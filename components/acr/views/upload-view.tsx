@@ -1,0 +1,125 @@
+"use client"
+
+import { useRef, useState } from "react"
+import { FileText, Upload, X, AlertTriangle } from "lucide-react"
+import type { View } from "../types"
+import { StepsIndicator } from "../steps-indicator"
+
+interface UploadViewProps {
+  onNavigate: (view: View) => void
+  onAnalyze: (file: File) => void
+}
+
+export function UploadView({ onNavigate, onAnalyze }: UploadViewProps) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const selectFile = (file: File | undefined) => {
+    if (!file) return
+
+    if (file.type !== "application/pdf") {
+      setFileError("Neste primeiro fluxo, envie a prestacao em PDF.")
+      return
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      setFileError("O arquivo precisa ter no maximo 20MB.")
+      return
+    }
+
+    setSelectedFile(file)
+    setFileError(null)
+  }
+
+  return (
+    <div>
+      <StepsIndicator activeStep={2} />
+
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
+          <FileText size={16} className="text-[#2D8C3A]" />
+          <span className="text-[13px] text-[#3D4F3F] font-medium">
+            Alive Imoveis · Grand Messejana II · Marco/2026
+          </span>
+        </div>
+
+        <div className="bg-white rounded-xl p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#EEF1EE]">
+          <h2 className="text-[18px] font-bold text-[#1A2B1C]">Envie os documentos do fechamento</h2>
+          <p className="text-[14px] text-[#6B7F6E] mt-1 mb-6">
+            Envie a prestacao de contas em PDF. Tamanho maximo: 20MB.
+          </p>
+
+          <div
+            className="border-2 border-dashed border-[#C3DEC9] rounded-xl bg-[#EFF7F1] p-12 text-center"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault()
+              selectFile(event.dataTransfer.files[0])
+            }}
+          >
+            <Upload size={40} className="text-[#2D8C3A] mx-auto mb-3" />
+            <p className="text-[16px] font-medium text-[#1A2B1C]">Arraste o arquivo aqui</p>
+            <p className="text-[14px] text-[#6B7F6E] my-2">ou</p>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(event) => selectFile(event.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="h-10 px-4 rounded-lg bg-white border border-[#2D8C3A] text-[#2D8C3A] text-[14px] font-medium hover:bg-[#EFF7F1] transition-colors"
+            >
+              Escolher arquivo
+            </button>
+          </div>
+
+          {selectedFile && (
+            <div className="mt-4 bg-[#EFF7F1] border border-[#C3DEC9] rounded-lg p-3 flex items-center gap-3">
+              <FileText size={18} className="text-[#2D8C3A] shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] text-[#1A2B1C] font-medium truncate">{selectedFile.name}</p>
+                <p className="text-[11px] text-[#6B7F6E]">
+                  {(selectedFile.size / 1024 / 1024).toFixed(1)} MB · pronto para analise
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedFile(null)}
+                className="p-1 rounded hover:bg-[#DDEEE1] text-[#6B7F6E]"
+                aria-label="Remover arquivo selecionado"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {fileError && (
+            <div className="bg-[#FEE2E2] border border-[#DC2626] rounded-lg p-3 flex gap-2 items-start mt-4">
+              <AlertTriangle size={16} className="text-[#DC2626] mt-0.5 shrink-0" />
+              <p className="text-[13px] text-[#991B1B]">{fileError}</p>
+            </div>
+          )}
+
+          <div className="flex justify-between items-center mt-6">
+            <button
+              onClick={() => onNavigate("novo-fechamento")}
+              className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium"
+            >
+              Voltar
+            </button>
+            <button
+              disabled={!selectedFile}
+              onClick={() => selectedFile && onAnalyze(selectedFile)}
+              className="h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Iniciar processamento
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
