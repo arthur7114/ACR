@@ -1,25 +1,56 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { FileText, Upload, X, AlertTriangle } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { AlertTriangle, FileText, Loader2, Upload, X } from "lucide-react"
+import { useProcessing } from "@/lib/contexts/processing-context"
+import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import type { FechamentoContext } from "@/lib/fechamento-context"
-import { getFechamentoLabel } from "@/lib/fechamento-context"
-import type { View } from "../types"
 import { StepsIndicator } from "../steps-indicator"
 
 interface UploadViewProps {
-  onNavigate: (view: View) => void
-  onAnalyze: (files: File[]) => void
-  onRequireFechamento: (files: File[]) => void
-  activeFechamento: FechamentoContext | null
+  fechamentoId: string
 }
 
-export function UploadView({ onNavigate, onAnalyze, onRequireFechamento, activeFechamento }: UploadViewProps) {
+export function UploadView({ fechamentoId }: UploadViewProps) {
+  const router = useRouter()
+  const { setPendingFiles } = useProcessing()
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
+  const [fechamento, setFechamento] = useState<FechamentoContext | null>(null)
+  const [fechamentoError, setFechamentoError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const canProcess = selectedFiles.length > 0
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/fechamentos/${fechamentoId}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled) return
+        if (payload.error || !payload.fechamento) {
+          setFechamentoError(payload.error ?? "Fechamento nao encontrado.")
+          return
+        }
+        const f = payload.fechamento
+        setFechamento({
+          id: f.id,
+          imobiliariaId: f.imobiliaria_id,
+          imobiliariaNome: f.imobiliarias?.nome ?? "Imobiliaria nao identificada",
+          empreendimentoId: f.empreendimento_id,
+          empreendimentoNome: f.empreendimentos?.nome ?? "Empreendimento nao identificado",
+          competencia: f.competencia,
+        })
+      })
+      .catch((err) => {
+        if (!cancelled) setFechamentoError(err instanceof Error ? err.message : "Falha ao carregar fechamento.")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fechamentoId])
+
+  const canProcess = selectedFiles.length > 0 && Boolean(fechamento)
 
   const selectFiles = (fileList: FileList | File[]) => {
     const files = Array.from(fileList)
@@ -41,24 +72,33 @@ export function UploadView({ onNavigate, onAnalyze, onRequireFechamento, activeF
     setFileError(null)
   }
 
+  const handleStart = () => {
+    if (!canProcess) return
+    setPendingFiles(selectedFiles)
+    router.push(`/fechamentos/${fechamentoId}/processando`)
+  }
+
   return (
     <div>
       <StepsIndicator activeStep={2} />
 
       <div className="max-w-3xl mx-auto">
-        {activeFechamento ? (
+        {fechamento ? (
           <div className="bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
             <FileText size={16} className="text-[#2D8C3A]" />
             <span className="text-[13px] text-[#3D4F3F] font-medium">
-              {getFechamentoLabel(activeFechamento)}
+              {fechamento.imobiliariaNome} · {fechamento.empreendimentoNome} · {formatCompetenciaLong(fechamento.competencia)}
             </span>
           </div>
+        ) : fechamentoError ? (
+          <div className="bg-[#FEE2E2] border-l-4 border-[#DC2626] rounded-lg p-3 flex items-start gap-2 mb-4">
+            <AlertTriangle size={16} className="text-[#DC2626] mt-0.5 shrink-0" />
+            <span className="text-[13px] text-[#991B1B]">{fechamentoError}</span>
+          </div>
         ) : (
-          <div className="bg-[#FEF3C7] border-l-4 border-[#F59E0B] rounded-lg p-3 flex items-start gap-2 mb-4">
-            <AlertTriangle size={16} className="text-[#92400E] mt-0.5 shrink-0" />
-            <span className="text-[13px] text-[#92400E]">
-              Este pacote ainda nao esta vinculado a um fechamento. Voce sera solicitado a escolher imobiliaria, empreendimento e competencia antes de iniciar o processamento.
-            </span>
+          <div className="bg-[#EEF1EE] rounded-lg p-3 flex items-center gap-2 mb-4">
+            <Loader2 size={16} className="animate-spin text-[#6B7F6E]" />
+            <span className="text-[13px] text-[#6B7F6E]">Carregando fechamento...</span>
           </div>
         )}
 
@@ -128,18 +168,18 @@ export function UploadView({ onNavigate, onAnalyze, onRequireFechamento, activeF
           )}
 
           <div className="flex justify-between items-center mt-6">
-            <button
-              onClick={() => onNavigate("novo-fechamento")}
+            <Link
+              href="/fechamentos"
               className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium"
             >
-              Voltar
-            </button>
+              ← Voltar
+            </Link>
             <button
               disabled={!canProcess}
-              onClick={() => (activeFechamento ? onAnalyze(selectedFiles) : onRequireFechamento(selectedFiles))}
+              onClick={handleStart}
               className="h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {activeFechamento ? "Iniciar processamento" : "Alocar e processar"}
+              Iniciar processamento
             </button>
           </div>
         </div>

@@ -1,75 +1,120 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Bell } from "lucide-react"
-import type { FechamentoContext } from "@/lib/fechamento-context"
-import { getFechamentoLabel } from "@/lib/fechamento-context"
-import type { PackageAnalysis } from "@/lib/prestacao-types"
-import type { View } from "./types"
+import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { NotificationsPanel } from "./notifications-panel"
 
+type Crumb = {
+  label: string
+  href?: string
+}
+
+function useFechamentoSummary(fechamentoId: string | null) {
+  const [summary, setSummary] = useState<{
+    imobiliaria: string
+    empreendimento: string
+    competencia: string
+  } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!fechamentoId) {
+      setSummary(null)
+      return
+    }
+    fetch(`/api/fechamentos/${fechamentoId}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        if (cancelled || payload.error) return
+        const fechamento = payload.fechamento
+        if (!fechamento) return
+        setSummary({
+          imobiliaria: fechamento.imobiliarias?.nome ?? "Imobiliaria nao identificada",
+          empreendimento: fechamento.empreendimentos?.nome ?? "Empreendimento nao identificado",
+          competencia: formatCompetenciaLong(fechamento.competencia),
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setSummary(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fechamentoId])
+
+  return summary
+}
+
+function buildCrumbs(pathname: string, summary: ReturnType<typeof useFechamentoSummary>): Crumb[] {
+  if (pathname === "/" || pathname === "/fechamentos") {
+    return [{ label: "Fechamentos" }]
+  }
+  if (pathname === "/fechamentos/novo") {
+    return [{ label: "Fechamentos", href: "/fechamentos" }, { label: "Novo fechamento" }]
+  }
+  const match = pathname.match(/^\/fechamentos\/([^/]+)\/([^/]+)$/)
+  if (match) {
+    const [, id, step] = match
+    const label = summary
+      ? `${summary.imobiliaria} · ${summary.empreendimento} · ${summary.competencia}`
+      : "Fechamento"
+    const stepLabel =
+      step === "upload" ? "Documentos" : step === "processando" ? "Processando" : step === "revisao" ? "Revisao" : step
+    return [
+      { label: "Fechamentos", href: "/fechamentos" },
+      { label, href: `/fechamentos/${id}/revisao` },
+      { label: stepLabel },
+    ]
+  }
+  if (pathname.startsWith("/imoveis")) {
+    return [{ label: "Imóveis" }]
+  }
+  if (pathname.startsWith("/configuracoes")) {
+    return [{ label: "Configurações" }]
+  }
+  return [{ label: "Fechamentos" }]
+}
+
+function extractFechamentoId(pathname: string) {
+  const match = pathname.match(/^\/fechamentos\/([0-9a-f-]{36})\//i)
+  return match ? match[1] : null
+}
+
 interface TopbarProps {
-  currentView: View
-  activeFechamento: FechamentoContext | null
-  analysisResult: PackageAnalysis | null
   showNotifications: boolean
   onToggleNotifications: () => void
-  onNavigate: (view: View) => void
 }
 
-function getBreadcrumb(view: View, activeFechamento: FechamentoContext | null, analysisResult: PackageAnalysis | null): string[] {
-  const fechamentoLabel = getFechamentoLabel(activeFechamento, analysisResult)
-
-  switch (view) {
-    case "fechamentos":
-      return ["Fechamentos"]
-    case "novo-fechamento":
-      return ["Fechamentos", "Novo fechamento"]
-    case "upload":
-      return ["Fechamentos", fechamentoLabel, "Documentos"]
-    case "processando":
-      return ["Fechamentos", fechamentoLabel, "Processando"]
-    case "revisao":
-      return ["Fechamentos", fechamentoLabel]
-    case "imoveis":
-      return ["Imóveis"]
-    case "configuracoes":
-      return ["Configurações"]
-    default:
-      return ["Fechamentos"]
-  }
-}
-
-export function Topbar({
-  currentView,
-  activeFechamento,
-  analysisResult,
-  showNotifications,
-  onToggleNotifications,
-  onNavigate,
-}: TopbarProps) {
-  const crumbs = getBreadcrumb(currentView, activeFechamento, analysisResult)
+export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps) {
+  const pathname = usePathname() ?? "/"
+  const fechamentoId = extractFechamentoId(pathname)
+  const summary = useFechamentoSummary(fechamentoId)
+  const crumbs = buildCrumbs(pathname, summary)
 
   return (
     <header className="fixed top-0 left-[220px] right-0 h-14 bg-white border-b border-[#EEF1EE] pl-6 pr-6 flex items-center justify-between z-30">
-      {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-[13px]">
         {crumbs.map((crumb, i) => (
-          <span key={i} className="flex items-center gap-2">
+          <span key={`${crumb.label}-${i}`} className="flex items-center gap-2">
             {i > 0 && <span className="text-[#D5DDD6]">/</span>}
-            <span
-              className={
-                i === crumbs.length - 1
-                  ? "text-[#1A2B1C] font-medium"
-                  : "text-[#6B7F6E]"
-              }
-            >
-              {crumb}
-            </span>
+            {crumb.href && i < crumbs.length - 1 ? (
+              <Link href={crumb.href} className="text-[#6B7F6E] hover:text-[#1A2B1C]">
+                {crumb.label}
+              </Link>
+            ) : (
+              <span
+                className={i === crumbs.length - 1 ? "text-[#1A2B1C] font-medium" : "text-[#6B7F6E]"}
+              >
+                {crumb.label}
+              </span>
+            )}
           </span>
         ))}
       </nav>
 
-      {/* Right actions */}
       <div className="flex items-center gap-4">
         <div className="relative">
           <button
@@ -80,11 +125,7 @@ export function Topbar({
             <Bell size={18} className="text-[#3D4F3F]" />
           </button>
 
-          {showNotifications && (
-            <NotificationsPanel
-              onClose={onToggleNotifications}
-            />
-          )}
+          {showNotifications && <NotificationsPanel onClose={onToggleNotifications} />}
         </div>
 
         <div className="h-8 w-8 rounded-full bg-[#DDEEE1]" aria-label="Usuário não carregado" />

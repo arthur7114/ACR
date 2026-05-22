@@ -1,19 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { AlertTriangle, Lightbulb, Loader2 } from "lucide-react"
-import type { Empreendimento, Imobiliaria } from "@/lib/cadastros-types"
-import type { View } from "../types"
+import { useCadastros } from "@/lib/contexts/cadastros-context"
 import { StepsIndicator } from "../steps-indicator"
-
-interface NovoFechamentoViewProps {
-  onNavigate: (view: View) => void
-  imobiliarias: Imobiliaria[]
-  empreendimentos: Empreendimento[]
-  loading: boolean
-  error: string | null
-  onCreateFechamento: (input: Record<string, unknown>) => Promise<unknown>
-}
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -26,16 +18,11 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 const selectClass =
   "w-full h-10 px-3 text-[14px] bg-white border border-[#D5DDD6] rounded-lg text-[#3D4F3F] focus:outline-none focus:border-[#2D8C3A] focus:ring-2 focus:ring-[#2D8C3A]/15"
 
-export function NovoFechamentoView({
-  onNavigate,
-  imobiliarias,
-  empreendimentos,
-  loading,
-  error,
-  onCreateFechamento,
-}: NovoFechamentoViewProps) {
-  const activeImobiliarias = useMemo(() => imobiliarias.filter((item) => item.ativo), [imobiliarias])
-  const activeEmpreendimentos = useMemo(() => empreendimentos.filter((item) => item.ativo), [empreendimentos])
+export function NovoFechamentoView() {
+  const router = useRouter()
+  const { cadastros, loading, error } = useCadastros()
+  const activeImobiliarias = useMemo(() => cadastros.imobiliarias.filter((item) => item.ativo), [cadastros.imobiliarias])
+  const activeEmpreendimentos = useMemo(() => cadastros.empreendimentos.filter((item) => item.ativo), [cadastros.empreendimentos])
   const [imobiliariaId, setImobiliariaId] = useState("")
   const [empreendimentoId, setEmpreendimentoId] = useState("")
   const [month, setMonth] = useState("3")
@@ -54,16 +41,26 @@ export function NovoFechamentoView({
     setFormError(null)
 
     try {
-      await onCreateFechamento({
-        imobiliaria_id: imobiliariaId,
-        empreendimento_id: empreendimentoId,
-        competencia: `${year}-${month.padStart(2, "0")}-01`,
-        observacoes,
+      const response = await fetch("/api/fechamentos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imobiliaria_id: imobiliariaId,
+          empreendimento_id: empreendimentoId,
+          competencia: `${year}-${month.padStart(2, "0")}-01`,
+          observacoes,
+        }),
       })
-      onNavigate("upload")
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Nao foi possivel criar o fechamento.")
-    } finally {
+
+      const payload = await response.json()
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error ?? "Falha ao criar fechamento.")
+      }
+      const fechamentoId = payload.fechamento?.id
+      if (!fechamentoId) throw new Error("Resposta do servidor sem id do fechamento.")
+      router.push(`/fechamentos/${fechamentoId}/upload`)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Nao foi possivel criar o fechamento.")
       setSubmitting(false)
     }
   }
@@ -165,12 +162,12 @@ export function NovoFechamentoView({
         </div>
 
         <div className="flex justify-between items-center mt-6">
-          <button
-            onClick={() => onNavigate("fechamentos")}
+          <Link
+            href="/fechamentos"
             className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium"
           >
             ← Voltar
-          </button>
+          </Link>
           <button
             onClick={() => void submit()}
             disabled={submitting || loading}

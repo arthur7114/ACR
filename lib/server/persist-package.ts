@@ -72,6 +72,7 @@ export async function persistPackage(input: PersistPackageInput) {
           documents: analysis.documents,
           totals: analysis.totals,
         },
+        analise_completa: analysis,
       },
       { onConflict: "imobiliaria_id,empreendimento_id,competencia" },
     )

@@ -1,13 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { AlertTriangle, CheckCircle, Loader2, Plus } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { View } from "../types"
-
-interface FechamentosViewProps {
-  onNavigate: (view: View) => void
-}
 
 type Status = "pendente" | "aprovado" | "processando"
 
@@ -58,7 +54,7 @@ function StatusBadge({ status }: { status: Status }) {
   )
 }
 
-export function FechamentosView({ onNavigate }: FechamentosViewProps) {
+export function FechamentosView() {
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -104,13 +100,13 @@ export function FechamentosView({ onNavigate }: FechamentosViewProps) {
             Conciliação mensal de repasses por imobiliária
           </p>
         </div>
-        <button
-          onClick={() => onNavigate("novo-fechamento")}
+        <Link
+          href="/fechamentos/novo"
           className="inline-flex items-center gap-2 h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24] transition-colors"
         >
           <Plus size={16} />
           Novo Fechamento
-        </button>
+        </Link>
       </div>
 
       <div className="bg-white rounded-xl overflow-hidden border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
@@ -127,13 +123,13 @@ export function FechamentosView({ onNavigate }: FechamentosViewProps) {
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-[#6B7F6E]">
             <p className="text-[14px]">Nenhum fechamento encontrado.</p>
-            <button
-              onClick={() => onNavigate("novo-fechamento")}
+            <Link
+              href="/fechamentos/novo"
               className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-[#2D8C3A] text-white text-[13px] font-medium hover:bg-[#1A5C24] transition-colors"
             >
               <Plus size={14} />
               Criar primeiro fechamento
-            </button>
+            </Link>
           </div>
         ) : (
           <>
@@ -170,19 +166,19 @@ export function FechamentosView({ onNavigate }: FechamentosViewProps) {
                     </td>
                     <td className="px-4 py-3.5">
                       {row.status === "pendente" ? (
-                        <button
-                          onClick={() => onNavigate("revisao")}
-                          className="h-8 px-3 rounded-lg bg-[#2D8C3A] text-white text-[13px] font-medium hover:bg-[#1A5C24] transition-colors"
+                        <Link
+                          href={`/fechamentos/${row.id}/revisao`}
+                          className="h-8 inline-flex items-center px-3 rounded-lg bg-[#2D8C3A] text-white text-[13px] font-medium hover:bg-[#1A5C24] transition-colors"
                         >
                           Revisar
-                        </button>
+                        </Link>
                       ) : (
-                        <button
-                          onClick={() => onNavigate("revisao")}
-                          className="h-8 px-3 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[13px] font-medium hover:bg-[#EEF1EE] transition-colors"
+                        <Link
+                          href={`/fechamentos/${row.id}/revisao`}
+                          className="h-8 inline-flex items-center px-3 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[13px] font-medium hover:bg-[#EEF1EE] transition-colors"
                         >
                           Ver detalhes
-                        </button>
+                        </Link>
                       )}
                     </td>
                   </tr>

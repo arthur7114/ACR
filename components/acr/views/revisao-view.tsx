@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import {
   AlertTriangle,
   CheckCircle,
@@ -12,12 +13,11 @@ import {
 import { formatBRL } from "@/lib/format"
 import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import type { View } from "../types"
 
 interface RevisaoViewProps {
-  onNavigate: (view: View) => void
-  onOpenModal: (apto: string, inquilino: string, valor: number) => void
+  fechamentoId: string
   analysisResult: PackageAnalysis | null
+  onOpenModal: (apto: string, inquilino: string, valor: number) => void
 }
 
 function SummaryCard({
@@ -114,7 +114,7 @@ function CheckValue({ label, value }: { label: string; value: number | null | un
   )
 }
 
-export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: RevisaoViewProps) {
+export function RevisaoView({ fechamentoId, onOpenModal, analysisResult }: RevisaoViewProps) {
   if (!analysisResult) {
     return (
       <div className="max-w-xl mx-auto bg-white rounded-xl p-8 border border-[#EEF1EE] text-center">
@@ -123,12 +123,12 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
         <p className="text-[14px] text-[#6B7F6E] mt-2">
           A revisao so exibe dados extraidos e validados pelo pipeline real.
         </p>
-        <button
-          onClick={() => onNavigate("upload")}
-          className="mt-6 h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24]"
+        <Link
+          href={`/fechamentos/${fechamentoId}/upload`}
+          className="inline-block mt-6 h-10 px-4 leading-10 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24]"
         >
           Voltar ao upload
-        </button>
+        </Link>
       </div>
     )
   }
@@ -184,13 +184,13 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate("upload")}
+          <Link
+            href={`/fechamentos/${fechamentoId}/upload`}
             className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors"
           >
             <RefreshCw size={14} />
             Reprocessar
-          </button>
+          </Link>
           <button
             disabled={hasBlocking}
             title={hasBlocking ? "Resolva as divergencias bloqueantes primeiro" : "Parecer tecnico sem bloqueios"}
@@ -496,9 +496,9 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
       )}
 
       <div className="bg-white border border-[#EEF1EE] rounded-xl p-4 flex justify-between items-center">
-        <button onClick={() => onNavigate("fechamentos")} className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium">
+        <Link href="/fechamentos" className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium">
           Voltar a lista
-        </button>
+        </Link>
         <div className="flex gap-2">
           <button className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors">
             <Download size={14} />
