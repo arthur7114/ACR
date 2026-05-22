@@ -11,6 +11,7 @@ import { RevisaoView } from "@/components/acr/views/revisao-view"
 import { ImoveisView } from "@/components/acr/views/imoveis-view"
 import { PlaceholderView } from "@/components/acr/views/placeholder-view"
 import { CorrectionModal } from "@/components/acr/correction-modal"
+import { AlocarEmpreendimentoModal } from "@/components/acr/alocar-empreendimento-modal"
 import type { View } from "@/components/acr/types"
 import type { CadastrosPayload, CsvImportResult } from "@/lib/cadastros-types"
 import type { FechamentoContext } from "@/lib/fechamento-context"
@@ -52,6 +53,10 @@ export default function HomePage() {
     apto: "",
     inquilino: "",
     valor: 0,
+  })
+  const [alocacaoModal, setAlocacaoModal] = useState<{ open: boolean; pendingFiles: File[] }>({
+    open: false,
+    pendingFiles: [],
   })
 
   const loadCadastros = useCallback(async () => {
@@ -143,17 +148,44 @@ export default function HomePage() {
       empreendimentos?: { nome: string } | null
     }
 
-    setActiveFechamento({
+    const context: FechamentoContext = {
       id: fechamento.id,
       imobiliariaId: fechamento.imobiliaria_id,
       imobiliariaNome: fechamento.imobiliarias?.nome ?? "Imobiliaria nao identificada",
       empreendimentoId: fechamento.empreendimento_id,
       empreendimentoNome: fechamento.empreendimentos?.nome ?? "Empreendimento nao identificado",
       competencia: fechamento.competencia,
-    })
+    }
+
+    setActiveFechamento(context)
+    return context
   }
 
-  const processPackage = async (files: File[]) => {
+  const handleRequireFechamento = (files: File[]) => {
+    setAlocacaoModal({ open: true, pendingFiles: files })
+  }
+
+  const handleAlocarConfirm = async ({
+    imobiliariaId,
+    empreendimentoId,
+    competencia,
+  }: {
+    imobiliariaId: string
+    empreendimentoId: string
+    competencia: string
+  }) => {
+    const context = await createFechamento({
+      imobiliaria_id: imobiliariaId,
+      empreendimento_id: empreendimentoId,
+      competencia,
+    })
+    const filesToProcess = alocacaoModal.pendingFiles
+    setAlocacaoModal({ open: false, pendingFiles: [] })
+    await processPackage(filesToProcess, context)
+  }
+
+  const processPackage = async (files: File[], overrideContext?: FechamentoContext) => {
+    const contextToUse = overrideContext ?? activeFechamento
     setAnalysisResult(null)
     setProcessingEvents([])
     setProcessing({ status: "running", message: "Processamento real do pacote iniciado.", error: null })
@@ -162,8 +194,8 @@ export default function HomePage() {
     try {
       const formData = new FormData()
       files.forEach((file) => formData.append("files", file))
-      if (activeFechamento) {
-        formData.append("fechamentoContext", JSON.stringify(activeFechamento))
+      if (contextToUse) {
+        formData.append("fechamentoContext", JSON.stringify(contextToUse))
       }
 
       const response = await fetch("/api/fechamentos/process/stream", {
@@ -241,7 +273,8 @@ export default function HomePage() {
         {currentView === "upload" && (
           <UploadView
             onNavigate={navigate}
-            onAnalyze={processPackage}
+            onAnalyze={(files) => processPackage(files)}
+            onRequireFechamento={handleRequireFechamento}
             activeFechamento={activeFechamento}
           />
         )}
@@ -292,6 +325,15 @@ export default function HomePage() {
         apto={modal.apto}
         inquilino={modal.inquilino}
         valorLido={formatBRL(modal.valor)}
+      />
+
+      <AlocarEmpreendimentoModal
+        open={alocacaoModal.open}
+        onClose={() => setAlocacaoModal({ open: false, pendingFiles: [] })}
+        imobiliarias={cadastros.imobiliarias}
+        empreendimentos={cadastros.empreendimentos}
+        pendingFilesCount={alocacaoModal.pendingFiles.length}
+        onConfirm={handleAlocarConfirm}
       />
     </div>
   )

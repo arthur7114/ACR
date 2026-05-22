@@ -10,10 +10,11 @@ import { StepsIndicator } from "../steps-indicator"
 interface UploadViewProps {
   onNavigate: (view: View) => void
   onAnalyze: (files: File[]) => void
+  onRequireFechamento: (files: File[]) => void
   activeFechamento: FechamentoContext | null
 }
 
-export function UploadView({ onNavigate, onAnalyze, activeFechamento }: UploadViewProps) {
+export function UploadView({ onNavigate, onAnalyze, onRequireFechamento, activeFechamento }: UploadViewProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -45,12 +46,21 @@ export function UploadView({ onNavigate, onAnalyze, activeFechamento }: UploadVi
       <StepsIndicator activeStep={2} />
 
       <div className="max-w-3xl mx-auto">
-        <div className="bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
-          <FileText size={16} className="text-[#2D8C3A]" />
-          <span className="text-[13px] text-[#3D4F3F] font-medium">
-            {getFechamentoLabel(activeFechamento)}
-          </span>
-        </div>
+        {activeFechamento ? (
+          <div className="bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
+            <FileText size={16} className="text-[#2D8C3A]" />
+            <span className="text-[13px] text-[#3D4F3F] font-medium">
+              {getFechamentoLabel(activeFechamento)}
+            </span>
+          </div>
+        ) : (
+          <div className="bg-[#FEF3C7] border-l-4 border-[#F59E0B] rounded-lg p-3 flex items-start gap-2 mb-4">
+            <AlertTriangle size={16} className="text-[#92400E] mt-0.5 shrink-0" />
+            <span className="text-[13px] text-[#92400E]">
+              Este pacote ainda nao esta vinculado a um fechamento. Voce sera solicitado a escolher imobiliaria, empreendimento e competencia antes de iniciar o processamento.
+            </span>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl p-8 shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#EEF1EE]">
           <h2 className="text-[18px] font-bold text-[#1A2B1C]">Envie os documentos do fechamento</h2>
@@ -126,10 +136,10 @@ export function UploadView({ onNavigate, onAnalyze, activeFechamento }: UploadVi
             </button>
             <button
               disabled={!canProcess}
-              onClick={() => onAnalyze(selectedFiles)}
+              onClick={() => (activeFechamento ? onAnalyze(selectedFiles) : onRequireFechamento(selectedFiles))}
               className="h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Iniciar processamento
+              {activeFechamento ? "Iniciar processamento" : "Alocar e processar"}
             </button>
           </div>
         </div>

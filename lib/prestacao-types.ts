@@ -33,6 +33,7 @@ export const receitaPorImovelSchema = z
     desconto: z.number().nullable(),
     aluguel_com_desconto: z.number().nullable(),
     garagem: z.number().nullable(),
+    vagas_garagem: z.number().int().nonnegative().nullable(),
     agua: z.number().nullable(),
     iptu: z.number().nullable(),
     seguro_incendio: z.number().nullable(),
@@ -52,6 +53,7 @@ export interface ReceitaPorImovel {
   desconto: number | null
   aluguel_com_desconto: number | null
   garagem: number | null
+  vagas_garagem: number | null
   agua: number | null
   iptu: number | null
   seguro_incendio: number | null

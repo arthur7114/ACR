@@ -10,7 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { PackageAnalysis, PrestacaoRecheck, TechnicalOpinion } from "@/lib/prestacao-types"
+import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import type { View } from "../types"
 
@@ -78,6 +78,31 @@ function isActionableWarning(check: PrestacaoRecheck) {
   return false
 }
 
+const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--"])
+
+function isInquilinoVazio(inquilino: string | null | undefined) {
+  if (!inquilino) return true
+  return VAGO_INQUILINO_TOKENS.has(inquilino.trim().toLowerCase())
+}
+
+function getRowBadge(row: ReceitaPorImovel) {
+  const aluguelZerado = row.aluguel === null || row.aluguel === 0
+
+  if (!aluguelZerado) return null
+
+  if (isInquilinoVazio(row.inquilino)) {
+    return {
+      label: "Vago",
+      classes: "border-[#D5DDD6] bg-[#EEF1EE] text-[#6B7F6E]",
+    }
+  }
+
+  return {
+    label: "Inadimplente",
+    classes: "border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]",
+  }
+}
+
 function CheckValue({ label, value }: { label: string; value: number | null | undefined }) {
   if (typeof value !== "number") return null
 
@@ -116,6 +141,16 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
   const title = `${prestacao?.empreendimento ?? "Empreendimento nao identificado"} - ${prestacao?.competencia ?? "Competencia nao identificada"}`
   const resumo = prestacao?.resumo_financeiro
   const totalLinhas = prestacao?.receitas_por_imovel.reduce((sum, row) => sum + row.total, 0) ?? 0
+  const linhasImoveis = prestacao?.receitas_por_imovel ?? []
+  const linhasAluguelValido = linhasImoveis.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
+  const mediaAluguel = linhasAluguelValido.length > 0
+    ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
+    : 0
+  const mediaGeral = linhasImoveis.length > 0
+    ? linhasImoveis.reduce((sum, row) => sum + (row.aluguel ?? 0), 0) / linhasImoveis.length
+    : 0
+  const inadimplentes = linhasImoveis.filter((row) => getRowBadge(row)?.label === "Inadimplente").length
+  const vagos = linhasImoveis.filter((row) => getRowBadge(row)?.label === "Vago").length
 
   return (
     <div className="space-y-6">
@@ -195,6 +230,27 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
         <SummaryCard label="Comissao + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido no resumo" />
         <SummaryCard label="Total a repassar" value={formatBRL(totals.total_a_repassar)} valueColor={hasBlocking ? "#DC2626" : "#2D8C3A"} subtext={totals.valor_comprovado === null ? "Comprovante nao conciliado" : `Comprovado: ${formatBRL(totals.valor_comprovado)}`} />
       </div>
+
+      {linhasImoveis.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <SummaryCard
+            label="Media de aluguel"
+            value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
+            subtext={`${linhasAluguelValido.length} imovel(is) com aluguel > 0`}
+          />
+          <SummaryCard
+            label="Media considerando vagos"
+            value={formatBRL(mediaGeral)}
+            subtext={`${linhasImoveis.length} imovel(is) no total`}
+          />
+          <SummaryCard
+            label="Ocupacao"
+            value={`${linhasAluguelValido.length}/${linhasImoveis.length}`}
+            subtext={`${inadimplentes} inadimplente(s) - ${vagos} vago(s)`}
+            valueColor={inadimplentes > 0 ? "#991B1B" : undefined}
+          />
+        </div>
+      )}
 
       {prestacao && (
         <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
@@ -339,7 +395,7 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Garagem", "Agua", "IPTU", "Total", "Confianca"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Garagem (R$)", "Vagas", "Agua", "IPTU", "Total", "Confianca"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -347,20 +403,33 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
               </tr>
             </thead>
             <tbody>
-              {prestacao.receitas_por_imovel.map((row) => (
+              {prestacao.receitas_por_imovel.map((row) => {
+                const badge = getRowBadge(row)
+                return (
                 <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                   <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
-                  <td className="px-4 py-3.5 text-[#3D4F3F]">{row.inquilino}</td>
+                  <td className="px-4 py-3.5 text-[#3D4F3F]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span>{row.inquilino?.trim() ? row.inquilino : "-"}</span>
+                      {badge && (
+                        <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${badge.classes}`}>
+                          {badge.label}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
                     {row.aluguel !== null ? formatBRL(row.aluguel) : "-"}
                   </td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.vagas_garagem ?? "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                   <td className="px-4 py-3.5 text-[#3D4F3F]">{Math.round(row.confianca * 100)}%</td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </section>

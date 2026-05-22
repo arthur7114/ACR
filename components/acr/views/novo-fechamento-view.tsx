@@ -12,7 +12,7 @@ interface NovoFechamentoViewProps {
   empreendimentos: Empreendimento[]
   loading: boolean
   error: string | null
-  onCreateFechamento: (input: Record<string, unknown>) => Promise<void>
+  onCreateFechamento: (input: Record<string, unknown>) => Promise<unknown>
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
