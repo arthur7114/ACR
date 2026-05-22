@@ -1,0 +1,487 @@
+import type {
+  ClassifiedDocument,
+  DespesasAnalysis,
+  PackageTotals,
+  PrestacaoAnalysis,
+  PrestacaoGuardrail,
+  PrestacaoRecheck,
+  ReajusteAnalysis,
+  RepasseAnalysis,
+  TechnicalOpinion,
+} from "@/lib/prestacao-types"
+
+const MONEY_TOLERANCE = 0.01
+const REPASSE_ALERT_TOLERANCE = 5
+const MIN_CONFIDENCE = 0.7
+
+export interface PackageValidationInput {
+  documents: ClassifiedDocument[]
+  prestacao: PrestacaoAnalysis | null
+  repasse: RepasseAnalysis | null
+  despesas: DespesasAnalysis | null
+  reajuste: ReajusteAnalysis | null
+}
+
+export function validatePackage(input: PackageValidationInput) {
+  const normalizedPrestacao = input.prestacao ? normalizePrestacao(input.prestacao) : null
+  const normalizedDespesas = input.despesas ? normalizeDespesas(input.despesas) : null
+  const normalizedRepasse = input.repasse ? normalizeRepasse(input.repasse) : null
+  const normalizedReajuste = input.reajuste ? normalizeReajuste(input.reajuste) : null
+  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse)
+  const rechecks = buildRechecks({
+    documents: input.documents,
+    prestacao: normalizedPrestacao,
+    repasse: normalizedRepasse,
+    despesas: normalizedDespesas,
+    reajuste: normalizedReajuste,
+    totals,
+  })
+  const guardrails = buildGuardrails(input.documents, rechecks)
+  const parecer = buildTechnicalOpinion(rechecks, guardrails)
+
+  return {
+    prestacao: normalizedPrestacao,
+    repasse: normalizedRepasse,
+    despesas: normalizedDespesas,
+    reajuste: normalizedReajuste,
+    totals,
+    rechecks,
+    guardrails,
+    parecer,
+  }
+}
+
+function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
+  return {
+    ...analysis,
+    confianca_geral: clampConfidence(analysis.confianca_geral),
+    resumo_financeiro: {
+      ...analysis.resumo_financeiro,
+      total_linhas_receitas: nullableMoney(analysis.resumo_financeiro.total_linhas_receitas),
+      total_linhas_comissoes: nullableMoney(analysis.resumo_financeiro.total_linhas_comissoes),
+      total_linhas_repasse: nullableMoney(analysis.resumo_financeiro.total_linhas_repasse),
+      comissao_administracao: nullableMoney(analysis.resumo_financeiro.comissao_administracao),
+      total_outras_comissoes_despesas: nullableMoney(analysis.resumo_financeiro.total_outras_comissoes_despesas),
+      total_comissao_despesas: nullableMoney(analysis.resumo_financeiro.total_comissao_despesas),
+      recebidos_em_nome_locador: nullableMoney(analysis.resumo_financeiro.recebidos_em_nome_locador),
+      total_a_repassar: nullableMoney(analysis.resumo_financeiro.total_a_repassar),
+      confianca: clampConfidence(analysis.resumo_financeiro.confianca),
+      outras_comissoes_despesas: analysis.resumo_financeiro.outras_comissoes_despesas.map((item) => ({
+        ...item,
+        valor: roundMoney(item.valor),
+        confianca: clampConfidence(item.confianca),
+      })),
+    },
+    receitas_por_imovel: analysis.receitas_por_imovel.map((row) => ({
+      ...row,
+      total: roundMoney(row.total),
+      aluguel: nullableMoney(row.aluguel),
+      desconto: nullableMoney(row.desconto),
+      aluguel_com_desconto: nullableMoney(row.aluguel_com_desconto),
+      garagem: nullableMoney(row.garagem),
+      agua: nullableMoney(row.agua),
+      iptu: nullableMoney(row.iptu),
+      seguro_incendio: nullableMoney(row.seguro_incendio),
+      comissao: nullableMoney(row.comissao),
+      repasse: nullableMoney(row.repasse),
+      confianca: clampConfidence(row.confianca),
+    })),
+  }
+}
+
+function normalizeRepasse(analysis: RepasseAnalysis): RepasseAnalysis {
+  return {
+    ...analysis,
+    valor: nullableMoney(analysis.valor),
+    confianca_geral: clampConfidence(analysis.confianca_geral),
+  }
+}
+
+function normalizeDespesas(analysis: DespesasAnalysis): DespesasAnalysis {
+  return {
+    ...analysis,
+    total_despesas: nullableMoney(analysis.total_despesas),
+    confianca_geral: clampConfidence(analysis.confianca_geral),
+    despesas: analysis.despesas.map((despesa) => ({
+      ...despesa,
+      valor: roundMoney(despesa.valor),
+      confianca: clampConfidence(despesa.confianca),
+    })),
+  }
+}
+
+function normalizeReajuste(analysis: ReajusteAnalysis): ReajusteAnalysis {
+  return {
+    ...analysis,
+    confianca_geral: clampConfidence(analysis.confianca_geral),
+    itens: analysis.itens.map((item) => ({
+      ...item,
+      valor_anterior: nullableMoney(item.valor_anterior),
+      valor_novo: nullableMoney(item.valor_novo),
+      confianca: clampConfidence(item.confianca),
+    })),
+  }
+}
+
+function calculateTotals(
+  prestacao: PrestacaoAnalysis | null,
+  despesas: DespesasAnalysis | null,
+  repasse: RepasseAnalysis | null,
+): PackageTotals {
+  const lineTotalReceitas = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? []))
+  const lineTotalComissoes = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.comissao ?? 0) ?? []))
+  const lineTotalRepasse = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.repasse ?? 0) ?? []))
+  const resumo = prestacao?.resumo_financeiro
+  const resumoOutrasDespesas = resumo?.total_outras_comissoes_despesas ?? sum(resumo?.outras_comissoes_despesas.map((item) => item.valor) ?? [])
+  const externalDespesas = roundMoney(sum(despesas?.despesas.map((despesa) => despesa.valor) ?? []))
+  const totalDespesas = roundMoney(resumoOutrasDespesas || externalDespesas)
+  const totalComissaoDespesas = roundMoney(resumo?.total_comissao_despesas ?? (resumo?.comissao_administracao ?? lineTotalComissoes) + totalDespesas)
+  const totalReceitas = roundMoney(resumo?.recebidos_em_nome_locador ?? resumo?.total_linhas_receitas ?? lineTotalReceitas)
+  const totalComissoes = roundMoney(resumo?.comissao_administracao ?? lineTotalComissoes)
+  const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
+  const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas)
+  const valorComprovado = repasse?.valor ?? null
+
+  return {
+    total_receitas: totalReceitas,
+    total_comissoes: totalComissoes,
+    total_repasse_bruto: totalRepasseBruto,
+    total_despesas: totalDespesas,
+    total_comissao_despesas: totalComissaoDespesas,
+    total_a_repassar: totalARepassar,
+    valor_comprovado: valorComprovado,
+    diferenca_repasse: valorComprovado === null ? null : roundMoney(Math.abs(totalARepassar - valorComprovado)),
+  }
+}
+
+function buildRechecks({
+  documents,
+  prestacao,
+  repasse,
+  despesas,
+  reajuste,
+  totals,
+}: PackageValidationInput & { totals: PackageTotals }) {
+  const checks: PrestacaoRecheck[] = [
+    checkRequiredDocument(documents, "prestacao_contas", "Prestacao de contas"),
+    checkRequiredDocument(documents, "comprovante_repasse", "Comprovante de repasse"),
+    checkOptionalDocument(documents, "relatorio_reajuste", "Relatorio de locacao/reajuste"),
+    checkOptionalDocument(documents, "despesas_comprovantes", "Despesas e comprovantes"),
+    checkUnknownDocuments(documents),
+    checkPrestacaoRows(prestacao),
+    compareTotal("total_linhas_receitas", "Total das linhas de receitas", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? [])),
+    compareTotal("total_linhas_comissoes", "Total das comissoes por linha", prestacao?.resumo_financeiro.total_linhas_comissoes ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.comissao ?? 0) ?? [])),
+    compareTotal("total_linhas_repasse", "Total dos repasses por linha", prestacao?.resumo_financeiro.total_linhas_repasse ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.repasse ?? 0) ?? [])),
+    compareResumoFormula(prestacao, totals),
+    compareDespesasTotal(despesas, totals.total_despesas),
+    compareRepasse(totals),
+    checkConfidence("prestacao_confidence", "Confianca da prestacao", getLowestPrestacaoConfidence(prestacao)),
+    checkConfidence("repasse_confidence", "Confianca do comprovante", repasse?.confianca_geral ?? null),
+    checkConfidence("despesas_confidence", "Confianca das despesas", getLowestDespesasConfidence(despesas)),
+    checkConfidence("reajuste_confidence", "Confianca do relatorio", getLowestReajusteConfidence(reajuste)),
+  ]
+
+  return checks.filter((check) => check.id !== "skip")
+}
+
+function buildGuardrails(documents: ClassifiedDocument[], rechecks: PrestacaoRecheck[]): PrestacaoGuardrail[] {
+  const hasFailed = rechecks.some((check) => check.status === "failed")
+  const hasWarning = rechecks.some((check) => check.status === "warning")
+
+  return [
+    {
+      id: "package_schema",
+      label: "Pacote estruturado",
+      status: "passed",
+      message: "Extracoes aceitas pelos schemas estritos.",
+    },
+    {
+      id: "documents_received",
+      label: "Documentos recebidos",
+      status: documents.length > 0 ? "passed" : "blocked",
+      message: `${documents.length} documento(s) recebido(s) para processamento.`,
+    },
+    {
+      id: "deterministic_validation",
+      label: "Validacao deterministica",
+      status: hasFailed ? "blocked" : hasWarning ? "warning" : "passed",
+      message: hasFailed
+        ? "Ha divergencias bloqueantes calculadas por codigo."
+        : hasWarning
+          ? "Ha alertas calculados por codigo."
+          : "Validacoes financeiras passaram sem bloqueios.",
+    },
+  ]
+}
+
+function buildTechnicalOpinion(rechecks: PrestacaoRecheck[], guardrails: PrestacaoGuardrail[]): TechnicalOpinion {
+  const failed = rechecks.filter((check) => check.status === "failed")
+  const warnings = rechecks.filter((check) => check.status === "warning")
+  const blocked = guardrails.filter((guardrail) => guardrail.status === "blocked")
+
+  if (failed.length > 0 || blocked.length > 0) {
+    return {
+      status: "bloqueado",
+      resumo: "Fechamento bloqueado por divergencia deterministica ou documento obrigatorio ausente.",
+      motivos: [...failed.map((check) => check.message), ...blocked.map((guardrail) => guardrail.message)],
+      confianca: 0.65,
+      requer_revisao_humana: true,
+    }
+  }
+
+  if (warnings.length > 0) {
+    return {
+      status: "aprovado_com_ressalvas",
+      resumo: "Fechamento processado com alertas; revisao humana permanece obrigatoria.",
+      motivos: warnings.map((check) => check.message),
+      confianca: 0.82,
+      requer_revisao_humana: true,
+    }
+  }
+
+  return {
+    status: "aprovado_tecnico",
+    resumo: "Fechamento revisado tecnicamente; documentos obrigatorios e rechecks passaram.",
+    motivos: ["Validacoes deterministicas passaram sem divergencias bloqueantes."],
+    confianca: 0.95,
+    requer_revisao_humana: false,
+  }
+}
+
+function checkRequiredDocument(documents: ClassifiedDocument[], documentType: string, label: string): PrestacaoRecheck {
+  const found = documents.some((document) => document.documentType === documentType)
+
+  return {
+    id: `required_${documentType}`,
+    label,
+    status: found ? "passed" : "failed",
+    message: found ? `${label} presente no pacote.` : `${label} ausente; aprovacao bloqueada.`,
+  }
+}
+
+function checkOptionalDocument(documents: ClassifiedDocument[], documentType: string, label: string): PrestacaoRecheck {
+  const found = documents.some((document) => document.documentType === documentType)
+
+  return {
+    id: `optional_${documentType}`,
+    label,
+    status: found ? "passed" : "warning",
+    message: found ? `${label} presente no pacote.` : `${label} nao enviado no pacote.`,
+  }
+}
+
+function checkUnknownDocuments(documents: ClassifiedDocument[]): PrestacaoRecheck {
+  const unknownCount = documents.filter((document) => document.documentType === "desconhecido").length
+
+  return {
+    id: "unknown_documents",
+    label: "Documentos desconhecidos",
+    status: unknownCount > 0 ? "warning" : "passed",
+    message: unknownCount > 0 ? `${unknownCount} documento(s) sem classificacao confiavel.` : "Todos os documentos receberam classificacao.",
+    actual: unknownCount,
+  }
+}
+
+function checkPrestacaoRows(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
+  const rows = prestacao?.receitas_por_imovel.length ?? 0
+
+  return {
+    id: "rows_present",
+    label: "Linhas da prestacao",
+    status: rows > 0 ? "passed" : "failed",
+    message: rows > 0 ? `${rows} imoveis extraidos da prestacao.` : "Nenhuma linha de prestacao foi extraida.",
+    actual: rows,
+  }
+}
+
+function compareTotal(id: string, label: string, extracted: number | null, calculated: number): PrestacaoRecheck {
+  if (extracted === null) {
+    return {
+      id,
+      label,
+      status: "warning",
+      message: `${label} nao veio explicitamente da IA; valor final foi calculado por codigo.`,
+      expected: calculated,
+      actual: null,
+      difference: null,
+    }
+  }
+
+  const actual = roundMoney(extracted)
+  const difference = roundMoney(Math.abs(actual - calculated))
+  const status = difference <= MONEY_TOLERANCE ? "passed" : "failed"
+
+  return {
+    id,
+    label,
+    status,
+    message:
+      status === "passed"
+        ? `${label} bate com o recalculo deterministico.`
+        : `${label} diverge do recalculo deterministico.`,
+    expected: calculated,
+    actual,
+    difference,
+  }
+}
+
+function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: number): PrestacaoRecheck {
+  if (!despesas) {
+    return {
+      id: "total_despesas",
+      label: "Total de despesas",
+      status: "warning",
+      message: "Nenhum documento de despesas foi extraido; total de despesas considerado R$ 0,00.",
+      expected: 0,
+      actual: null,
+      difference: null,
+    }
+  }
+
+  return compareTotal("total_despesas", "Total de despesas", despesas.total_despesas, calculated)
+}
+
+function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: PackageTotals): PrestacaoRecheck {
+  if (!prestacao?.resumo_financeiro.recebidos_em_nome_locador || !prestacao.resumo_financeiro.total_comissao_despesas) {
+    return {
+      id: "resumo_financeiro",
+      label: "Resumo financeiro final",
+      status: "warning",
+      message: "Resumo financeiro final incompleto; total a repassar foi calculado com dados disponiveis.",
+      expected: totals.total_a_repassar,
+      actual: prestacao?.resumo_financeiro.total_a_repassar ?? null,
+      difference: null,
+    }
+  }
+
+  const expected = roundMoney(prestacao.resumo_financeiro.recebidos_em_nome_locador - prestacao.resumo_financeiro.total_comissao_despesas)
+  const actual = prestacao.resumo_financeiro.total_a_repassar
+
+  if (actual === null) {
+    return {
+      id: "resumo_financeiro",
+      label: "Resumo financeiro final",
+      status: "warning",
+      message: "Total a repassar nao foi extraido do resumo financeiro.",
+      expected,
+      actual: null,
+      difference: null,
+    }
+  }
+
+  const difference = roundMoney(Math.abs(expected - actual))
+  const status = difference <= MONEY_TOLERANCE ? "passed" : "failed"
+
+  return {
+    id: "resumo_financeiro",
+    label: "Resumo financeiro final",
+    status,
+    message:
+      status === "passed"
+        ? "Recebidos em nome do locador menos total de comissoes e despesas bate com o total a repassar."
+        : "Resumo financeiro final diverge da formula recebidos menos comissoes/despesas.",
+    expected,
+    actual,
+    difference,
+  }
+}
+
+function compareRepasse(totals: PackageTotals): PrestacaoRecheck {
+  if (totals.valor_comprovado === null || totals.diferenca_repasse === null) {
+    return {
+      id: "repasse_conciliation",
+      label: "Conciliacao do repasse",
+      status: "failed",
+      message: "Comprovante de repasse sem valor extraido; aprovacao bloqueada.",
+      expected: totals.total_a_repassar,
+      actual: null,
+      difference: null,
+    }
+  }
+
+  const status =
+    totals.diferenca_repasse <= MONEY_TOLERANCE
+      ? "passed"
+      : totals.diferenca_repasse <= REPASSE_ALERT_TOLERANCE
+        ? "warning"
+        : "failed"
+
+  return {
+    id: "repasse_conciliation",
+    label: "Conciliacao do repasse",
+    status,
+    message:
+      status === "passed"
+        ? "Valor a repassar bate com o comprovante bancario."
+        : status === "warning"
+          ? "Valor a repassar diverge do comprovante dentro da faixa de alerta."
+          : "Valor a repassar diverge do comprovante acima da tolerancia bloqueante.",
+    expected: totals.total_a_repassar,
+    actual: totals.valor_comprovado,
+    difference: totals.diferenca_repasse,
+  }
+}
+
+function checkConfidence(id: string, label: string, confidence: number | null): PrestacaoRecheck {
+  if (confidence === null) {
+    return {
+      id,
+      label,
+      status: "warning",
+      message: `${label} indisponivel porque o documento nao foi extraido.`,
+      actual: null,
+    }
+  }
+
+  const normalized = roundConfidence(confidence)
+
+  return {
+    id,
+    label,
+    status: normalized >= MIN_CONFIDENCE ? "passed" : "warning",
+    message:
+      normalized >= MIN_CONFIDENCE
+        ? `${label} acima do piso de 0.70.`
+        : `${label} abaixo do piso de 0.70; revisao humana obrigatoria.`,
+    actual: normalized,
+  }
+}
+
+function getLowestPrestacaoConfidence(prestacao: PrestacaoAnalysis | null) {
+  if (!prestacao) return null
+  return Math.min(prestacao.confianca_geral, ...prestacao.receitas_por_imovel.map((row) => row.confianca))
+}
+
+function getLowestDespesasConfidence(despesas: DespesasAnalysis | null) {
+  if (!despesas) return null
+  if (despesas.despesas.length === 0) return despesas.confianca_geral
+  return Math.min(despesas.confianca_geral, ...despesas.despesas.map((despesa) => despesa.confianca))
+}
+
+function getLowestReajusteConfidence(reajuste: ReajusteAnalysis | null) {
+  if (!reajuste) return null
+  if (reajuste.itens.length === 0) return reajuste.confianca_geral
+  return Math.min(reajuste.confianca_geral, ...reajuste.itens.map((item) => item.confianca))
+}
+
+function nullableMoney(value: number | null) {
+  return value === null ? null : roundMoney(value)
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0)
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function roundConfidence(value: number) {
+  return Math.round(clampConfidence(value) * 100) / 100
+}
+
+function clampConfidence(value: number) {
+  if (value < 0) return 0
+  if (value > 1) return 1
+  return value
+}

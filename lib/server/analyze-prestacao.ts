@@ -1,5 +1,6 @@
 import OpenAI from "openai"
 import { prestacaoAnalysisSchema, type PrestacaoAnalysis } from "@/lib/prestacao-types"
+import { prestacaoAliveAgent } from "./ai-agents/prestacao-alive-agent"
 import { getOptionalEnv, requireEnv } from "./env"
 
 const schema = {
@@ -10,7 +11,9 @@ const schema = {
     "imobiliaria",
     "empreendimento",
     "competencia",
+    "plano_extracao",
     "receitas_por_imovel",
+    "resumo_financeiro",
     "totais",
     "campos_ausentes",
     "observacoes",
@@ -21,6 +24,17 @@ const schema = {
     imobiliaria: { type: "string" },
     empreendimento: { type: "string" },
     competencia: { type: "string" },
+    plano_extracao: {
+      type: "object",
+      additionalProperties: false,
+      required: ["documento_lido_integralmente", "secoes_identificadas", "estrategia", "alertas"],
+      properties: {
+        documento_lido_integralmente: { type: "boolean" },
+        secoes_identificadas: { type: "array", items: { type: "string" } },
+        estrategia: { type: "array", items: { type: "string" } },
+        alertas: { type: "array", items: { type: "string" } },
+      },
+    },
     receitas_por_imovel: {
       type: "array",
       items: {
@@ -62,6 +76,46 @@ const schema = {
         },
       },
     },
+    resumo_financeiro: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "total_linhas_receitas",
+        "total_linhas_comissoes",
+        "total_linhas_repasse",
+        "comissao_administracao",
+        "outras_comissoes_despesas",
+        "total_outras_comissoes_despesas",
+        "total_comissao_despesas",
+        "recebidos_em_nome_locador",
+        "total_a_repassar",
+        "confianca",
+      ],
+      properties: {
+        total_linhas_receitas: { type: ["number", "null"] },
+        total_linhas_comissoes: { type: ["number", "null"] },
+        total_linhas_repasse: { type: ["number", "null"] },
+        comissao_administracao: { type: ["number", "null"] },
+        outras_comissoes_despesas: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["descricao", "valor", "confianca"],
+            properties: {
+              descricao: { type: "string" },
+              valor: { type: "number" },
+              confianca: { type: "number" },
+            },
+          },
+        },
+        total_outras_comissoes_despesas: { type: ["number", "null"] },
+        total_comissao_despesas: { type: ["number", "null"] },
+        recebidos_em_nome_locador: { type: ["number", "null"] },
+        total_a_repassar: { type: ["number", "null"] },
+        confianca: { type: "number" },
+      },
+    },
     totais: {
       type: "object",
       additionalProperties: false,
@@ -87,12 +141,11 @@ export async function extractPrestacaoAliveFromPdf(input: {
   const fileData = `data:${input.fileType};base64,${input.fileBase64}`
 
   const response = await client.responses.create({
-    model: getOptionalEnv("OPENAI_MODEL", "gpt-5"),
+    model: getOptionalEnv("OPENAI_MODEL", prestacaoAliveAgent.defaultModel),
     input: [
       {
         role: "system",
-        content:
-          "Voce extrai dados financeiros de prestacoes de contas imobiliarias Alive/GM II. Responda apenas com JSON aderente ao schema.",
+        content: prestacaoAliveAgent.systemPrompt,
       },
       {
         role: "user",
@@ -104,8 +157,7 @@ export async function extractPrestacaoAliveFromPdf(input: {
           },
           {
             type: "input_text",
-            text:
-              "Analise este PDF de prestacao de contas Alive / Grand Messejana II. Extraia somente a Secao 1, Vigencia do mes, tabela principal por apartamento. Use numeros em reais como number, datas em ISO quando possivel, null quando ausente, e informe confianca de 0 a 1 por linha.",
+            text: prestacaoAliveAgent.userPrompt,
           },
         ],
       },
@@ -113,7 +165,7 @@ export async function extractPrestacaoAliveFromPdf(input: {
     text: {
       format: {
         type: "json_schema",
-        name: "prestacao_alive_secao_1",
+        name: prestacaoAliveAgent.name,
         strict: true,
         schema,
       },

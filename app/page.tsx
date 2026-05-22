@@ -11,7 +11,7 @@ import { RevisaoView } from "@/components/acr/views/revisao-view"
 import { PlaceholderView } from "@/components/acr/views/placeholder-view"
 import { CorrectionModal } from "@/components/acr/correction-modal"
 import type { View } from "@/components/acr/types"
-import type { AnalyzePrestacaoResponse, PrestacaoAnalysis } from "@/lib/prestacao-types"
+import type { PackageAnalysis, ProcessingEvent } from "@/lib/prestacao-types"
 import { formatBRL } from "@/lib/format"
 
 type ProcessingState = {
@@ -23,8 +23,8 @@ type ProcessingState = {
 export default function HomePage() {
   const [currentView, setCurrentView] = useState<View>("fechamentos")
   const [showNotifications, setShowNotifications] = useState(false)
-  const [analysis, setAnalysis] = useState<PrestacaoAnalysis | null>(null)
-  const [analysisResult, setAnalysisResult] = useState<AnalyzePrestacaoResponse | null>(null)
+  const [analysisResult, setAnalysisResult] = useState<PackageAnalysis | null>(null)
+  const [processingEvents, setProcessingEvents] = useState<ProcessingEvent[]>([])
   const [processing, setProcessing] = useState<ProcessingState>({
     status: "idle",
     message: "Aguardando envio da prestacao.",
@@ -51,33 +51,61 @@ export default function HomePage() {
   const openModal = (apto: string, inquilino: string, valor: number) =>
     setModal({ open: true, apto, inquilino, valor })
 
-  const analyzePrestacao = async (file: File) => {
-    setAnalysis(null)
+  const processPackage = async (files: File[]) => {
     setAnalysisResult(null)
-    setProcessing({ status: "running", message: "Mastra esta validando, extraindo, rechecando e gerando o parecer tecnico.", error: null })
+    setProcessingEvents([])
+    setProcessing({ status: "running", message: "Processamento real do pacote iniciado.", error: null })
     navigate("processando")
 
     try {
       const formData = new FormData()
-      formData.append("file", file)
+      files.forEach((file) => formData.append("files", file))
 
-      const response = await fetch("/api/prestacao/analyze", {
+      const response = await fetch("/api/fechamentos/process/stream", {
         method: "POST",
         body: formData,
       })
-      const payload = (await response.json()) as Partial<AnalyzePrestacaoResponse> & { error?: string }
 
-      if (!response.ok || !payload.analysis) {
-        throw new Error(payload.error || "Nao foi possivel analisar a prestacao.")
+      if (!response.ok || !response.body) {
+        throw new Error("Nao foi possivel iniciar o processamento do pacote.")
       }
 
-      setAnalysis(payload.analysis)
-      setAnalysisResult(payload as AnalyzePrestacaoResponse)
-      setProcessing({ status: "success", message: "Prestacao analisada e rechecada com sucesso.", error: null })
-      navigate("revisao")
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let completed = false
+
+      while (!completed) {
+        const read = await reader.read()
+        completed = read.done
+        buffer += decoder.decode(read.value, { stream: !completed })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          const event = JSON.parse(line) as ProcessingEvent
+          setProcessingEvents((events) => [...events, event])
+          setProcessing({ status: event.type === "workflow_failed" ? "error" : "running", message: event.message, error: event.error ?? null })
+
+          if (event.type === "workflow_completed" && event.result) {
+            setAnalysisResult(event.result)
+            setProcessing({ status: "success", message: event.message, error: null })
+            navigate("revisao")
+          }
+        }
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao analisar a prestacao."
-      setProcessing({ status: "error", message: "Analise interrompida.", error: message })
+      const message = error instanceof Error ? error.message : "Falha ao processar o pacote."
+      const event: ProcessingEvent = {
+        type: "workflow_failed",
+        message,
+        progress: 100,
+        error: message,
+      }
+      setProcessingEvents((events) => [...events, event])
+      setProcessing({ status: "error", message: "Processamento interrompido.", error: message })
     }
   }
 
@@ -94,15 +122,14 @@ export default function HomePage() {
       <main className="ml-[220px] mt-14 p-6">
         {currentView === "fechamentos" && <FechamentosView onNavigate={navigate} />}
         {currentView === "novo-fechamento" && <NovoFechamentoView onNavigate={navigate} />}
-        {currentView === "upload" && <UploadView onNavigate={navigate} onAnalyze={analyzePrestacao} />}
+        {currentView === "upload" && <UploadView onNavigate={navigate} onAnalyze={processPackage} />}
         {currentView === "processando" && (
-          <ProcessandoView onNavigate={navigate} processing={processing} />
+          <ProcessandoView onNavigate={navigate} processing={processing} events={processingEvents} />
         )}
         {currentView === "revisao" && (
           <RevisaoView
             onNavigate={navigate}
             onOpenModal={openModal}
-            analysis={analysis}
             analysisResult={analysisResult}
           />
         )}

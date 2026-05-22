@@ -1,5 +1,30 @@
 import { z } from "zod"
 
+export const documentTypeSchema = z.enum([
+  "prestacao_contas",
+  "comprovante_repasse",
+  "relatorio_reajuste",
+  "despesas_comprovantes",
+  "desconhecido",
+])
+
+export type DocumentType = z.infer<typeof documentTypeSchema>
+
+export const classifiedDocumentSchema = z
+  .object({
+    fileName: z.string(),
+    fileType: z.string(),
+    fileSize: z.number(),
+    documentType: documentTypeSchema,
+    confidence: z.number().min(0).max(1),
+    reason: z.string(),
+    storagePath: z.string().nullable().optional(),
+    documentoId: z.string().nullable().optional(),
+  })
+  .strict()
+
+export type ClassifiedDocument = z.infer<typeof classifiedDocumentSchema>
+
 export const receitaPorImovelSchema = z
   .object({
     apto: z.string(),
@@ -38,13 +63,53 @@ export interface ReceitaPorImovel {
   confianca: number
 }
 
+export const extractionPlanSchema = z
+  .object({
+    documento_lido_integralmente: z.boolean(),
+    secoes_identificadas: z.array(z.string()),
+    estrategia: z.array(z.string()),
+    alertas: z.array(z.string()),
+  })
+  .strict()
+
+export type ExtractionPlan = z.infer<typeof extractionPlanSchema>
+
+export const prestacaoResumoDespesaSchema = z
+  .object({
+    descricao: z.string(),
+    valor: z.number(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type PrestacaoResumoDespesa = z.infer<typeof prestacaoResumoDespesaSchema>
+
+export const prestacaoResumoFinanceiroSchema = z
+  .object({
+    total_linhas_receitas: z.number().nullable(),
+    total_linhas_comissoes: z.number().nullable(),
+    total_linhas_repasse: z.number().nullable(),
+    comissao_administracao: z.number().nullable(),
+    outras_comissoes_despesas: z.array(prestacaoResumoDespesaSchema),
+    total_outras_comissoes_despesas: z.number().nullable(),
+    total_comissao_despesas: z.number().nullable(),
+    recebidos_em_nome_locador: z.number().nullable(),
+    total_a_repassar: z.number().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type PrestacaoResumoFinanceiro = z.infer<typeof prestacaoResumoFinanceiroSchema>
+
 export const prestacaoAnalysisSchema = z
   .object({
     tipo_documento: z.literal("prestacao_contas"),
     imobiliaria: z.string(),
     empreendimento: z.string(),
     competencia: z.string(),
+    plano_extracao: extractionPlanSchema,
     receitas_por_imovel: z.array(receitaPorImovelSchema),
+    resumo_financeiro: prestacaoResumoFinanceiroSchema,
     totais: z
       .object({
         total_receitas: z.number().nullable(),
@@ -63,7 +128,9 @@ export interface PrestacaoAnalysis {
   imobiliaria: string
   empreendimento: string
   competencia: string
+  plano_extracao: ExtractionPlan
   receitas_por_imovel: ReceitaPorImovel[]
+  resumo_financeiro: PrestacaoResumoFinanceiro
   totais: {
     total_receitas: number | null
     total_comissoes: number | null
@@ -73,6 +140,81 @@ export interface PrestacaoAnalysis {
   observacoes: string[]
   confianca_geral: number
 }
+
+export const repasseAnalysisSchema = z
+  .object({
+    valor: z.number().nullable(),
+    data: z.string().nullable(),
+    origem_nome: z.string().nullable(),
+    destino_nome: z.string().nullable(),
+    destino_banco: z.string().nullable(),
+    destino_agencia: z.string().nullable(),
+    destino_conta: z.string().nullable(),
+    protocolo: z.string().nullable(),
+    campos_ausentes: z.array(z.string()),
+    observacoes: z.array(z.string()),
+    confianca_geral: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type RepasseAnalysis = z.infer<typeof repasseAnalysisSchema>
+
+export const despesaSchema = z
+  .object({
+    tipo: z.enum(["energia", "agua", "iptu", "seguro", "outro"]),
+    fornecedor: z.string().nullable(),
+    referencia: z.string().nullable(),
+    vencimento: z.string().nullable(),
+    valor: z.number(),
+    endereco: z.string().nullable(),
+    unidade_consumidora: z.string().nullable(),
+    pago_em: z.string().nullable(),
+    pago_por: z.string().nullable(),
+    observacao: z.string().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type Despesa = z.infer<typeof despesaSchema>
+
+export const despesasAnalysisSchema = z
+  .object({
+    despesas: z.array(despesaSchema),
+    total_despesas: z.number().nullable(),
+    campos_ausentes: z.array(z.string()),
+    observacoes: z.array(z.string()),
+    confianca_geral: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type DespesasAnalysis = z.infer<typeof despesasAnalysisSchema>
+
+export const reajusteItemSchema = z
+  .object({
+    apto: z.string().nullable(),
+    inquilino: z.string().nullable(),
+    descricao: z.string(),
+    valor_anterior: z.number().nullable(),
+    valor_novo: z.number().nullable(),
+    percentual: z.number().nullable(),
+    vigencia: z.string().nullable(),
+    observacao: z.string().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type ReajusteItem = z.infer<typeof reajusteItemSchema>
+
+export const reajusteAnalysisSchema = z
+  .object({
+    itens: z.array(reajusteItemSchema),
+    campos_ausentes: z.array(z.string()),
+    observacoes: z.array(z.string()),
+    confianca_geral: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type ReajusteAnalysis = z.infer<typeof reajusteAnalysisSchema>
 
 export const technicalOpinionSchema = z
   .object({
@@ -110,6 +252,64 @@ export const guardrailSchema = z
   .strict()
 
 export type PrestacaoGuardrail = z.infer<typeof guardrailSchema>
+
+export const packageTotalsSchema = z
+  .object({
+    total_receitas: z.number(),
+    total_comissoes: z.number(),
+    total_repasse_bruto: z.number(),
+    total_despesas: z.number(),
+    total_comissao_despesas: z.number(),
+    total_a_repassar: z.number(),
+    valor_comprovado: z.number().nullable(),
+    diferenca_repasse: z.number().nullable(),
+  })
+  .strict()
+
+export type PackageTotals = z.infer<typeof packageTotalsSchema>
+
+export const packageAnalysisSchema = z
+  .object({
+    documents: z.array(classifiedDocumentSchema),
+    prestacao: prestacaoAnalysisSchema.nullable(),
+    repasse: repasseAnalysisSchema.nullable(),
+    despesas: despesasAnalysisSchema.nullable(),
+    reajuste: reajusteAnalysisSchema.nullable(),
+    totals: packageTotalsSchema,
+    parecer: technicalOpinionSchema,
+    rechecks: z.array(recheckSchema),
+    guardrails: z.array(guardrailSchema),
+    fechamentoId: z.string().nullable(),
+    storagePath: z.string().nullable(),
+  })
+  .strict()
+
+export type PackageAnalysis = z.infer<typeof packageAnalysisSchema>
+
+export const processingEventSchema = z
+  .object({
+    type: z.enum([
+      "workflow_started",
+      "file_saved",
+      "document_classified",
+      "extraction_started",
+      "extraction_completed",
+      "validation_started",
+      "validation_completed",
+      "persistence_completed",
+      "workflow_completed",
+      "workflow_failed",
+    ]),
+    message: z.string(),
+    fileName: z.string().optional(),
+    documentType: documentTypeSchema.optional(),
+    progress: z.number().min(0).max(100),
+    result: packageAnalysisSchema.optional(),
+    error: z.string().optional(),
+  })
+  .strict()
+
+export type ProcessingEvent = z.infer<typeof processingEventSchema>
 
 export interface AnalyzePrestacaoResponse {
   analysis: PrestacaoAnalysis

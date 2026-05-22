@@ -2,32 +2,21 @@
 
 import {
   AlertTriangle,
-  ArrowRightLeft,
   CheckCircle,
   Download,
+  FileText,
+  ReceiptText,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { AnalyzePrestacaoResponse, PrestacaoAnalysis, TechnicalOpinion } from "@/lib/prestacao-types"
+import type { PackageAnalysis, TechnicalOpinion } from "@/lib/prestacao-types"
 import type { View } from "../types"
 
 interface RevisaoViewProps {
   onNavigate: (view: View) => void
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
-  analysis: PrestacaoAnalysis | null
-  analysisResult: AnalyzePrestacaoResponse | null
-}
-
-interface ReceitaRow {
-  apto: string
-  inquilino: string
-  aluguel: number | null
-  garagem: number | null
-  agua: number | null
-  iptu: number | null
-  total: number
-  status: "ok" | "inadimplente"
+  analysisResult: PackageAnalysis | null
 }
 
 function SummaryCard({
@@ -64,14 +53,24 @@ function getOpinionClasses(status: TechnicalOpinion["status"]) {
   return "bg-[#FEE2E2] text-[#991B1B] border-[#DC2626]"
 }
 
-export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult }: RevisaoViewProps) {
-  if (!analysis || !analysisResult) {
+function getCheckClasses(status: "passed" | "warning" | "failed") {
+  if (status === "failed") return "bg-[#FEE2E2] text-[#DC2626]"
+  if (status === "warning") return "bg-[#FEF3C7] text-[#92400E]"
+  return "bg-[#DCFCE7] text-[#166534]"
+}
+
+export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: RevisaoViewProps) {
+  if (!analysisResult) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4">
-        <p className="text-[16px] text-[#6B7F6E]">Nenhuma analise disponivel.</p>
+      <div className="max-w-xl mx-auto bg-white rounded-xl p-8 border border-[#EEF1EE] text-center">
+        <AlertTriangle size={28} className="text-[#F59E0B] mx-auto mb-3" />
+        <h2 className="text-[20px] font-bold text-[#1A2B1C]">Nenhum processamento real carregado</h2>
+        <p className="text-[14px] text-[#6B7F6E] mt-2">
+          A revisao so exibe dados extraidos e validados pelo pipeline real.
+        </p>
         <button
           onClick={() => onNavigate("upload")}
-          className="h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24] transition-colors"
+          className="mt-6 h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium hover:bg-[#1A5C24]"
         >
           Voltar ao upload
         </button>
@@ -79,24 +78,13 @@ export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult 
     )
   }
 
-  const receitaRows: ReceitaRow[] = analysis.receitas_por_imovel.map((row) => ({
-    apto: row.apto,
-    inquilino: row.inquilino,
-    aluguel: row.aluguel,
-    garagem: row.garagem,
-    agua: row.agua,
-    iptu: row.iptu,
-    total: row.total,
-    status: row.total <= 0 ? "inadimplente" : "ok",
-  }))
-
-  const totalReceitas = analysis.totais.total_receitas ?? receitaRows.reduce((sum, row) => sum + row.total, 0)
-  const totalComissoes = analysis.totais.total_comissoes
-  const totalRepassar = analysis.totais.total_repassar
-  const parecer = analysisResult.parecer
-  const failedRechecks = analysisResult.rechecks.filter((check) => check.status === "failed")
-  const warningRechecks = analysisResult.rechecks.filter((check) => check.status === "warning")
+  const { prestacao, repasse, despesas, reajuste, totals, parecer, documents, rechecks } = analysisResult
+  const failedRechecks = rechecks.filter((check) => check.status === "failed")
+  const warningRechecks = rechecks.filter((check) => check.status === "warning")
   const hasBlocking = parecer.status === "bloqueado" || failedRechecks.length > 0
+  const title = `${prestacao?.empreendimento ?? "Empreendimento nao identificado"} - ${prestacao?.competencia ?? "Competencia nao identificada"}`
+  const resumo = prestacao?.resumo_financeiro
+  const totalLinhas = prestacao?.receitas_por_imovel.reduce((sum, row) => sum + row.total, 0) ?? 0
 
   return (
     <div className="space-y-6">
@@ -115,29 +103,25 @@ export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult 
             {parecer.resumo}
           </span>
         </div>
-        <button className="text-[#3D4F3F] text-sm font-medium hover:underline whitespace-nowrap">
-          Ver rechecks
-        </button>
       </div>
 
       <div className="flex justify-between items-start gap-4">
         <div>
-          <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">
-            {analysis.empreendimento} - {analysis.competencia}
-          </h1>
+          <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">{title}</h1>
           <p className="text-[14px] text-[#6B7F6E] mt-1">
-            {analysis.imobiliaria} · Dados extraidos por IA + rechecks
+            {prestacao?.imobiliaria ?? "Imobiliaria nao identificada"} - dados reais extraidos e validados
           </p>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium mt-2 border ${getOpinionClasses(parecer.status)}`}
-          >
+          <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium mt-2 border ${getOpinionClasses(parecer.status)}`}>
             {hasBlocking ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
             {getOpinionLabel(parecer.status)}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors">
+          <button
+            onClick={() => onNavigate("upload")}
+            className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors"
+          >
             <RefreshCw size={14} />
             Reprocessar
           </button>
@@ -159,7 +143,7 @@ export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult 
           <ShieldCheck size={20} className="mt-0.5 shrink-0" />
           <div className="flex-1">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Parecer tecnico Mastra</h3>
+              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Parecer tecnico deterministico</h3>
               <span className="text-[12px] font-medium tabular-nums">Confianca {Math.round(parecer.confianca * 100)}%</span>
             </div>
             <p className="text-[13px] text-[#3D4F3F] mt-2">{parecer.resumo}</p>
@@ -175,53 +159,108 @@ export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard
-          label="Total recebido"
-          value={formatBRL(totalReceitas)}
-          valueColor="#2D8C3A"
-          subtext={`${receitaRows.length} imoveis - ${analysis.competencia}`}
-        />
-        <SummaryCard
-          label="Comissoes e despesas"
-          value={totalComissoes !== null ? formatBRL(totalComissoes) : "-"}
-          subtext="Recalculado por codigo"
-        />
-        <SummaryCard
-          label="Total a repassar"
-          value={totalRepassar !== null ? formatBRL(totalRepassar) : "-"}
-          valueColor="#2D8C3A"
-          subtext="Valor final protegido por recheck"
-        />
-        <SummaryCard
-          label="Valor transferido"
-          value="-"
-          valueColor="#2D8C3A"
-          subtext="Proximo slice"
-        />
+        <SummaryCard label="Recebidos no resumo" value={formatBRL(totals.total_receitas)} valueColor="#2D8C3A" subtext="R$ recebidos em nome do locador" />
+        <SummaryCard label="Comissao administracao" value={formatBRL(totals.total_comissoes)} subtext="Comissao principal do documento" />
+        <SummaryCard label="Comissao + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido no resumo" />
+        <SummaryCard label="Total a repassar" value={formatBRL(totals.total_a_repassar)} valueColor={hasBlocking ? "#DC2626" : "#2D8C3A"} subtext={totals.valor_comprovado === null ? "Comprovante nao conciliado" : `Comprovado: ${formatBRL(totals.valor_comprovado)}`} />
       </div>
 
-      <div className={`bg-white border rounded-xl p-5 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
+      {prestacao && (
+        <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck size={18} className="text-[#2D8C3A]" />
+            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Plano e resumo financeiro extraidos</h3>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium mb-1">Secoes identificadas</p>
+                <div className="flex flex-wrap gap-2">
+                  {prestacao.plano_extracao.secoes_identificadas.map((secao) => (
+                    <span key={secao} className="rounded-full bg-[#EFF7F1] border border-[#C3DEC9] px-2.5 py-1 text-[11px] text-[#1A5C24]">
+                      {secao}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium mb-1">Estrategia de leitura</p>
+                <ul className="space-y-1">
+                  {prestacao.plano_extracao.estrategia.map((item) => (
+                    <li key={item} className="text-[13px] text-[#3D4F3F]">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-2 gap-3 text-[13px]">
+              <dt className="text-[#6B7F6E]">Total das linhas</dt>
+              <dd className="text-[#1A2B1C] font-medium text-right">{formatBRL(resumo?.total_linhas_receitas ?? totalLinhas)}</dd>
+              <dt className="text-[#6B7F6E]">Comissao principal</dt>
+              <dd className="text-[#1A2B1C] font-medium text-right">{resumo?.comissao_administracao === null || resumo?.comissao_administracao === undefined ? "-" : formatBRL(resumo.comissao_administracao)}</dd>
+              <dt className="text-[#6B7F6E]">Outras despesas</dt>
+              <dd className="text-[#1A2B1C] font-medium text-right">{formatBRL(totals.total_despesas)}</dd>
+              <dt className="text-[#6B7F6E]">Total comissao + despesas</dt>
+              <dd className="text-[#1A2B1C] font-medium text-right">{formatBRL(totals.total_comissao_despesas)}</dd>
+              <dt className="text-[#6B7F6E]">Recebidos locador</dt>
+              <dd className="text-[#1A2B1C] font-bold text-right">{formatBRL(totals.total_receitas)}</dd>
+              <dt className="text-[#6B7F6E]">Total a repassar</dt>
+              <dd className="text-[#1A2B1C] font-bold text-right">{formatBRL(totals.total_a_repassar)}</dd>
+            </dl>
+          </div>
+
+          {resumo && resumo.outras_comissoes_despesas.length > 0 && (
+            <div className="mt-5 border-t border-[#EEF1EE] pt-4">
+              <p className="text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium mb-2">Outras comissoes e despesas no resumo</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {resumo.outras_comissoes_despesas.map((item) => (
+                  <div key={`${item.descricao}-${item.valor}`} className="flex justify-between gap-3 rounded-lg border border-[#EEF1EE] px-3 py-2">
+                    <span className="text-[13px] text-[#3D4F3F]">{item.descricao}</span>
+                    <span className="text-[13px] font-bold text-[#1A2B1C] tabular-nums">{formatBRL(item.valor)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="bg-white border border-[#EEF1EE] rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-[#EEF1EE] flex items-center gap-2">
+          <FileText size={18} className="text-[#2D8C3A]" />
+          <h3 className="text-[16px] font-bold text-[#1A2B1C]">Documentos processados</h3>
+        </div>
+        <div className="divide-y divide-[#EEF1EE]">
+          {documents.map((document) => (
+            <div key={document.fileName} className="p-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[14px] font-medium text-[#1A2B1C] truncate">{document.fileName}</p>
+                <p className="text-[12px] text-[#6B7F6E]">{document.reason}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[12px] font-medium text-[#3D4F3F]">{document.documentType}</p>
+                <p className="text-[12px] text-[#6B7F6E]">{Math.round(document.confidence * 100)}%</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className={`bg-white border rounded-xl p-5 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
         <div className="flex items-center gap-2 mb-4">
           <AlertTriangle size={18} className={hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"} />
           <h3 className="text-[16px] font-bold text-[#1A2B1C]">Rechecks e divergencias</h3>
           <span className="ml-auto inline-flex items-center bg-[#EEF1EE] text-[#3D4F3F] rounded-full px-3 py-1 text-xs font-medium">
-            {failedRechecks.length} bloqueante(s) · {warningRechecks.length} ressalva(s)
+            {failedRechecks.length} bloqueante(s) - {warningRechecks.length} alerta(s)
           </span>
         </div>
 
         <div className="space-y-3">
-          {analysisResult.rechecks.map((check) => (
+          {rechecks.map((check) => (
             <div key={check.id} className="border border-[#EEF1EE] rounded-lg p-3 flex justify-between gap-4">
               <div>
-                <span
-                  className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium mb-2 ${
-                    check.status === "failed"
-                      ? "bg-[#FEE2E2] text-[#DC2626]"
-                      : check.status === "warning"
-                        ? "bg-[#FEF3C7] text-[#92400E]"
-                        : "bg-[#DCFCE7] text-[#166534]"
-                  }`}
-                >
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium mb-2 ${getCheckClasses(check.status)}`}>
                   {check.status}
                 </span>
                 <p className="font-bold text-[14px] text-[#1A2B1C]">{check.label}</p>
@@ -235,68 +274,106 @@ export function RevisaoView({ onNavigate, onOpenModal, analysis, analysisResult 
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-        <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
-          <h3 className="text-[16px] font-bold text-[#1A2B1C]">Receitas por imovel</h3>
-          <span className="text-[14px] font-medium text-[#1A2B1C]">
-            Total: <span className="tabular-nums">{formatBRL(totalReceitas)}</span>
-          </span>
-        </div>
+      {prestacao && (
+        <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
+            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Receitas por imovel</h3>
+            <span className="text-[14px] font-medium text-[#1A2B1C]">
+              Total das linhas: <span className="tabular-nums">{formatBRL(resumo?.total_linhas_receitas ?? totalLinhas)}</span>
+            </span>
+          </div>
 
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-              {["Apto", "Inquilino", "Aluguel", "Garagem", "Agua", "IPTU", "Total", "Status"].map((header) => (
-                <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {receitaRows.map((row) => {
-              const isInadimp = row.status === "inadimplente"
-              const valueColor = isInadimp ? "text-[#DC2626]" : "text-[#3D4F3F]"
-
-              return (
-                <tr key={row.apto} className={`border-b border-[#EEF1EE] last:border-0 ${isInadimp ? "bg-[#FEF9F9]" : "hover:bg-[#EFF7F1]"}`}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
+                {["Apto", "Inquilino", "Aluguel", "Garagem", "Agua", "IPTU", "Total", "Confianca"].map((header) => (
+                  <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {prestacao.receitas_por_imovel.map((row) => (
+                <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                   <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
                   <td className="px-4 py-3.5 text-[#3D4F3F]">{row.inquilino}</td>
-                  <td className={`px-4 py-3.5 tabular-nums cursor-pointer hover:underline ${valueColor}`} onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
                     {row.aluguel !== null ? formatBRL(row.aluguel) : "-"}
                   </td>
-                  <td className={`px-4 py-3.5 tabular-nums ${valueColor}`}>{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
-                  <td className={`px-4 py-3.5 tabular-nums ${valueColor}`}>{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
-                  <td className={`px-4 py-3.5 tabular-nums ${valueColor}`}>{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
-                  <td className={`px-4 py-3.5 tabular-nums font-medium ${valueColor}`}>{formatBRL(row.total)}</td>
-                  <td className="px-4 py-3.5">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ${isInadimp ? "bg-[#FEE2E2] text-[#DC2626]" : "bg-[#DCFCE7] text-[#166534]"}`}>
-                      {isInadimp ? "Inadimplente" : "OK"}
-                    </span>
-                  </td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
+                  <td className="px-4 py-3.5 text-[#3D4F3F]">{Math.round(row.confianca * 100)}%</td>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
-      <div className="bg-[#EFF7F1] border-2 border-[#2D8C3A] rounded-xl p-5">
-        <div className="flex justify-between items-center mb-5">
-          <div className="flex items-center gap-2">
-            <ArrowRightLeft size={18} className="text-[#2D8C3A]" />
-            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Comprovante de Repasse</h3>
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ReceiptText size={18} className="text-[#2D8C3A]" />
+            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Comprovante de repasse</h3>
           </div>
-          <span className="inline-flex items-center gap-1 bg-[#FEF3C7] text-[#92400E] rounded-full px-3 py-1 text-xs font-medium">
-            Proximo slice
-          </span>
+          {repasse ? (
+            <dl className="grid grid-cols-2 gap-3 text-[13px]">
+              <dt className="text-[#6B7F6E]">Valor</dt>
+              <dd className="text-[#1A2B1C] font-bold text-right">{repasse.valor === null ? "-" : formatBRL(repasse.valor)}</dd>
+              <dt className="text-[#6B7F6E]">Data</dt>
+              <dd className="text-[#1A2B1C] text-right">{repasse.data ?? "-"}</dd>
+              <dt className="text-[#6B7F6E]">Origem</dt>
+              <dd className="text-[#1A2B1C] text-right">{repasse.origem_nome ?? "-"}</dd>
+              <dt className="text-[#6B7F6E]">Destino</dt>
+              <dd className="text-[#1A2B1C] text-right">{repasse.destino_nome ?? "-"}</dd>
+              <dt className="text-[#6B7F6E]">Protocolo</dt>
+              <dd className="text-[#1A2B1C] text-right">{repasse.protocolo ?? "-"}</dd>
+            </dl>
+          ) : (
+            <p className="text-[13px] text-[#991B1B]">Comprovante nao extraido no pacote real.</p>
+          )}
         </div>
-        <p className="text-[13px] text-[#3D4F3F]">
-          A prestacao ja gera parecer tecnico. A conciliacao com o comprovante de repasse sera ligada na proxima etapa.
-        </p>
-      </div>
+
+        <div className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+          <h3 className="text-[16px] font-bold text-[#1A2B1C] mb-4">Despesas extraidas</h3>
+          {despesas && despesas.despesas.length > 0 ? (
+            <div className="space-y-3">
+              {despesas.despesas.map((despesa, index) => (
+                <div key={`${despesa.tipo}-${index}`} className="flex justify-between gap-3 border-b border-[#EEF1EE] pb-3 last:border-0 last:pb-0">
+                  <div>
+                    <p className="text-[13px] font-medium text-[#1A2B1C]">{despesa.fornecedor ?? despesa.tipo}</p>
+                    <p className="text-[12px] text-[#6B7F6E]">{despesa.referencia ?? despesa.vencimento ?? "Referencia nao extraida"}</p>
+                  </div>
+                  <p className="text-[13px] font-bold tabular-nums text-[#1A2B1C]">{formatBRL(despesa.valor)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[13px] text-[#6B7F6E]">Nenhuma despesa extraida do pacote real.</p>
+          )}
+        </div>
+      </section>
+
+      {reajuste && reajuste.itens.length > 0 && (
+        <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+          <h3 className="text-[16px] font-bold text-[#1A2B1C] mb-4">Relatorio de locacao/reajuste</h3>
+          <div className="space-y-3">
+            {reajuste.itens.map((item, index) => (
+              <div key={`${item.descricao}-${index}`} className="border border-[#EEF1EE] rounded-lg p-3">
+                <p className="text-[13px] font-bold text-[#1A2B1C]">{item.descricao}</p>
+                <p className="text-[12px] text-[#6B7F6E] mt-1">
+                  {item.apto ?? "Apto nao identificado"} - {item.inquilino ?? "Inquilino nao identificado"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="bg-white border border-[#EEF1EE] rounded-xl p-4 flex justify-between items-center">
         <button onClick={() => onNavigate("fechamentos")} className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium">

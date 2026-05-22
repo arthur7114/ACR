@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { FileText, CheckCircle, Loader2, Clock } from "lucide-react"
+import { AlertTriangle, CheckCircle, Clock, FileText, Loader2 } from "lucide-react"
+import type { ProcessingEvent } from "@/lib/prestacao-types"
 import type { View } from "../types"
 
 interface ProcessandoViewProps {
@@ -11,52 +11,28 @@ interface ProcessandoViewProps {
     message: string
     error: string | null
   }
+  events: ProcessingEvent[]
 }
 
-const steps = [
-  "Salvando arquivos",
-  "Classificando documentos",
-  "Extraindo dados com IA",
-  "Rodando rechecks deterministicos",
-  "Gerando parecer tecnico",
-  "Finalizando",
-]
-
-const progressByIndex: Record<number, string> = {
-  0: "8%",
-  1: "25%",
-  2: "45%",
-  3: "65%",
-  4: "82%",
-  5: "95%",
-  6: "100%",
+function getEventLabel(event: ProcessingEvent) {
+  const suffix = event.fileName ? ` - ${event.fileName}` : ""
+  if (event.type === "workflow_started") return `Workflow iniciado${suffix}`
+  if (event.type === "file_saved") return `Arquivo salvo${suffix}`
+  if (event.type === "document_classified") return `Documento classificado${suffix}`
+  if (event.type === "extraction_started") return `Extracao iniciada${suffix}`
+  if (event.type === "extraction_completed") return `Extracao concluida${suffix}`
+  if (event.type === "validation_started") return "Validacao deterministica iniciada"
+  if (event.type === "validation_completed") return "Validacao deterministica concluida"
+  if (event.type === "persistence_completed") return "Persistencia concluida"
+  if (event.type === "workflow_completed") return "Workflow concluido"
+  return "Workflow interrompido"
 }
 
-export function ProcessandoView({ onNavigate, processing }: ProcessandoViewProps) {
+export function ProcessandoView({ onNavigate, processing, events }: ProcessandoViewProps) {
   const isError = processing.status === "error"
   const isSuccess = processing.status === "success"
-
-  const [displayIndex, setDisplayIndex] = useState(0)
-
-  // Avança steps 0→1→2 otimisticamente enquanto o workflow roda
-  useEffect(() => {
-    if (processing.status !== "running") return
-    const t1 = setTimeout(() => setDisplayIndex(1), 700)
-    const t2 = setTimeout(() => setDisplayIndex(2), 1500)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
-  }, [processing.status])
-
-  // Quando o workflow termina com sucesso, fast-forward pelos steps restantes
-  useEffect(() => {
-    if (processing.status !== "success") return
-    setDisplayIndex((prev) => Math.max(prev, 3))
-    const t1 = setTimeout(() => setDisplayIndex(4), 350)
-    const t2 = setTimeout(() => setDisplayIndex(5), 700)
-    const t3 = setTimeout(() => setDisplayIndex(6), 1100)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [processing.status])
-
-  const allDone = isSuccess && displayIndex >= 6
+  const latestEvent = events.at(-1)
+  const progress = latestEvent?.progress ?? 0
 
   return (
     <div>
@@ -70,35 +46,43 @@ export function ProcessandoView({ onNavigate, processing }: ProcessandoViewProps
       <div className="max-w-lg mx-auto bg-white rounded-xl p-10 text-center shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#EEF1EE]">
         <div
           className={`h-14 w-14 border-4 border-[#EEF1EE] rounded-full mx-auto mb-4 ${
-            isError ? "border-t-[#DC2626]" : allDone ? "border-t-[#2D8C3A]" : "border-t-[#2D8C3A] animate-spin"
+            isError ? "border-t-[#DC2626]" : "border-t-[#2D8C3A] animate-spin"
           }`}
         />
 
         <h2 className="text-[20px] font-bold text-[#1A2B1C] mb-2">
-          {isError ? "Nao foi possivel analisar" : allDone ? "Analise concluida" : "Analisando os documentos..."}
+          {isError ? "Nao foi possivel analisar" : isSuccess ? "Analise concluida" : "Analisando os documentos..."}
         </h2>
         <p className="text-[14px] text-[#6B7F6E] max-w-sm mx-auto mb-8">
-          {isError ? processing.error : processing.message}
+          {isError ? processing.error : latestEvent?.message ?? processing.message}
         </p>
 
         <ul className="text-left max-w-sm mx-auto space-y-3">
-          {steps.map((label, index) => {
-            const done = index < displayIndex
-            const active = index === displayIndex && !allDone
-            const waiting = !done && !active
+          {events.length === 0 && (
+            <li className="flex items-center gap-3">
+              <Clock size={20} className="text-[#D5DDD6] shrink-0" />
+              <span className="flex-1 text-[14px] text-[#6B7F6E]">Aguardando primeiro evento do servidor</span>
+              <span className="text-[12px] text-[#6B7F6E]">Aguardando</span>
+            </li>
+          )}
+
+          {events.map((event, index) => {
+            const isLatest = index === events.length - 1
+            const failed = event.type === "workflow_failed"
+            const completed = event.type === "workflow_completed" || (!isLatest && !failed)
 
             return (
-              <li key={label} className="flex items-center gap-3">
-                {done && <CheckCircle size={20} className="text-[#22C55E] shrink-0" />}
-                {active && !isError && <Loader2 size={20} className="text-[#2D8C3A] animate-spin shrink-0" />}
-                {(waiting || (active && isError)) && <Clock size={20} className="text-[#D5DDD6] shrink-0" />}
+              <li key={`${event.type}-${index}-${event.fileName ?? "workflow"}`} className="flex items-center gap-3">
+                {failed && <AlertTriangle size={20} className="text-[#DC2626] shrink-0" />}
+                {!failed && completed && <CheckCircle size={20} className="text-[#22C55E] shrink-0" />}
+                {!failed && !completed && <Loader2 size={20} className="text-[#2D8C3A] animate-spin shrink-0" />}
 
-                <span className={`flex-1 text-[14px] ${active ? "font-bold text-[#1A2B1C]" : done ? "text-[#3D4F3F]" : "text-[#6B7F6E]"}`}>
-                  {label}
+                <span className={`flex-1 text-[14px] ${isLatest ? "font-bold text-[#1A2B1C]" : "text-[#3D4F3F]"}`}>
+                  {getEventLabel(event)}
                 </span>
 
-                <span className={`text-[12px] ${done ? "text-[#22C55E]" : active ? "text-[#2D8C3A] font-medium" : "text-[#6B7F6E]"}`}>
-                  {done ? "Concluido" : active ? "Em andamento..." : "Aguardando"}
+                <span className={`text-[12px] ${failed ? "text-[#DC2626]" : isLatest ? "text-[#2D8C3A] font-medium" : "text-[#22C55E]"}`}>
+                  {failed ? "Erro" : completed ? "Concluido" : "Em andamento"}
                 </span>
               </li>
             )
@@ -108,11 +92,11 @@ export function ProcessandoView({ onNavigate, processing }: ProcessandoViewProps
         <div className="mt-6 bg-[#EEF1EE] rounded-full h-2 max-w-sm mx-auto overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${isError ? "bg-[#DC2626]" : "bg-[#2D8C3A]"}`}
-            style={{ width: isError ? "45%" : progressByIndex[Math.min(displayIndex, 6)] }}
+            style={{ width: `${progress}%` }}
           />
         </div>
         <p className="text-[12px] text-[#6B7F6E] text-center mt-2">
-          {isError ? "Processamento interrompido" : allDone ? "6 de 6 etapas concluidas" : "Mastra executando 6 etapas"}
+          {isError ? "Processamento interrompido" : isSuccess ? "Processamento concluido" : `${progress}% processado`}
         </p>
 
         <button
