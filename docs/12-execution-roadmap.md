@@ -8,7 +8,7 @@ O repositorio contem o harness `.agent`, o PRD completo em `docs/`, a trilha num
 
 ## Proxima acao recomendada
 
-Reprocessar o PDF real pela UI agora com URLs reais: cada tela tem path proprio (`/fechamentos`, `/fechamentos/novo`, `/fechamentos/{id}/upload|processando|revisao`, `/imoveis`, `/configuracoes`); refresh em qualquer rota deve manter contexto, e `/fechamentos/{id}/revisao` deve carregar a analise persistida em `analise_completa` (JSONB) mesmo sem o state em memoria.
+Deployar no EasyPanel com Nixpacks: a config em `nixpacks.toml` ja seta install/build/start; basta apontar a branch master, popular os envs listados em `.env.example` e dar deploy. DB foi limpo (fechamentos zerados, storage zerado, imobiliarias/empreendimentos deduplicados).
 
 ## Progresso por etapa
 
@@ -45,6 +45,16 @@ Reprocessar o PDF real pela UI agora com URLs reais: cada tela tem path proprio 
 - App passa a usar URLs reais: cada view tem um path proprio em `app/(app)/*`, com Sidebar/Topbar derivados de `usePathname`. Estado compartilhado vive em `lib/contexts/cadastros-context.tsx` e `lib/contexts/processing-context.tsx`. PackageAnalysis completa fica persistida em `fechamentos.analise_completa` (JSONB) para sobreviver a refresh em `/fechamentos/{id}/revisao`.
 
 ## Historico de ciclos
+
+### 2026-05-22 - Limpeza do DB e prep de deploy EasyPanel
+
+Status: done
+Job: zerar fechamentos/movimentacoes/validacoes/storage do banco para tirar a sujeira dos testes, deduplicar imobiliarias e empreendimentos, e deixar o repo pronto pra deployar em EasyPanel (Nixpacks).
+Outcome entregue: 7 fechamentos, 10 documentos, 156 movimentacoes, 76 validacoes e 10 PDFs do bucket `fechamento-documentos` apagados; imobiliarias reduzidas de 5 para 3 (mantida `Alive Imoveis` do seed inicial); empreendimentos reduzidos de 4 para 3 (mantido `Grand Messejana II` em camel case); `package.json` ganhou `packageManager: "pnpm@11.1.1"`, `engines.node: >=20` e `start` agora roda `next start -H 0.0.0.0 -p ${PORT:-3000}` para containers; `.env.example` documenta as 5 variaveis necessarias; `nixpacks.toml` define provider node, install com corepack/pnpm@11.1.1, build com `pnpm build` e start com `pnpm start`.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build` passaram com a nova config; storage cleanup feito via Storage REST API porque trigger `storage.protect_delete()` bloqueia DELETE direto na tabela; tabelas pos-limpeza confirmadas via SELECT count(*) zerado para fechamentos/docs/movs/vals/storage_objects.
+Decisoes: `Alive Imoveis` (sem acento, igual ao seed da migration inicial) foi mantida para evitar drift entre seed e dados reais; `Grand Messejana II` em camel case ganhou da versao caixa alta por ser o que o PDF da prestacao real usa.
+Arquivos/docs impactados: `package.json`, `.env.example`, `nixpacks.toml`, `docs/12-execution-roadmap.md` (sem migration nova; cleanup foi data-only).
+Proxima acao: criar app no EasyPanel apontando para a branch master, popular envs do `.env.example`, deployar e reprocessar o PDF real pelo dominio publicado.
 
 ### 2026-05-22 - URLs reais por tela + persistencia de analise completa
 
