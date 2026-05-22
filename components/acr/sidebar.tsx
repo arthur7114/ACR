@@ -68,12 +68,10 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
         </button>
 
         <div className="border-t border-white/10 pt-3 px-1 flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-full bg-[#2D8C3A] flex items-center justify-center text-white font-bold text-[12px]">
-            AB
-          </div>
+          <div className="h-9 w-9 rounded-full bg-white/10" />
           <div className="flex flex-col leading-tight">
-            <span className="text-white text-[13px] font-medium">Arthur Brito</span>
-            <span className="text-white/50 text-[11px]">Aprovador</span>
+            <span className="text-white text-[13px] font-medium">Usuário</span>
+            <span className="text-white/50 text-[11px]">Sessão local</span>
           </div>
         </div>
       </div>

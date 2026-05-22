@@ -13,6 +13,16 @@ import type {
 const MONEY_TOLERANCE = 0.01
 const REPASSE_ALERT_TOLERANCE = 5
 const MIN_CONFIDENCE = 0.7
+const OPERATIONAL_RECHECK_IDS = new Set([
+  "required_prestacao_contas",
+  "required_comprovante_repasse",
+  "rows_present",
+  "total_linhas_receitas",
+  "total_linhas_comissoes",
+  "total_linhas_repasse",
+  "resumo_financeiro",
+  "repasse_conciliation",
+])
 
 export interface PackageValidationInput {
   documents: ClassifiedDocument[]
@@ -169,9 +179,21 @@ function buildRechecks({
     checkOptionalDocument(documents, "despesas_comprovantes", "Despesas e comprovantes"),
     checkUnknownDocuments(documents),
     checkPrestacaoRows(prestacao),
-    compareTotal("total_linhas_receitas", "Total das linhas de receitas", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? [])),
-    compareTotal("total_linhas_comissoes", "Total das comissoes por linha", prestacao?.resumo_financeiro.total_linhas_comissoes ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.comissao ?? 0) ?? [])),
-    compareTotal("total_linhas_repasse", "Total dos repasses por linha", prestacao?.resumo_financeiro.total_linhas_repasse ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.repasse ?? 0) ?? [])),
+    compareTotal("total_linhas_receitas", "Total das linhas de receitas", "Total", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? [])),
+    compareColumnTotal(
+      "total_linhas_comissoes",
+      "Total das comissoes por linha",
+      "Comissao",
+      prestacao?.resumo_financeiro.total_linhas_comissoes ?? null,
+      prestacao?.receitas_por_imovel.map((row) => row.comissao) ?? [],
+    ),
+    compareColumnTotal(
+      "total_linhas_repasse",
+      "Total dos repasses por linha",
+      "Repasse",
+      prestacao?.resumo_financeiro.total_linhas_repasse ?? null,
+      prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
+    ),
     compareResumoFormula(prestacao, totals),
     compareDespesasTotal(despesas, totals.total_despesas),
     compareRepasse(totals),
@@ -185,8 +207,9 @@ function buildRechecks({
 }
 
 function buildGuardrails(documents: ClassifiedDocument[], rechecks: PrestacaoRecheck[]): PrestacaoGuardrail[] {
-  const hasFailed = rechecks.some((check) => check.status === "failed")
-  const hasWarning = rechecks.some((check) => check.status === "warning")
+  const operationalRechecks = rechecks.filter(isOperationalRecheck)
+  const hasFailed = operationalRechecks.some((check) => check.status === "failed")
+  const hasWarning = operationalRechecks.some((check) => check.status === "warning")
 
   return [
     {
@@ -215,8 +238,9 @@ function buildGuardrails(documents: ClassifiedDocument[], rechecks: PrestacaoRec
 }
 
 function buildTechnicalOpinion(rechecks: PrestacaoRecheck[], guardrails: PrestacaoGuardrail[]): TechnicalOpinion {
-  const failed = rechecks.filter((check) => check.status === "failed")
-  const warnings = rechecks.filter((check) => check.status === "warning")
+  const operationalRechecks = rechecks.filter(isOperationalRecheck)
+  const failed = operationalRechecks.filter((check) => check.status === "failed")
+  const warnings = operationalRechecks.filter((check) => check.status === "warning")
   const blocked = guardrails.filter((guardrail) => guardrail.status === "blocked")
 
   if (failed.length > 0 || blocked.length > 0) {
@@ -255,7 +279,7 @@ function checkRequiredDocument(documents: ClassifiedDocument[], documentType: st
     id: `required_${documentType}`,
     label,
     status: found ? "passed" : "failed",
-    message: found ? `${label} presente no pacote.` : `${label} ausente; aprovacao bloqueada.`,
+    message: found ? `${label} presente no pacote.` : `${label} nao foi enviado. Envie o documento antes de aprovar.`,
   }
 }
 
@@ -294,13 +318,13 @@ function checkPrestacaoRows(prestacao: PrestacaoAnalysis | null): PrestacaoReche
   }
 }
 
-function compareTotal(id: string, label: string, extracted: number | null, calculated: number): PrestacaoRecheck {
+function compareTotal(id: string, label: string, columnLabel: string, extracted: number | null, calculated: number): PrestacaoRecheck {
   if (extracted === null) {
     return {
       id,
       label,
       status: "warning",
-      message: `${label} nao veio explicitamente da IA; valor final foi calculado por codigo.`,
+      message: `O consolidado de ${columnLabel} nao foi identificado. O valor pelo recalculo e ${formatBRL(calculated)}. Verifique manualmente.`,
       expected: calculated,
       actual: null,
       difference: null,
@@ -317,12 +341,37 @@ function compareTotal(id: string, label: string, extracted: number | null, calcu
     status,
     message:
       status === "passed"
-        ? `${label} bate com o recalculo deterministico.`
-        : `${label} diverge do recalculo deterministico.`,
+        ? `A soma da coluna ${columnLabel} bate com o consolidado.`
+        : `A soma da coluna ${columnLabel} e ${formatBRL(calculated)}, mas o consolidado informa ${formatBRL(actual)}. O correto pelo recalculo e ${formatBRL(calculated)}. Verifique manualmente.`,
     expected: calculated,
     actual,
     difference,
   }
+}
+
+function compareColumnTotal(
+  id: string,
+  label: string,
+  columnLabel: string,
+  extracted: number | null,
+  values: Array<number | null>,
+): PrestacaoRecheck {
+  const hasRows = values.length > 0
+  const hasCompleteColumn = hasRows && values.every((value) => value !== null)
+
+  if (!hasCompleteColumn) {
+    return {
+      id,
+      label,
+      status: "warning",
+      message: `A coluna ${columnLabel} nao foi extraida em todas as linhas. O recheck financeiro dessa coluna nao foi aplicado.`,
+      expected: null,
+      actual: extracted,
+      difference: null,
+    }
+  }
+
+  return compareTotal(id, label, columnLabel, extracted, sum(values.map((value) => value ?? 0)))
 }
 
 function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: number): PrestacaoRecheck {
@@ -338,16 +387,21 @@ function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: num
     }
   }
 
-  return compareTotal("total_despesas", "Total de despesas", despesas.total_despesas, calculated)
+  return compareTotal("total_despesas", "Total de despesas", "Despesas", despesas.total_despesas, calculated)
 }
 
 function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: PackageTotals): PrestacaoRecheck {
-  if (!prestacao?.resumo_financeiro.recebidos_em_nome_locador || !prestacao.resumo_financeiro.total_comissao_despesas) {
+  if (
+    prestacao?.resumo_financeiro.recebidos_em_nome_locador === null ||
+    prestacao?.resumo_financeiro.recebidos_em_nome_locador === undefined ||
+    prestacao.resumo_financeiro.total_comissao_despesas === null ||
+    prestacao.resumo_financeiro.total_comissao_despesas === undefined
+  ) {
     return {
       id: "resumo_financeiro",
       label: "Resumo financeiro final",
       status: "warning",
-      message: "Resumo financeiro final incompleto; total a repassar foi calculado com dados disponiveis.",
+      message: `O resumo financeiro esta incompleto. O total a repassar calculado com os dados disponiveis e ${formatBRL(totals.total_a_repassar)}. Verifique manualmente.`,
       expected: totals.total_a_repassar,
       actual: prestacao?.resumo_financeiro.total_a_repassar ?? null,
       difference: null,
@@ -362,7 +416,7 @@ function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: Packa
       id: "resumo_financeiro",
       label: "Resumo financeiro final",
       status: "warning",
-      message: "Total a repassar nao foi extraido do resumo financeiro.",
+      message: `O total a repassar nao foi identificado no resumo. O correto pela formula e ${formatBRL(expected)}. Verifique manualmente.`,
       expected,
       actual: null,
       difference: null,
@@ -379,7 +433,7 @@ function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: Packa
     message:
       status === "passed"
         ? "Recebidos em nome do locador menos total de comissoes e despesas bate com o total a repassar."
-        : "Resumo financeiro final diverge da formula recebidos menos comissoes/despesas.",
+        : `Recebidos menos comissoes/despesas resulta em ${formatBRL(expected)}, mas o resumo informa ${formatBRL(actual)}. O correto pela formula e ${formatBRL(expected)}. Verifique manualmente.`,
     expected,
     actual,
     difference,
@@ -392,7 +446,7 @@ function compareRepasse(totals: PackageTotals): PrestacaoRecheck {
       id: "repasse_conciliation",
       label: "Conciliacao do repasse",
       status: "failed",
-      message: "Comprovante de repasse sem valor extraido; aprovacao bloqueada.",
+      message: "Nao foi possivel confirmar o valor do comprovante de repasse. Envie ou revise o comprovante antes de aprovar.",
       expected: totals.total_a_repassar,
       actual: null,
       difference: null,
@@ -414,8 +468,8 @@ function compareRepasse(totals: PackageTotals): PrestacaoRecheck {
       status === "passed"
         ? "Valor a repassar bate com o comprovante bancario."
         : status === "warning"
-          ? "Valor a repassar diverge do comprovante dentro da faixa de alerta."
-          : "Valor a repassar diverge do comprovante acima da tolerancia bloqueante.",
+          ? `O total a repassar calculado e ${formatBRL(totals.total_a_repassar)}, mas o comprovante bancario tem ${formatBRL(totals.valor_comprovado)}. Diferenca de ${formatBRL(totals.diferenca_repasse)}. Verifique manualmente.`
+          : `O total a repassar calculado e ${formatBRL(totals.total_a_repassar)}, mas o comprovante bancario tem ${formatBRL(totals.valor_comprovado)}. Diferenca de ${formatBRL(totals.diferenca_repasse)}. Verifique manualmente.`,
     expected: totals.total_a_repassar,
     actual: totals.valor_comprovado,
     difference: totals.diferenca_repasse,
@@ -464,6 +518,15 @@ function getLowestReajusteConfidence(reajuste: ReajusteAnalysis | null) {
   return Math.min(reajuste.confianca_geral, ...reajuste.itens.map((item) => item.confianca))
 }
 
+function isOperationalRecheck(check: PrestacaoRecheck) {
+  if (!OPERATIONAL_RECHECK_IDS.has(check.id)) return false
+  if (check.status === "passed") return true
+  if (check.id === "total_linhas_comissoes" || check.id === "total_linhas_repasse") {
+    return typeof check.difference === "number"
+  }
+  return true
+}
+
 function nullableMoney(value: number | null) {
   return value === null ? null : roundMoney(value)
 }
@@ -484,4 +547,11 @@ function clampConfidence(value: number) {
   if (value < 0) return 0
   if (value > 1) return 1
   return value
+}
+
+function formatBRL(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value)
 }

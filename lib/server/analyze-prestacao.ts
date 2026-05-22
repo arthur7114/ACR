@@ -2,6 +2,7 @@ import OpenAI from "openai"
 import { prestacaoAnalysisSchema, type PrestacaoAnalysis } from "@/lib/prestacao-types"
 import { prestacaoAliveAgent } from "./ai-agents/prestacao-alive-agent"
 import { getOptionalEnv, requireEnv } from "./env"
+import { createResponseWithRetry } from "./openai-responses"
 
 const schema = {
   type: "object",
@@ -140,7 +141,7 @@ export async function extractPrestacaoAliveFromPdf(input: {
   const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") })
   const fileData = `data:${input.fileType};base64,${input.fileBase64}`
 
-  const response = await client.responses.create({
+  const response = await createResponseWithRetry(client, {
     model: getOptionalEnv("OPENAI_MODEL", prestacaoAliveAgent.defaultModel),
     input: [
       {

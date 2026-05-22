@@ -9,6 +9,7 @@ import type {
   RepasseAnalysis,
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
+import type { FechamentoContext } from "@/lib/fechamento-context"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
@@ -24,14 +25,15 @@ export interface PackageFileForPersistence {
 interface PersistPackageInput {
   files: PackageFileForPersistence[]
   analysis: Omit<PackageAnalysis, "fechamentoId" | "storagePath">
+  fechamentoContext?: FechamentoContext | null
 }
 
 export async function persistPackage(input: PersistPackageInput) {
   const supabase = createSupabaseAdmin()
   const { analysis } = input
-  const imobiliariaNome = analysis.prestacao?.imobiliaria || "Alive Imoveis"
-  const empreendimentoNome = analysis.prestacao?.empreendimento || "Grand Messejana II"
-  const competencia = normalizeCompetencia(analysis.prestacao?.competencia ?? "2026-03")
+  const imobiliariaNome = input.fechamentoContext?.imobiliariaNome ?? analysis.prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
+  const empreendimentoNome = input.fechamentoContext?.empreendimentoNome ?? analysis.prestacao?.empreendimento ?? "Empreendimento nao identificado"
+  const competencia = normalizeCompetencia(input.fechamentoContext?.competencia ?? analysis.prestacao?.competencia ?? "")
 
   const { data: imobiliaria, error: imobiliariaError } = await supabase
     .from("imobiliarias")
@@ -324,6 +326,8 @@ function sanitizeFilename(filename: string) {
 
 function normalizeCompetencia(value: string) {
   const normalized = value.trim()
+  if (!normalized) throw new Error("Competencia do fechamento nao identificada.")
+
   const iso = normalized.match(/(\d{4})-(\d{2})/)
   if (iso) return `${iso[1]}-${iso[2]}-01`
 
@@ -332,5 +336,5 @@ function normalizeCompetencia(value: string) {
 
   if (/mar/i.test(normalized) && /2026/.test(normalized)) return "2026-03-01"
 
-  return "2026-03-01"
+  throw new Error(`Competencia do fechamento invalida: ${value}.`)
 }

@@ -1,28 +1,35 @@
 "use client"
 
 import { Bell } from "lucide-react"
+import type { FechamentoContext } from "@/lib/fechamento-context"
+import { getFechamentoLabel } from "@/lib/fechamento-context"
+import type { PackageAnalysis } from "@/lib/prestacao-types"
 import type { View } from "./types"
 import { NotificationsPanel } from "./notifications-panel"
 
 interface TopbarProps {
   currentView: View
+  activeFechamento: FechamentoContext | null
+  analysisResult: PackageAnalysis | null
   showNotifications: boolean
   onToggleNotifications: () => void
   onNavigate: (view: View) => void
 }
 
-function getBreadcrumb(view: View): string[] {
+function getBreadcrumb(view: View, activeFechamento: FechamentoContext | null, analysisResult: PackageAnalysis | null): string[] {
+  const fechamentoLabel = getFechamentoLabel(activeFechamento, analysisResult)
+
   switch (view) {
     case "fechamentos":
       return ["Fechamentos"]
     case "novo-fechamento":
       return ["Fechamentos", "Novo fechamento"]
     case "upload":
-      return ["Fechamentos", "Novo fechamento", "Documentos"]
+      return ["Fechamentos", fechamentoLabel, "Documentos"]
     case "processando":
-      return ["Fechamentos", "Processando"]
+      return ["Fechamentos", fechamentoLabel, "Processando"]
     case "revisao":
-      return ["Fechamentos", "Grand Messejana II — Março/2026"]
+      return ["Fechamentos", fechamentoLabel]
     case "imoveis":
       return ["Imóveis"]
     case "configuracoes":
@@ -32,8 +39,15 @@ function getBreadcrumb(view: View): string[] {
   }
 }
 
-export function Topbar({ currentView, showNotifications, onToggleNotifications, onNavigate }: TopbarProps) {
-  const crumbs = getBreadcrumb(currentView)
+export function Topbar({
+  currentView,
+  activeFechamento,
+  analysisResult,
+  showNotifications,
+  onToggleNotifications,
+  onNavigate,
+}: TopbarProps) {
+  const crumbs = getBreadcrumb(currentView, activeFechamento, analysisResult)
 
   return (
     <header className="fixed top-0 left-[220px] right-0 h-14 bg-white border-b border-[#EEF1EE] pl-6 pr-6 flex items-center justify-between z-30">
@@ -64,25 +78,16 @@ export function Topbar({ currentView, showNotifications, onToggleNotifications, 
             aria-label="Notificações"
           >
             <Bell size={18} className="text-[#3D4F3F]" />
-            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-[#DC2626] text-white text-[10px] font-bold flex items-center justify-center">
-              2
-            </span>
           </button>
 
           {showNotifications && (
             <NotificationsPanel
               onClose={onToggleNotifications}
-              onNavigate={(v) => {
-                onToggleNotifications()
-                onNavigate(v)
-              }}
             />
           )}
         </div>
 
-        <div className="h-8 w-8 rounded-full bg-[#2D8C3A] flex items-center justify-center text-white font-bold text-[12px]">
-          AB
-        </div>
+        <div className="h-8 w-8 rounded-full bg-[#DDEEE1]" aria-label="Usuário não carregado" />
       </div>
     </header>
   )

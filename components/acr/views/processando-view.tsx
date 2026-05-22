@@ -1,6 +1,8 @@
 "use client"
 
 import { AlertTriangle, CheckCircle, Clock, FileText, Loader2 } from "lucide-react"
+import type { FechamentoContext } from "@/lib/fechamento-context"
+import { getFechamentoLabel } from "@/lib/fechamento-context"
 import type { ProcessingEvent } from "@/lib/prestacao-types"
 import type { View } from "../types"
 
@@ -12,6 +14,7 @@ interface ProcessandoViewProps {
     error: string | null
   }
   events: ProcessingEvent[]
+  activeFechamento: FechamentoContext | null
 }
 
 function getEventLabel(event: ProcessingEvent) {
@@ -28,7 +31,7 @@ function getEventLabel(event: ProcessingEvent) {
   return "Workflow interrompido"
 }
 
-export function ProcessandoView({ onNavigate, processing, events }: ProcessandoViewProps) {
+export function ProcessandoView({ onNavigate, processing, events, activeFechamento }: ProcessandoViewProps) {
   const isError = processing.status === "error"
   const isSuccess = processing.status === "success"
   const latestEvent = events.at(-1)
@@ -39,7 +42,7 @@ export function ProcessandoView({ onNavigate, processing, events }: ProcessandoV
       <div className="max-w-3xl mx-auto bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
         <FileText size={16} className="text-[#2D8C3A]" />
         <span className="text-[13px] text-[#3D4F3F] font-medium">
-          Alive Imoveis · Grand Messejana II · Marco/2026
+          {getFechamentoLabel(activeFechamento)}
         </span>
       </div>
 

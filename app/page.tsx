@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Sidebar } from "@/components/acr/sidebar"
 import { Topbar } from "@/components/acr/topbar"
 import { FechamentosView } from "@/components/acr/views/fechamentos-view"
@@ -8,9 +8,12 @@ import { NovoFechamentoView } from "@/components/acr/views/novo-fechamento-view"
 import { UploadView } from "@/components/acr/views/upload-view"
 import { ProcessandoView } from "@/components/acr/views/processando-view"
 import { RevisaoView } from "@/components/acr/views/revisao-view"
+import { ImoveisView } from "@/components/acr/views/imoveis-view"
 import { PlaceholderView } from "@/components/acr/views/placeholder-view"
 import { CorrectionModal } from "@/components/acr/correction-modal"
 import type { View } from "@/components/acr/types"
+import type { CadastrosPayload, CsvImportResult } from "@/lib/cadastros-types"
+import type { FechamentoContext } from "@/lib/fechamento-context"
 import type { PackageAnalysis, ProcessingEvent } from "@/lib/prestacao-types"
 import { formatBRL } from "@/lib/format"
 
@@ -24,6 +27,15 @@ export default function HomePage() {
   const [currentView, setCurrentView] = useState<View>("fechamentos")
   const [showNotifications, setShowNotifications] = useState(false)
   const [analysisResult, setAnalysisResult] = useState<PackageAnalysis | null>(null)
+  const [activeFechamento, setActiveFechamento] = useState<FechamentoContext | null>(null)
+  const [cadastros, setCadastros] = useState<CadastrosPayload>({
+    imobiliarias: [],
+    empreendimentos: [],
+    imoveis: [],
+  })
+  const [cadastrosLoading, setCadastrosLoading] = useState(true)
+  const [cadastrosError, setCadastrosError] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<CsvImportResult | null>(null)
   const [processingEvents, setProcessingEvents] = useState<ProcessingEvent[]>([])
   const [processing, setProcessing] = useState<ProcessingState>({
     status: "idle",
@@ -42,6 +54,33 @@ export default function HomePage() {
     valor: 0,
   })
 
+  const loadCadastros = useCallback(async () => {
+    setCadastrosLoading(true)
+    setCadastrosError(null)
+
+    try {
+      const [imobiliarias, empreendimentos, imoveis] = await Promise.all([
+        fetchJson("/api/cadastros/imobiliarias"),
+        fetchJson("/api/cadastros/empreendimentos"),
+        fetchJson("/api/cadastros/imoveis"),
+      ])
+
+      setCadastros({
+        imobiliarias: imobiliarias.imobiliarias ?? [],
+        empreendimentos: empreendimentos.empreendimentos ?? [],
+        imoveis: imoveis.imoveis ?? [],
+      })
+    } catch (error) {
+      setCadastrosError(error instanceof Error ? error.message : "Falha ao carregar cadastros.")
+    } finally {
+      setCadastrosLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadCadastros()
+  }, [loadCadastros])
+
   const navigate = (view: View) => {
     setCurrentView(view)
     setShowNotifications(false)
@@ -50,6 +89,69 @@ export default function HomePage() {
 
   const openModal = (apto: string, inquilino: string, valor: number) =>
     setModal({ open: true, apto, inquilino, valor })
+
+  const saveCadastro = async (url: string, input: Record<string, unknown>) => {
+    setCadastrosError(null)
+    const method = input.id ? "PATCH" : "POST"
+    await fetchJson(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+    await loadCadastros()
+  }
+
+  const deactivateCadastro = async (url: string, id: string) => {
+    setCadastrosError(null)
+    await fetchJson(`${url}?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+    await loadCadastros()
+  }
+
+  const importImoveis = async (file: File) => {
+    setCadastrosError(null)
+    setImportResult(null)
+    const formData = new FormData()
+    formData.append("file", file)
+
+    const response = await fetch("/api/cadastros/imoveis/import", {
+      method: "POST",
+      body: formData,
+    })
+    const payload = await response.json()
+
+    setImportResult(payload as CsvImportResult)
+    if (!response.ok && payload.error) {
+      throw new Error(payload.error)
+    }
+    await loadCadastros()
+  }
+
+  const createFechamento = async (input: Record<string, unknown>) => {
+    setCadastrosError(null)
+    const payload = await fetchJson("/api/fechamentos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    })
+
+    const fechamento = payload.fechamento as {
+      id: string
+      imobiliaria_id: string
+      empreendimento_id: string
+      competencia: string
+      imobiliarias?: { nome: string } | null
+      empreendimentos?: { nome: string } | null
+    }
+
+    setActiveFechamento({
+      id: fechamento.id,
+      imobiliariaId: fechamento.imobiliaria_id,
+      imobiliariaNome: fechamento.imobiliarias?.nome ?? "Imobiliaria nao identificada",
+      empreendimentoId: fechamento.empreendimento_id,
+      empreendimentoNome: fechamento.empreendimentos?.nome ?? "Empreendimento nao identificado",
+      competencia: fechamento.competencia,
+    })
+  }
 
   const processPackage = async (files: File[]) => {
     setAnalysisResult(null)
@@ -60,6 +162,9 @@ export default function HomePage() {
     try {
       const formData = new FormData()
       files.forEach((file) => formData.append("files", file))
+      if (activeFechamento) {
+        formData.append("fechamentoContext", JSON.stringify(activeFechamento))
+      }
 
       const response = await fetch("/api/fechamentos/process/stream", {
         method: "POST",
@@ -114,6 +219,8 @@ export default function HomePage() {
       <Sidebar currentView={currentView} onNavigate={navigate} />
       <Topbar
         currentView={currentView}
+        activeFechamento={activeFechamento}
+        analysisResult={analysisResult}
         showNotifications={showNotifications}
         onToggleNotifications={() => setShowNotifications((s) => !s)}
         onNavigate={navigate}
@@ -121,10 +228,30 @@ export default function HomePage() {
 
       <main className="ml-[220px] mt-14 p-6">
         {currentView === "fechamentos" && <FechamentosView onNavigate={navigate} />}
-        {currentView === "novo-fechamento" && <NovoFechamentoView onNavigate={navigate} />}
-        {currentView === "upload" && <UploadView onNavigate={navigate} onAnalyze={processPackage} />}
+        {currentView === "novo-fechamento" && (
+          <NovoFechamentoView
+            onNavigate={navigate}
+            imobiliarias={cadastros.imobiliarias}
+            empreendimentos={cadastros.empreendimentos}
+            loading={cadastrosLoading}
+            error={cadastrosError}
+            onCreateFechamento={createFechamento}
+          />
+        )}
+        {currentView === "upload" && (
+          <UploadView
+            onNavigate={navigate}
+            onAnalyze={processPackage}
+            activeFechamento={activeFechamento}
+          />
+        )}
         {currentView === "processando" && (
-          <ProcessandoView onNavigate={navigate} processing={processing} events={processingEvents} />
+          <ProcessandoView
+            onNavigate={navigate}
+            processing={processing}
+            events={processingEvents}
+            activeFechamento={activeFechamento}
+          />
         )}
         {currentView === "revisao" && (
           <RevisaoView
@@ -134,10 +261,20 @@ export default function HomePage() {
           />
         )}
         {currentView === "imoveis" && (
-          <PlaceholderView
-            title="Imóveis"
-            description="Cadastro e gestão dos imóveis dos empreendimentos. Esta área será detalhada em breve."
-            icon="building"
+          <ImoveisView
+            imobiliarias={cadastros.imobiliarias}
+            empreendimentos={cadastros.empreendimentos}
+            imoveis={cadastros.imoveis}
+            loading={cadastrosLoading}
+            error={cadastrosError}
+            importResult={importResult}
+            onSaveImovel={(input) => saveCadastro("/api/cadastros/imoveis", input)}
+            onDeactivateImovel={(id) => deactivateCadastro("/api/cadastros/imoveis", id)}
+            onSaveImobiliaria={(input) => saveCadastro("/api/cadastros/imobiliarias", input)}
+            onDeactivateImobiliaria={(id) => deactivateCadastro("/api/cadastros/imobiliarias", id)}
+            onSaveEmpreendimento={(input) => saveCadastro("/api/cadastros/empreendimentos", input)}
+            onDeactivateEmpreendimento={(id) => deactivateCadastro("/api/cadastros/empreendimentos", id)}
+            onImportImoveis={importImoveis}
           />
         )}
         {currentView === "configuracoes" && (
@@ -158,4 +295,15 @@ export default function HomePage() {
       />
     </div>
   )
+}
+
+async function fetchJson(url: string, init?: RequestInit) {
+  const response = await fetch(url, init)
+  const payload = await response.json()
+
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error ?? "Falha na requisicao.")
+  }
+
+  return payload
 }

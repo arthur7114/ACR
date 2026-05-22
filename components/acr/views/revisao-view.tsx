@@ -10,7 +10,8 @@ import {
   ShieldCheck,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { PackageAnalysis, TechnicalOpinion } from "@/lib/prestacao-types"
+import type { PackageAnalysis, PrestacaoRecheck, TechnicalOpinion } from "@/lib/prestacao-types"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import type { View } from "../types"
 
 interface RevisaoViewProps {
@@ -54,9 +55,38 @@ function getOpinionClasses(status: TechnicalOpinion["status"]) {
 }
 
 function getCheckClasses(status: "passed" | "warning" | "failed") {
-  if (status === "failed") return "bg-[#FEE2E2] text-[#DC2626]"
-  if (status === "warning") return "bg-[#FEF3C7] text-[#92400E]"
+  if (status === "failed") return "bg-[#FEE2E2] text-[#991B1B] border-[#FCA5A5]"
+  if (status === "warning") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
   return "bg-[#DCFCE7] text-[#166534]"
+}
+
+function getCheckLabel(status: "passed" | "warning" | "failed") {
+  if (status === "failed") return "Bloqueante"
+  if (status === "warning") return "Alerta"
+  return "OK"
+}
+
+function isActionableWarning(check: PrestacaoRecheck) {
+  if (check.status === "passed") return false
+  if (check.id === "required_prestacao_contas" || check.id === "required_comprovante_repasse") return true
+  if (check.id === "rows_present") return check.status === "failed"
+  if (check.id === "repasse_conciliation") return true
+  if (check.id === "resumo_financeiro") return true
+  if (check.id === "total_linhas_receitas") return typeof check.difference === "number"
+  if (check.id === "total_linhas_comissoes") return typeof check.difference === "number"
+  if (check.id === "total_linhas_repasse") return typeof check.difference === "number"
+  return false
+}
+
+function CheckValue({ label, value }: { label: string; value: number | null | undefined }) {
+  if (typeof value !== "number") return null
+
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] text-[#6B7F6E]">
+      {label}
+      <strong className="font-semibold text-[#1A2B1C] tabular-nums">{formatBRL(value)}</strong>
+    </span>
+  )
 }
 
 export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: RevisaoViewProps) {
@@ -79,8 +109,9 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
   }
 
   const { prestacao, repasse, despesas, reajuste, totals, parecer, documents, rechecks } = analysisResult
-  const failedRechecks = rechecks.filter((check) => check.status === "failed")
-  const warningRechecks = rechecks.filter((check) => check.status === "warning")
+  const actionableRechecks = rechecks.filter(isActionableWarning)
+  const failedRechecks = actionableRechecks.filter((check) => check.status === "failed")
+  const warningRechecks = actionableRechecks.filter((check) => check.status === "warning")
   const hasBlocking = parecer.status === "bloqueado" || failedRechecks.length > 0
   const title = `${prestacao?.empreendimento ?? "Empreendimento nao identificado"} - ${prestacao?.competencia ?? "Competencia nao identificada"}`
   const resumo = prestacao?.resumo_financeiro
@@ -247,33 +278,53 @@ export function RevisaoView({ onNavigate, onOpenModal, analysisResult }: Revisao
         </div>
       </section>
 
-      <section className={`bg-white border rounded-xl p-5 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <AlertTriangle size={18} className={hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"} />
-          <h3 className="text-[16px] font-bold text-[#1A2B1C]">Rechecks e divergencias</h3>
-          <span className="ml-auto inline-flex items-center bg-[#EEF1EE] text-[#3D4F3F] rounded-full px-3 py-1 text-xs font-medium">
-            {failedRechecks.length} bloqueante(s) - {warningRechecks.length} alerta(s)
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          {rechecks.map((check) => (
-            <div key={check.id} className="border border-[#EEF1EE] rounded-lg p-3 flex justify-between gap-4">
-              <div>
-                <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium mb-2 ${getCheckClasses(check.status)}`}>
-                  {check.status}
+      <section className={`bg-white border rounded-xl px-4 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
+        <Accordion type="single" collapsible>
+          <AccordionItem value="warnings" className="border-0">
+            <AccordionTrigger className="py-3 hover:no-underline">
+              <div className="flex w-full items-center gap-3">
+                <AlertTriangle size={16} className={hasBlocking ? "text-[#DC2626]" : actionableRechecks.length > 0 ? "text-[#F59E0B]" : "text-[#2D8C3A]"} />
+                <div className="min-w-0 text-left">
+                  <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Warnings reais</h3>
+                  <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">
+                    {actionableRechecks.length > 0 ? "Divergencias financeiras e documentos obrigatorios" : "Sem divergencias financeiras acionaveis"}
+                  </p>
+                </div>
+                <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#EEF1EE] px-3 text-[12px] font-medium text-[#3D4F3F]">
+                  {failedRechecks.length} bloqueante(s) - {warningRechecks.length} alerta(s)
                 </span>
-                <p className="font-bold text-[14px] text-[#1A2B1C]">{check.label}</p>
-                <p className="text-[13px] text-[#3D4F3F] mt-1">{check.message}</p>
               </div>
-              {typeof check.difference === "number" && (
-                <span className="text-[13px] font-bold tabular-nums text-[#1A2B1C]">
-                  Dif. {formatBRL(check.difference)}
-                </span>
+            </AccordionTrigger>
+            <AccordionContent className="pb-3">
+              {actionableRechecks.length > 0 ? (
+                <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
+                  {actionableRechecks.map((check) => (
+                    <div key={check.id} className="flex items-center justify-between gap-4 py-2.5">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${getCheckClasses(check.status)}`}>
+                            {getCheckLabel(check.status)}
+                          </span>
+                          <p className="truncate text-[13px] font-bold text-[#1A2B1C]">{check.label}</p>
+                        </div>
+                        <p className="mt-1 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
+                      </div>
+                      <div className="hidden shrink-0 flex-col items-end gap-0.5 md:flex">
+                        <CheckValue label="Correto" value={check.expected} />
+                        <CheckValue label="Consolidado" value={check.actual} />
+                        <CheckValue label="Dif." value={check.difference} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="border-t border-[#EEF1EE] py-3 text-[13px] text-[#3D4F3F]">
+                  Nenhuma divergencia financeira ou ausencia de documento obrigatorio foi encontrada.
+                </p>
               )}
-            </div>
-          ))}
-        </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </section>
 
       {prestacao && (

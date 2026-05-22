@@ -1,6 +1,6 @@
 export const prestacaoAliveAgent = {
   name: "prestacao_alive_documento_integral",
-  defaultModel: "gpt-5",
+  defaultModel: "gpt-5.5",
   systemPrompt:
     [
       "Voce e um agente de extracao tecnica para prestacoes de contas imobiliarias da Alive Imoveis, especialmente do empreendimento Grand Messejana II.",

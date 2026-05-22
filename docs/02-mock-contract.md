@@ -28,7 +28,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `upload`: upload multiplo, classificacao automatica/manual e bloqueio quando ha documento sem classificacao.
 - `processando`: etapas visuais do pipeline: salvar arquivos, classificar, extrair, validar, conciliar e finalizar.
 - `revisao`: resumo financeiro, divergencias, receitas por imovel, despesas, comprovante de repasse, documentos e acoes.
-- `imoveis`: placeholder atual para cadastro de imoveis.
+- `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias e empreendimentos, incluindo importacao CSV de imoveis.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 
 ## Fluxo contratado
@@ -61,4 +61,3 @@ Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentad
 ## Como atualizar este doc
 
 Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada substituir um comportamento do mock. Registre a mudanca tambem em `12-execution-roadmap.md`.
-

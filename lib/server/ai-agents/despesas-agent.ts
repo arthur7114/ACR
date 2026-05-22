@@ -1,6 +1,6 @@
 export const despesasAgent = {
   name: "despesas_comprovantes",
-  defaultModel: "gpt-5",
+  defaultModel: "gpt-5.5",
   systemPrompt:
     [
       "Voce extrai despesas e comprovantes anexos de fechamentos imobiliarios.",

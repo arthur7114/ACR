@@ -7,6 +7,7 @@ import type {
   ReajusteAnalysis,
   RepasseAnalysis,
 } from "@/lib/prestacao-types"
+import type { FechamentoContext } from "@/lib/fechamento-context"
 import {
   classifyDocument,
   extractDespesasFromPdf,
@@ -27,7 +28,10 @@ interface PackageInputDocument {
   fileBuffer: Buffer
 }
 
-export async function* runPackageWorkflowWithEvents(files: File[]): AsyncGenerator<ProcessingEvent> {
+export async function* runPackageWorkflowWithEvents(
+  files: File[],
+  fechamentoContext: FechamentoContext | null = null,
+): AsyncGenerator<ProcessingEvent> {
   try {
     yield event("workflow_started", "Processamento real iniciado.", 2)
 
@@ -91,6 +95,7 @@ export async function* runPackageWorkflowWithEvents(files: File[]): AsyncGenerat
         },
       })) satisfies PackageFileForPersistence[],
       analysis: packageAnalysis,
+      fechamentoContext,
     })
 
     for (const document of persistence.documents) {

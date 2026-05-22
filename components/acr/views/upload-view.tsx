@@ -2,15 +2,18 @@
 
 import { useRef, useState } from "react"
 import { FileText, Upload, X, AlertTriangle } from "lucide-react"
+import type { FechamentoContext } from "@/lib/fechamento-context"
+import { getFechamentoLabel } from "@/lib/fechamento-context"
 import type { View } from "../types"
 import { StepsIndicator } from "../steps-indicator"
 
 interface UploadViewProps {
   onNavigate: (view: View) => void
   onAnalyze: (files: File[]) => void
+  activeFechamento: FechamentoContext | null
 }
 
-export function UploadView({ onNavigate, onAnalyze }: UploadViewProps) {
+export function UploadView({ onNavigate, onAnalyze, activeFechamento }: UploadViewProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -45,7 +48,7 @@ export function UploadView({ onNavigate, onAnalyze }: UploadViewProps) {
         <div className="bg-[#EFF7F1] border-l-4 border-[#2D8C3A] rounded-lg p-3 flex items-center gap-2 mb-4">
           <FileText size={16} className="text-[#2D8C3A]" />
           <span className="text-[13px] text-[#3D4F3F] font-medium">
-            Alive Imoveis · Grand Messejana II · Marco/2026
+            {getFechamentoLabel(activeFechamento)}
           </span>
         </div>
 

@@ -15,6 +15,7 @@ import { documentClassifierAgent } from "./ai-agents/document-classifier-agent"
 import { reajusteAgent } from "./ai-agents/reajuste-agent"
 import { repasseAgent } from "./ai-agents/repasse-agent"
 import { getOptionalEnv, requireEnv } from "./env"
+import { createResponseWithRetry } from "./openai-responses"
 
 interface DocumentInput {
   fileName: string
@@ -232,7 +233,7 @@ async function analyzeWithSchema({
   userPrompt: string
 }) {
   const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") })
-  const response = await client.responses.create({
+  const response = await createResponseWithRetry(client, {
     model,
     input: [
       {
