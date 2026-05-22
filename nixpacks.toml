@@ -1,5 +1,7 @@
 # Nixpacks config para EasyPanel / Railway / Coolify
-# pnpm + Next.js 16 production build
+# Next.js 16 + pnpm 11.1.1 sobre Node 22.
+# Node 20 quebra com `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING` no corepack,
+# por isso evitamos corepack e instalamos o pnpm via npm.
 
 providers = ["node"]
 
@@ -8,12 +10,11 @@ NODE_ENV = "production"
 NPM_CONFIG_PRODUCTION = "false"
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "pnpm-9_x"]
+nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = [
-  "corepack enable",
-  "corepack prepare pnpm@11.1.1 --activate",
+  "npm install -g pnpm@11.1.1",
   "pnpm install --frozen-lockfile",
 ]
 
