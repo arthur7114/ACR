@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from "fs"
+import { join } from "path"
 import OpenAI from "openai"
 import {
   classifiedDocumentSchema,
@@ -161,6 +163,33 @@ const reajusteJsonSchema = {
 }
 
 export async function classifyDocument(input: DocumentInput): Promise<ClassifiedDocument> {
+  if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
+    console.log("[MOCK IA] Intercepting classifyDocument for:", input.fileName)
+    const name = input.fileName.toLowerCase()
+    let documentType: DocumentType = "desconhecido"
+    const confidence = 0.98
+    const reason = "Classificação mockada via nome do arquivo."
+
+    if (name.includes("prestacao") || name.includes("prestação")) {
+      documentType = "prestacao_contas"
+    } else if (name.includes("repasse")) {
+      documentType = "comprovante_repasse"
+    } else if (name.includes("despesa")) {
+      documentType = "despesas_comprovantes"
+    } else if (name.includes("reajuste") || name.includes("locacao") || name.includes("locação") || name.includes("relatorio") || name.includes("relatório")) {
+      documentType = "relatorio_reajuste"
+    }
+
+    return classifiedDocumentSchema.parse({
+      fileName: input.fileName,
+      fileType: input.fileType,
+      fileSize: input.fileSize,
+      documentType,
+      confidence,
+      reason,
+    })
+  }
+
   const result = await analyzeWithSchema({
     input,
     model: getOptionalEnv("OPENAI_MODEL", documentClassifierAgent.defaultModel),
@@ -179,6 +208,18 @@ export async function classifyDocument(input: DocumentInput): Promise<Classified
 }
 
 export async function extractRepasseFromPdf(input: DocumentInput): Promise<RepasseAnalysis> {
+  if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
+    console.log("[MOCK IA] Intercepting extractRepasseFromPdf...")
+    const fixturePath = join(process.cwd(), "lib/server/mock-gmii-analysis.json")
+    if (existsSync(fixturePath)) {
+      const raw = readFileSync(fixturePath, "utf-8")
+      const fullAnalysis = JSON.parse(raw)
+      if (fullAnalysis.repasse) {
+        return repasseAnalysisSchema.parse(fullAnalysis.repasse)
+      }
+    }
+  }
+
   const result = await analyzeWithSchema({
     input,
     model: getOptionalEnv("OPENAI_MODEL", repasseAgent.defaultModel),
@@ -192,6 +233,25 @@ export async function extractRepasseFromPdf(input: DocumentInput): Promise<Repas
 }
 
 export async function extractDespesasFromPdf(input: DocumentInput): Promise<DespesasAnalysis> {
+  if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
+    console.log("[MOCK IA] Intercepting extractDespesasFromPdf...")
+    const fixturePath = join(process.cwd(), "lib/server/mock-gmii-analysis.json")
+    if (existsSync(fixturePath)) {
+      const raw = readFileSync(fixturePath, "utf-8")
+      const fullAnalysis = JSON.parse(raw)
+      if (fullAnalysis.despesas) {
+        return despesasAnalysisSchema.parse(fullAnalysis.despesas)
+      }
+    }
+    return {
+      despesas: [],
+      total_despesas: 0,
+      campos_ausentes: [],
+      observacoes: ["Despesas mockadas."],
+      confianca_geral: 0.95,
+    }
+  }
+
   const result = await analyzeWithSchema({
     input,
     model: getOptionalEnv("OPENAI_MODEL", despesasAgent.defaultModel),
@@ -205,6 +265,24 @@ export async function extractDespesasFromPdf(input: DocumentInput): Promise<Desp
 }
 
 export async function extractReajusteFromPdf(input: DocumentInput): Promise<ReajusteAnalysis> {
+  if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
+    console.log("[MOCK IA] Intercepting extractReajusteFromPdf...")
+    const fixturePath = join(process.cwd(), "lib/server/mock-gmii-analysis.json")
+    if (existsSync(fixturePath)) {
+      const raw = readFileSync(fixturePath, "utf-8")
+      const fullAnalysis = JSON.parse(raw)
+      if (fullAnalysis.reajuste) {
+        return reajusteAnalysisSchema.parse(fullAnalysis.reajuste)
+      }
+    }
+    return {
+      itens: [],
+      campos_ausentes: [],
+      observacoes: ["Reajustes mockados."],
+      confianca_geral: 0.95,
+    }
+  }
+
   const result = await analyzeWithSchema({
     input,
     model: getOptionalEnv("OPENAI_MODEL", reajusteAgent.defaultModel),

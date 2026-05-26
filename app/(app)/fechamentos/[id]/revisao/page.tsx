@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useEffect, useState } from "react"
+import { use, useEffect, useState, useCallback } from "react"
 import { AlertTriangle, Loader2 } from "lucide-react"
 import { CorrectionModal } from "@/components/acr/correction-modal"
 import { RevisaoView } from "@/components/acr/views/revisao-view"
@@ -20,19 +20,11 @@ export default function RevisaoPage({ params }: PageProps) {
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
 
-  useEffect(() => {
-    if (cachedAnalysis) {
-      setAnalysis(cachedAnalysis)
-      setLoading(false)
-      return
-    }
-    let cancelled = false
-    setLoading(true)
+  const loadFromApi = useCallback(() => {
     setError(null)
-    fetch(`/api/fechamentos/${id}`)
+    return fetch(`/api/fechamentos/${id}`)
       .then((response) => response.json())
       .then((payload) => {
-        if (cancelled) return
         if (payload.error) {
           setError(payload.error)
           return
@@ -40,15 +32,19 @@ export default function RevisaoPage({ params }: PageProps) {
         setAnalysis(payload.analise_completa ?? null)
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
+        setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+  }, [id])
+
+  useEffect(() => {
+    if (cachedAnalysis) {
+      setAnalysis(cachedAnalysis)
+      setLoading(false)
+      return
     }
-  }, [id, cachedAnalysis])
+    setLoading(true)
+    loadFromApi().finally(() => setLoading(false))
+  }, [id, cachedAnalysis, loadFromApi])
 
   if (loading) {
     return (
@@ -74,6 +70,7 @@ export default function RevisaoPage({ params }: PageProps) {
         fechamentoId={id}
         analysisResult={analysis}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
+        onRefresh={loadFromApi}
       />
       <CorrectionModal
         open={modal.open}

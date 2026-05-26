@@ -40,6 +40,44 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
   const analiseCompleta = (data.analise_completa as PackageAnalysis | null) ?? null
 
+  if (analiseCompleta) {
+    const { data: dbValidacoes } = await supabase
+      .from("validacoes")
+      .select("*")
+      .eq("fechamento_id", id)
+
+    if (dbValidacoes) {
+      if (analiseCompleta.rechecks) {
+        analiseCompleta.rechecks = analiseCompleta.rechecks.map((check) => {
+          const dbVal = dbValidacoes.find((v) => v.tipo_validacao === check.id)
+          return {
+            ...check,
+            databaseId: dbVal?.id ?? null,
+            dbStatus: dbVal?.status ?? "aberta",
+            justificativa: dbVal?.justificativa ?? null,
+            status: dbVal && (dbVal.status === "resolvida" || dbVal.status === "ignorada_com_justificativa") ? "passed" : check.status,
+          }
+        })
+      }
+      if (analiseCompleta.guardrails) {
+        analiseCompleta.guardrails = analiseCompleta.guardrails.map((guardrail) => {
+          const dbVal = dbValidacoes.find((v) => v.tipo_validacao === guardrail.id)
+          return {
+            ...guardrail,
+            databaseId: dbVal?.id ?? null,
+            dbStatus: dbVal?.status ?? "aberta",
+            justificativa: dbVal?.justificativa ?? null,
+            status: dbVal && (dbVal.status === "resolvida" || dbVal.status === "ignorada_com_justificativa") ? "passed" : guardrail.status,
+          }
+        })
+      }
+      const dbParecer = dbValidacoes.find((v) => v.tipo_validacao === "parecer_tecnico")
+      if (dbParecer && (dbParecer.status === "resolvida" || dbParecer.status === "ignorada_com_justificativa")) {
+        analiseCompleta.parecer.status = "aprovado_tecnico"
+      }
+    }
+  }
+
   return NextResponse.json({
     fechamento: {
       id: data.id,

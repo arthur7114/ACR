@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -13,11 +14,13 @@ import {
 import { formatBRL } from "@/lib/format"
 import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 
 interface RevisaoViewProps {
   fechamentoId: string
   analysisResult: PackageAnalysis | null
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
+  onRefresh?: () => void
 }
 
 function SummaryCard({
@@ -54,22 +57,27 @@ function getOpinionClasses(status: TechnicalOpinion["status"]) {
   return "bg-[#FEE2E2] text-[#991B1B] border-[#DC2626]"
 }
 
-function getCheckClasses(status: "passed" | "warning" | "failed") {
-  if (status === "failed") return "bg-[#FEE2E2] text-[#991B1B] border-[#FCA5A5]"
-  if (status === "warning") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
-  return "bg-[#DCFCE7] text-[#166534]"
+function getCheckClasses(check: PrestacaoRecheck) {
+  const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
+  if (isResolved) return "bg-[#E6F4EA] text-[#137333] border-[#A3E2B9]"
+  if (check.status === "failed") return "bg-[#FEE2E2] text-[#991B1B] border-[#FCA5A5]"
+  if (check.status === "warning") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
+  return "bg-[#DCFCE7] text-[#166534] border-[#86EFAC]"
 }
 
-function getCheckLabel(status: "passed" | "warning" | "failed") {
-  if (status === "failed") return "Bloqueante"
-  if (status === "warning") return "Alerta"
+function getCheckLabel(check: PrestacaoRecheck) {
+  const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
+  if (isResolved) return "Resolvido"
+  if (check.status === "failed") return "Bloqueante"
+  if (check.status === "warning") return "Alerta"
   return "OK"
 }
 
 function isActionableWarning(check: PrestacaoRecheck) {
-  if (check.status === "passed") return false
+  const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
+  if (check.status === "passed" && !isResolved) return false
   if (check.id === "required_prestacao_contas" || check.id === "required_comprovante_repasse") return true
-  if (check.id === "rows_present") return check.status === "failed"
+  if (check.id === "rows_present") return check.status === "failed" || isResolved
   if (check.id === "repasse_conciliation") return true
   if (check.id === "resumo_financeiro") return true
   if (check.id === "total_linhas_receitas") return typeof check.difference === "number"
@@ -114,7 +122,18 @@ function CheckValue({ label, value }: { label: string; value: number | null | un
   )
 }
 
-export function RevisaoView({ fechamentoId, onOpenModal, analysisResult }: RevisaoViewProps) {
+export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResult }: RevisaoViewProps) {
+  const [activeValidation, setActiveValidation] = useState<{
+    id: string
+    fechamento_id: string
+    tipo_validacao: string
+    mensagem: string
+    valor_esperado: number | null
+    valor_encontrado: number | null
+    diferenca: number | null
+  } | null>(null)
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false)
+
   if (!analysisResult) {
     return (
       <div className="max-w-xl mx-auto bg-white rounded-xl p-8 border border-[#EEF1EE] text-center">
@@ -354,24 +373,54 @@ export function RevisaoView({ fechamentoId, onOpenModal, analysisResult }: Revis
             <AccordionContent className="pb-3">
               {actionableRechecks.length > 0 ? (
                 <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
-                  {actionableRechecks.map((check) => (
-                    <div key={check.id} className="flex items-center justify-between gap-4 py-2.5">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${getCheckClasses(check.status)}`}>
-                            {getCheckLabel(check.status)}
-                          </span>
-                          <p className="truncate text-[13px] font-bold text-[#1A2B1C]">{check.label}</p>
+                  {actionableRechecks.map((check) => {
+                    const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
+                    return (
+                      <div key={check.id} className="flex items-start justify-between gap-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${getCheckClasses(check)}`}>
+                              {getCheckLabel(check)}
+                            </span>
+                            <p className="truncate text-[13px] font-bold text-[#1A2B1C]">{check.label}</p>
+                          </div>
+                          <p className="mt-1.5 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
+                          {isResolved && check.justificativa && (
+                            <div className="mt-2 text-[12px] bg-[#F4F9F5] text-[#1A5C24] px-3 py-2 rounded-lg border border-[#D1E7D6]">
+                              <span className="font-semibold block text-[11px] uppercase tracking-wide text-[#2D8C3A] mb-0.5">Divergência Resolvida:</span>
+                              <span className="italic">{check.justificativa}</span>
+                            </div>
+                          )}
                         </div>
-                        <p className="mt-1 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
+                        <div className="flex items-center gap-4 shrink-0">
+                          <div className="hidden flex-col items-end gap-0.5 md:flex text-right">
+                            <CheckValue label="Correto" value={check.expected} />
+                            <CheckValue label="Consolidado" value={check.actual} />
+                            <CheckValue label="Dif." value={check.difference} />
+                          </div>
+                          {!isResolved && (
+                            <button
+                              onClick={() => {
+                                setActiveValidation({
+                                  id: check.databaseId || "",
+                                  fechamento_id: fechamentoId,
+                                  tipo_validacao: check.id,
+                                  mensagem: check.message,
+                                  valor_esperado: check.expected ?? null,
+                                  valor_encontrado: check.actual ?? null,
+                                  diferenca: check.difference ?? null
+                                })
+                                setIsResolveModalOpen(true)
+                              }}
+                              className="h-8 px-3 rounded-md bg-[#2D8C3A]/10 text-[#2D8C3A] hover:bg-[#2D8C3A] hover:text-white text-[12px] font-medium transition-colors"
+                            >
+                              Resolver
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="hidden shrink-0 flex-col items-end gap-0.5 md:flex">
-                        <CheckValue label="Correto" value={check.expected} />
-                        <CheckValue label="Consolidado" value={check.actual} />
-                        <CheckValue label="Dif." value={check.difference} />
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <p className="border-t border-[#EEF1EE] py-3 text-[13px] text-[#3D4F3F]">
@@ -515,6 +564,13 @@ export function RevisaoView({ fechamentoId, onOpenModal, analysisResult }: Revis
           </button>
         </div>
       </div>
+
+      <ResolveConflictModal
+        isOpen={isResolveModalOpen}
+        onClose={() => setIsResolveModalOpen(false)}
+        validation={activeValidation}
+        onResolveSuccess={() => onRefresh && onRefresh()}
+      />
     </div>
   )
 }

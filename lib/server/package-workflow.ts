@@ -50,7 +50,8 @@ export async function* runPackageWorkflowWithEvents(
       )
     }
 
-    const extraction = await extractDocuments(documents, classifications, (processingEvent) => processingEvent)
+    const competencia = fechamentoContext?.competencia ?? "2026-03"
+    const extraction = await extractDocuments(documents, classifications, competencia, (processingEvent) => processingEvent)
 
     for (const processingEvent of extraction.events) {
       yield processingEvent
@@ -136,14 +137,20 @@ export async function* runPackageWorkflowWithEvents(
 
 async function readAndValidateFiles(files: File[]) {
   if (files.length === 0) {
-    throw new Error("Envie ao menos um arquivo PDF para processamento.")
+    throw new Error("Envie ao menos um arquivo para processamento.")
   }
 
   const documents: PackageInputDocument[] = []
 
   for (const file of files) {
-    if (file.type !== "application/pdf") {
-      throw new Error(`Arquivo ${file.name} nao e PDF. Neste fluxo, envie apenas PDFs.`)
+    const isPdf = file.type === "application/pdf" || file.name.endsWith(".pdf")
+    const isExcel = file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
+                    file.type === "application/vnd.ms-excel" || 
+                    file.name.endsWith(".xlsx") || 
+                    file.name.endsWith(".xls")
+
+    if (!isPdf && !isExcel) {
+      throw new Error(`Arquivo ${file.name} nao e PDF ou Planilha. Neste fluxo, envie apenas PDFs ou planilhas Excel.`)
     }
 
     if (file.size > MAX_FILE_SIZE) {
@@ -171,6 +178,7 @@ async function readAndValidateFiles(files: File[]) {
 async function extractDocuments(
   documents: PackageInputDocument[],
   classifications: ClassifiedDocument[],
+  competencia: string,
   passthrough: (event: ProcessingEvent) => ProcessingEvent,
 ) {
   const events: ProcessingEvent[] = []
@@ -197,7 +205,7 @@ async function extractDocuments(
     )
 
     if (classification.documentType === "prestacao_contas" && !prestacao) {
-      prestacao = await extractPrestacaoAliveFromPdf(document)
+      prestacao = await extractPrestacaoAliveFromPdf(document, competencia)
     }
 
     if (classification.documentType === "comprovante_repasse" && !repasse) {

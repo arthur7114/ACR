@@ -239,6 +239,9 @@ export const recheckSchema = z
     expected: z.number().nullable().optional(),
     actual: z.number().nullable().optional(),
     difference: z.number().nullable().optional(),
+    databaseId: z.string().nullable().optional(),
+    dbStatus: z.string().optional(),
+    justificativa: z.string().nullable().optional(),
   })
   .strict()
 
@@ -250,6 +253,9 @@ export const guardrailSchema = z
     label: z.string(),
     status: z.enum(["passed", "warning", "blocked"]),
     message: z.string(),
+    databaseId: z.string().nullable().optional(),
+    dbStatus: z.string().optional(),
+    justificativa: z.string().nullable().optional(),
   })
   .strict()
 

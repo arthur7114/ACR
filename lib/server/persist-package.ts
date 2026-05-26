@@ -14,6 +14,14 @@ import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
 
+interface ResolvedValidation {
+  tipo_validacao: string
+  status: string
+  justificativa: string | null
+  resolvido_por: string | null
+  resolvido_em: string | null
+}
+
 export interface PackageFileForPersistence {
   fileName: string
   fileType: string
@@ -51,6 +59,30 @@ export async function persistPackage(input: PersistPackageInput) {
 
   if (empreendimentoError) throw empreendimentoError
 
+  // Fetch existing resolved validations to decide status and preserve them
+  const { data: existingFechamento } = await supabase
+    .from("fechamentos")
+    .select("id")
+    .eq("imobiliaria_id", imobiliaria.id)
+    .eq("empreendimento_id", empreendimento.id)
+    .eq("competencia", competencia)
+    .maybeSingle()
+
+  let resolvedValidations: ResolvedValidation[] = []
+  if (existingFechamento) {
+    const { data } = await supabase
+      .from("validacoes")
+      .select("tipo_validacao, status, justificativa, resolvido_por, resolvido_em")
+      .eq("fechamento_id", existingFechamento.id)
+      .in("status", ["resolvida", "ignorada_com_justificativa"])
+    resolvedValidations = data || []
+  }
+
+  const hasUnresolvedBlocking =
+    (analysis.parecer.status === "bloqueado" && !resolvedValidations.some((r) => r.tipo_validacao === "parecer_tecnico")) ||
+    analysis.rechecks.some((c) => c.status === "failed" && !resolvedValidations.some((r) => r.tipo_validacao === c.id)) ||
+    analysis.guardrails.some((g) => g.status === "blocked" && !resolvedValidations.some((r) => r.tipo_validacao === g.id))
+
   const { data: fechamento, error: fechamentoError } = await supabase
     .from("fechamentos")
     .upsert(
@@ -58,7 +90,7 @@ export async function persistPackage(input: PersistPackageInput) {
         imobiliaria_id: imobiliaria.id,
         empreendimento_id: empreendimento.id,
         competencia,
-        status: analysis.parecer.status === "bloqueado" ? "pendente_revisao" : "processado_com_sucesso",
+        status: hasUnresolvedBlocking ? "pendente_revisao" : "processado_com_sucesso",
         total_receitas: analysis.totals.total_receitas,
         total_despesas: analysis.totals.total_despesas,
         total_comissoes: analysis.totals.total_comissoes,
@@ -96,6 +128,21 @@ export async function persistPackage(input: PersistPackageInput) {
     }
   })
 
+  // Clear previous movimentacoes and validacoes for this fechamento to avoid duplication on reprocessing
+  const { error: deleteMovError } = await supabase
+    .from("movimentacoes")
+    .delete()
+    .eq("fechamento_id", fechamento.id)
+
+  if (deleteMovError) throw deleteMovError
+
+  const { error: deleteValError } = await supabase
+    .from("validacoes")
+    .delete()
+    .eq("fechamento_id", fechamento.id)
+
+  if (deleteValError) throw deleteValError
+
   await persistMovimentacoes({
     fechamentoId: fechamento.id as string,
     competencia,
@@ -112,6 +159,7 @@ export async function persistPackage(input: PersistPackageInput) {
     parecer: analysis.parecer,
     rechecks: analysis.rechecks,
     guardrails: analysis.guardrails,
+    resolvedValidations,
   })
 
   return {
@@ -263,52 +311,72 @@ async function persistValidacoes({
   parecer,
   rechecks,
   guardrails,
+  resolvedValidations,
 }: {
   fechamentoId: string
   documents: ClassifiedDocument[]
   parecer: TechnicalOpinion
   rechecks: PrestacaoRecheck[]
   guardrails: PrestacaoGuardrail[]
+  resolvedValidations: ResolvedValidation[]
 }) {
   const supabase = createSupabaseAdmin()
   const rows = [
     ...rechecks
       .filter((check) => check.status !== "passed")
-      .map((check) => ({
-        fechamento_id: fechamentoId,
-        documento_id: null,
-        tipo_validacao: check.id,
-        severidade: check.status === "failed" ? "bloqueante" : "alerta",
-        status: "aberta",
-        mensagem: check.message,
-        valor_esperado: check.expected ?? null,
-        valor_encontrado: check.actual ?? null,
-        diferenca: check.difference ?? null,
-      })),
+      .map((check) => {
+        const resolved = resolvedValidations.find((r) => r.tipo_validacao === check.id)
+        return {
+          fechamento_id: fechamentoId,
+          documento_id: null,
+          tipo_validacao: check.id,
+          severidade: check.status === "failed" ? "bloqueante" : "alerta",
+          status: resolved ? resolved.status : "aberta",
+          mensagem: check.message,
+          valor_esperado: check.expected ?? null,
+          valor_encontrado: check.actual ?? null,
+          diferenca: check.difference ?? null,
+          justificativa: resolved ? resolved.justificativa : null,
+          resolvido_por: resolved ? resolved.resolvido_por : null,
+          resolvido_em: resolved ? resolved.resolvido_em : null,
+        }
+      }),
     ...guardrails
       .filter((guardrail) => guardrail.status !== "passed")
-      .map((guardrail) => ({
+      .map((guardrail) => {
+        const resolved = resolvedValidations.find((r) => r.tipo_validacao === guardrail.id)
+        return {
+          fechamento_id: fechamentoId,
+          documento_id: null,
+          tipo_validacao: guardrail.id,
+          severidade: guardrail.status === "blocked" ? "bloqueante" : "alerta",
+          status: resolved ? resolved.status : "aberta",
+          mensagem: guardrail.message,
+          valor_esperado: null,
+          valor_encontrado: null,
+          diferenca: null,
+          justificativa: resolved ? resolved.justificativa : null,
+          resolvido_por: resolved ? resolved.resolvido_por : null,
+          resolvido_em: resolved ? resolved.resolvido_em : null,
+        }
+      }),
+    (() => {
+      const resolved = resolvedValidations.find((r) => r.tipo_validacao === "parecer_tecnico")
+      return {
         fechamento_id: fechamentoId,
-        documento_id: null,
-        tipo_validacao: guardrail.id,
-        severidade: guardrail.status === "blocked" ? "bloqueante" : "alerta",
-        status: "aberta",
-        mensagem: guardrail.message,
+        documento_id: getDocumentoId(documents, "prestacao_contas"),
+        tipo_validacao: "parecer_tecnico",
+        severidade: parecer.status === "bloqueado" ? "bloqueante" : parecer.status === "aprovado_com_ressalvas" ? "alerta" : "info",
+        status: resolved ? resolved.status : parecer.requer_revisao_humana ? "aberta" : "resolvida",
+        mensagem: parecer.resumo,
         valor_esperado: null,
-        valor_encontrado: null,
+        valor_encontrado: parecer.confianca,
         diferenca: null,
-      })),
-    {
-      fechamento_id: fechamentoId,
-      documento_id: getDocumentoId(documents, "prestacao_contas"),
-      tipo_validacao: "parecer_tecnico",
-      severidade: parecer.status === "bloqueado" ? "bloqueante" : parecer.status === "aprovado_com_ressalvas" ? "alerta" : "info",
-      status: parecer.requer_revisao_humana ? "aberta" : "resolvida",
-      mensagem: parecer.resumo,
-      valor_esperado: null,
-      valor_encontrado: parecer.confianca,
-      diferenca: null,
-    },
+        justificativa: resolved ? resolved.justificativa : null,
+        resolvido_por: resolved ? resolved.resolvido_por : null,
+        resolvido_em: resolved ? resolved.resolvido_em : null,
+      }
+    })(),
   ]
 
   if (rows.length === 0) return

@@ -1,8 +1,11 @@
+import { readFileSync, existsSync } from "fs"
+import { join } from "path"
 import OpenAI from "openai"
 import { prestacaoAnalysisSchema, type PrestacaoAnalysis } from "@/lib/prestacao-types"
 import { prestacaoAliveAgent } from "./ai-agents/prestacao-alive-agent"
 import { getOptionalEnv, requireEnv } from "./env"
 import { createResponseWithRetry } from "./openai-responses"
+import { parseExcelPrestacao } from "./excel-parser"
 
 const schema = {
   type: "object",
@@ -135,11 +138,33 @@ const schema = {
   },
 }
 
-export async function extractPrestacaoAliveFromPdf(input: {
-  fileName: string
-  fileType: string
-  fileBase64: string
-}): Promise<PrestacaoAnalysis> {
+export async function extractPrestacaoAliveFromPdf(
+  input: {
+    fileName: string
+    fileType: string
+    fileBase64: string
+  },
+  competencia: string = "2026-03",
+): Promise<PrestacaoAnalysis> {
+  const isExcel = input.fileName.endsWith(".xlsx") || input.fileName.endsWith(".xls") || input.fileType.includes("sheet") || input.fileType.includes("excel")
+  if (isExcel) {
+    console.log("[EXCEL PARSER] Local parsing Excel file:", input.fileName)
+    const fileBuffer = Buffer.from(input.fileBase64, "base64")
+    return parseExcelPrestacao(fileBuffer, competencia)
+  }
+  if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
+    console.log("[MOCK IA] Intercepting extractPrestacaoAliveFromPdf...")
+    const fixturePath = join(process.cwd(), "lib/server/mock-gmii-analysis.json")
+    if (existsSync(fixturePath)) {
+      const raw = readFileSync(fixturePath, "utf-8")
+      const fullAnalysis = JSON.parse(raw)
+      if (fullAnalysis.prestacao) {
+        return prestacaoAnalysisSchema.parse(fullAnalysis.prestacao)
+      }
+    }
+    throw new Error("Mock Mode enabled but lib/server/mock-gmii-analysis.json is missing or invalid.")
+  }
+
   const client = new OpenAI({ apiKey: requireEnv("OPENAI_API_KEY") })
   const fileData = `data:${input.fileType};base64,${input.fileBase64}`
 
