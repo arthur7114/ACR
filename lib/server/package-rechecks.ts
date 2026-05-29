@@ -9,6 +9,7 @@ import type {
   RepasseAnalysis,
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
+import type { CommercialRuleForValidation } from "./regras-comerciais"
 
 const MONEY_TOLERANCE = 0.01
 const REPASSE_ALERT_TOLERANCE = 5
@@ -20,6 +21,7 @@ const OPERATIONAL_RECHECK_IDS = new Set([
   "total_linhas_receitas",
   "total_linhas_comissoes",
   "total_linhas_repasse",
+  "comissao_administracao_regra",
   "resumo_financeiro",
   "repasse_conciliation",
 ])
@@ -30,6 +32,7 @@ export interface PackageValidationInput {
   repasse: RepasseAnalysis | null
   despesas: DespesasAnalysis | null
   reajuste: ReajusteAnalysis | null
+  commercialRule?: CommercialRuleForValidation | null
 }
 
 export function validatePackage(input: PackageValidationInput) {
@@ -37,13 +40,14 @@ export function validatePackage(input: PackageValidationInput) {
   const normalizedDespesas = input.despesas ? normalizeDespesas(input.despesas) : null
   const normalizedRepasse = input.repasse ? normalizeRepasse(input.repasse) : null
   const normalizedReajuste = input.reajuste ? normalizeReajuste(input.reajuste) : null
-  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse)
+  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse, input.commercialRule ?? null)
   const rechecks = buildRechecks({
     documents: input.documents,
     prestacao: normalizedPrestacao,
     repasse: normalizedRepasse,
     despesas: normalizedDespesas,
     reajuste: normalizedReajuste,
+    commercialRule: input.commercialRule ?? null,
     totals,
   })
   const guardrails = buildGuardrails(input.documents, rechecks)
@@ -137,10 +141,21 @@ function calculateTotals(
   prestacao: PrestacaoAnalysis | null,
   despesas: DespesasAnalysis | null,
   repasse: RepasseAnalysis | null,
+  commercialRule: CommercialRuleForValidation | null,
 ): PackageTotals {
+  const rows = prestacao?.receitas_por_imovel ?? []
   const lineTotalReceitas = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? []))
   const lineTotalComissoes = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.comissao ?? 0) ?? []))
   const lineTotalRepasse = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.repasse ?? 0) ?? []))
+  const totalAluguel = roundMoney(sum(rows.map((row) => row.aluguel_com_desconto ?? row.aluguel ?? 0)))
+  const totalGaragem = roundMoney(sum(rows.map((row) => row.garagem ?? 0)))
+  const totalAgua = roundMoney(sum(rows.map((row) => row.agua ?? 0)))
+  const totalIptu = roundMoney(sum(rows.map((row) => row.iptu ?? 0)))
+  const totalSeguroIncendio = roundMoney(sum(rows.map((row) => row.seguro_incendio ?? 0)))
+  const commissionBase = roundMoney(totalAluguel + totalGaragem + totalAgua + totalIptu + totalSeguroIncendio)
+  const calculatedAdminCommission = commercialRule
+    ? roundMoney((commissionBase * commercialRule.taxa_administracao_percent) / 100)
+    : null
   const resumo = prestacao?.resumo_financeiro
   const resumoOutrasDespesas = resumo?.total_outras_comissoes_despesas ?? sum(resumo?.outras_comissoes_despesas.map((item) => item.valor) ?? [])
   const externalDespesas = roundMoney(sum(despesas?.despesas.map((despesa) => despesa.valor) ?? []))
@@ -154,6 +169,11 @@ function calculateTotals(
 
   return {
     total_receitas: totalReceitas,
+    total_aluguel: totalAluguel,
+    total_garagem: totalGaragem,
+    total_agua: totalAgua,
+    total_iptu: totalIptu,
+    total_seguro_incendio: totalSeguroIncendio,
     total_comissoes: totalComissoes,
     total_repasse_bruto: totalRepasseBruto,
     total_despesas: totalDespesas,
@@ -161,6 +181,9 @@ function calculateTotals(
     total_a_repassar: totalARepassar,
     valor_comprovado: valorComprovado,
     diferenca_repasse: valorComprovado === null ? null : roundMoney(Math.abs(totalARepassar - valorComprovado)),
+    taxa_administracao_percent: commercialRule?.taxa_administracao_percent ?? null,
+    taxa_intermediacao_percent: commercialRule?.taxa_intermediacao_percent ?? null,
+    comissao_administracao_calculada: calculatedAdminCommission,
   }
 }
 
@@ -170,6 +193,7 @@ function buildRechecks({
   repasse,
   despesas,
   reajuste,
+  commercialRule,
   totals,
 }: PackageValidationInput & { totals: PackageTotals }) {
   const checks: PrestacaoRecheck[] = [
@@ -194,6 +218,7 @@ function buildRechecks({
       prestacao?.resumo_financeiro.total_linhas_repasse ?? null,
       prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
     ),
+    compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
     compareResumoFormula(prestacao, totals),
     compareDespesasTotal(despesas, totals.total_despesas),
     compareRepasse(totals),
@@ -390,6 +415,42 @@ function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: num
   return compareTotal("total_despesas", "Total de despesas", "Despesas", despesas.total_despesas, calculated)
 }
 
+function compareAdminCommissionRule(
+  prestacao: PrestacaoAnalysis | null,
+  totals: PackageTotals,
+  commercialRule: CommercialRuleForValidation | null,
+): PrestacaoRecheck {
+  if (!commercialRule || totals.comissao_administracao_calculada === null) {
+    return {
+      id: "comissao_administracao_regra",
+      label: "Comissao administrativa pela regra",
+      status: "warning",
+      message: "Regra comercial ativa nao encontrada para esta imobiliaria e empreendimento. Cadastre a taxa para validar a comissao administrativa.",
+      expected: null,
+      actual: prestacao?.resumo_financeiro.comissao_administracao ?? totals.total_comissoes,
+      difference: null,
+    }
+  }
+
+  const expected = totals.comissao_administracao_calculada
+  const actual = roundMoney(prestacao?.resumo_financeiro.comissao_administracao ?? totals.total_comissoes)
+  const difference = roundMoney(Math.abs(expected - actual))
+  const status = difference <= MONEY_TOLERANCE ? "passed" : "warning"
+
+  return {
+    id: "comissao_administracao_regra",
+    label: "Comissao administrativa pela regra",
+    status,
+    message:
+      status === "passed"
+        ? `Comissao administrativa confere com a taxa de ${formatPercent(commercialRule.taxa_administracao_percent)} sobre o total pago pelo inquilino.`
+        : `A taxa administrativa de ${formatPercent(commercialRule.taxa_administracao_percent)} sobre aluguel, garagem, agua, IPTU e seguro resulta em ${formatBRL(expected)}, mas o documento informa ${formatBRL(actual)}. Verifique manualmente.`,
+    expected,
+    actual,
+    difference,
+  }
+}
+
 function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: PackageTotals): PrestacaoRecheck {
   if (
     prestacao?.resumo_financeiro.recebidos_em_nome_locador === null ||
@@ -521,7 +582,7 @@ function getLowestReajusteConfidence(reajuste: ReajusteAnalysis | null) {
 function isOperationalRecheck(check: PrestacaoRecheck) {
   if (!OPERATIONAL_RECHECK_IDS.has(check.id)) return false
   if (check.status === "passed") return true
-  if (check.id === "total_linhas_comissoes" || check.id === "total_linhas_repasse") {
+  if (check.id === "total_linhas_comissoes" || check.id === "total_linhas_repasse" || check.id === "comissao_administracao_regra") {
     return typeof check.difference === "number"
   }
   return true
@@ -554,4 +615,8 @@ function formatBRL(value: number) {
     style: "currency",
     currency: "BRL",
   }).format(value)
+}
+
+function formatPercent(value: number) {
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
 }

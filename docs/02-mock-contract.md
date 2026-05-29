@@ -27,8 +27,8 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `novo-fechamento`: formulario com imobiliaria, empreendimento, competencia e observacoes.
 - `upload`: upload multiplo, classificacao automatica/manual e bloqueio quando ha documento sem classificacao.
 - `processando`: etapas visuais do pipeline: salvar arquivos, classificar, extrair, validar, conciliar e finalizar.
-- `revisao`: resumo financeiro, divergencias, receitas por imovel, despesas, comprovante de repasse, documentos e acoes.
-- `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias e empreendimentos, incluindo importacao CSV de imoveis.
+- `revisao`: resumo financeiro agrupado, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, pendencias de revisao, receitas por imovel com totalizadores, despesas, comprovante de repasse, documentos e acoes.
+- `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 
 ## Fluxo contratado
@@ -44,7 +44,8 @@ Estados e acoes relevantes:
 - Documento com baixa confianca exige classificacao manual antes de continuar.
 - Processamento mostra progresso por etapa.
 - Revisao mostra bloqueio de aprovacao quando ha divergencia bloqueante.
-- Correcao manual abre modal com justificativa.
+- Revisao nao usa percentual de confianca como indicador operacional principal; qualidade de leitura fica restrita a documentos/linhas extraidas.
+- Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria.
 - Fechamentos aprovados podem ser vistos em detalhes.
 
 ## Dados e nomenclatura de exemplo

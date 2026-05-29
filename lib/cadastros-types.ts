@@ -43,10 +43,22 @@ export type Imovel = {
   empreendimentos?: { nome: string } | null
 }
 
+export type RegraComercial = {
+  id: string
+  imobiliaria_id: string
+  empreendimento_id: string
+  taxa_administracao_percent: number
+  taxa_intermediacao_percent: number
+  ativo: boolean
+  imobiliarias?: { nome: string } | null
+  empreendimentos?: { nome: string } | null
+}
+
 export type CadastrosPayload = {
   imobiliarias: Imobiliaria[]
   empreendimentos: Empreendimento[]
   imoveis: Imovel[]
+  regrasComerciais: RegraComercial[]
 }
 
 export type CsvImportResult = {

@@ -39,6 +39,20 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   }
 
   const analiseCompleta = (data.analise_completa as PackageAnalysis | null) ?? null
+  const { data: regraComercial } = await supabase
+    .from("regras_comerciais")
+    .select("id,taxa_administracao_percent,taxa_intermediacao_percent,ativo")
+    .eq("imobiliaria_id", data.imobiliaria_id)
+    .eq("empreendimento_id", data.empreendimento_id)
+    .eq("ativo", true)
+    .maybeSingle()
+  const regraComercialNormalizada = regraComercial
+    ? {
+        ...regraComercial,
+        taxa_administracao_percent: Number(regraComercial.taxa_administracao_percent),
+        taxa_intermediacao_percent: Number(regraComercial.taxa_intermediacao_percent),
+      }
+    : null
 
   if (analiseCompleta) {
     const { data: dbValidacoes } = await supabase
@@ -96,6 +110,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       atualizado_em: data.atualizado_em,
       imobiliarias: data.imobiliarias,
       empreendimentos: data.empreendimentos,
+      regra_comercial: regraComercialNormalizada,
     },
     analise_completa: analiseCompleta,
   })

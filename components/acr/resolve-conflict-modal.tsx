@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "sonner"
-import { Sparkles, Check, AlertTriangle } from "lucide-react"
+import { AlertTriangle, CheckCircle2 } from "lucide-react"
 
 interface ResolveConflictModalProps {
   isOpen: boolean
@@ -39,7 +39,7 @@ export function ResolveConflictModal({
   // Reset state when modal opens/closes or validation changes
   useEffect(() => {
     if (isOpen) {
-      setOption("esperado")
+      setOption(validation?.valor_esperado !== null ? "esperado" : validation?.valor_encontrado !== null ? "encontrado" : "custom")
       setCustomValue("")
       setJustification("")
     }
@@ -48,20 +48,24 @@ export function ResolveConflictModal({
   if (!validation) return null
 
   const formatCurrency = (val: number | null) => {
-    if (val === null) return "N/A"
+    if (val === null) return "-"
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val)
   }
+
+  const hasExpected = validation.valor_esperado !== null
+  const hasFound = validation.valor_encontrado !== null
+  const hasDifference = typeof validation.diferenca === "number" && validation.diferenca > 0
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!justification.trim()) {
-      toast.error("Por favor, preencha a justificativa.")
+      toast.error("Informe a justificativa para registrar a decisão.")
       return
     }
 
     if (option === "custom" && (!customValue || isNaN(Number(customValue)))) {
-      toast.error("Por favor, preencha um valor customizado válido.")
+      toast.error("Informe um valor manual válido.")
       return
     }
 
@@ -70,11 +74,11 @@ export function ResolveConflictModal({
     // Build standard audit-compliant justification
     let chosenValText = ""
     if (option === "esperado") {
-      chosenValText = `Valor Calculado: ${formatCurrency(validation.valor_esperado)}`
+      chosenValText = `Valor calculado pelo sistema: ${formatCurrency(validation.valor_esperado)}`
     } else if (option === "encontrado") {
-      chosenValText = `Valor Extraído pela IA: ${formatCurrency(validation.valor_encontrado)}`
+      chosenValText = `Valor informado no documento: ${formatCurrency(validation.valor_encontrado)}`
     } else {
-      chosenValText = `Valor Customizado: ${formatCurrency(Number(customValue))}`
+      chosenValText = `Valor manual: ${formatCurrency(Number(customValue))}`
     }
 
     const fullJustification = `[Resolvido - Aceito ${chosenValText}] ${justification.trim()}`
@@ -96,7 +100,7 @@ export function ResolveConflictModal({
         throw new Error(err.error || "Falha ao resolver divergência.")
       }
 
-      toast.success("Divergência resolvida com sucesso!")
+      toast.success("Pendência marcada como resolvida.")
       onResolveSuccess()
       onClose()
     } catch (err) {
@@ -108,120 +112,128 @@ export function ResolveConflictModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px] border border-emerald-500/20 bg-zinc-950/95 text-zinc-50 shadow-2xl backdrop-blur-md">
+      <DialogContent className="max-h-[92vh] overflow-y-auto border border-[#D5DDD6] bg-white p-0 text-[#1A2B1C] shadow-2xl sm:max-w-[720px]">
+        <div className="border-b border-[#EEF1EE] bg-[#F8FAF8] px-6 py-5">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl font-semibold text-emerald-400">
-            <AlertTriangle className="h-5 w-5 text-amber-500 animate-pulse" />
-            Reconciliar Divergência
+          <DialogTitle className="flex items-center gap-2 text-[20px] font-bold text-[#1A2B1C]">
+            <AlertTriangle className="h-5 w-5 text-[#F59E0B]" />
+            Resolver pendência do fechamento
           </DialogTitle>
-          <DialogDescription className="text-zinc-400 mt-2">
-            Esta ação resolverá o conflito financeiro no fechamento ativo e registrará o log de auditoria obrigatório.
+          <DialogDescription className="mt-2 text-[13px] leading-relaxed text-[#6B7F6E]">
+            Escolha o valor que ficará registrado e informe uma justificativa. A decisão será salva no histórico de auditoria.
           </DialogDescription>
         </DialogHeader>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6 mt-4">
-          {/* Validation Details */}
-          <div className="rounded-lg bg-zinc-900/60 p-4 border border-zinc-800">
-            <h4 className="text-sm font-semibold text-zinc-300">Mensagem da Divergência:</h4>
-            <p className="text-sm text-zinc-400 mt-1 leading-relaxed">{validation.mensagem}</p>
+        <form onSubmit={handleSubmit} className="space-y-5 px-6 py-5">
+          <div className="rounded-lg border border-[#F5D08A] bg-[#FFF8E8] p-4">
+            <h4 className="text-[13px] font-bold text-[#7A4D00]">Pendência encontrada</h4>
+            <p className="mt-1 text-[13px] leading-relaxed text-[#5C4A23]">{validation.mensagem}</p>
           </div>
 
-          {/* Comparison Cards */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg bg-zinc-900/40 p-3 border border-zinc-800/80 text-center">
-              <span className="text-xs text-zinc-500 block uppercase tracking-wider font-semibold">Cálculo Determinado</span>
-              <span className="text-lg font-bold text-zinc-100 mt-1 block">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-[#D5DDD6] bg-white p-4">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Sistema calculou</span>
+              <span className="mt-1 block text-[22px] font-bold tabular-nums text-[#1A2B1C]">
                 {formatCurrency(validation.valor_esperado)}
               </span>
             </div>
-            <div className="rounded-lg bg-zinc-900/40 p-3 border border-zinc-800/80 text-center">
-              <span className="text-xs text-zinc-500 block uppercase tracking-wider font-semibold">Extraído pela IA</span>
-              <span className="text-lg font-bold text-zinc-100 mt-1 block">
+            <div className="rounded-lg border border-[#D5DDD6] bg-white p-4">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Documento informou</span>
+              <span className="mt-1 block text-[22px] font-bold tabular-nums text-[#1A2B1C]">
                 {formatCurrency(validation.valor_encontrado)}
+              </span>
+            </div>
+            <div className={`rounded-lg border p-4 ${hasDifference ? "border-[#FCA5A5] bg-[#FEF2F2]" : "border-[#D1E7D6] bg-[#F4F9F5]"}`}>
+              <span className={`block text-[11px] font-semibold uppercase tracking-wide ${hasDifference ? "text-[#991B1B]" : "text-[#1A5C24]"}`}>Diferença</span>
+              <span className={`mt-1 block text-[22px] font-bold tabular-nums ${hasDifference ? "text-[#991B1B]" : "text-[#1A5C24]"}`}>
+                {formatCurrency(validation.diferenca)}
               </span>
             </div>
           </div>
 
-          {/* Choice Section */}
           <div className="space-y-3">
-            <Label className="text-zinc-300 font-semibold block text-sm">Qual valor deve ser considerado oficial?</Label>
+            <Label className="block text-[13px] font-bold text-[#1A2B1C]">Valor que será considerado no fechamento</Label>
             <RadioGroup
               value={option}
               onValueChange={(val: "esperado" | "encontrado" | "custom") => setOption(val)}
               className="grid gap-3"
             >
-              {validation.valor_esperado !== null && (
-                <div className="flex items-center space-x-3 rounded-lg border border-zinc-800 bg-zinc-900/20 p-3 hover:bg-zinc-900/40 transition">
-                  <RadioGroupItem value="esperado" id="r-esperado" className="border-zinc-700 text-emerald-500" />
-                  <Label htmlFor="r-esperado" className="cursor-pointer text-sm text-zinc-300 flex-1">
-                    Aceitar Cálculo Determinístico ({formatCurrency(validation.valor_esperado)})
+              {hasExpected && (
+                <div className="flex items-center gap-3 rounded-lg border border-[#D5DDD6] bg-white p-3 transition hover:bg-[#F8FAF8]">
+                  <RadioGroupItem value="esperado" id="r-esperado" className="border-[#6B7F6E] text-[#2D8C3A]" />
+                  <Label htmlFor="r-esperado" className="flex-1 cursor-pointer text-[14px] text-[#3D4F3F]">
+                    Usar valor calculado pelo sistema <span className="font-semibold tabular-nums text-[#1A2B1C]">{formatCurrency(validation.valor_esperado)}</span>
                   </Label>
                 </div>
               )}
-              {validation.valor_encontrado !== null && (
-                <div className="flex items-center space-x-3 rounded-lg border border-zinc-800 bg-zinc-900/20 p-3 hover:bg-zinc-900/40 transition">
-                  <RadioGroupItem value="encontrado" id="r-encontrado" className="border-zinc-700 text-emerald-500" />
-                  <Label htmlFor="r-encontrado" className="cursor-pointer text-sm text-zinc-300 flex-1">
-                    Aceitar Extração da IA ({formatCurrency(validation.valor_encontrado)})
+              {hasFound && (
+                <div className="flex items-center gap-3 rounded-lg border border-[#D5DDD6] bg-white p-3 transition hover:bg-[#F8FAF8]">
+                  <RadioGroupItem value="encontrado" id="r-encontrado" className="border-[#6B7F6E] text-[#2D8C3A]" />
+                  <Label htmlFor="r-encontrado" className="flex-1 cursor-pointer text-[14px] text-[#3D4F3F]">
+                    Manter valor informado no documento <span className="font-semibold tabular-nums text-[#1A2B1C]">{formatCurrency(validation.valor_encontrado)}</span>
                   </Label>
                 </div>
               )}
-              <div className="flex items-center space-x-3 rounded-lg border border-zinc-800 bg-zinc-900/20 p-3 hover:bg-zinc-900/40 transition">
-                <RadioGroupItem value="custom" id="r-custom" className="border-zinc-700 text-emerald-500" />
-                <Label htmlFor="r-custom" className="cursor-pointer text-sm text-zinc-300 flex-1">
-                  Digitar outro valor
+              <div className="flex items-center gap-3 rounded-lg border border-[#D5DDD6] bg-white p-3 transition hover:bg-[#F8FAF8]">
+                <RadioGroupItem value="custom" id="r-custom" className="border-[#6B7F6E] text-[#2D8C3A]" />
+                <Label htmlFor="r-custom" className="flex-1 cursor-pointer text-[14px] text-[#3D4F3F]">
+                  Informar outro valor manualmente
                 </Label>
               </div>
             </RadioGroup>
           </div>
 
-          {/* Custom value input */}
           {option === "custom" && (
-            <div className="space-y-2 animate-fadeIn">
-              <Label htmlFor="custom-value" className="text-zinc-400 text-sm">Valor Customizado (R$)</Label>
+            <div className="space-y-2">
+              <Label htmlFor="custom-value" className="text-[13px] font-medium text-[#3D4F3F]">Valor manual</Label>
               <Input
                 id="custom-value"
                 type="number"
                 step="0.01"
-                placeholder="Ex: 1250.00"
+                placeholder="Ex.: 2944.00"
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
-                className="bg-zinc-900 border-zinc-800 text-zinc-100 focus-visible:ring-emerald-500/50"
+                className="h-10 border-[#D5DDD6] text-[#1A2B1C] focus-visible:ring-[#2D8C3A]/30"
               />
             </div>
           )}
 
-          {/* Justification Textarea */}
           <div className="space-y-2">
-            <Label htmlFor="justification" className="text-zinc-300 font-semibold text-sm">
-              Justificativa Técnica <span className="text-red-400">*</span>
+            <Label htmlFor="justification" className="text-[13px] font-bold text-[#1A2B1C]">
+              Justificativa para auditoria <span className="text-[#DC2626]">*</span>
             </Label>
             <Textarea
               id="justification"
-              placeholder="Digite o motivo operacional pelo qual esta divergência foi aceita/resolvida..."
+              placeholder="Ex.: valor conferido no comprovante enviado pela imobiliária; pendência aceita para fechamento desta competência."
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
-              className="min-h-[90px] bg-zinc-900 border-zinc-800 text-zinc-100 placeholder-zinc-600 focus-visible:ring-emerald-500/50"
+              className="min-h-[96px] border-[#D5DDD6] text-[#1A2B1C] placeholder:text-[#8A9A8C] focus-visible:ring-[#2D8C3A]/30"
               required
             />
           </div>
 
-          <DialogFooter className="gap-2">
+          <div className="flex items-start gap-2 rounded-lg border border-[#D1E7D6] bg-[#F4F9F5] px-3 py-2 text-[12px] text-[#1A5C24]">
+            <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
+            Resolver remove a pendência da lista, mas mantém a decisão rastreável no histórico.
+          </div>
+
+          <DialogFooter className="gap-2 border-t border-[#EEF1EE] pt-4">
             <Button
               type="button"
               variant="outline"
               onClick={onClose}
               disabled={loading}
-              className="border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+              className="h-10 border-[#D5DDD6] text-[#3D4F3F] hover:bg-[#EEF1EE]"
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               disabled={loading}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-lg hover:shadow-emerald-500/20 transition-all"
+              className="h-10 bg-[#2D8C3A] text-white hover:bg-[#1A5C24]"
             >
-              {loading ? "Resolvendo..." : "Confirmar Resolução"}
+              {loading ? "Salvando..." : "Salvar resolução"}
             </Button>
           </DialogFooter>
         </form>

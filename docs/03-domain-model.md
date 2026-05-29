@@ -16,6 +16,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Documento do fechamento: arquivo original imutavel, hash SHA-256, tipo, status de processamento, confianca, parser, erro, classificacao manual e remessa.
 - Imobiliaria: nome, CNPJ, layout, tolerancia de repasse e janela de conciliacao.
 - Empreendimento: agrupador de imoveis.
+- Regra comercial: taxa de administracao e taxa de intermediacao por imobiliaria + empreendimento, com uma regra ativa por par.
 - Imovel: unidade, inquilino, status, aluguel esperado e taxa de administracao.
 - Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca e correcao manual.
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
@@ -44,4 +45,5 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Prestacao ausente gera alerta bloqueante e impede aprovacao.
 - Reprocessamento parcial deve preservar correcoes manuais.
 - IA deve retornar JSON validavel e nunca aprovar ou calcular resultado final sem validacao deterministica.
-
+- Comissao administrativa deve ser validada, quando houver regra comercial ativa, pela taxa do par imobiliaria + empreendimento aplicada sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
+- Taxa de intermediacao e cadastrada e exibida como regra comercial, mas nao altera o total a repassar ate haver documento/campo operacional especifico para esse lancamento.

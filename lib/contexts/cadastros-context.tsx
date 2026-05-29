@@ -31,6 +31,7 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
     imobiliarias: [],
     empreendimentos: [],
     imoveis: [],
+    regrasComerciais: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,15 +41,17 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
     setLoading(true)
     setError(null)
     try {
-      const [imobiliarias, empreendimentos, imoveis] = await Promise.all([
+      const [imobiliarias, empreendimentos, imoveis, regrasComerciais] = await Promise.all([
         fetchJson("/api/cadastros/imobiliarias"),
         fetchJson("/api/cadastros/empreendimentos"),
         fetchJson("/api/cadastros/imoveis"),
+        fetchJson("/api/cadastros/regras-comerciais"),
       ])
       setCadastros({
         imobiliarias: imobiliarias.imobiliarias ?? [],
         empreendimentos: empreendimentos.empreendimentos ?? [],
         imoveis: imoveis.imoveis ?? [],
+        regrasComerciais: regrasComerciais.regrasComerciais ?? [],
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar cadastros.")

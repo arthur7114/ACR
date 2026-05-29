@@ -17,6 +17,7 @@ import {
 import { extractPrestacaoAliveFromPdf } from "./analyze-prestacao"
 import { validatePackage } from "./package-rechecks"
 import { persistPackage, type PackageFileForPersistence } from "./persist-package"
+import { getCommercialRuleForValidation } from "./regras-comerciais"
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024
 
@@ -51,19 +52,24 @@ export async function* runPackageWorkflowWithEvents(
     }
 
     const competencia = fechamentoContext?.competencia ?? "2026-03"
-    const extraction = await extractDocuments(documents, classifications, competencia, (processingEvent) => processingEvent)
+    const extraction = await extractDocuments(documents, classifications, competencia, fechamentoContext, (processingEvent) => processingEvent)
 
     for (const processingEvent of extraction.events) {
       yield processingEvent
     }
 
     yield event("validation_started", "Validacoes deterministicas iniciadas.", 72)
+    const commercialRule = await getCommercialRuleForValidation(
+      fechamentoContext?.imobiliariaId,
+      fechamentoContext?.empreendimentoId,
+    )
     const validation = validatePackage({
       documents: classifications,
       prestacao: extraction.prestacao,
       repasse: extraction.repasse,
       despesas: extraction.despesas,
       reajuste: extraction.reajuste,
+      commercialRule,
     })
 
     yield event("validation_completed", "Validacoes deterministicas concluidas.", 82)
@@ -179,6 +185,7 @@ async function extractDocuments(
   documents: PackageInputDocument[],
   classifications: ClassifiedDocument[],
   competencia: string,
+  fechamentoContext: FechamentoContext | null,
   passthrough: (event: ProcessingEvent) => ProcessingEvent,
 ) {
   const events: ProcessingEvent[] = []
@@ -205,7 +212,11 @@ async function extractDocuments(
     )
 
     if (classification.documentType === "prestacao_contas" && !prestacao) {
-      prestacao = await extractPrestacaoAliveFromPdf(document, competencia)
+      prestacao = applyFechamentoContextToPrestacao(
+        await extractPrestacaoAliveFromPdf(document, competencia),
+        competencia,
+        fechamentoContext,
+      )
     }
 
     if (classification.documentType === "comprovante_repasse" && !repasse) {
@@ -234,6 +245,19 @@ async function extractDocuments(
   }
 
   return { prestacao, repasse, despesas, reajuste, events }
+}
+
+function applyFechamentoContextToPrestacao(
+  prestacao: PrestacaoAnalysis,
+  competencia: string,
+  fechamentoContext: FechamentoContext | null,
+): PrestacaoAnalysis {
+  return {
+    ...prestacao,
+    imobiliaria: fechamentoContext?.imobiliariaNome ?? prestacao.imobiliaria,
+    empreendimento: fechamentoContext?.empreendimentoNome ?? prestacao.empreendimento,
+    competencia,
+  }
 }
 
 function event(

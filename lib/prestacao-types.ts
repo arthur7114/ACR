@@ -264,6 +264,11 @@ export type PrestacaoGuardrail = z.infer<typeof guardrailSchema>
 export const packageTotalsSchema = z
   .object({
     total_receitas: z.number(),
+    total_aluguel: z.number(),
+    total_garagem: z.number(),
+    total_agua: z.number(),
+    total_iptu: z.number(),
+    total_seguro_incendio: z.number(),
     total_comissoes: z.number(),
     total_repasse_bruto: z.number(),
     total_despesas: z.number(),
@@ -271,6 +276,9 @@ export const packageTotalsSchema = z
     total_a_repassar: z.number(),
     valor_comprovado: z.number().nullable(),
     diferenca_repasse: z.number().nullable(),
+    taxa_administracao_percent: z.number().nullable(),
+    taxa_intermediacao_percent: z.number().nullable(),
+    comissao_administracao_calculada: z.number().nullable(),
   })
   .strict()
 

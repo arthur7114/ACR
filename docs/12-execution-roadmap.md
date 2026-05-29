@@ -2,13 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está totalmente funcional com otimização de custo (gpt-4o-mini e parser XLSX local), e a interface de revisão permite a resolução manual de divergências com persistência no banco e histórico de auditoria completo.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento e revisão com resumo financeiro agrupado por decisão operacional.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
 
-Rodar o app localmente e validar o fluxo de resolução de conflitos na tela de revisão (usando `NEXT_PUBLIC_MOCK_IA=true` para simular as divergências), e prosseguir com o deploy final.
+Validar manualmente no navegador um fechamento de empreendimento diferente de Grand Messejana II e conferir título, regra comercial, resumo financeiro agrupado, totalizadores e modal de resolução antes do deploy final.
 
 ## Progresso por etapa
 
@@ -48,8 +48,45 @@ Rodar o app localmente e validar o fluxo de resolução de conflitos na tela de 
 - Migração de agentes menores (classifier, repasse, despesas, reajuste) para gpt-4o-mini para economia de custos da OpenAI de até 95%.
 - Uso de parser local com biblioteca `xlsx` para planilhas `.xlsx` de locação, eliminando chamadas de IA para estes tipos de arquivos.
 - Resolução de conflitos financeiros via modal no frontend, registrando o histórico na tabela `auditoria_correcoes` e atualizando o status do fechamento para `processado_com_sucesso` quando não houverem bloqueios pendentes.
+- Regras comerciais passam a ser cadastradas por par imobiliaria + empreendimento, com taxa de administracao e taxa de intermediacao.
+- Comissao administrativa e validada pela taxa do par sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
+- Taxa de intermediacao fica cadastrada e visivel na revisao, mas nao entra no total a repassar ate existir documento/campo operacional especifico.
+- Tela de revisao deve priorizar o contexto do fechamento salvo no banco para imobiliaria, empreendimento e competencia; dados extraidos do documento nao podem sobrescrever o contexto operacional.
+- Dashboard da revisao deve agrupar indicadores por decisao financeira, evitando cards soltos para totais relacionados.
+- Modal de resolucao de pendencia deve usar linguagem operacional, fundo claro, comparacao objetiva dos valores e justificativa de auditoria.
+- Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 
 ## Historico de ciclos
+
+### 2026-05-29 - Indicadores objetivos no Parecer Automático
+
+Status: done
+Job: Remover o destaque "Confiança XX%" da revisao porque o percentual vinha de regra interna fixa do parecer e nao explicava a situacao operacional.
+Outcome entregue: Parecer automatico passou a mostrar contagem objetiva de bloqueios, alertas e validacoes ok; copy explica que o resumo vem das validacoes automaticas do fechamento; documentos e linhas extraidas passam a rotular percentuais como qualidade da leitura.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `python3 .agent/skills/frontend-design/scripts/ux_audit.py .` e `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` passaram. UX audit retornou warnings gerais preexistentes, mas status final PASS.
+Decisoes: Manter `parecer.confianca` no contrato interno por compatibilidade, mas nao exibi-lo como confianca do fechamento.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: Validar visualmente a revisao em um fechamento bloqueado, um com alerta e um sem bloqueios quando houver dados para os tres estados.
+
+### 2026-05-29 - UX da Revisao e Modal de Resolucao
+
+Status: done
+Job: Melhorar a UX da revisao apos feedback de que os indicadores estavam espalhados e o modal de resolver problemas estava confuso.
+Outcome entregue: Resumo financeiro reorganizado em um unico painel com total a repassar, recebido, descontos, diferenca, composicao do recebido e metricas operacionais; microcopy trocada de "warnings" e "IA" para termos operacionais; modal de resolucao redesenhado em fundo claro com valores comparados, escolha do valor oficial e justificativa para auditoria.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build` e `python3 .agent/skills/frontend-design/scripts/ux_audit.py .` passaram. UX audit retornou warnings gerais preexistentes, mas status final PASS.
+Decisoes: Manter a paleta operacional verde/cinza do contrato e reduzir a densidade cognitiva por agrupamento, nao por esconder valores.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `components/acr/resolve-conflict-modal.tsx`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: Conferir visualmente no navegador a revisao com dados reais e ajustar espaçamento fino se houver overflow em telas menores.
+
+### 2026-05-29 - Regras Comerciais, Totalizadores e Contexto de Empreendimento
+
+Status: done
+Job: Implementar regras comerciais por imobiliaria + empreendimento, validar comissao administrativa sobre o total pago pelo inquilino, corrigir contexto de empreendimento na revisao e adicionar totalizadores de receitas.
+Outcome entregue: Nova tabela `regras_comerciais` com seeds dos 8 pares solicitados; API e aba de cadastro de regras comerciais; pipeline carrega a regra do fechamento e gera recheck de comissao administrativa; revisao prioriza o empreendimento/imobiliaria do fechamento salvo; cards de aluguel, garagem, agua, IPTU e seguro incendio adicionados; tabela de receitas ganhou seguro, comissao, repasse e rodape totalizador.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `npx --yes tsx --test lib/server/package-rechecks.test.ts` e `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` passaram. `npx supabase db push` sem link falhou; aplicacao via `--db-url` no pooler remoto passou e consulta via Supabase confirmou 8 regras comerciais.
+Decisoes: Seed usa nomes ASCII/camel case consistentes com os cadastros existentes para evitar duplicidade por acento. Intermediacao permanece informativa nesta etapa.
+Arquivos/docs impactados: `supabase/migrations/202605290001_regras_comerciais.sql`, `app/api/cadastros/regras-comerciais/route.ts`, `lib/server/regras-comerciais.ts`, `lib/server/package-rechecks.ts`, `lib/server/package-workflow.ts`, `components/acr/views/revisao-view.tsx`, `components/acr/views/imoveis-view.tsx`, `docs/02-mock-contract.md`, `docs/03-domain-model.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: Validar manualmente no browser um fechamento GC I/Alive ou outro empreendimento nao-GM II para confirmar que a revisao nao mostra Grand Messejana II indevidamente.
 
 ### 2026-05-26 - Etapa 3: Otimização de Custos e Reconciliação Manual de Divergências
 

@@ -68,6 +68,18 @@ export const imovelPatchSchema = imovelInputSchema.partial().extend({
   id: z.string().uuid(),
 })
 
+export const regraComercialInputSchema = z.object({
+  imobiliaria_id: z.string().uuid(),
+  empreendimento_id: z.string().uuid(),
+  taxa_administracao_percent: z.coerce.number().finite().min(0).max(100),
+  taxa_intermediacao_percent: z.coerce.number().finite().min(0).max(100),
+  ativo: z.boolean().default(true),
+})
+
+export const regraComercialPatchSchema = regraComercialInputSchema.partial().extend({
+  id: z.string().uuid(),
+})
+
 export const fechamentoInputSchema = z.object({
   imobiliaria_id: z.string().uuid(),
   empreendimento_id: z.string().uuid(),

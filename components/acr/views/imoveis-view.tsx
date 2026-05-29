@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react"
 import { AlertTriangle, Building2, CheckCircle, Edit3, FileUp, Home, Loader2, Plus, Power, Save, Search } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus } from "@/lib/cadastros-types"
+import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus, RegraComercial } from "@/lib/cadastros-types"
 
-type Tab = "imoveis" | "imobiliarias" | "empreendimentos"
+type Tab = "imoveis" | "imobiliarias" | "empreendimentos" | "regras"
 
 type ImovelForm = {
   id?: string
@@ -48,10 +48,20 @@ type EmpreendimentoForm = {
   egestor_tag_id: string
 }
 
+type RegraComercialForm = {
+  id?: string
+  imobiliaria_id: string
+  empreendimento_id: string
+  taxa_administracao_percent: string
+  taxa_intermediacao_percent: string
+  ativo: boolean
+}
+
 interface ImoveisViewProps {
   imobiliarias: Imobiliaria[]
   empreendimentos: Empreendimento[]
   imoveis: Imovel[]
+  regrasComerciais: RegraComercial[]
   loading: boolean
   error: string | null
   importResult: CsvImportResult | null
@@ -61,6 +71,8 @@ interface ImoveisViewProps {
   onDeactivateImobiliaria: (id: string) => Promise<void>
   onSaveEmpreendimento: (input: Record<string, unknown>) => Promise<void>
   onDeactivateEmpreendimento: (id: string) => Promise<void>
+  onSaveRegraComercial: (input: Record<string, unknown>) => Promise<void>
+  onDeactivateRegraComercial: (id: string) => Promise<void>
   onImportImoveis: (file: File) => Promise<void>
 }
 
@@ -116,10 +128,19 @@ const emptyEmpreendimento: EmpreendimentoForm = {
   egestor_tag_id: "",
 }
 
+const emptyRegraComercial: RegraComercialForm = {
+  imobiliaria_id: "",
+  empreendimento_id: "",
+  taxa_administracao_percent: "",
+  taxa_intermediacao_percent: "",
+  ativo: true,
+}
+
 export function ImoveisView({
   imobiliarias,
   empreendimentos,
   imoveis,
+  regrasComerciais,
   loading,
   error,
   importResult,
@@ -129,6 +150,8 @@ export function ImoveisView({
   onDeactivateImobiliaria,
   onSaveEmpreendimento,
   onDeactivateEmpreendimento,
+  onSaveRegraComercial,
+  onDeactivateRegraComercial,
   onImportImoveis,
 }: ImoveisViewProps) {
   const [tab, setTab] = useState<Tab>("imoveis")
@@ -139,6 +162,7 @@ export function ImoveisView({
   const [imovelForm, setImovelForm] = useState<ImovelForm>(emptyImovel)
   const [imobiliariaForm, setImobiliariaForm] = useState<ImobiliariaForm>(emptyImobiliaria)
   const [empreendimentoForm, setEmpreendimentoForm] = useState<EmpreendimentoForm>(emptyEmpreendimento)
+  const [regraComercialForm, setRegraComercialForm] = useState<RegraComercialForm>(emptyRegraComercial)
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -194,6 +218,19 @@ export function ImoveisView({
     }
   }
 
+  async function submitRegraComercial() {
+    setSaving(true)
+    setActionError(null)
+    try {
+      await onSaveRegraComercial(toRegraComercialPayload(regraComercialForm))
+      setRegraComercialForm(emptyRegraComercial)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Nao foi possivel salvar a regra comercial.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-start justify-between">
@@ -225,6 +262,7 @@ export function ImoveisView({
         <TabButton active={tab === "imoveis"} icon={Home} label="Imóveis" onClick={() => setTab("imoveis")} />
         <TabButton active={tab === "imobiliarias"} icon={Building2} label="Imobiliárias" onClick={() => setTab("imobiliarias")} />
         <TabButton active={tab === "empreendimentos"} icon={Building2} label="Empreendimentos" onClick={() => setTab("empreendimentos")} />
+        <TabButton active={tab === "regras"} icon={CheckCircle} label="Regras comerciais" onClick={() => setTab("regras")} />
       </div>
 
       {(error || actionError) && (
@@ -467,6 +505,53 @@ export function ImoveisView({
               }
             />
           )}
+
+          {tab === "regras" && (
+            <RegistrySection
+              rows={regrasComerciais}
+              headers={["Imobiliária", "Empreendimento", "Tx admin.", "Tx intermediação", "Status", "Ações"]}
+              renderRow={(item) => (
+                <tr key={item.id} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
+                  <td className="px-4 py-3 font-medium text-[#3D4F3F]">{item.imobiliarias?.nome ?? "-"}</td>
+                  <td className="px-4 py-3 text-[#3D4F3F]">{item.empreendimentos?.nome ?? "-"}</td>
+                  <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(item.taxa_administracao_percent)}</td>
+                  <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(item.taxa_intermediacao_percent)}</td>
+                  <td className="px-4 py-3"><ActiveBadge active={item.ativo} /></td>
+                  <td className="px-4 py-3">
+                    <RowActions onEdit={() => setRegraComercialForm(fromRegraComercial(item))} onDeactivate={() => void runAction(() => onDeactivateRegraComercial(item.id), setActionError)} inactive={!item.ativo} />
+                  </td>
+                </tr>
+              )}
+              form={
+                <FormPanel title={regraComercialForm.id ? "Editar regra" : "Nova regra"} onCancel={() => setRegraComercialForm(emptyRegraComercial)} onSubmit={() => void submitRegraComercial()} saving={saving}>
+                  <Field label="Imobiliária">
+                    <Select value={regraComercialForm.imobiliaria_id} onChange={(value) => setRegraComercialForm((form) => ({ ...form, imobiliaria_id: value }))}>
+                      <option value="">Selecione</option>
+                      {imobiliarias.filter((item) => item.ativo).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.nome}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Empreendimento">
+                    <Select value={regraComercialForm.empreendimento_id} onChange={(value) => setRegraComercialForm((form) => ({ ...form, empreendimento_id: value }))}>
+                      <option value="">Selecione</option>
+                      {empreendimentos.filter((item) => item.ativo).map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.nome}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <TwoColumns>
+                    <Field label="Tx admin. %"><Input type="number" value={regraComercialForm.taxa_administracao_percent} onChange={(value) => setRegraComercialForm((form) => ({ ...form, taxa_administracao_percent: value }))} /></Field>
+                    <Field label="Tx intermediação %"><Input type="number" value={regraComercialForm.taxa_intermediacao_percent} onChange={(value) => setRegraComercialForm((form) => ({ ...form, taxa_intermediacao_percent: value }))} /></Field>
+                  </TwoColumns>
+                </FormPanel>
+              }
+            />
+          )}
         </>
       )}
     </div>
@@ -649,6 +734,17 @@ function fromEmpreendimento(empreendimento: Empreendimento): EmpreendimentoForm 
   }
 }
 
+function fromRegraComercial(regra: RegraComercial): RegraComercialForm {
+  return {
+    id: regra.id,
+    imobiliaria_id: regra.imobiliaria_id,
+    empreendimento_id: regra.empreendimento_id,
+    taxa_administracao_percent: regra.taxa_administracao_percent.toString(),
+    taxa_intermediacao_percent: regra.taxa_intermediacao_percent.toString(),
+    ativo: regra.ativo,
+  }
+}
+
 function toImovelPayload(form: ImovelForm) {
   return {
     ...form,
@@ -668,6 +764,18 @@ function toImobiliariaPayload(form: ImobiliariaForm) {
 
 function toEmpreendimentoPayload(form: EmpreendimentoForm) {
   return form
+}
+
+function toRegraComercialPayload(form: RegraComercialForm) {
+  return {
+    ...form,
+    taxa_administracao_percent: form.taxa_administracao_percent || "0",
+    taxa_intermediacao_percent: form.taxa_intermediacao_percent || "0",
+  }
+}
+
+function formatPercent(value: number) {
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(Number(value))}%`
 }
 
 function normalize(value: string) {

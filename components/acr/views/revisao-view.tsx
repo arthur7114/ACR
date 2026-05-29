@@ -19,36 +19,55 @@ import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 interface RevisaoViewProps {
   fechamentoId: string
   analysisResult: PackageAnalysis | null
+  fechamento?: {
+    imobiliarias?: { nome: string } | null
+    empreendimentos?: { nome: string } | null
+    competencia: string
+    regra_comercial?: {
+      taxa_administracao_percent: number
+      taxa_intermediacao_percent: number
+    } | null
+  } | null
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
   onRefresh?: () => void
 }
 
-function SummaryCard({
+function MetricTile({
   label,
   value,
-  valueColor = "#1A2B1C",
+  tone = "default",
   subtext,
 }: {
   label: string
   value: string
-  valueColor?: string
+  tone?: "default" | "positive" | "danger" | "warning"
   subtext?: string
 }) {
+  const valueClass =
+    tone === "positive" ? "text-[#2D8C3A]" : tone === "danger" ? "text-[#DC2626]" : tone === "warning" ? "text-[#92400E]" : "text-[#1A2B1C]"
+
   return (
-    <div className="bg-white rounded-xl p-5 border border-[#D5DDD6] shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-      <p className="text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium mb-1">{label}</p>
-      <p className="text-[28px] font-bold tabular-nums leading-tight" style={{ color: valueColor }}>
-        {value}
-      </p>
-      {subtext && <p className="text-[12px] text-[#6B7F6E] mt-1">{subtext}</p>}
+    <div className="rounded-lg border border-[#EEF1EE] bg-white px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7F6E]">{label}</p>
+      <p className={`mt-1 text-[17px] font-bold leading-tight tabular-nums ${valueClass}`}>{value}</p>
+      {subtext && <p className="mt-0.5 text-[11px] leading-tight text-[#6B7F6E]">{subtext}</p>}
+    </div>
+  )
+}
+
+function SectionTitle({ title, description }: { title: string; description?: string }) {
+  return (
+    <div>
+      <h3 className="text-[14px] font-bold text-[#1A2B1C]">{title}</h3>
+      {description && <p className="mt-0.5 text-[12px] text-[#6B7F6E]">{description}</p>}
     </div>
   )
 }
 
 function getOpinionLabel(status: TechnicalOpinion["status"]) {
-  if (status === "aprovado_tecnico") return "Aprovado tecnico"
+  if (status === "aprovado_tecnico") return "Pronto para aprovação"
   if (status === "aprovado_com_ressalvas") return "Aprovado com ressalvas"
-  return "Bloqueado"
+  return "Aguardando resolução"
 }
 
 function getOpinionClasses(status: TechnicalOpinion["status"]) {
@@ -83,7 +102,48 @@ function isActionableWarning(check: PrestacaoRecheck) {
   if (check.id === "total_linhas_receitas") return typeof check.difference === "number"
   if (check.id === "total_linhas_comissoes") return typeof check.difference === "number"
   if (check.id === "total_linhas_repasse") return typeof check.difference === "number"
+  if (check.id === "comissao_administracao_regra") return true
   return false
+}
+
+function isResolvedCheck(check: PrestacaoRecheck) {
+  return check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
+}
+
+function isObjectiveValidation(check: PrestacaoRecheck) {
+  return !check.id.endsWith("_confidence")
+}
+
+function pluralize(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
+function getValidationSummary(rechecks: PrestacaoRecheck[]) {
+  const objectiveChecks = rechecks.filter(isObjectiveValidation)
+
+  return objectiveChecks.reduce(
+    (summary, check) => {
+      const isResolved = isResolvedCheck(check)
+      if (isResolved || check.status === "passed") return { ...summary, passed: summary.passed + 1 }
+      if (check.status === "failed") return { ...summary, blocked: summary.blocked + 1 }
+      if (check.status === "warning") return { ...summary, warnings: summary.warnings + 1 }
+      return summary
+    },
+    { blocked: 0, warnings: 0, passed: 0 },
+  )
+}
+
+function getValidationSummaryLabel(summary: { blocked: number; warnings: number; passed: number }) {
+  const parts = [summary.blocked > 0 ? pluralize(summary.blocked, "bloqueio", "bloqueios") : "Sem bloqueios"]
+  if (summary.warnings > 0) parts.push(pluralize(summary.warnings, "alerta", "alertas"))
+  if (summary.passed > 0) parts.push(`${summary.passed} ok`)
+  return parts.join(" · ")
+}
+
+function getObjectiveOpinionCopy(summary: { blocked: number; warnings: number; passed: number }) {
+  if (summary.blocked > 0) return "Fechamento bloqueado por pendências obrigatórias. Resolva os itens abaixo antes de aprovar."
+  if (summary.warnings > 0) return "Há alertas para revisar antes de aprovar. Confira os itens destacados abaixo."
+  return "Validações principais concluídas. O fechamento não possui bloqueios operacionais."
 }
 
 const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--"])
@@ -122,7 +182,28 @@ function CheckValue({ label, value }: { label: string; value: number | null | un
   )
 }
 
-export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResult }: RevisaoViewProps) {
+function sumRows(rows: ReceitaPorImovel[]) {
+  return rows.reduce(
+    (totals, row) => ({
+      aluguel: totals.aluguel + (row.aluguel_com_desconto ?? row.aluguel ?? 0),
+      garagem: totals.garagem + (row.garagem ?? 0),
+      agua: totals.agua + (row.agua ?? 0),
+      iptu: totals.iptu + (row.iptu ?? 0),
+      seguro: totals.seguro + (row.seguro_incendio ?? 0),
+      total: totals.total + row.total,
+      comissao: totals.comissao + (row.comissao ?? 0),
+      repasse: totals.repasse + (row.repasse ?? 0),
+    }),
+    { aluguel: 0, garagem: 0, agua: 0, iptu: 0, seguro: 0, total: 0, comissao: 0, repasse: 0 },
+  )
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number") return "-"
+  return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
+}
+
+export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, analysisResult }: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
     id: string
     fechamento_id: string
@@ -138,9 +219,9 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
     return (
       <div className="max-w-xl mx-auto bg-white rounded-xl p-8 border border-[#EEF1EE] text-center">
         <AlertTriangle size={28} className="text-[#F59E0B] mx-auto mb-3" />
-        <h2 className="text-[20px] font-bold text-[#1A2B1C]">Nenhum processamento real carregado</h2>
+        <h2 className="text-[20px] font-bold text-[#1A2B1C]">Nenhuma análise carregada</h2>
         <p className="text-[14px] text-[#6B7F6E] mt-2">
-          A revisao so exibe dados extraidos e validados pelo pipeline real.
+          Envie os documentos deste fechamento para ver a conciliação.
         </p>
         <Link
           href={`/fechamentos/${fechamentoId}/upload`}
@@ -156,17 +237,22 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
   const actionableRechecks = rechecks.filter(isActionableWarning)
   const failedRechecks = actionableRechecks.filter((check) => check.status === "failed")
   const warningRechecks = actionableRechecks.filter((check) => check.status === "warning")
+  const validationSummary = getValidationSummary(rechecks)
   const hasBlocking = parecer.status === "bloqueado" || failedRechecks.length > 0
-  const title = `${prestacao?.empreendimento ?? "Empreendimento nao identificado"} - ${prestacao?.competencia ?? "Competencia nao identificada"}`
+  const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento nao identificado"
+  const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
+  const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competencia nao identificada"
+  const title = `${empreendimentoNome} - ${competencia}`
   const resumo = prestacao?.resumo_financeiro
   const totalLinhas = prestacao?.receitas_por_imovel.reduce((sum, row) => sum + row.total, 0) ?? 0
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
+  const rowTotals = sumRows(linhasImoveis)
+  const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
+  const taxaIntermediacao = totals.taxa_intermediacao_percent ?? fechamento?.regra_comercial?.taxa_intermediacao_percent ?? null
+  const comissaoCalculada = totals.comissao_administracao_calculada ?? null
   const linhasAluguelValido = linhasImoveis.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
     ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
-    : 0
-  const mediaGeral = linhasImoveis.length > 0
-    ? linhasImoveis.reduce((sum, row) => sum + (row.aluguel ?? 0), 0) / linhasImoveis.length
     : 0
   const inadimplentes = linhasImoveis.filter((row) => getRowBadge(row)?.label === "Inadimplente").length
   const vagos = linhasImoveis.filter((row) => getRowBadge(row)?.label === "Vago").length
@@ -185,7 +271,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
             <CheckCircle size={18} className="text-[#2D8C3A] shrink-0" />
           )}
           <span className={`text-[14px] ${hasBlocking ? "text-[#991B1B]" : "text-[#1A5C24]"}`}>
-            {parecer.resumo}
+            {hasBlocking ? "Há pendências que precisam de decisão antes da aprovação." : "Sem pendências bloqueantes no fechamento."}
           </span>
         </div>
       </div>
@@ -193,9 +279,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
       <div className="flex justify-between items-start gap-4">
         <div>
           <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">{title}</h1>
-          <p className="text-[14px] text-[#6B7F6E] mt-1">
-            {prestacao?.imobiliaria ?? "Imobiliaria nao identificada"} - dados reais extraidos e validados
-          </p>
+          <p className="text-[14px] text-[#6B7F6E] mt-1">{imobiliariaNome} - conciliação da competência</p>
           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium mt-2 border ${getOpinionClasses(parecer.status)}`}>
             {hasBlocking ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
             {getOpinionLabel(parecer.status)}
@@ -212,7 +296,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
           </Link>
           <button
             disabled={hasBlocking}
-            title={hasBlocking ? "Resolva as divergencias bloqueantes primeiro" : "Parecer tecnico sem bloqueios"}
+            title={hasBlocking ? "Resolva as pendências bloqueantes primeiro" : "Fechamento sem bloqueios"}
             className={`h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium inline-flex items-center gap-2 ${
               hasBlocking ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-[#1A5C24]"
             }`}
@@ -227,11 +311,16 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
         <div className="flex items-start gap-3">
           <ShieldCheck size={20} className="mt-0.5 shrink-0" />
           <div className="flex-1">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Parecer tecnico deterministico</h3>
-              <span className="text-[12px] font-medium tabular-nums">Confianca {Math.round(parecer.confianca * 100)}%</span>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Parecer automático</h3>
+              <span className="w-fit rounded-full border border-current bg-white/70 px-2.5 py-1 text-[12px] font-medium">
+                {getValidationSummaryLabel(validationSummary)}
+              </span>
             </div>
-            <p className="text-[13px] text-[#3D4F3F] mt-2">{parecer.resumo}</p>
+            <p className="text-[13px] text-[#3D4F3F] mt-2">{getObjectiveOpinionCopy(validationSummary)}</p>
+            <p className="text-[12px] text-[#6B7F6E] mt-1">
+              Este resumo vem das validações automáticas do fechamento, não da confiança da IA.
+            </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {parecer.motivos.map((motivo) => (
                 <span key={motivo} className="inline-flex rounded-full bg-white/70 border border-current px-2.5 py-1 text-[11px]">
@@ -243,39 +332,86 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard label="Recebidos no resumo" value={formatBRL(totals.total_receitas)} valueColor="#2D8C3A" subtext="R$ recebidos em nome do locador" />
-        <SummaryCard label="Comissao administracao" value={formatBRL(totals.total_comissoes)} subtext="Comissao principal do documento" />
-        <SummaryCard label="Comissao + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido no resumo" />
-        <SummaryCard label="Total a repassar" value={formatBRL(totals.total_a_repassar)} valueColor={hasBlocking ? "#DC2626" : "#2D8C3A"} subtext={totals.valor_comprovado === null ? "Comprovante nao conciliado" : `Comprovado: ${formatBRL(totals.valor_comprovado)}`} />
-      </div>
-
-      {linhasImoveis.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <SummaryCard
-            label="Media de aluguel"
-            value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-            subtext={`${linhasAluguelValido.length} imovel(is) com aluguel > 0`}
+      <section className="overflow-hidden rounded-xl border border-[#D5DDD6] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+        <div className="flex flex-col gap-4 border-b border-[#EEF1EE] bg-[#F8FAF8] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <SectionTitle
+            title="Resumo financeiro"
+            description="Valores consolidados para decidir aprovação e repasse."
           />
-          <SummaryCard
-            label="Media considerando vagos"
-            value={formatBRL(mediaGeral)}
-            subtext={`${linhasImoveis.length} imovel(is) no total`}
-          />
-          <SummaryCard
-            label="Ocupacao"
-            value={`${linhasAluguelValido.length}/${linhasImoveis.length}`}
-            subtext={`${inadimplentes} inadimplente(s) - ${vagos} vago(s)`}
-            valueColor={inadimplentes > 0 ? "#991B1B" : undefined}
-          />
+          <div className="flex flex-wrap gap-2 text-[12px] text-[#3D4F3F]">
+            <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Admin. {formatPercent(taxaAdministracao)}</span>
+            <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Intermediação {formatPercent(taxaIntermediacao)}</span>
+          </div>
         </div>
-      )}
+
+        <div className="grid gap-5 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <div className={`rounded-xl border p-5 ${hasBlocking ? "border-[#FCA5A5] bg-[#FEF2F2]" : "border-[#BFE4C7] bg-[#F4F9F5]"}`}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Total a repassar</p>
+            <p className={`mt-2 text-[34px] font-bold leading-none tabular-nums ${hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>
+              {formatBRL(totals.total_a_repassar)}
+            </p>
+            <p className="mt-3 text-[13px] leading-relaxed text-[#3D4F3F]">
+              {totals.valor_comprovado === null
+                ? "Comprovante de repasse ainda não conciliado."
+                : `Comprovante encontrado: ${formatBRL(totals.valor_comprovado)}.`}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <MetricTile label="Recebido" value={formatBRL(totals.total_receitas)} tone="positive" subtext="Em nome do locador" />
+              <MetricTile label="Descontos" value={formatBRL(totals.total_comissao_despesas)} subtext="Comissões + despesas" />
+              <MetricTile
+                label="Diferença"
+                value={totals.diferenca_repasse === null ? "-" : formatBRL(totals.diferenca_repasse)}
+                tone={totals.diferenca_repasse ? "danger" : "positive"}
+                subtext="Entre cálculo e comprovante"
+              />
+            </div>
+
+            {linhasImoveis.length > 0 && (
+              <div className="space-y-3">
+                <SectionTitle title="Composição do recebido" description="Soma das colunas pagas pelo inquilino." />
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  <MetricTile label="Aluguel" value={formatBRL(totals.total_aluguel ?? rowTotals.aluguel)} />
+                  <MetricTile label="Garagem" value={formatBRL(totals.total_garagem ?? rowTotals.garagem)} />
+                  <MetricTile label="Água" value={formatBRL(totals.total_agua ?? rowTotals.agua)} />
+                  <MetricTile label="IPTU" value={formatBRL(totals.total_iptu ?? rowTotals.iptu)} />
+                  <MetricTile label="Seguro incêndio" value={formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)} />
+                </div>
+              </div>
+            )}
+
+            {linhasImoveis.length > 0 && (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <MetricTile
+                  label="Comissão admin."
+                  value={formatBRL(totals.total_comissoes)}
+                  subtext={comissaoCalculada === null ? "Documento" : `Cálculo: ${formatBRL(comissaoCalculada)}`}
+                  tone={comissaoCalculada !== null && Math.abs(comissaoCalculada - totals.total_comissoes) > 0.01 ? "warning" : "default"}
+                />
+                <MetricTile
+                  label="Aluguel médio"
+                  value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
+                  subtext={`${linhasAluguelValido.length} unidade(s) com aluguel`}
+                />
+                <MetricTile
+                  label="Ocupação"
+                  value={`${linhasAluguelValido.length}/${linhasImoveis.length}`}
+                  subtext={`${inadimplentes} inadimplente(s), ${vagos} vago(s)`}
+                  tone={inadimplentes > 0 ? "danger" : "default"}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {prestacao && (
         <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <ShieldCheck size={18} className="text-[#2D8C3A]" />
-            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Plano e resumo financeiro extraidos</h3>
+            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Leitura do documento</h3>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -346,7 +482,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[12px] font-medium text-[#3D4F3F]">{document.documentType}</p>
-                <p className="text-[12px] text-[#6B7F6E]">{Math.round(document.confidence * 100)}%</p>
+                <p className="text-[12px] text-[#6B7F6E]">Qualidade da leitura {Math.round(document.confidence * 100)}%</p>
               </div>
             </div>
           ))}
@@ -360,13 +496,13 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
               <div className="flex w-full items-center gap-3">
                 <AlertTriangle size={16} className={hasBlocking ? "text-[#DC2626]" : actionableRechecks.length > 0 ? "text-[#F59E0B]" : "text-[#2D8C3A]"} />
                 <div className="min-w-0 text-left">
-                  <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Warnings reais</h3>
+                  <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Pendências de revisão</h3>
                   <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">
-                    {actionableRechecks.length > 0 ? "Divergencias financeiras e documentos obrigatorios" : "Sem divergencias financeiras acionaveis"}
+                    {actionableRechecks.length > 0 ? "Itens que precisam de decisão ou documento" : "Sem pendências acionáveis"}
                   </p>
                 </div>
                 <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#EEF1EE] px-3 text-[12px] font-medium text-[#3D4F3F]">
-                  {failedRechecks.length} bloqueante(s) - {warningRechecks.length} alerta(s)
+                  {failedRechecks.length} bloqueante(s) · {warningRechecks.length} alerta(s)
                 </span>
               </div>
             </AccordionTrigger>
@@ -387,7 +523,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
                           <p className="mt-1.5 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
                           {isResolved && check.justificativa && (
                             <div className="mt-2 text-[12px] bg-[#F4F9F5] text-[#1A5C24] px-3 py-2 rounded-lg border border-[#D1E7D6]">
-                              <span className="font-semibold block text-[11px] uppercase tracking-wide text-[#2D8C3A] mb-0.5">Divergência Resolvida:</span>
+                              <span className="font-semibold block text-[11px] uppercase tracking-wide text-[#2D8C3A] mb-0.5">Pendência resolvida</span>
                               <span className="italic">{check.justificativa}</span>
                             </div>
                           )}
@@ -424,7 +560,7 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
                 </div>
               ) : (
                 <p className="border-t border-[#EEF1EE] py-3 text-[13px] text-[#3D4F3F]">
-                  Nenhuma divergencia financeira ou ausencia de documento obrigatorio foi encontrada.
+                  Nenhuma pendência financeira ou ausência de documento obrigatório foi encontrada.
                 </p>
               )}
             </AccordionContent>
@@ -441,10 +577,11 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
             </span>
           </div>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[1120px] text-sm">
             <thead>
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Garagem (R$)", "Vagas", "Agua", "IPTU", "Total", "Confianca"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Garagem (R$)", "Vagas", "Agua", "IPTU", "Seg. inc.", "Total", "Comissao", "Repasse", "Qualidade leitura"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -474,13 +611,32 @@ export function RevisaoView({ fechamentoId, onOpenModal, onRefresh, analysisResu
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.vagas_garagem ?? "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
                   <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
+                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
                   <td className="px-4 py-3.5 text-[#3D4F3F]">{Math.round(row.confianca * 100)}%</td>
                 </tr>
                 )
               })}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-[#D5DDD6] bg-[#F8FAF8] font-semibold text-[#1A2B1C]">
+                <td className="px-4 py-3" colSpan={2}>Total</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.aluguel)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.garagem)}</td>
+                <td className="px-4 py-3 tabular-nums">-</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.agua)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.iptu)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.seguro)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.total)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.comissao)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.repasse)}</td>
+                <td className="px-4 py-3">-</td>
+              </tr>
+            </tfoot>
           </table>
+          </div>
         </section>
       )}
 

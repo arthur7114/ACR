@@ -19,6 +19,7 @@ export default function ImoveisPage() {
       imobiliarias={cadastros.imobiliarias}
       empreendimentos={cadastros.empreendimentos}
       imoveis={cadastros.imoveis}
+      regrasComerciais={cadastros.regrasComerciais}
       loading={loading}
       error={error}
       importResult={importResult}
@@ -28,6 +29,8 @@ export default function ImoveisPage() {
       onDeactivateImobiliaria={(id) => deactivateCadastro("/api/cadastros/imobiliarias", id)}
       onSaveEmpreendimento={(input) => saveCadastro("/api/cadastros/empreendimentos", input)}
       onDeactivateEmpreendimento={(id) => deactivateCadastro("/api/cadastros/empreendimentos", id)}
+      onSaveRegraComercial={(input) => saveCadastro("/api/cadastros/regras-comerciais", input)}
+      onDeactivateRegraComercial={(id) => deactivateCadastro("/api/cadastros/regras-comerciais", id)}
       onImportImoveis={async (file) => {
         await importImoveis(file)
       }}

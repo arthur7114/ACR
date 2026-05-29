@@ -12,10 +12,21 @@ interface PageProps {
   params: Promise<{ id: string }>
 }
 
+type FechamentoResumo = {
+  imobiliarias?: { nome: string } | null
+  empreendimentos?: { nome: string } | null
+  competencia: string
+  regra_comercial?: {
+    taxa_administracao_percent: number
+    taxa_intermediacao_percent: number
+  } | null
+}
+
 export default function RevisaoPage({ params }: PageProps) {
   const { id } = use(params)
   const { analysisResult: cachedAnalysis } = useProcessing()
   const [analysis, setAnalysis] = useState<PackageAnalysis | null>(cachedAnalysis)
+  const [fechamento, setFechamento] = useState<FechamentoResumo | null>(null)
   const [loading, setLoading] = useState(!cachedAnalysis)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
@@ -30,6 +41,7 @@ export default function RevisaoPage({ params }: PageProps) {
           return
         }
         setAnalysis(payload.analise_completa ?? null)
+        setFechamento(payload.fechamento ?? null)
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
@@ -69,6 +81,7 @@ export default function RevisaoPage({ params }: PageProps) {
       <RevisaoView
         fechamentoId={id}
         analysisResult={analysis}
+        fechamento={fechamento}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
         onRefresh={loadFromApi}
       />

@@ -185,3 +185,52 @@ test("documentos opcionais ausentes nao alteram o parecer tecnico operacional", 
   assert.equal(result.rechecks.find((item) => item.id === "optional_despesas_comprovantes")?.status, "warning")
   assert.equal(result.parecer.status, "aprovado_tecnico")
 })
+
+test("totaliza receitas por categoria paga pelo inquilino", () => {
+  const prestacao = createPrestacao()
+  prestacao.receitas_por_imovel[0].garagem = 50
+  prestacao.receitas_por_imovel[0].agua = 25
+  prestacao.receitas_por_imovel[0].iptu = 10
+  prestacao.receitas_por_imovel[0].seguro_incendio = 5
+
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao,
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.total_aluguel, 3000)
+  assert.equal(result.totals.total_garagem, 50)
+  assert.equal(result.totals.total_agua, 25)
+  assert.equal(result.totals.total_iptu, 10)
+  assert.equal(result.totals.total_seguro_incendio, 5)
+})
+
+test("valida comissao administrativa pela regra comercial sobre total pago", () => {
+  const prestacao = createPrestacao()
+  prestacao.receitas_por_imovel[0].garagem = 100
+
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao,
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+    commercialRule: {
+      taxa_administracao_percent: 1,
+      taxa_intermediacao_percent: 50,
+    },
+  })
+
+  const check = result.rechecks.find((item) => item.id === "comissao_administracao_regra")
+
+  assert.equal(result.totals.comissao_administracao_calculada, 31)
+  assert.equal(result.totals.taxa_administracao_percent, 1)
+  assert.equal(result.totals.taxa_intermediacao_percent, 50)
+  assert.equal(check?.status, "warning")
+  assert.equal(check?.expected, 31)
+  assert.equal(check?.actual, 30)
+  assert.equal(check?.difference, 1)
+})
