@@ -251,6 +251,20 @@ async function persistMovimentacoes({
       status_validacao: "pendente",
       dados_extraidos: row,
     })) ?? []),
+    ...(prestacao?.acordos_rescisoes_recebidos.map((item) => ({
+      fechamento_id: fechamentoId,
+      documento_id: getDocumentoId(documents, "prestacao_contas"),
+      tipo_movimentacao: "acordo_rescisao_recebido",
+      categoria: item.tipo,
+      descricao: [item.apto, item.inquilino, item.observacao].filter(Boolean).join(" - ") || "Acordo/rescisao recebido",
+      valor: item.valor,
+      sinal: "positivo",
+      data_competencia: normalizeCompetenciaForDatabase(item.competencia_original) ?? competencia,
+      origem_documental: "prestacao_acordos_rescisoes",
+      confianca_extracao: item.confianca,
+      status_validacao: "pendente",
+      dados_extraidos: item,
+    })) ?? []),
     ...(despesas?.despesas.map((despesa) => ({
       fechamento_id: fechamentoId,
       documento_id: getDocumentoId(documents, "despesas_comprovantes"),
@@ -387,6 +401,15 @@ async function persistValidacoes({
 
 function getDocumentoId(documents: ClassifiedDocument[], documentType: string) {
   return documents.find((document) => document.documentType === documentType)?.documentoId ?? null
+}
+
+function normalizeCompetenciaForDatabase(value: string | null | undefined) {
+  if (!value) return null
+  const iso = value.match(/(\d{4})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}-01`
+  const numeric = value.match(/(\d{1,2})\/(\d{4})/)
+  if (numeric) return `${numeric[2]}-${numeric[1].padStart(2, "0")}-01`
+  return null
 }
 
 function sanitizeFilename(filename: string) {

@@ -23,12 +23,13 @@
 - CA06: despesas Alive extraem ENEL, CAGECE, IPTU, seguros e comprovantes.
 - CA07: despesas e comprovantes conciliam por valor, beneficiario e janela de data.
 - CA10: aprovacao e bloqueada quando ha divergencia bloqueante aberta.
+- CA10.1: possivel acordo/rescisao repetido bloqueia aprovacao ate resolucao ou justificativa.
 - CA11: notificacao in-app chega em ate 30 segundos apos conclusao ou bloqueante.
 - CA12 completo: toda correcao manual registra usuario, campo, valores, data/hora e justificativa.
+- CA12.1: resolucao de pendencia salva o valor oficial escolhido pelo operador e nunca chama a API com id de validacao vazio.
 - CA14: fechamento apenas com comprovante de repasse bloqueia aprovacao por prestacao ausente.
 
 ## Etapa 4 - Futuro
 
 - Previa eGestor deve listar lancamentos, categorias, tags, contas, descricoes, valores e status de validacao.
 - Envio real ao eGestor so deve iniciar depois das perguntas abertas da fase serem respondidas.
-

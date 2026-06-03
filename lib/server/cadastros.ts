@@ -108,3 +108,13 @@ export function normalizeCsvHeader(value: string) {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_|_$/g, "")
 }
+
+export function normalizeCadastroKey(value: string | null | undefined) {
+  if (!value) return ""
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+}

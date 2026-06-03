@@ -19,6 +19,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Regra comercial: taxa de administracao e taxa de intermediacao por imobiliaria + empreendimento, com uma regra ativa por par.
 - Imovel: unidade, inquilino, status, aluguel esperado e taxa de administracao.
 - Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca e correcao manual.
+- Acordo/rescisao recebido: item extraido da prestacao quando houver pagamento, acordo, rescisao, parcela ou decisao recebida no mes, com tipo, inquilino, unidade, valor, competencia original, competencia de recebimento, observacao e confianca.
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
 - Validacao: alerta ou divergencia com severidade, status, valores esperados/encontrados e justificativa.
 - Mapeamento eGestor: categorias internas para categorias/tags/contas do eGestor.
@@ -47,3 +48,6 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - IA deve retornar JSON validavel e nunca aprovar ou calcular resultado final sem validacao deterministica.
 - Comissao administrativa deve ser validada, quando houver regra comercial ativa, pela taxa do par imobiliaria + empreendimento aplicada sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
 - Taxa de intermediacao e cadastrada e exibida como regra comercial, mas nao altera o total a repassar ate haver documento/campo operacional especifico para esse lancamento.
+- Comissao realizada em percentual e calculada como comissao administrativa documentada dividida pela base de comissao administrativa.
+- Acordo/rescisao com mesma combinacao normalizada de tipo, inquilino, competencia original e valor ja vista no pacote ou no historico do mesmo par imobiliaria + empreendimento gera alerta bloqueante por possivel pagamento repetido.
+- Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.

@@ -72,6 +72,7 @@ function createPrestacao(overrides: Partial<PrestacaoAnalysis> = {}): PrestacaoA
         confianca: 0.95,
       },
     ],
+    acordos_rescisoes_recebidos: [],
     resumo_financeiro: {
       total_linhas_receitas: 3000,
       total_linhas_comissoes: 30,
@@ -233,4 +234,80 @@ test("valida comissao administrativa pela regra comercial sobre total pago", () 
   assert.equal(check?.expected, 31)
   assert.equal(check?.actual, 30)
   assert.equal(check?.difference, 1)
+})
+
+test("calcula percentual de comissao realizada e base cadastrada", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao(),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+    commercialRule: {
+      taxa_administracao_percent: 1,
+      taxa_intermediacao_percent: 50,
+    },
+  })
+
+  assert.equal(result.totals.base_comissao_administracao, 3000)
+  assert.equal(result.totals.comissao_realizada_percent, 1)
+  assert.equal(result.totals.taxa_administracao_percent, 1)
+})
+
+test("alerta quando acordo recebido no mes tem competencia original diferente", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "101",
+          inquilino: "Natan",
+          valor: 500,
+          competencia_original: "2026-02",
+          competencia_recebimento: "2026-03",
+          observacao: "Acordo recebido em marco.",
+          confianca: 0.95,
+        },
+      ],
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const check = result.rechecks.find((item) => item.id === "acordos_competencias")
+
+  assert.equal(check?.status, "warning")
+  assert.equal(check?.actual, 1)
+})
+
+test("bloqueia possivel acordo ou rescisao repetido", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "rescisao",
+          apto: "202",
+          inquilino: "Natan",
+          valor: 750,
+          competencia_original: "03/2026",
+          competencia_recebimento: "2026-03",
+          observacao: "Rescisao paga.",
+          confianca: 0.95,
+        },
+      ],
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+    historicalAgreementKeys: ["rescisao|natan|2026-03|750.00"],
+  })
+
+  const check = result.rechecks.find((item) => item.id === "duplicate_agreement_payment")
+
+  assert.equal(check?.status, "failed")
+  assert.equal(check?.actual, 1)
+  assert.equal(result.parecer.status, "bloqueado")
 })

@@ -71,14 +71,21 @@ export function ResolveConflictModal({
 
     setLoading(true)
 
-    // Build standard audit-compliant justification
     let chosenValText = ""
+    let officialValue: number | null = null
+    let valueOrigin: "sistema" | "documento" | "manual" = "sistema"
     if (option === "esperado") {
+      officialValue = validation.valor_esperado
+      valueOrigin = "sistema"
       chosenValText = `Valor calculado pelo sistema: ${formatCurrency(validation.valor_esperado)}`
     } else if (option === "encontrado") {
+      officialValue = validation.valor_encontrado
+      valueOrigin = "documento"
       chosenValText = `Valor informado no documento: ${formatCurrency(validation.valor_encontrado)}`
     } else {
-      chosenValText = `Valor manual: ${formatCurrency(Number(customValue))}`
+      officialValue = Number(customValue)
+      valueOrigin = "manual"
+      chosenValText = `Valor manual: ${formatCurrency(officialValue)}`
     }
 
     const fullJustification = `[Resolvido - Aceito ${chosenValText}] ${justification.trim()}`
@@ -90,7 +97,9 @@ export function ResolveConflictModal({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          status: "ignorada_com_justificativa", // OR "resolvida" as per PRD
+          status: "ignorada_com_justificativa",
+          valor_oficial: officialValue,
+          origem_valor: valueOrigin,
           justificativa: fullJustification,
         }),
       })

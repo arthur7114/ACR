@@ -65,6 +65,21 @@ export interface ReceitaPorImovel {
   confianca: number
 }
 
+export const acordoRescisaoRecebidoSchema = z
+  .object({
+    tipo: z.enum(["acordo", "rescisao", "outro"]),
+    apto: z.string().nullable(),
+    inquilino: z.string().nullable(),
+    valor: z.number(),
+    competencia_original: z.string().nullable(),
+    competencia_recebimento: z.string().nullable(),
+    observacao: z.string().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type AcordoRescisaoRecebido = z.infer<typeof acordoRescisaoRecebidoSchema>
+
 export const extractionPlanSchema = z
   .object({
     documento_lido_integralmente: z.boolean(),
@@ -111,6 +126,7 @@ export const prestacaoAnalysisSchema = z
     competencia: z.string(),
     plano_extracao: extractionPlanSchema,
     receitas_por_imovel: z.array(receitaPorImovelSchema),
+    acordos_rescisoes_recebidos: z.array(acordoRescisaoRecebidoSchema).default([]),
     resumo_financeiro: prestacaoResumoFinanceiroSchema,
     totais: z
       .object({
@@ -132,6 +148,7 @@ export interface PrestacaoAnalysis {
   competencia: string
   plano_extracao: ExtractionPlan
   receitas_por_imovel: ReceitaPorImovel[]
+  acordos_rescisoes_recebidos: AcordoRescisaoRecebido[]
   resumo_financeiro: PrestacaoResumoFinanceiro
   totais: {
     total_receitas: number | null
@@ -279,6 +296,8 @@ export const packageTotalsSchema = z
     taxa_administracao_percent: z.number().nullable(),
     taxa_intermediacao_percent: z.number().nullable(),
     comissao_administracao_calculada: z.number().nullable(),
+    base_comissao_administracao: z.number(),
+    comissao_realizada_percent: z.number().nullable(),
   })
   .strict()
 

@@ -1,4 +1,5 @@
 import type {
+  AcordoRescisaoRecebido,
   ClassifiedDocument,
   DespesasAnalysis,
   PackageAnalysis,
@@ -15,9 +16,10 @@ import {
   extractRepasseFromPdf,
 } from "./analyze-package-documents"
 import { extractPrestacaoAliveFromPdf } from "./analyze-prestacao"
-import { validatePackage } from "./package-rechecks"
+import { buildAgreementPaymentKey, validatePackage } from "./package-rechecks"
 import { persistPackage, type PackageFileForPersistence } from "./persist-package"
 import { getCommercialRuleForValidation } from "./regras-comerciais"
+import { createSupabaseAdmin } from "./supabase"
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024
 
@@ -63,6 +65,7 @@ export async function* runPackageWorkflowWithEvents(
       fechamentoContext?.imobiliariaId,
       fechamentoContext?.empreendimentoId,
     )
+    const historicalAgreementKeys = await getHistoricalAgreementKeys(fechamentoContext)
     const validation = validatePackage({
       documents: classifications,
       prestacao: extraction.prestacao,
@@ -70,6 +73,7 @@ export async function* runPackageWorkflowWithEvents(
       despesas: extraction.despesas,
       reajuste: extraction.reajuste,
       commercialRule,
+      historicalAgreementKeys,
     })
 
     yield event("validation_completed", "Validacoes deterministicas concluidas.", 82)
@@ -245,6 +249,32 @@ async function extractDocuments(
   }
 
   return { prestacao, repasse, despesas, reajuste, events }
+}
+
+async function getHistoricalAgreementKeys(fechamentoContext: FechamentoContext | null) {
+  if (!fechamentoContext?.imobiliariaId || !fechamentoContext?.empreendimentoId) return []
+
+  const supabase = createSupabaseAdmin()
+  const { data: fechamentos } = await supabase
+    .from("fechamentos")
+    .select("id")
+    .eq("imobiliaria_id", fechamentoContext.imobiliariaId)
+    .eq("empreendimento_id", fechamentoContext.empreendimentoId)
+
+  const fechamentoIds = (fechamentos ?? [])
+    .map((item) => item.id as string)
+    .filter((id) => id && id !== fechamentoContext.id)
+  if (fechamentoIds.length === 0) return []
+
+  const { data: movimentacoes } = await supabase
+    .from("movimentacoes")
+    .select("dados_extraidos")
+    .eq("tipo_movimentacao", "acordo_rescisao_recebido")
+    .in("fechamento_id", fechamentoIds)
+
+  return (movimentacoes ?? [])
+    .map((item) => buildAgreementPaymentKey(item.dados_extraidos as AcordoRescisaoRecebido))
+    .filter((key): key is string => Boolean(key))
 }
 
 function applyFechamentoContextToPrestacao(

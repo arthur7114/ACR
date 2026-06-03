@@ -328,9 +328,9 @@ export function ImoveisView({
                     ))}
                   </Select>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="max-h-[70vh] overflow-auto">
                   <table className="w-full text-sm">
-                    <thead>
+                    <thead className="sticky top-0 z-10">
                       <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
                         {["Código", "Unidade", "Imobiliária", "Empreendimento", "Status", "Aluguel", "Taxa", "Ações"].map((header) => (
                           <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
@@ -633,9 +633,9 @@ function FormPanel({ title, children, saving, onCancel, onSubmit }: { title: str
 function RegistrySection<T>({ rows, headers, renderRow, form }: { rows: T[]; headers: string[]; renderRow: (row: T) => React.ReactNode; form: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
-      <div className="min-w-0 rounded-xl border border-[#EEF1EE] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+      <div className="max-h-[70vh] min-w-0 overflow-auto rounded-xl border border-[#EEF1EE] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
               {headers.map((header) => (
                 <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">

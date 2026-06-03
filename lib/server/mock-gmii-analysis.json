@@ -7,7 +7,17 @@
     "valor_comprovado": 15031.82,
     "diferenca_repasse": 0,
     "total_repasse_bruto": 16474.1,
-    "total_comissao_despesas": 3466.44
+    "total_comissao_despesas": 3466.44,
+    "base_comissao_administracao": 18498.25,
+    "comissao_realizada_percent": 7,
+    "taxa_administracao_percent": 7,
+    "taxa_intermediacao_percent": 60,
+    "comissao_administracao_calculada": null,
+    "total_aluguel": 15274.75,
+    "total_garagem": 694.46,
+    "total_agua": 1570.64,
+    "total_iptu": 34.35,
+    "total_seguro_incendio": 139.83
   },
   "parecer": {
     "resumo": "Fechamento bloqueado por divergencia deterministica ou documento obrigatorio ausente.",
@@ -752,7 +762,8 @@
         "seguro_incendio": 0,
         "aluguel_com_desconto": 629.32
       }
-    ]
+    ],
+    "acordos_rescisoes_recebidos": []
   },
   "guardrails": [
     {

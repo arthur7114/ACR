@@ -47,9 +47,13 @@ Fluxo:
 
 ## Revisao e correcao
 
-A revisao deve exibir resumo financeiro, receitas por imovel, despesas e comprovantes, comprovante de repasse, divergencias, documentos anexados e historico.
+A revisao deve exibir resumo financeiro operacional no topo, receitas por imovel, acordos/rescisoes recebidos no mes, despesas e comprovantes, comprovante de repasse, divergencias, documentos anexados e historico.
+
+Leitura tecnica do documento e documentos processados ficam colapsados no fim da revisao.
 
 Correcoes manuais exigem log com usuario, campo, valor anterior, valor novo, data/hora e justificativa.
+
+Resolver pendencia exige uma validacao persistida; quando a linha ainda nao existe no banco, a interface deve orientar atualizar/reprocessar em vez de chamar a resolucao com id vazio.
 
 ## Aprovacao e eGestor
 
@@ -60,4 +64,3 @@ Aprovacao exige:
 - despesas criticas conciliadas ou justificadas.
 
 Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. Envio real fica para fase futura.
-

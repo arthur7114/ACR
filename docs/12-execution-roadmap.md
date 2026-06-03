@@ -2,7 +2,7 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento e revisão com resumo financeiro agrupado por decisão operacional.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
@@ -52,11 +52,36 @@ Validar manualmente no navegador um fechamento de empreendimento diferente de Gr
 - Comissao administrativa e validada pela taxa do par sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
 - Taxa de intermediacao fica cadastrada e visivel na revisao, mas nao entra no total a repassar ate existir documento/campo operacional especifico.
 - Tela de revisao deve priorizar o contexto do fechamento salvo no banco para imobiliaria, empreendimento e competencia; dados extraidos do documento nao podem sobrescrever o contexto operacional.
-- Dashboard da revisao deve agrupar indicadores por decisao financeira, evitando cards soltos para totais relacionados.
+- Dashboard da revisao deve agrupar indicadores por decisao financeira, evitando cards soltos para totais relacionados, separando receitas, comissao administrativa, despesas e outras comissoes/despesas.
+- Situacao das unidades na revisao deve separar explicitamente apartamentos alugados, inadimplentes e aptos vagos; inadimplencia nao deve ser misturada com vacancia.
+- Resumo financeiro deve exibir data do repasse quando houver comprovante extraido.
 - Modal de resolucao de pendencia deve usar linguagem operacional, fundo claro, comparacao objetiva dos valores e justificativa de auditoria.
+- Resolucao de pendencia nao pode chamar a API sem `databaseId`; a auditoria deve gravar o valor oficial escolhido pelo operador.
+- Leitura do documento e documentos processados ficam colapsados no fim da revisao para priorizar o resumo operacional.
+- Possivel acordo/rescisao repetido, por tipo + inquilino + competencia + valor, e bloqueante ate resolucao ou justificativa.
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 
 ## Historico de ciclos
+
+### 2026-06-03 - Correcoes pos-reuniao: resolucao, resumo e duplicidades
+
+Status: done
+Job: Implementar anotacoes da ultima reuniao: corrigir erro ao resolver pendencias, clarear resumo financeiro, destacar comissao/despesas, colapsar leitura documental, detectar acordos/rescisoes repetidos e corrigir cadastros duplicados/inativos.
+Outcome entregue: API e modal de resolucao passam a validar id persistido e salvar valor oficial escolhido; revisao separa receitas, comissao, despesas e outras comissoes/despesas, exibe comissao realizada em percentual e taxa cadastrada, adiciona cabecalhos fixos, observacoes e acordos/rescisoes; extração da prestacao aceita acordos/rescisoes recebidos no mes; rechecks bloqueiam possivel pagamento repetido e alertam competencias diferentes; cadastros reativam registros equivalentes e ocultam inativos dos fluxos por padrao.
+Validacao: `pnpm exec tsc --noEmit`, `npx --yes tsx --test lib/server/package-rechecks.test.ts`, `pnpm lint`, `pnpm build` e `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` passaram. `npx supabase db push --dry-run` nao validou porque o CLI nao encontrou project ref linkado neste checkout.
+Decisoes: pagamento repetido de acordo/rescisao e bloqueante; cadastros inativos permanecem para historico, mas fluxos ativos usam apenas `ativo=true`; leitura documental fica colapsada no fim da revisao.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `components/acr/resolve-conflict-modal.tsx`, `app/api/validacoes/[id]/resolver/route.ts`, `app/api/cadastros/*`, `lib/prestacao-types.ts`, `lib/server/package-rechecks.ts`, `lib/server/package-workflow.ts`, `lib/server/persist-package.ts`, `supabase/migrations/202606030001_cadastros_normalizados.sql`, `docs/02-mock-contract.md`, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: validar visualmente com PDF Alive e Cesar Rego/Natan no navegador, confirmando pendencia bloqueante e resolucao sem erro.
+
+### 2026-06-03 - Design review do resumo financeiro e unidades
+
+Status: done
+Job: Revisar UX do resumo financeiro para melhorar observacao dos dados e incorporar feedback sobre despesas, comissao, data de repasse, inadimplencia e vacancia.
+Outcome entregue: card de total a repassar exibe data do repasse; resumo separa comissao administrativa, outras despesas e total comissao + despesas; situacao das unidades foi separada em Alugadas, Inadimplentes e Aptos vagos; aluguel medio passa a considerar unidades alugadas com valor, sem misturar inadimplentes e vacancia.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build` passaram.
+Decisoes: "Aptos vagos" representa vacancia de apartamentos, nao quantidade de vagas de garagem; para GM II abril/26, vacancia pode aparecer como 0 sem ser confundida com os 2 inadimplentes.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: validar visualmente o dashboard de revisao com o fechamento GM II abril/26.
 
 ### 2026-05-29 - Indicadores objetivos no Parecer Automático
 

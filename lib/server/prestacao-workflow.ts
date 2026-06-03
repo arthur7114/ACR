@@ -191,5 +191,11 @@ export async function runPrestacaoAliveWorkflow(file: File): Promise<AnalyzePres
         : new Error(`Workflow finalizado com status ${result.status}.`)
   }
 
-  return result.result
+  return {
+    ...result.result,
+    analysis: {
+      ...result.result.analysis,
+      acordos_rescisoes_recebidos: result.result.analysis.acordos_rescisoes_recebidos ?? [],
+    },
+  }
 }

@@ -27,7 +27,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `novo-fechamento`: formulario com imobiliaria, empreendimento, competencia e observacoes.
 - `upload`: upload multiplo, classificacao automatica/manual e bloqueio quando ha documento sem classificacao.
 - `processando`: etapas visuais do pipeline: salvar arquivos, classificar, extrair, validar, conciliar e finalizar.
-- `revisao`: resumo financeiro agrupado, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, pendencias de revisao, receitas por imovel com totalizadores, despesas, comprovante de repasse, documentos e acoes.
+- `revisao`: resumo financeiro agrupado no topo, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, separacao clara entre receitas, comissao administrativa, outras despesas e total comissao + despesas, exibicao da taxa cadastrada, da comissao realizada em % e da data do repasse, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, situacao das unidades separando alugadas, inadimplentes e aptos vagos, pendencias de revisao, receitas por imovel com totalizadores e cabecalho fixo, acordos/rescisoes recebidos no mes, despesas, comprovante de repasse, documentos colapsaveis no fim e acoes.
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 
@@ -46,6 +46,8 @@ Estados e acoes relevantes:
 - Revisao mostra bloqueio de aprovacao quando ha divergencia bloqueante.
 - Revisao nao usa percentual de confianca como indicador operacional principal; qualidade de leitura fica restrita a documentos/linhas extraidas.
 - Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria.
+- Leitura do documento e documentos processados ficam no fim da revisao, em secoes colapsaveis fechadas por padrao, para nao deslocar o resumo financeiro operacional.
+- Possivel pagamento repetido de acordo/rescisao e pendencia bloqueante ate resolucao ou justificativa.
 - Fechamentos aprovados podem ser vistos em detalhes.
 
 ## Dados e nomenclatura de exemplo

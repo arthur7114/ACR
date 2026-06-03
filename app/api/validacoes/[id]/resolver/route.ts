@@ -1,17 +1,48 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const validOrigins = new Set(["sistema", "documento", "manual"])
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
-    const { status = "resolvida", justificativa } = await request.json()
+    const { status = "resolvida", justificativa, valor_oficial, origem_valor } = await request.json()
+
+    if (!uuidRegex.test(id)) {
+      return NextResponse.json(
+        { error: "Validação inválida. Atualize o fechamento e tente novamente." },
+        { status: 400 }
+      )
+    }
 
     if (!justificativa || typeof justificativa !== "string" || justificativa.trim() === "") {
       return NextResponse.json(
         { error: "Justificativa obrigatória." },
+        { status: 400 }
+      )
+    }
+
+    if (origem_valor !== undefined && !validOrigins.has(String(origem_valor))) {
+      return NextResponse.json(
+        { error: "Origem do valor oficial inválida." },
+        { status: 400 }
+      )
+    }
+
+    const officialValue =
+      typeof valor_oficial === "number" && Number.isFinite(valor_oficial)
+        ? valor_oficial
+        : valor_oficial === null || valor_oficial === undefined
+          ? null
+          : Number(valor_oficial)
+
+    if (officialValue !== null && !Number.isFinite(officialValue)) {
+      return NextResponse.json(
+        { error: "Valor oficial inválido." },
         { status: 400 }
       )
     }
@@ -55,7 +86,7 @@ export async function POST(
         usuario: "Operador",
         campo_alterado: validacao.tipo_validacao,
         valor_anterior: validacao.valor_encontrado !== null ? String(validacao.valor_encontrado) : null,
-        valor_novo: validacao.valor_esperado !== null ? String(validacao.valor_esperado) : null,
+        valor_novo: officialValue !== null ? String(officialValue) : null,
         justificativa: justificativa.trim(),
       })
 

@@ -130,6 +130,7 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
       alertas: [],
     },
     receitas_por_imovel: receitas,
+    acordos_rescisoes_recebidos: [],
     resumo_financeiro: {
       total_linhas_receitas: total_receitas,
       total_linhas_comissoes: total_comissoes,

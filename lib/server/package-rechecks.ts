@@ -1,4 +1,5 @@
 import type {
+  AcordoRescisaoRecebido,
   ClassifiedDocument,
   DespesasAnalysis,
   PackageTotals,
@@ -22,6 +23,8 @@ const OPERATIONAL_RECHECK_IDS = new Set([
   "total_linhas_comissoes",
   "total_linhas_repasse",
   "comissao_administracao_regra",
+  "acordos_competencias",
+  "duplicate_agreement_payment",
   "resumo_financeiro",
   "repasse_conciliation",
 ])
@@ -33,6 +36,7 @@ export interface PackageValidationInput {
   despesas: DespesasAnalysis | null
   reajuste: ReajusteAnalysis | null
   commercialRule?: CommercialRuleForValidation | null
+  historicalAgreementKeys?: string[]
 }
 
 export function validatePackage(input: PackageValidationInput) {
@@ -48,6 +52,7 @@ export function validatePackage(input: PackageValidationInput) {
     despesas: normalizedDespesas,
     reajuste: normalizedReajuste,
     commercialRule: input.commercialRule ?? null,
+    historicalAgreementKeys: input.historicalAgreementKeys ?? [],
     totals,
   })
   const guardrails = buildGuardrails(input.documents, rechecks)
@@ -99,6 +104,11 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       comissao: nullableMoney(row.comissao),
       repasse: nullableMoney(row.repasse),
       confianca: clampConfidence(row.confianca),
+    })),
+    acordos_rescisoes_recebidos: (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
+      ...item,
+      valor: roundMoney(item.valor),
+      confianca: clampConfidence(item.confianca),
     })),
   }
 }
@@ -163,6 +173,7 @@ function calculateTotals(
   const totalComissaoDespesas = roundMoney(resumo?.total_comissao_despesas ?? (resumo?.comissao_administracao ?? lineTotalComissoes) + totalDespesas)
   const totalReceitas = roundMoney(resumo?.recebidos_em_nome_locador ?? resumo?.total_linhas_receitas ?? lineTotalReceitas)
   const totalComissoes = roundMoney(resumo?.comissao_administracao ?? lineTotalComissoes)
+  const realizedCommissionPercent = commissionBase > 0 ? roundPercent((totalComissoes / commissionBase) * 100) : null
   const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
   const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas)
   const valorComprovado = repasse?.valor ?? null
@@ -184,6 +195,8 @@ function calculateTotals(
     taxa_administracao_percent: commercialRule?.taxa_administracao_percent ?? null,
     taxa_intermediacao_percent: commercialRule?.taxa_intermediacao_percent ?? null,
     comissao_administracao_calculada: calculatedAdminCommission,
+    base_comissao_administracao: commissionBase,
+    comissao_realizada_percent: realizedCommissionPercent,
   }
 }
 
@@ -194,8 +207,9 @@ function buildRechecks({
   despesas,
   reajuste,
   commercialRule,
+  historicalAgreementKeys,
   totals,
-}: PackageValidationInput & { totals: PackageTotals }) {
+}: PackageValidationInput & { totals: PackageTotals; historicalAgreementKeys: string[] }) {
   const checks: PrestacaoRecheck[] = [
     checkRequiredDocument(documents, "prestacao_contas", "Prestacao de contas"),
     checkRequiredDocument(documents, "comprovante_repasse", "Comprovante de repasse"),
@@ -219,6 +233,8 @@ function buildRechecks({
       prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
     ),
     compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
+    checkAgreementCompetencies(prestacao),
+    checkDuplicateAgreementPayments(prestacao, historicalAgreementKeys),
     compareResumoFormula(prestacao, totals),
     compareDespesasTotal(despesas, totals.total_despesas),
     compareRepasse(totals),
@@ -229,6 +245,65 @@ function buildRechecks({
   ]
 
   return checks.filter((check) => check.id !== "skip")
+}
+
+function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
+  const items = prestacao?.acordos_rescisoes_recebidos ?? []
+  const differentCompetencies = items.filter((item) => {
+    const original = normalizeCompetenciaKey(item.competencia_original)
+    const received = normalizeCompetenciaKey(item.competencia_recebimento ?? prestacao?.competencia ?? null)
+    return original && received && original !== received
+  })
+
+  if (differentCompetencies.length === 0) {
+    return {
+      id: "acordos_competencias",
+      label: "Competencias de acordos e rescisoes",
+      status: "passed",
+      message: items.length > 0 ? "Acordos e rescisoes recebidos no mes foram lidos sem divergencia de competencia." : "Nenhum acordo ou rescisao recebido no mes foi identificado.",
+      actual: items.length,
+    }
+  }
+
+  return {
+    id: "acordos_competencias",
+    label: "Competencias de acordos e rescisoes",
+    status: "warning",
+    message: `${differentCompetencies.length} acordo(s) ou rescisao(oes) foram recebidos no mes com competencia original diferente. Confira antes de aprovar.`,
+    actual: differentCompetencies.length,
+  }
+}
+
+function checkDuplicateAgreementPayments(prestacao: PrestacaoAnalysis | null, historicalAgreementKeys: string[]): PrestacaoRecheck {
+  const items = prestacao?.acordos_rescisoes_recebidos ?? []
+  const seen = new Set<string>()
+  const duplicated = new Set<string>()
+  const historical = new Set(historicalAgreementKeys)
+
+  for (const item of items) {
+    const key = buildAgreementPaymentKey(item)
+    if (!key) continue
+    if (seen.has(key) || historical.has(key)) duplicated.add(key)
+    seen.add(key)
+  }
+
+  if (duplicated.size === 0) {
+    return {
+      id: "duplicate_agreement_payment",
+      label: "Pagamento de acordo/rescisao repetido",
+      status: "passed",
+      message: "Nenhum acordo ou rescisao repetido foi identificado pelos dados disponiveis.",
+      actual: 0,
+    }
+  }
+
+  return {
+    id: "duplicate_agreement_payment",
+    label: "Pagamento de acordo/rescisao repetido",
+    status: "failed",
+    message: `${duplicated.size} possivel(is) pagamento(s) de acordo/rescisao repetido(s). Resolva ou justifique antes de aprovar.`,
+    actual: duplicated.size,
+  }
 }
 
 function buildGuardrails(documents: ClassifiedDocument[], rechecks: PrestacaoRecheck[]): PrestacaoGuardrail[] {
@@ -598,6 +673,37 @@ function sum(values: number[]) {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+function roundPercent(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+export function buildAgreementPaymentKey(item: AcordoRescisaoRecebido) {
+  const inquilino = normalizeText(item.inquilino)
+  const competencia = normalizeCompetenciaKey(item.competencia_original ?? item.competencia_recebimento)
+  if (!inquilino || !competencia || !Number.isFinite(item.valor)) return null
+  return [item.tipo, inquilino, competencia, roundMoney(item.valor).toFixed(2)].join("|")
+}
+
+function normalizeCompetenciaKey(value: string | null | undefined) {
+  if (!value) return null
+  const normalized = value.trim()
+  const iso = normalized.match(/(\d{4})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}`
+  const numeric = normalized.match(/(\d{1,2})\/(\d{4})/)
+  if (numeric) return `${numeric[2]}-${numeric[1].padStart(2, "0")}`
+  return normalizeText(normalized)
+}
+
+function normalizeText(value: string | null | undefined) {
+  if (!value) return ""
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
 }
 
 function roundConfidence(value: number) {

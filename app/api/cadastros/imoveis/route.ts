@@ -29,10 +29,12 @@ export async function GET(request: Request) {
   const imobiliariaId = params.get("imobiliaria_id")
   const empreendimentoId = params.get("empreendimento_id")
   const status = params.get("status")
+  const includeInactive = params.get("include_inactive") === "true"
 
   if (imobiliariaId) query = query.eq("imobiliaria_id", imobiliariaId)
   if (empreendimentoId) query = query.eq("empreendimento_id", empreendimentoId)
   if (status) query = query.eq("status", status)
+  if (!includeInactive) query = query.eq("ativo", true)
 
   const { data, error } = await query
 
