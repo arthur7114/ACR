@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Validar manualmente no navegador um fechamento de empreendimento diferente de Grand Messejana II e conferir título, regra comercial, resumo financeiro agrupado, totalizadores e modal de resolução antes do deploy final.
+Validar manualmente no navegador um fechamento antigo e um fechamento novo apos deploy para confirmar que a revisao carrega com payloads historicos e atuais.
 
 ## Progresso por etapa
 
@@ -59,9 +59,20 @@ Validar manualmente no navegador um fechamento de empreendimento diferente de Gr
 - Resolucao de pendencia nao pode chamar a API sem `databaseId`; a auditoria deve gravar o valor oficial escolhido pelo operador.
 - Leitura do documento e documentos processados ficam colapsados no fim da revisao para priorizar o resumo operacional.
 - Possivel acordo/rescisao repetido, por tipo + inquilino + competencia + valor, e bloqueante ate resolucao ou justificativa.
+- Tela de revisao deve ser retrocompativel com analises persistidas antes de campos novos; arrays opcionais do payload devem ser normalizados para lista vazia na renderizacao.
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 
 ## Historico de ciclos
+
+### 2026-06-03 - Hotfix revisão 404 em análises antigas
+
+Status: done
+Job: Corrigir queda da página de revisão em produção ao abrir fechamento salvo antes do campo `acordos_rescisoes_recebidos`.
+Outcome entregue: `RevisaoView` passou a normalizar arrays opcionais (`documents`, `rechecks`, `motivos` e `acordos_rescisoes_recebidos`) antes de renderizar, evitando erro client-side em payloads historicos.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` e validação local no navegador em `/fechamentos/d756ee76-178b-46a1-a970-a973a99cc19d/revisao` passaram.
+Decisoes: compatibilidade com analises persistidas antigas deve ser garantida na view, sem exigir reprocessamento para abrir revisão.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `docs/12-execution-roadmap.md`.
+Proxima acao: aguardar deploy do EasyPanel e reabrir a URL de produção para confirmar que o 404/queda sumiu.
 
 ### 2026-06-03 - Correcoes pos-reuniao: resolucao, resumo e duplicidades
 

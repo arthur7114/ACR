@@ -296,7 +296,10 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
     )
   }
 
-  const { prestacao, repasse, despesas, reajuste, totals, parecer, documents, rechecks } = analysisResult
+  const { prestacao, repasse, despesas, reajuste, totals, parecer } = analysisResult
+  const documents = analysisResult.documents ?? []
+  const rechecks = analysisResult.rechecks ?? []
+  const motivosParecer = parecer.motivos ?? []
   const actionableRechecks = rechecks.filter(isActionableWarning)
   const failedRechecks = actionableRechecks.filter((check) => check.status === "failed")
   const warningRechecks = actionableRechecks.filter((check) => check.status === "warning")
@@ -307,8 +310,9 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
   const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competencia nao identificada"
   const title = `${empreendimentoNome} - ${competencia}`
   const resumo = prestacao?.resumo_financeiro
-  const totalLinhas = prestacao?.receitas_por_imovel.reduce((sum, row) => sum + row.total, 0) ?? 0
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
+  const acordosRescisoesRecebidos = prestacao?.acordos_rescisoes_recebidos ?? []
+  const totalLinhas = linhasImoveis.reduce((sum, row) => sum + row.total, 0)
   const rowTotals = sumRows(linhasImoveis)
   const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
   const taxaIntermediacao = totals.taxa_intermediacao_percent ?? fechamento?.regra_comercial?.taxa_intermediacao_percent ?? null
@@ -417,7 +421,7 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
               Este resumo vem das validações automáticas do fechamento, não da confiança da IA.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {parecer.motivos.map((motivo) => (
+              {motivosParecer.map((motivo) => (
                 <span key={motivo} className="inline-flex rounded-full bg-white/70 border border-current px-2.5 py-1 text-[11px]">
                   {motivo}
                 </span>
@@ -723,11 +727,11 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
         </section>
       )}
 
-      {prestacao && prestacao.acordos_rescisoes_recebidos.length > 0 && (
+      {acordosRescisoesRecebidos.length > 0 && (
         <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
             <h3 className="text-[16px] font-bold text-[#1A2B1C]">Acordos e rescisões recebidos no mês</h3>
-            <span className="text-[13px] text-[#6B7F6E]">{prestacao.acordos_rescisoes_recebidos.length} item(ns)</span>
+            <span className="text-[13px] text-[#6B7F6E]">{acordosRescisoesRecebidos.length} item(ns)</span>
           </div>
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full min-w-[920px] text-sm">
@@ -741,7 +745,7 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
                 </tr>
               </thead>
               <tbody>
-                {prestacao.acordos_rescisoes_recebidos.map((item, index) => (
+                {acordosRescisoesRecebidos.map((item, index) => (
                   <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                     <td className="px-4 py-3 font-medium capitalize text-[#1A2B1C]">{item.tipo}</td>
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
