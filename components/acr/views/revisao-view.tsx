@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
@@ -10,6 +10,9 @@ import {
   ReceiptText,
   RefreshCw,
   ShieldCheck,
+  Search,
+  MessageSquare,
+  Info
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
@@ -23,6 +26,7 @@ interface RevisaoViewProps {
     imobiliarias?: { nome: string } | null
     empreendimentos?: { nome: string } | null
     competencia: string
+    comentario_operador?: string | null
     regra_comercial?: {
       taxa_administracao_percent: number
       taxa_intermediacao_percent: number
@@ -37,18 +41,23 @@ function MetricTile({
   value,
   tone = "default",
   subtext,
+  tooltip,
 }: {
   label: string
   value: string
   tone?: "default" | "positive" | "danger" | "warning"
   subtext?: string
+  tooltip?: string
 }) {
   const valueClass =
     tone === "positive" ? "text-[#2D8C3A]" : tone === "danger" ? "text-[#DC2626]" : tone === "warning" ? "text-[#92400E]" : "text-[#1A2B1C]"
 
   return (
-    <div className="rounded-lg border border-[#EEF1EE] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7F6E]">{label}</p>
+    <div className="rounded-lg border border-[#EEF1EE] bg-white px-3 py-2.5 relative group" title={tooltip}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7F6E] flex items-center gap-1">
+        {label}
+        {tooltip && <Info size={12} className="text-[#8A9A8C]" />}
+      </p>
       <p className={`mt-1 text-[17px] font-bold leading-tight tabular-nums ${valueClass}`}>{value}</p>
       {subtext && <p className="mt-0.5 text-[11px] leading-tight text-[#6B7F6E]">{subtext}</p>}
     </div>
@@ -238,6 +247,37 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
   } | null>(null)
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false)
 
+  const [filtroTexto, setFiltroTexto] = useState("")
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "alugados" | "vagos" | "inadimplentes">("todos")
+
+  const [comentario, setComentario] = useState(fechamento?.comentario_operador ?? "")
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+
+  useEffect(() => {
+    if (fechamento?.comentario_operador !== undefined && comentario === "") {
+      setComentario(fechamento.comentario_operador || "")
+    }
+  }, [fechamento?.comentario_operador, comentario])
+
+  useEffect(() => {
+    if (comentario === (fechamento?.comentario_operador ?? "")) return;
+    setSaveStatus("saving")
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/fechamentos/${fechamentoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ comentario_operador: comentario })
+        })
+        if (res.ok) setSaveStatus("saved")
+        else setSaveStatus("error")
+      } catch (e) {
+        setSaveStatus("error")
+      }
+    }, 800)
+    return () => clearTimeout(timeout)
+  }, [comentario, fechamentoId, fechamento?.comentario_operador])
+
   if (!analysisResult) {
     return (
       <div className="max-w-xl mx-auto bg-white rounded-xl p-8 border border-[#EEF1EE] text-center">
@@ -283,6 +323,34 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
     : 0
   const inadimplentes = linhasImoveis.filter(isDelinquentRow).length
   const vagos = linhasImoveis.filter(isVacantRow).length
+
+  const linhasImoveisExibicao = linhasImoveis.filter((row) => {
+    const textMatch = !filtroTexto || 
+      row.apto.toLowerCase().includes(filtroTexto.toLowerCase()) || 
+      (row.inquilino?.toLowerCase() || "").includes(filtroTexto.toLowerCase())
+    if (!textMatch) return false
+    
+    if (filtroStatus === "vagos") return isVacantRow(row)
+    if (filtroStatus === "inadimplentes") return isDelinquentRow(row)
+    if (filtroStatus === "alugados") return isRentedCurrentRow(row)
+    return true
+  })
+
+  const rowTotalsExibicao = sumRows(linhasImoveisExibicao)
+
+  const despesasAgrupadas = (despesas?.despesas ?? []).reduce((acc, d) => {
+    let cat = "Outras despesas"
+    const lower = (d.tipo || d.fornecedor || "").toLowerCase()
+    if (lower.includes("enel") || lower.includes("energia") || lower.includes("luz")) cat = "Energia Elétrica"
+    else if (lower.includes("cagece") || lower.includes("agua") || lower.includes("água")) cat = "Água/Esgoto"
+    else if (lower.includes("iptu")) cat = "IPTU"
+    else if (lower.includes("seguro") || lower.includes("incendio")) cat = "Seguro Incêndio"
+    
+    if (!acc[cat]) acc[cat] = { total: 0, items: [] }
+    acc[cat].total += d.valor
+    acc[cat].items.push(d)
+    return acc
+  }, {} as Record<string, { total: number, items: Array<NonNullable<typeof despesas>["despesas"][number]> }>)
 
   return (
     <div className="space-y-6">
@@ -389,15 +457,16 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
 
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <MetricTile label="Recebido" value={formatBRL(totals.total_receitas)} tone="positive" subtext="Em nome do locador" />
-              <MetricTile label="Comissão admin." value={formatBRL(totals.total_comissoes)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} />
-              <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} />
-              <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" />
+              <MetricTile label="Recebido" value={formatBRL(totals.total_receitas)} tone="positive" subtext="Em nome do locador" tooltip="Soma de todos os aluguéis e encargos (água, IPTU, etc.) efetivamente pagos pelos inquilinos nesta competência." />
+              <MetricTile label="Comissão admin." value={formatBRL(totals.total_comissoes)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Nenhuma taxa cadastrada na regra comercial."} />
+              <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
+              <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
               <MetricTile
                 label="Diferença"
                 value={totals.diferenca_repasse === null ? "-" : formatBRL(totals.diferenca_repasse)}
                 tone={totals.diferenca_repasse ? "danger" : "positive"}
                 subtext="Entre cálculo e comprovante"
+                tooltip="Diferença entre o Total a Repassar (calculado) e o valor pago encontrado no comprovante de repasse."
               />
             </div>
 
@@ -549,18 +618,44 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
 
       {prestacao && (
         <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
-            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Receitas por imovel</h3>
-            <span className="text-[14px] font-medium text-[#1A2B1C]">
-              Total das linhas: <span className="tabular-nums">{formatBRL(resumo?.total_linhas_receitas ?? totalLinhas)}</span>
-            </span>
+          <div className="p-4 border-b border-[#EEF1EE] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+            <div>
+              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Receitas por imóvel</h3>
+              <p className="text-[12px] text-[#6B7F6E]">Mostrando {linhasImoveisExibicao.length} de {linhasImoveis.length} unidades</p>
+            </div>
+            
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-2.5 text-[#8A9A8C]" />
+                <input
+                  type="text"
+                  placeholder="Buscar apto ou inquilino..."
+                  value={filtroTexto}
+                  onChange={(e) => setFiltroTexto(e.target.value)}
+                  className="h-9 w-full sm:w-[220px] rounded-md border border-[#D5DDD6] bg-white pl-8 pr-3 text-[13px] text-[#1A2B1C] focus:border-[#2D8C3A] focus:outline-none"
+                />
+              </div>
+              <div className="flex bg-[#F4F9F5] rounded-md p-1 border border-[#D1E7D6]">
+                {(["todos", "alugados", "vagos", "inadimplentes"] as const).map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFiltroStatus(status)}
+                    className={`px-3 py-1 text-[11px] font-medium rounded-sm capitalize transition-colors ${
+                      filtroStatus === status ? "bg-white text-[#1A5C24] shadow-sm border border-[#C3DEC9]" : "text-[#6B7F6E] hover:text-[#3D4F3F]"
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="max-h-[70vh] overflow-auto">
           <table className="w-full min-w-[1120px] text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Garagem (R$)", "Vagas", "Agua", "IPTU", "Seg. inc.", "Total", "Comissao", "Repasse", "Obs", "Qualidade leitura"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Obs", "Q. Leitura"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -568,52 +663,59 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
               </tr>
             </thead>
             <tbody>
-              {prestacao.receitas_por_imovel.map((row) => {
-                const badge = getRowBadge(row)
-                return (
-                <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
-                  <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
-                  <td className="px-4 py-3.5 text-[#3D4F3F]">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span>{row.inquilino?.trim() ? row.inquilino : "-"}</span>
-                      {badge && (
-                        <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${badge.classes}`}>
-                          {badge.label}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
-                    {row.aluguel !== null ? formatBRL(row.aluguel) : "-"}
-                  </td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.vagas_garagem ?? "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
-                  <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
-                  <td className="max-w-[260px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E]">{row.observacao?.trim() || "-"}</td>
-                  <td className="px-4 py-3.5 text-[#3D4F3F]">{Math.round(row.confianca * 100)}%</td>
+              {linhasImoveisExibicao.length > 0 ? (
+                linhasImoveisExibicao.map((row) => {
+                  const badge = getRowBadge(row)
+                  return (
+                  <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
+                    <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
+                    <td className="px-4 py-3.5 text-[#3D4F3F]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>{row.inquilino?.trim() ? row.inquilino : "-"}</span>
+                        {badge && (
+                          <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${badge.classes}`}>
+                            {badge.label}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
+                      {row.aluguel !== null ? formatBRL(row.aluguel) : "-"}
+                    </td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.vagas_garagem ?? "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
+                    <td className="max-w-[220px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] truncate" title={row.observacao?.trim() || ""}>{row.observacao?.trim() || "-"}</td>
+                    <td className="px-4 py-3.5 text-[#3D4F3F]">{Math.round(row.confianca * 100)}%</td>
+                  </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan={13} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
-                )
-              })}
+              )}
             </tbody>
             <tfoot>
               <tr className="border-t border-[#D5DDD6] bg-[#F8FAF8] font-semibold text-[#1A2B1C]">
-                <td className="px-4 py-3" colSpan={2}>Total</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.aluguel)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.garagem)}</td>
+                <td className="px-4 py-3" colSpan={2}>
+                  Total {filtroStatus !== "todos" || filtroTexto ? "Filtrado" : ""}
+                </td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.aluguel)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.garagem)}</td>
                 <td className="px-4 py-3 tabular-nums">-</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.agua)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.iptu)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.seguro)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.total)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.comissao)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotals.repasse)}</td>
-                <td className="px-4 py-3">-</td>
-                <td className="px-4 py-3">-</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.agua)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.iptu)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.seguro)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>
+                <td className="px-4 py-3" colSpan={2}></td>
               </tr>
             </tfoot>
           </table>
@@ -681,23 +783,54 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
         </div>
 
         <div className="bg-white border border-[#EEF1EE] rounded-xl p-5">
-          <h3 className="text-[16px] font-bold text-[#1A2B1C] mb-4">Despesas extraidas</h3>
+          <h3 className="text-[16px] font-bold text-[#1A2B1C] mb-4">Despesas extraídas</h3>
           {despesas && despesas.despesas.length > 0 ? (
-            <div className="space-y-3">
-              {despesas.despesas.map((despesa, index) => (
-                <div key={`${despesa.tipo}-${index}`} className="flex justify-between gap-3 border-b border-[#EEF1EE] pb-3 last:border-0 last:pb-0">
-                  <div>
-                    <p className="text-[13px] font-medium text-[#1A2B1C]">{despesa.fornecedor ?? despesa.tipo}</p>
-                    <p className="text-[12px] text-[#6B7F6E]">{despesa.referencia ?? despesa.vencimento ?? "Referencia nao extraida"}</p>
+            <div className="space-y-4">
+              {Object.entries(despesasAgrupadas).map(([categoria, info]) => (
+                <div key={categoria} className="border border-[#EEF1EE] rounded-lg overflow-hidden">
+                  <div className="bg-[#F8FAF8] px-3 py-2 border-b border-[#EEF1EE] flex justify-between items-center">
+                    <span className="text-[13px] font-bold text-[#1A2B1C]">{categoria}</span>
+                    <span className="text-[13px] font-bold text-[#1A2B1C] tabular-nums">{formatBRL(info.total)}</span>
                   </div>
-                  <p className="text-[13px] font-bold tabular-nums text-[#1A2B1C]">{formatBRL(despesa.valor)}</p>
+                  <div className="divide-y divide-[#EEF1EE]">
+                    {info.items.map((despesa, index) => (
+                      <div key={index} className="flex justify-between gap-3 p-3 group relative cursor-help" title={`Snippet lido:\n"${despesa.observacao || despesa.tipo}"`}>
+                        <div className="flex items-start gap-2">
+                          <Info size={14} className="mt-0.5 text-[#C3DEC9] group-hover:text-[#2D8C3A] transition-colors shrink-0" />
+                          <div>
+                            <p className="text-[13px] font-medium text-[#1A2B1C]">{despesa.fornecedor ?? despesa.tipo}</p>
+                            <p className="text-[12px] text-[#6B7F6E]">{despesa.referencia ?? despesa.vencimento ?? "Referência não extraída"}</p>
+                          </div>
+                        </div>
+                        <p className="text-[13px] font-bold tabular-nums text-[#1A2B1C]">{formatBRL(despesa.valor)}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-[13px] text-[#6B7F6E]">Nenhuma despesa extraida do pacote real.</p>
+            <p className="text-[13px] text-[#6B7F6E]">Nenhuma despesa extraída do pacote real.</p>
           )}
         </div>
+      </section>
+
+      <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <MessageSquare size={18} className="text-[#2D8C3A]" />
+            <h3 className="text-[16px] font-bold text-[#1A2B1C]">Comentários da Revisão</h3>
+          </div>
+          <span className="text-[11px] font-medium text-[#6B7F6E] bg-[#F8FAF8] px-2 py-1 rounded">
+            {saveStatus === "saving" ? "Salvando..." : saveStatus === "saved" ? "Salvo automanticamente" : saveStatus === "error" ? "Erro ao salvar" : ""}
+          </span>
+        </div>
+        <textarea
+          value={comentario}
+          onChange={(e) => setComentario(e.target.value)}
+          placeholder="Adicione notas, ressalvas ou explicações gerais sobre o fechamento..."
+          className="w-full min-h-[80px] p-3 text-[13px] text-[#1A2B1C] bg-[#F8FAF8] border border-[#EEF1EE] rounded-lg focus:border-[#2D8C3A] focus:ring-1 focus:ring-[#2D8C3A] focus:outline-none resize-y"
+        />
       </section>
 
       {reajuste && reajuste.itens.length > 0 && (

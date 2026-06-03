@@ -21,6 +21,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       total_repassar,
       valor_repassado_comprovante,
       diferenca_total,
+      comentario_operador,
       analise_completa,
       criado_em,
       atualizado_em,
@@ -106,6 +107,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       total_repassar: data.total_repassar,
       valor_repassado_comprovante: data.valor_repassado_comprovante,
       diferenca_total: data.diferenca_total,
+      comentario_operador: data.comentario_operador,
       criado_em: data.criado_em,
       atualizado_em: data.atualizado_em,
       imobiliarias: data.imobiliarias,
@@ -114,4 +116,32 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     },
     analise_completa: analiseCompleta,
   })
+}
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params
+  const supabase = createSupabaseAdmin()
+
+  try {
+    const body = await request.json()
+    const { comentario_operador } = body
+
+    const { data, error } = await supabase
+      .from("fechamentos")
+      .update({
+        comentario_operador: comentario_operador ?? null,
+        atualizado_em: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select("id, comentario_operador")
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ fechamento: data })
+  } catch (err) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
+  }
 }
