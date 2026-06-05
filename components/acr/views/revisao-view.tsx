@@ -9,12 +9,14 @@ import {
   FileText,
   ReceiptText,
   RefreshCw,
+  Send,
   ShieldCheck,
   Search,
   MessageSquare,
   Info
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
+import type { EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
@@ -27,11 +29,13 @@ interface RevisaoViewProps {
     empreendimentos?: { nome: string } | null
     competencia: string
     comentario_operador?: string | null
+    status?: string
     regra_comercial?: {
       taxa_administracao_percent: number
       taxa_intermediacao_percent: number
     } | null
   } | null
+  egestorLancamentos?: EgestorLancamento[]
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
   onRefresh?: () => void
 }
@@ -235,7 +239,23 @@ function formatDateBR(value: string | null | undefined) {
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(date)
 }
 
-export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, analysisResult }: RevisaoViewProps) {
+function getEgestorStatusClasses(status: EgestorLancamento["status"]) {
+  if (status === "validado") return "bg-[#DCFCE7] text-[#166534]"
+  if (status === "enviado") return "bg-[#DBEAFE] text-[#1E40AF]"
+  if (status === "anexo_pendente") return "bg-[#FEF3C7] text-[#92400E]"
+  if (status === "erro") return "bg-[#FEE2E2] text-[#991B1B]"
+  return "bg-[#FEF3C7] text-[#92400E]"
+}
+
+function getEgestorStatusLabel(lancamento: EgestorLancamento) {
+  if (lancamento.status === "validado") return "Validado"
+  if (lancamento.status === "enviado") return `Enviado #${lancamento.egestor_codigo ?? "-"}`
+  if (lancamento.status === "anexo_pendente") return "Anexo pendente"
+  if (lancamento.status === "erro") return "Erro"
+  return "Configuração pendente"
+}
+
+export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, analysisResult, egestorLancamentos = [] }: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
     id: string
     fechamento_id: string
@@ -252,6 +272,8 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
 
   const [comentario, setComentario] = useState(fechamento?.comentario_operador ?? "")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
+  const [egestorAction, setEgestorAction] = useState<"idle" | "approving" | "previewing" | "sending">("idle")
+  const [egestorError, setEgestorError] = useState<string | null>(null)
 
   useEffect(() => {
     if (fechamento?.comentario_operador !== undefined && comentario === "") {
@@ -305,6 +327,33 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
   const warningRechecks = actionableRechecks.filter((check) => check.status === "warning")
   const validationSummary = getValidationSummary(rechecks)
   const hasBlocking = parecer.status === "bloqueado" || failedRechecks.length > 0
+  const isApproved = ["aprovado", "preparado_egestor", "lancado_egestor", "erro_egestor"].includes(fechamento?.status ?? "")
+  const canPreviewEgestor = isApproved && !hasBlocking
+  const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
+  const hasSentEgestor = egestorLancamentos.some((l) => l.egestor_codigo !== null)
+
+  async function runEgestorAction(action: "approve" | "preview" | "send") {
+    setEgestorError(null)
+    setEgestorAction(action === "approve" ? "approving" : action === "preview" ? "previewing" : "sending")
+    const url =
+      action === "approve"
+        ? `/api/fechamentos/${fechamentoId}/aprovar`
+        : action === "preview"
+          ? `/api/fechamentos/${fechamentoId}/egestor/preview`
+          : `/api/fechamentos/${fechamentoId}/egestor/send`
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: action === "send" ? JSON.stringify({ confirmation: "ENVIAR_EGESTOR" }) : "{}",
+    })
+    const payload = await response.json()
+    setEgestorAction("idle")
+    if (!response.ok || payload.error) {
+      setEgestorError(payload.error ?? "Falha na integração eGestor.")
+      return
+    }
+    if (onRefresh) await onRefresh()
+  }
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento nao identificado"
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
   const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competencia nao identificada"
@@ -394,14 +443,15 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
             Reprocessar
           </Link>
           <button
-            disabled={hasBlocking}
-            title={hasBlocking ? "Resolva as pendências bloqueantes primeiro" : "Fechamento sem bloqueios"}
+            onClick={() => runEgestorAction("approve")}
+            disabled={hasBlocking || isApproved || egestorAction !== "idle"}
+            title={hasBlocking ? "Resolva as pendências bloqueantes primeiro" : isApproved ? "Fechamento aprovado" : "Aprovar fechamento"}
             className={`h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium inline-flex items-center gap-2 ${
-              hasBlocking ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-[#1A5C24]"
+              hasBlocking || isApproved ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-[#1A5C24]"
             }`}
           >
             <CheckCircle size={14} />
-            Aprovar fechamento
+            {isApproved ? "Fechamento aprovado" : egestorAction === "approving" ? "Aprovando..." : "Aprovar fechamento"}
           </button>
         </div>
       </div>
@@ -837,6 +887,74 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
         />
       </section>
 
+      <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <SectionTitle
+            title="Prévia eGestor"
+            description="Lançamentos consolidados para envio após a aprovação do fechamento."
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => runEgestorAction("preview")}
+              disabled={!canPreviewEgestor || egestorAction !== "idle" || hasSentEgestor}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+            >
+              <ReceiptText size={14} />
+              {egestorAction === "previewing" ? "Gerando..." : "Gerar prévia"}
+            </button>
+            <button
+              onClick={() => runEgestorAction("send")}
+              disabled={!canSendEgestor || egestorAction !== "idle" || hasSentEgestor}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2D8C3A] px-3 text-[13px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
+            >
+              <Send size={14} />
+              {hasSentEgestor ? "Enviado" : egestorAction === "sending" ? "Enviando..." : "Enviar ao eGestor"}
+            </button>
+          </div>
+        </div>
+        {egestorError && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] p-3 text-[13px] text-[#991B1B]">
+            <AlertTriangle size={15} />
+            {egestorError}
+          </div>
+        )}
+        {!isApproved ? (
+          <p className="mt-4 text-[13px] text-[#6B7F6E]">Aprove o fechamento para preparar os lançamentos do eGestor.</p>
+        ) : egestorLancamentos.length === 0 ? (
+          <p className="mt-4 text-[13px] text-[#6B7F6E]">Nenhuma prévia gerada ainda.</p>
+        ) : (
+          <div className="mt-4 overflow-hidden rounded-lg border border-[#EEF1EE]">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F8FAF8] text-[11px] uppercase tracking-wide text-[#6B7F6E]">
+                <tr>
+                  {["Tipo", "Categoria", "Descrição", "Valor", "Plano", "Status"].map((header) => (
+                    <th key={header} className="px-3 py-2 text-left font-medium">{header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EEF1EE]">
+                {egestorLancamentos.map((lancamento) => (
+                  <tr key={lancamento.id}>
+                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.tipo}</td>
+                    <td className="px-3 py-2 font-medium text-[#1A2B1C]">{lancamento.categoria}</td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.descricao}</td>
+                    <td className="px-3 py-2 tabular-nums text-[#1A2B1C]">{formatBRL(lancamento.valor)}</td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.cod_plano_contas ?? "-"}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getEgestorStatusClasses(lancamento.status)}`}>
+                        {getEgestorStatusLabel(lancamento)}
+                      </span>
+                      {lancamento.validacao_mensagem && <p className="mt-1 text-[11px] text-[#991B1B]">{lancamento.validacao_mensagem}</p>}
+                      {lancamento.anexo_mensagem && <p className="mt-1 text-[11px] text-[#92400E]">{lancamento.anexo_mensagem}</p>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {reajuste && reajuste.itens.length > 0 && (
         <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
           <h3 className="text-[16px] font-bold text-[#1A2B1C] mb-4">Relatorio de locacao/reajuste</h3>
@@ -972,13 +1090,14 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
             Exportar relatorio
           </button>
           <button
-            disabled={hasBlocking}
+            onClick={() => runEgestorAction("approve")}
+            disabled={hasBlocking || isApproved || egestorAction !== "idle"}
             className={`h-10 px-4 rounded-lg bg-[#2D8C3A] text-white text-[14px] font-medium inline-flex items-center gap-2 ${
-              hasBlocking ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-[#1A5C24]"
+              hasBlocking || isApproved ? "opacity-60 cursor-not-allowed pointer-events-none" : "hover:bg-[#1A5C24]"
             }`}
           >
             <CheckCircle size={14} />
-            Aprovar fechamento
+            {isApproved ? "Fechamento aprovado" : egestorAction === "approving" ? "Aprovando..." : "Aprovar fechamento"}
           </button>
         </div>
       </div>

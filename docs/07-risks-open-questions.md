@@ -27,13 +27,12 @@
 
 ## Perguntas que bloqueiam Fase 4
 
-- Lancamento eGestor sera consolidado por imobiliaria/competencia ou detalhado por imovel?
-- Quais tags/categorias ja existem no eGestor?
-- O eGestor permite anexar comprovantes via API?
-- Existe conta de teste no eGestor?
-- Qual sera a regra oficial para despesas pagas pela imobiliaria?
+- Respondido: lancamento V1 sera consolidado por fechamento/imobiliaria/competencia, nao por imovel.
+- Respondido: mapeamentos oficiais ficarao no ACR, configurados por categoria, imobiliaria e empreendimento.
+- Respondido tecnicamente: eGestor possui `discoVirtual`; anexos serao tentados apos o lancamento financeiro e falha nao desfaz o envio.
+- Pendente operacional: validar escrita real em ambiente/conta controlada antes de usar em producao.
+- Respondido: despesas pagas pela imobiliaria entram como pagamentos separados, sem dupla contagem no repasse.
 
 ## Pos-MVP
 
 - Havera multiplos proprietarios no mesmo sistema? Decisao atual: nao.
-

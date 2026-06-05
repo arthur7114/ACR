@@ -30,6 +30,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `revisao`: resumo financeiro agrupado no topo, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, separacao clara entre receitas, comissao administrativa, outras despesas e total comissao + despesas, exibicao da taxa cadastrada, da comissao realizada em % e da data do repasse, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, situacao das unidades separando alugadas, inadimplentes e aptos vagos, pendencias de revisao, receitas por imovel com totalizadores e cabecalho fixo, acordos/rescisoes recebidos no mes, despesas, comprovante de repasse, documentos colapsaveis no fim e acoes.
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
+- `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
 
 ## Fluxo contratado
 
@@ -49,6 +50,7 @@ Estados e acoes relevantes:
 - Leitura do documento e documentos processados ficam no fim da revisao, em secoes colapsaveis fechadas por padrao, para nao deslocar o resumo financeiro operacional.
 - Possivel pagamento repetido de acordo/rescisao e pendencia bloqueante ate resolucao ou justificativa.
 - Fechamentos aprovados podem ser vistos em detalhes.
+- Depois de aprovado, a revisao exibe a previa eGestor com lancamentos consolidados, status de configuracao e acao de envio real controlado.
 
 ## Dados e nomenclatura de exemplo
 

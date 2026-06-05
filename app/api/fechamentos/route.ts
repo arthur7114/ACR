@@ -14,6 +14,7 @@ export async function GET() {
       total_repassar,
       valor_repassado_comprovante,
       diferenca_total,
+      atualizado_em,
       imobiliarias ( nome ),
       empreendimentos ( nome )
     `)

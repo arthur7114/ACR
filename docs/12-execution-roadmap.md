@@ -18,7 +18,7 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 | 1 - App vivo sem IA | concluida | Schema inicial, Storage, CRUD de cadastros, importação CSV de imóveis e UI conectada aos dados reais. |
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
-| 4 - eGestor e layouts futuros | pendente | Depende de respostas sobre eGestor. |
+| 4 - eGestor e layouts futuros | em andamento | Integracao eGestor V1 implementada com configuracao, previa dry-run, envio controlado e auditoria tecnica. |
 
 ## Decisoes registradas
 
@@ -63,6 +63,18 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 
 ## Historico de ciclos
+
+### 2026-06-05 - Integracao eGestor V1
+
+Status: in progress
+Job: Implementar fluxo seguro ACR -> eGestor com configuracao local, previa dry-run, envio controlado e auditoria tecnica.
+Outcome entregue: migration da integracao criada; tela `Configuracoes` passou a configurar token, conta disponivel, planos de contas, contatos e tags; camada server-side `egestor` autentica no eGestor, gera previa consolidada, aprova fechamento, envia recebimentos/pagamentos de forma idempotente e tenta anexar documentos via `discoVirtual`; revisao exibe painel de previa eGestor e a listagem reflete `preparado_egestor`, `lancado_egestor` e `erro_egestor`.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `npx --yes tsx --test lib/server/egestor.test.ts lib/server/package-rechecks.test.ts`, `pnpm build` e `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` passaram. `npx supabase db push --dry-run` nao validou porque o checkout nao esta linkado a um project ref Supabase.
+Decisoes: V1 consolidada por fechamento; repasse como recebimento; comissao/despesas como pagamentos; mapeamentos oficiais no ACR; contato eGestor por imobiliaria; anexos sao pos-lancamento e nao desfazem financeiro.
+Arquivos/docs impactados: `supabase/migrations/202606050001_egestor_integracao.sql`, `lib/server/egestor.ts`, `lib/server/egestor-client.ts`, `app/api/egestor/config/route.ts`, `app/api/fechamentos/[id]/aprovar/route.ts`, `app/api/fechamentos/[id]/egestor/*`, `components/acr/views/configuracoes-view.tsx`, `components/acr/views/revisao-view.tsx`, `components/acr/views/fechamentos-view.tsx`, `.env.example`, docs numerados da Etapa 4.
+Proxima acao: resolver pendencias bloqueantes de um fechamento real e executar o primeiro dry-run eGestor pela revisao antes de qualquer envio real.
+
+Atualizacao operacional 2026-06-05: migration `202606050001_egestor_integracao.sql` aplicada no Supabase remoto via pooler `aws-1-us-east-2`; configuracao eGestor gravada com token ativo, conta disponivel padrao `2`, planos de contas reais (`repasse_mensal=44`, `comissao_administrativa=23`, `energia=18`, `agua=13`, `iptu=73`, `seguro=72`, `outras_despesas=26`) e contatos por imobiliaria (`Alive=233`, `Cesar Rego=15`, `Plural=19`); teste de conexao eGestor passou. Dry-run real nao foi executado porque nao ha fechamento elegivel sem bloqueios abertos no banco atual.
 
 ### 2026-06-03 - Hotfix revisão 404 em análises antigas
 

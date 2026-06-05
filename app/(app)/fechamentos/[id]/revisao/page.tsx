@@ -6,6 +6,7 @@ import { CorrectionModal } from "@/components/acr/correction-modal"
 import { RevisaoView } from "@/components/acr/views/revisao-view"
 import { useProcessing } from "@/lib/contexts/processing-context"
 import { formatBRL } from "@/lib/format"
+import type { EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 
 interface PageProps {
@@ -16,6 +17,8 @@ type FechamentoResumo = {
   imobiliarias?: { nome: string } | null
   empreendimentos?: { nome: string } | null
   competencia: string
+  status?: string
+  comentario_operador?: string | null
   regra_comercial?: {
     taxa_administracao_percent: number
     taxa_intermediacao_percent: number
@@ -27,6 +30,7 @@ export default function RevisaoPage({ params }: PageProps) {
   const { analysisResult: cachedAnalysis } = useProcessing()
   const [analysis, setAnalysis] = useState<PackageAnalysis | null>(cachedAnalysis)
   const [fechamento, setFechamento] = useState<FechamentoResumo | null>(null)
+  const [egestorLancamentos, setEgestorLancamentos] = useState<EgestorLancamento[]>([])
   const [loading, setLoading] = useState(!cachedAnalysis)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
@@ -42,6 +46,7 @@ export default function RevisaoPage({ params }: PageProps) {
         }
         setAnalysis(payload.analise_completa ?? null)
         setFechamento(payload.fechamento ?? null)
+        setEgestorLancamentos(payload.egestor_lancamentos ?? [])
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
@@ -52,6 +57,7 @@ export default function RevisaoPage({ params }: PageProps) {
     if (cachedAnalysis) {
       setAnalysis(cachedAnalysis)
       setLoading(false)
+      loadFromApi()
       return
     }
     setLoading(true)
@@ -82,6 +88,7 @@ export default function RevisaoPage({ params }: PageProps) {
         fechamentoId={id}
         analysisResult={analysis}
         fechamento={fechamento}
+        egestorLancamentos={egestorLancamentos}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
         onRefresh={loadFromApi}
       />

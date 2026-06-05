@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, CheckCircle, Loader2, Plus } from "lucide-react"
+import { AlertTriangle, CheckCircle, Loader2, Plus, Send } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 
-type Status = "pendente" | "aprovado" | "processando"
+type Status = "pendente" | "aprovado" | "processando" | "preparado_egestor" | "lancado_egestor" | "erro_egestor"
 
 interface Row {
   id: string
@@ -25,6 +25,9 @@ function formatCompetencia(date: string) {
 }
 
 function mapStatus(dbStatus: string): Status {
+  if (dbStatus === "lancado_egestor") return "lancado_egestor"
+  if (dbStatus === "preparado_egestor") return "preparado_egestor"
+  if (dbStatus === "erro_egestor") return "erro_egestor"
   if (dbStatus === "aprovado") return "aprovado"
   if (dbStatus === "rascunho") return "processando"
   return "pendente"
@@ -44,6 +47,30 @@ function StatusBadge({ status }: { status: Status }) {
       <span className="inline-flex items-center gap-1 bg-[#DCFCE7] text-[#166534] rounded-full px-3 py-1 text-xs font-medium">
         <CheckCircle size={12} />
         Aprovado
+      </span>
+    )
+  }
+  if (status === "preparado_egestor") {
+    return (
+      <span className="inline-flex items-center gap-1 bg-[#E0F2FE] text-[#075985] rounded-full px-3 py-1 text-xs font-medium">
+        <Send size={12} />
+        Pronto eGestor
+      </span>
+    )
+  }
+  if (status === "lancado_egestor") {
+    return (
+      <span className="inline-flex items-center gap-1 bg-[#DCFCE7] text-[#166534] rounded-full px-3 py-1 text-xs font-medium">
+        <CheckCircle size={12} />
+        Lançado eGestor
+      </span>
+    )
+  }
+  if (status === "erro_egestor") {
+    return (
+      <span className="inline-flex items-center gap-1 bg-[#FEE2E2] text-[#991B1B] rounded-full px-3 py-1 text-xs font-medium">
+        <AlertTriangle size={12} />
+        Erro eGestor
       </span>
     )
   }

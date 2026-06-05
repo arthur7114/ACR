@@ -31,5 +31,8 @@
 
 ## Etapa 4 - Futuro
 
-- Previa eGestor deve listar lancamentos, categorias, tags, contas, descricoes, valores e status de validacao.
-- Envio real ao eGestor so deve iniciar depois das perguntas abertas da fase serem respondidas.
+- CA15: configuracao eGestor deve permitir token, teste de conexao, conta disponivel padrao, contato/tag por imobiliaria, tag por empreendimento e plano de contas por categoria.
+- CA16: previa eGestor deve listar lancamentos, categorias, tags, contas, descricoes, valores e status de validacao.
+- CA17: envio real ao eGestor so deve ocorrer apos fechamento aprovado, previa validada e confirmacao explicita do operador.
+- CA18: envio deve ser idempotente; fechamento com codigo eGestor salvo nao pode reenviar os mesmos lancamentos.
+- CA19: falha de anexo nao desfaz lancamento financeiro; o item fica marcado como anexo pendente para retry futuro.

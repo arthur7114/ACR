@@ -1,0 +1,58 @@
+export type EgestorTipoLancamento = "recebimento" | "pagamento"
+
+export type EgestorCategoria =
+  | "repasse_mensal"
+  | "comissao_administrativa"
+  | "energia"
+  | "agua"
+  | "iptu"
+  | "seguro"
+  | "outras_despesas"
+
+export type EgestorLancamentoStatus = "validado" | "pendente_config" | "enviado" | "erro" | "anexo_pendente"
+
+export type EgestorConfiguracao = {
+  ativo: boolean
+  token_configurado: boolean
+  token_mascarado: string | null
+  cod_disponivel_padrao: number | null
+  ultimo_teste_status: string | null
+  ultimo_teste_mensagem: string | null
+  ultimo_teste_em: string | null
+}
+
+export type EgestorMapeamentoCategoria = {
+  categoria: EgestorCategoria
+  tipo_lancamento: EgestorTipoLancamento
+  cod_plano_contas: number | null
+  tags: string[]
+  descricao: string | null
+  ativo: boolean
+}
+
+export type EgestorLancamento = {
+  id: string
+  fechamento_id: string
+  tipo: EgestorTipoLancamento
+  categoria: EgestorCategoria
+  descricao: string
+  valor: number
+  cod_contato: number | null
+  cod_disponivel: number | null
+  cod_plano_contas: number | null
+  tags: string[]
+  payload: Record<string, unknown>
+  status: EgestorLancamentoStatus
+  validacao_mensagem: string | null
+  egestor_codigo: number | null
+  egestor_cod_modulo: number | null
+  anexo_status: string | null
+  anexo_mensagem: string | null
+}
+
+export type EgestorConfigPayload = {
+  configuracao: EgestorConfiguracao
+  mapeamentos: EgestorMapeamentoCategoria[]
+  imobiliarias: Array<{ id: string; nome: string; egestor_contato_id: number | null; egestor_tag_id: string | null }>
+  empreendimentos: Array<{ id: string; nome: string; egestor_tag_id: string | null }>
+}

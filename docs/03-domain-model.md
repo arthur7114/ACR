@@ -23,6 +23,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
 - Validacao: alerta ou divergencia com severidade, status, valores esperados/encontrados e justificativa.
 - Mapeamento eGestor: categorias internas para categorias/tags/contas do eGestor.
+- Integracao eGestor V1: fechamento aprovado gera lancamentos consolidados em `egestor_lancamentos`; repasse mensal vira `recebimento`; comissao administrativa e despesas agrupadas viram `pagamentos`; envio real grava codigos eGestor e tentativas em auditoria tecnica.
 
 ## RBAC
 

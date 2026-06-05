@@ -63,4 +63,4 @@ Aprovacao exige:
 - comprovante de repasse conciliado ou justificado;
 - despesas criticas conciliadas ou justificadas.
 
-Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. Envio real fica para fase futura.
+Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. A V1 usa lancamento consolidado por fechamento: repasse mensal como recebimento, comissao/despesas como pagamentos separados. O envio real so ocorre por acao explicita do operador e fica bloqueado quando ha pendencia, configuracao incompleta ou lancamento ja enviado.

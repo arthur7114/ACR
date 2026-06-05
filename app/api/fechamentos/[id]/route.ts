@@ -115,6 +115,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       regra_comercial: regraComercialNormalizada,
     },
     analise_completa: analiseCompleta,
+    egestor_lancamentos: await getEgestorLancamentos(supabase, id),
   })
 }
 
@@ -144,4 +145,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   } catch (err) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
+}
+
+async function getEgestorLancamentos(supabase: ReturnType<typeof createSupabaseAdmin>, fechamentoId: string) {
+  const { data } = await supabase
+    .from("egestor_lancamentos")
+    .select("*")
+    .eq("fechamento_id", fechamentoId)
+    .order("tipo")
+    .order("categoria")
+
+  return data ?? []
 }
