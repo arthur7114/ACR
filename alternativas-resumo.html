@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alternativas - Resumo Financeiro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#EFF7F1',
+                            100: '#E1F0E4',
+                            500: '#2D8C3A',
+                            600: '#247330',
+                            900: '#1A2B1C',
+                        },
+                        textSec: '#6B7F6E',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1A2B1C; }
+        .card { background: white; border-radius: 0.75rem; border: 1px solid #e5e7eb; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); }
+    </style>
+</head>
+<body class="p-8 space-y-16">
+
+    <div class="max-w-6xl mx-auto space-y-4">
+        <h1 class="text-2xl font-bold">Propostas de Layout: Resumo Financeiro</h1>
+        <p class="text-gray-600">Problema atual: Card grande vazio à esquerda e muitos cards pequenos "espremidos" à direita.</p>
+    </div>
+
+    <!-- ALTERNATIVA 1: Painel Consolidado (Foco em Tabela/Lista) -->
+    <div class="max-w-6xl mx-auto space-y-4">
+        <h2 class="text-xl font-semibold text-brand-500">Alternativa 1: Painel Consolidado</h2>
+        <p class="text-sm text-gray-600 mb-4">Elimina os vários cards soltos. O "Total a Repassar" ganha destaque na esquerda, mas a quebra dos valores vira uma lista limpa na direita, dentro do mesmo bloco.</p>
+        
+        <div class="card p-6 flex flex-col md:flex-row gap-8 items-center">
+            <!-- Esquerda: Destaque -->
+            <div class="w-full md:w-1/3 flex flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200 pb-6 md:pb-0 md:pr-8">
+                <p class="text-sm font-medium text-gray-500 uppercase tracking-wider mb-2">Total a repassar</p>
+                <div class="text-4xl font-bold text-red-600 mb-2">R$ 6.103,89</div>
+                <div class="flex items-center gap-2 text-sm text-brand-500 bg-brand-50 w-fit px-3 py-1 rounded-full">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Comprovante: R$ 6.103,89
+                </div>
+                <p class="text-xs text-gray-400 mt-4">Data do repasse: 12/05/2026</p>
+            </div>
+
+            <!-- Direita: Detalhamento Limpo -->
+            <div class="w-full md:w-2/3">
+                <div class="grid grid-cols-2 gap-y-6 gap-x-8">
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase mb-1">Recebido</p>
+                        <p class="text-xl font-semibold text-gray-900">R$ 6.866,82</p>
+                        <p class="text-xs text-gray-400">Em nome do locador</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase mb-1">Diferença</p>
+                        <p class="text-xl font-semibold text-brand-500">R$ 0,00</p>
+                        <p class="text-xs text-gray-400">Entre cálculo e comprovante</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase mb-1">Comissão Admin. (7,52%)</p>
+                        <p class="text-lg font-medium text-gray-700">R$ 480,68</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 uppercase mb-1">Outras Despesas (4 itens)</p>
+                        <p class="text-lg font-medium text-gray-700">R$ 282,25</p>
+                    </div>
+                </div>
+                <div class="mt-6 pt-4 border-t border-gray-100 flex justify-between items-center">
+                    <span class="text-sm font-medium text-gray-500">Total abatido (Comissão + Despesas)</span>
+                    <span class="text-lg font-semibold text-gray-900">R$ 762,93</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ALTERNATIVA 2: Fluxo de Cálculo Visual -->
+    <div class="max-w-6xl mx-auto space-y-4">
+        <h2 class="text-xl font-semibold text-brand-500">Alternativa 2: Fluxo Matemático</h2>
+        <p class="text-sm text-gray-600 mb-4">Conta a história do dinheiro usando operadores matemáticos visuais. Fica claro exatamente como se chegou no valor final, sem deixar espaços vazios.</p>
+        
+        <div class="card p-8 bg-white flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <div class="text-center w-full md:w-1/4">
+                <p class="text-sm text-gray-500 mb-1">Recebido Bruto</p>
+                <p class="text-2xl font-bold text-gray-900">R$ 6.866,82</p>
+                <p class="text-xs text-gray-400 mt-1">15 unidades alugadas</p>
+            </div>
+
+            <div class="bg-gray-100 rounded-full p-2 text-gray-400 shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+            </div>
+
+            <div class="text-center w-full md:w-1/4">
+                <p class="text-sm text-gray-500 mb-1">Comissão + Despesas</p>
+                <p class="text-2xl font-bold text-gray-900">R$ 762,93</p>
+                <p class="text-xs text-blue-600 mt-1 cursor-pointer hover:underline">Ver detalhes (4 itens)</p>
+            </div>
+
+            <div class="bg-gray-100 rounded-full p-2 text-gray-400 shrink-0">
+                <span class="text-lg font-bold leading-none w-5 h-5 flex items-center justify-center">=</span>
+            </div>
+
+            <div class="text-center w-full md:w-1/3 bg-red-50 rounded-xl p-4 border border-red-100 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                <p class="text-sm font-semibold text-red-800 mb-1">TOTAL A REPASSAR</p>
+                <p class="text-3xl font-bold text-red-600">R$ 6.103,89</p>
+                <p class="text-xs text-red-600/80 mt-1 flex items-center justify-center gap-1">
+                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                    Diferença R$ 0,00
+                </p>
+            </div>
+            
+        </div>
+    </div>
+
+
+    <!-- ALTERNATIVA 3: Header Horizontal + Cards Livres -->
+    <div class="max-w-6xl mx-auto space-y-4">
+        <h2 class="text-xl font-semibold text-brand-500">Alternativa 3: Header Banner + Cards Uniformes</h2>
+        <p class="text-sm text-gray-600 mb-4">Transforma o valor principal num banner superior que atravessa toda a tela. Isso libera espaço abaixo para os cards terem tamanhos iguais e respirarem melhor.</p>
+        
+        <!-- Banner Principal -->
+        <div class="bg-gradient-to-r from-red-50 to-white border border-red-100 rounded-xl p-6 flex flex-col md:flex-row justify-between items-center shadow-sm">
+            <div>
+                <p class="text-red-800 font-medium text-sm tracking-wide uppercase mb-1">Resumo Financeiro • Total a Repassar</p>
+                <div class="flex items-end gap-4">
+                    <h3 class="text-4xl font-bold text-red-600">R$ 6.103,89</h3>
+                    <span class="text-sm text-brand-600 mb-1 flex items-center gap-1 bg-brand-50 px-2 py-1 rounded">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        Comprovante Bate (Dif. R$ 0,00)
+                    </span>
+                </div>
+            </div>
+            <div class="text-right mt-4 md:mt-0">
+                <p class="text-sm text-gray-500">Data do repasse</p>
+                <p class="font-medium text-gray-900">12/05/2026</p>
+            </div>
+        </div>
+
+        <!-- Grid de Cards Limpos -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <div class="card p-4">
+                <p class="text-xs text-gray-500 uppercase mb-2">Recebido Bruto</p>
+                <p class="text-xl font-semibold text-gray-900">R$ 6.866,82</p>
+                <p class="text-xs text-gray-400 mt-1">Em nome do locador</p>
+            </div>
+            <div class="card p-4">
+                <p class="text-xs text-gray-500 uppercase mb-2">Comissão Admin</p>
+                <p class="text-xl font-semibold text-gray-900">R$ 480,68</p>
+                <p class="text-xs text-gray-400 mt-1">7,52% realizada</p>
+            </div>
+            <div class="card p-4">
+                <p class="text-xs text-gray-500 uppercase mb-2">Outras Despesas</p>
+                <p class="text-xl font-semibold text-gray-900">R$ 282,25</p>
+                <p class="text-xs text-gray-400 mt-1">4 itens no resumo</p>
+            </div>
+            <div class="card p-4 bg-gray-50 border-gray-200">
+                <p class="text-xs text-gray-500 uppercase mb-2">Comissão + Despesas</p>
+                <p class="text-xl font-semibold text-gray-700">R$ 762,93</p>
+                <p class="text-xs text-gray-400 mt-1">Total abatido</p>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

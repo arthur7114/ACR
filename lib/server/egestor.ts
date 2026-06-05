@@ -405,10 +405,10 @@ function buildPayload(
 
   if (draft.tipo === "recebimento") {
     payload.dtCred = repasseDate ?? competencia
-    payload.dtPgto = repasseDate ?? "0000-00-00"
+    payload.dtPgto = repasseDate ?? ""
     payload.recebido = Boolean(repasseDate)
   } else {
-    payload.dtPgto = repasseDate ?? "0000-00-00"
+    payload.dtPgto = repasseDate ?? ""
     payload.pago = Boolean(repasseDate)
   }
 

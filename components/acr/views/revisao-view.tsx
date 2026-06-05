@@ -356,10 +356,10 @@ export function RevisaoView({
   const rechecks = analysisResult.rechecks ?? []
   const motivosParecer = parecer.motivos ?? []
   const actionableRechecks = rechecks.filter(isActionableWarning)
-  const failedRechecks = actionableRechecks.filter((check) => check.status === "failed")
-  const warningRechecks = actionableRechecks.filter((check) => check.status === "warning")
+  const failedRechecks = actionableRechecks.filter((check) => check.status === "failed" && !isResolvedCheck(check))
+  const warningRechecks = actionableRechecks.filter((check) => check.status === "warning" && !isResolvedCheck(check))
   const validationSummary = getValidationSummary(rechecks)
-  const hasBlocking = parecer.status === "bloqueado" || failedRechecks.length > 0
+  const hasBlocking = validationSummary.blocked > 0
   const isApproved = ["aprovado", "preparado_egestor", "lancado_egestor", "erro_egestor"].includes(fechamento?.status ?? "")
   const canPreviewEgestor = isApproved && !hasBlocking
   const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
@@ -940,7 +940,8 @@ export function RevisaoView({
               <button
                 onClick={() => runEgestorAction("preview")}
                 disabled={!canPreviewEgestor || egestorAction !== "idle" || hasSentEgestor}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+                title={!isApproved ? "Aprove o fechamento primeiro" : "Gerar prévia"}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <ReceiptText size={14} />
                 {egestorAction === "previewing" ? "Gerando..." : "Gerar prévia"}
@@ -981,7 +982,20 @@ export function RevisaoView({
           </div>
         )}
         {!isApproved ? (
-          <p className="mt-4 text-[13px] text-[#6B7F6E]">Aprove o fechamento para preparar os lançamentos do eGestor.</p>
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-[#F59E0B] bg-[#FEF3C7] p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <AlertTriangle size={18} className="text-[#92400E] shrink-0" />
+              <p className="text-[13px] text-[#92400E]">
+                <strong>Etapa bloqueada:</strong> Você precisa aprovar o fechamento no topo da tela antes de poder gerar a prévia do eGestor.
+              </p>
+            </div>
+            <button 
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="inline-flex items-center justify-center h-8 px-3 rounded-md bg-[#FDE68A] text-[#92400E] text-[12px] font-semibold hover:bg-[#FCD34D] transition-colors whitespace-nowrap"
+            >
+              Ir para aprovação ↑
+            </button>
+          </div>
         ) : egestorLancamentos.length === 0 ? (
           <p className="mt-4 text-[13px] text-[#6B7F6E]">Nenhuma prévia gerada ainda.</p>
         ) : (
