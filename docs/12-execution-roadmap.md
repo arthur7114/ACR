@@ -18,7 +18,7 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 | 1 - App vivo sem IA | concluida | Schema inicial, Storage, CRUD de cadastros, importação CSV de imóveis e UI conectada aos dados reais. |
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
-| 4 - eGestor e layouts futuros | em andamento | Integracao eGestor V1 implementada com configuracao, previa dry-run, envio controlado e auditoria tecnica. |
+| 4 - eGestor e layouts futuros | em andamento | Integracao eGestor V1 implementada com configuracao, previa dry-run, envio controlado, retry de anexos, revalidacao e auditoria tecnica. |
 
 ## Decisoes registradas
 
@@ -75,6 +75,16 @@ Arquivos/docs impactados: `supabase/migrations/202606050001_egestor_integracao.s
 Proxima acao: resolver pendencias bloqueantes de um fechamento real e executar o primeiro dry-run eGestor pela revisao antes de qualquer envio real.
 
 Atualizacao operacional 2026-06-05: migration `202606050001_egestor_integracao.sql` aplicada no Supabase remoto via pooler `aws-1-us-east-2`; configuracao eGestor gravada com token ativo, conta disponivel padrao `2`, planos de contas reais (`repasse_mensal=44`, `comissao_administrativa=23`, `energia=18`, `agua=13`, `iptu=73`, `seguro=72`, `outras_despesas=26`) e contatos por imobiliaria (`Alive=233`, `Cesar Rego=15`, `Plural=19`); teste de conexao eGestor passou. Dry-run real nao foi executado porque nao ha fechamento elegivel sem bloqueios abertos no banco atual.
+
+### 2026-06-05 - Operacao eGestor: retry, revalidacao e auditoria
+
+Status: done
+Job: Implementar os cinco pontos pos-V1: retry de anexos pendentes, revalidacao de status eGestor, auditoria de aprovacao/status, teste mockado do fluxo e observabilidade de `egestor_envios`.
+Outcome entregue: migration operacional adiciona auditoria de status e campos de revalidacao; backend expoe endpoints de revalidacao, retry de anexos e historico de envios; revisao mostra botoes pos-envio, mensagens de revalidacao, historico tecnico e trilha de status; testes mockados cobrem auth, retry 429/5xx e escrita autenticada do cliente eGestor.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `npx --yes tsx --test lib/server/egestor.test.ts lib/server/package-rechecks.test.ts`, `pnpm build` e `PYTHONIOENCODING=utf-8 python3 .agent/scripts/checklist.py .` passaram. Migration `202606050002_egestor_operacao.sql` aplicada no Supabase remoto via `supabase db push`; schema remoto validado pela API Supabase para colunas de revalidacao, auditoria de status e aprovacao. `supabase migration list` falhou no pooler por prepared statement duplicado e na porta direta por IPv6 sem rota, entao a validacao final foi por REST com service role.
+Decisoes: revalidar status nunca reenviara financeiro; retry de anexo opera somente em lancamentos `anexo_pendente`; auditoria de aprovacao grava usuario operacional V1 como `Operador`; historico de envios fica limitado aos 50 eventos mais recentes na API de fechamento.
+Arquivos/docs impactados: `supabase/migrations/202606050002_egestor_operacao.sql`, `lib/server/egestor.ts`, `lib/server/egestor-client.ts`, `lib/egestor-types.ts`, `app/api/fechamentos/[id]/route.ts`, `app/api/fechamentos/[id]/egestor/revalidar/route.ts`, `app/api/fechamentos/[id]/egestor/retry-anexos/route.ts`, `app/api/fechamentos/[id]/egestor/envios/route.ts`, `app/(app)/fechamentos/[id]/revisao/page.tsx`, `components/acr/views/revisao-view.tsx`, `lib/server/egestor.test.ts`, docs numerados da Etapa 4.
+Proxima acao: gerar um fechamento elegivel sem bloqueios para executar dry-run real e, depois, teste controlado de envio/revalidacao/anexo em conta eGestor.
 
 ### 2026-06-03 - Hotfix revisão 404 em análises antigas
 

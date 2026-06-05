@@ -50,7 +50,7 @@ Estados e acoes relevantes:
 - Leitura do documento e documentos processados ficam no fim da revisao, em secoes colapsaveis fechadas por padrao, para nao deslocar o resumo financeiro operacional.
 - Possivel pagamento repetido de acordo/rescisao e pendencia bloqueante ate resolucao ou justificativa.
 - Fechamentos aprovados podem ser vistos em detalhes.
-- Depois de aprovado, a revisao exibe a previa eGestor com lancamentos consolidados, status de configuracao e acao de envio real controlado.
+- Depois de aprovado, a revisao exibe a previa eGestor com lancamentos consolidados, status de configuracao, acao de envio real controlado, revalidacao de status, retry de anexos pendentes, historico de envios e auditoria de mudanca de status.
 
 ## Dados e nomenclatura de exemplo
 

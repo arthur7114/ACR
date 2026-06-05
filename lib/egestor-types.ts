@@ -48,6 +48,21 @@ export type EgestorLancamento = {
   egestor_cod_modulo: number | null
   anexo_status: string | null
   anexo_mensagem: string | null
+  revalidado_em?: string | null
+  revalidacao_status?: string | null
+  revalidacao_mensagem?: string | null
+}
+
+export type EgestorEnvio = {
+  id: string
+  fechamento_id: string
+  lancamento_id: string | null
+  acao: string
+  status: string
+  erro: string | null
+  criado_em: string
+  request_payload?: Record<string, unknown> | null
+  response_payload?: Record<string, unknown> | null
 }
 
 export type EgestorConfigPayload = {

@@ -52,20 +52,24 @@ type PersistedLancamento = {
   valor: number
   tags: string[]
   payload: Record<string, unknown>
+  egestor_codigo?: number | null
+  egestor_cod_modulo?: number | null
 }
 
 export async function approveFechamentoForEgestor(supabase: SupabaseClient, fechamentoId: string) {
   const openBlocking = await getOpenBlockingCount(supabase, fechamentoId)
   if (openBlocking > 0) throw new Error("Resolva as pendencias bloqueantes antes de aprovar.")
+  const previousStatus = await getFechamentoStatus(supabase, fechamentoId)
 
   const { data, error } = await supabase
     .from("fechamentos")
-    .update({ status: "aprovado" })
+    .update({ status: "aprovado", aprovado_por: "Operador", aprovado_em: new Date().toISOString() })
     .eq("id", fechamentoId)
     .select("id,status")
     .single()
 
   if (error) throw error
+  await logStatusEvento(supabase, fechamentoId, previousStatus, "aprovado", "Operador", "Aprovacao manual do fechamento.")
   return data
 }
 
@@ -102,6 +106,7 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
 
   const nextStatus = rows.every((row) => row.status === "validado") ? "preparado_egestor" : "erro_egestor"
   await supabase.from("fechamentos").update({ status: nextStatus }).eq("id", fechamentoId)
+  await logStatusEvento(supabase, fechamentoId, fechamento.status, nextStatus, "Sistema", "Previa eGestor gerada.")
   return getLancamentos(supabase, fechamentoId)
 }
 
@@ -142,7 +147,9 @@ export async function sendEgestorLancamentos(supabase: SupabaseClient, fechament
     .in("status", ["validado", "erro"])
     .limit(1)
   const status = pending && pending.length > 0 ? "erro_egestor" : "lancado_egestor"
+  const previousStatus = await getFechamentoStatus(supabase, fechamentoId)
   await supabase.from("fechamentos").update({ status }).eq("id", fechamentoId)
+  await logStatusEvento(supabase, fechamentoId, previousStatus, status, "Sistema", "Envio eGestor finalizado.")
   return getLancamentos(supabase, fechamentoId)
 }
 
@@ -158,6 +165,71 @@ export async function testEgestorConnection(supabase: SupabaseClient) {
     await updateConnectionStatus(supabase, "erro", message)
     throw error
   }
+}
+
+export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId: string) {
+  const config = await getConfig(supabase)
+  if (!config.personal_token) throw new Error("Configure o personal_token do eGestor antes do retry.")
+
+  const { data: lancamentos, error } = await supabase
+    .from("egestor_lancamentos")
+    .select("*")
+    .eq("fechamento_id", fechamentoId)
+    .eq("status", "anexo_pendente")
+    .not("egestor_cod_modulo", "is", null)
+
+  if (error) throw error
+  if (!lancamentos || lancamentos.length === 0) throw new Error("Nao ha anexos pendentes para retry.")
+
+  const client = new EgestorClient({ personalToken: config.personal_token })
+  for (const lancamento of lancamentos as PersistedLancamento[]) {
+    await uploadAnexos(supabase, client, lancamento, Number(lancamento.egestor_cod_modulo))
+    const { data: current } = await supabase
+      .from("egestor_lancamentos")
+      .select("status")
+      .eq("id", lancamento.id)
+      .single()
+    if (current?.status === "anexo_pendente") {
+      await logEnvio(supabase, lancamento, "retry_anexo", "pendente", null, "Anexo ainda pendente.")
+    } else {
+      await logEnvio(supabase, lancamento, "retry_anexo", "ok", null)
+    }
+  }
+
+  return getLancamentos(supabase, fechamentoId)
+}
+
+export async function revalidateEgestorLancamentos(supabase: SupabaseClient, fechamentoId: string) {
+  const config = await getConfig(supabase)
+  if (!config.personal_token) throw new Error("Configure o personal_token do eGestor antes de revalidar.")
+
+  const { data: lancamentos, error } = await supabase
+    .from("egestor_lancamentos")
+    .select("*")
+    .eq("fechamento_id", fechamentoId)
+    .not("egestor_codigo", "is", null)
+
+  if (error) throw error
+  if (!lancamentos || lancamentos.length === 0) throw new Error("Nenhum lancamento enviado para revalidar.")
+
+  const client = new EgestorClient({ personalToken: config.personal_token })
+  for (const lancamento of lancamentos as PersistedLancamento[]) {
+    await revalidateLancamento(supabase, client, lancamento)
+  }
+
+  return getLancamentos(supabase, fechamentoId)
+}
+
+export async function getEgestorEnvios(supabase: SupabaseClient, fechamentoId: string) {
+  const { data, error } = await supabase
+    .from("egestor_envios")
+    .select("id,fechamento_id,lancamento_id,acao,status,erro,request_payload,response_payload,criado_em")
+    .eq("fechamento_id", fechamentoId)
+    .order("criado_em", { ascending: false })
+    .limit(50)
+
+  if (error) throw error
+  return data ?? []
 }
 
 async function sendLancamento(supabase: SupabaseClient, client: EgestorClient, lancamento: PersistedLancamento) {
@@ -214,6 +286,39 @@ async function uploadAnexos(supabase: SupabaseClient, client: EgestorClient, lan
       await markAnexoPendente(supabase, lancamento.id, message)
       return
     }
+  }
+
+  await supabase.from("egestor_lancamentos").update({
+    status: "enviado",
+    anexo_status: "enviado",
+    anexo_mensagem: null,
+  }).eq("id", lancamento.id)
+}
+
+async function revalidateLancamento(supabase: SupabaseClient, client: EgestorClient, lancamento: PersistedLancamento) {
+  const codigo = Number(lancamento.egestor_codigo)
+  if (!Number.isFinite(codigo)) return
+
+  try {
+    const response = lancamento.tipo === "recebimento"
+      ? await client.getRecebimento(codigo)
+      : await client.getPagamento(codigo)
+    await supabase.from("egestor_lancamentos").update({
+      revalidado_em: new Date().toISOString(),
+      revalidacao_status: "ok",
+      revalidacao_mensagem: "Lancamento encontrado no eGestor.",
+      egestor_response: response,
+    }).eq("id", lancamento.id)
+    await logEnvio(supabase, lancamento, "revalidar_status", "ok", response)
+  } catch (error) {
+    const payload = error instanceof EgestorApiError ? error.payload : null
+    const message = error instanceof Error ? error.message : "Falha ao revalidar lancamento."
+    await supabase.from("egestor_lancamentos").update({
+      revalidado_em: new Date().toISOString(),
+      revalidacao_status: "erro",
+      revalidacao_mensagem: message,
+    }).eq("id", lancamento.id)
+    await logEnvio(supabase, lancamento, "revalidar_status", "erro", payload, message)
   }
 }
 
@@ -353,6 +458,16 @@ async function getOpenBlockingCount(supabase: SupabaseClient, fechamentoId: stri
   return count ?? 0
 }
 
+async function getFechamentoStatus(supabase: SupabaseClient, fechamentoId: string) {
+  const { data, error } = await supabase
+    .from("fechamentos")
+    .select("status")
+    .eq("id", fechamentoId)
+    .single()
+  if (error) throw error
+  return data.status as string
+}
+
 async function getConfig(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from("egestor_configuracoes")
@@ -392,6 +507,24 @@ async function logEnvio(supabase: SupabaseClient, lancamento: PersistedLancament
     request_payload: lancamento.payload,
     response_payload: response,
     erro: erro ?? null,
+  })
+}
+
+async function logStatusEvento(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+  statusAnterior: string | null,
+  statusNovo: string,
+  usuario: string,
+  motivo: string,
+) {
+  if (statusAnterior === statusNovo) return
+  await supabase.from("fechamento_status_eventos").insert({
+    fechamento_id: fechamentoId,
+    status_anterior: statusAnterior,
+    status_novo: statusNovo,
+    usuario,
+    motivo,
   })
 }
 

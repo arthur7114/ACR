@@ -36,3 +36,6 @@
 - CA17: envio real ao eGestor so deve ocorrer apos fechamento aprovado, previa validada e confirmacao explicita do operador.
 - CA18: envio deve ser idempotente; fechamento com codigo eGestor salvo nao pode reenviar os mesmos lancamentos.
 - CA19: falha de anexo nao desfaz lancamento financeiro; o item fica marcado como anexo pendente para retry futuro.
+- CA20: anexos pendentes podem ser reenviados sem recriar recebimento/pagamento e com nova tentativa registrada em `egestor_envios`.
+- CA21: lancamentos enviados podem ser revalidados por codigo eGestor, gravando status, mensagem e horario sem alterar a idempotencia financeira.
+- CA22: aprovacao e transicoes eGestor devem gerar trilha de status do fechamento visivel na revisao.

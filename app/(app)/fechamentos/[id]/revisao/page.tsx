@@ -6,7 +6,7 @@ import { CorrectionModal } from "@/components/acr/correction-modal"
 import { RevisaoView } from "@/components/acr/views/revisao-view"
 import { useProcessing } from "@/lib/contexts/processing-context"
 import { formatBRL } from "@/lib/format"
-import type { EgestorLancamento } from "@/lib/egestor-types"
+import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 
 interface PageProps {
@@ -25,12 +25,23 @@ type FechamentoResumo = {
   } | null
 }
 
+type StatusEvento = {
+  id: string
+  status_anterior: string | null
+  status_novo: string
+  usuario: string
+  motivo: string | null
+  criado_em: string
+}
+
 export default function RevisaoPage({ params }: PageProps) {
   const { id } = use(params)
   const { analysisResult: cachedAnalysis } = useProcessing()
   const [analysis, setAnalysis] = useState<PackageAnalysis | null>(cachedAnalysis)
   const [fechamento, setFechamento] = useState<FechamentoResumo | null>(null)
   const [egestorLancamentos, setEgestorLancamentos] = useState<EgestorLancamento[]>([])
+  const [egestorEnvios, setEgestorEnvios] = useState<EgestorEnvio[]>([])
+  const [statusEventos, setStatusEventos] = useState<StatusEvento[]>([])
   const [loading, setLoading] = useState(!cachedAnalysis)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
@@ -47,6 +58,8 @@ export default function RevisaoPage({ params }: PageProps) {
         setAnalysis(payload.analise_completa ?? null)
         setFechamento(payload.fechamento ?? null)
         setEgestorLancamentos(payload.egestor_lancamentos ?? [])
+        setEgestorEnvios(payload.egestor_envios ?? [])
+        setStatusEventos(payload.status_eventos ?? [])
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
@@ -89,6 +102,8 @@ export default function RevisaoPage({ params }: PageProps) {
         analysisResult={analysis}
         fechamento={fechamento}
         egestorLancamentos={egestorLancamentos}
+        egestorEnvios={egestorEnvios}
+        statusEventos={statusEventos}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
         onRefresh={loadFromApi}
       />

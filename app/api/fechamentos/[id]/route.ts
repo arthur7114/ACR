@@ -116,6 +116,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     },
     analise_completa: analiseCompleta,
     egestor_lancamentos: await getEgestorLancamentos(supabase, id),
+    egestor_envios: await getEgestorEnvios(supabase, id),
+    status_eventos: await getStatusEventos(supabase, id),
   })
 }
 
@@ -154,6 +156,28 @@ async function getEgestorLancamentos(supabase: ReturnType<typeof createSupabaseA
     .eq("fechamento_id", fechamentoId)
     .order("tipo")
     .order("categoria")
+
+  return data ?? []
+}
+
+async function getEgestorEnvios(supabase: ReturnType<typeof createSupabaseAdmin>, fechamentoId: string) {
+  const { data } = await supabase
+    .from("egestor_envios")
+    .select("id,fechamento_id,lancamento_id,acao,status,erro,request_payload,response_payload,criado_em")
+    .eq("fechamento_id", fechamentoId)
+    .order("criado_em", { ascending: false })
+    .limit(50)
+
+  return data ?? []
+}
+
+async function getStatusEventos(supabase: ReturnType<typeof createSupabaseAdmin>, fechamentoId: string) {
+  const { data } = await supabase
+    .from("fechamento_status_eventos")
+    .select("id,status_anterior,status_novo,usuario,motivo,criado_em")
+    .eq("fechamento_id", fechamentoId)
+    .order("criado_em", { ascending: false })
+    .limit(20)
 
   return data ?? []
 }

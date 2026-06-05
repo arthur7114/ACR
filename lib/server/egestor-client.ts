@@ -51,6 +51,14 @@ export class EgestorClient {
     return this.request("POST", "/v1/pagamentos", payload) as Promise<EgestorCreateResponse>
   }
 
+  async getRecebimento(codigo: number) {
+    return this.request("GET", `/v1/recebimentos/${codigo}`)
+  }
+
+  async getPagamento(codigo: number) {
+    return this.request("GET", `/v1/pagamentos/${codigo}`)
+  }
+
   async uploadDiscoVirtual(input: {
     file: Blob
     fileName: string

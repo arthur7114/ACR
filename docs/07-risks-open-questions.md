@@ -6,6 +6,8 @@
 - Layouts mudam: parsers por imobiliaria, versionamento e monitoramento de campos nao reconhecidos.
 - IA extrai valor errado: validacoes deterministicas, comparacao de totais e revisao por baixa confianca.
 - eGestor limita o modelo: manter camada interna propria e mapear apenas na saida.
+- eGestor pode aceitar lancamento financeiro e rejeitar anexo: tratar anexos como etapa independente com retry e historico proprio.
+- eGestor pode retornar 429/5xx em janelas de instabilidade: cliente deve respeitar retry limitado e registrar erro sem duplicar lancamentos.
 - Usuario confia cegamente: revisao clara, documento original acessivel e aprovacao humana obrigatoria.
 - Timeout: jobs assincronos, limite de 5 minutos por documento e reprocessamento disponivel.
 - Merge incorreto em remessa adicional: deduplicar por hash, preservar `corrigido_manualmente` e auditar merge.
@@ -32,6 +34,7 @@
 - Respondido tecnicamente: eGestor possui `discoVirtual`; anexos serao tentados apos o lancamento financeiro e falha nao desfaz o envio.
 - Pendente operacional: validar escrita real em ambiente/conta controlada antes de usar em producao.
 - Respondido: despesas pagas pela imobiliaria entram como pagamentos separados, sem dupla contagem no repasse.
+- Respondido: revalidacao de status consulta codigos eGestor ja salvos e nao reabre envio financeiro.
 
 ## Pos-MVP
 

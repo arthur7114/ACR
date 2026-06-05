@@ -6,7 +6,7 @@ Fluxo canonico:
 
 `rascunho -> arquivos_enviados -> processando -> processado_com_sucesso | processado_com_alertas -> pendente_revisao -> documentos_adicionados -> reprocessando_parcial -> processado_com_sucesso | processado_com_alertas -> aprovado -> preparado_egestor -> lancado_egestor`
 
-Estados excepcionais: `erro` e `cancelado`.
+Estados excepcionais: `erro`, `cancelado` e `erro_egestor`.
 
 O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `lancado_egestor`.
 
@@ -24,6 +24,9 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Validacao: alerta ou divergencia com severidade, status, valores esperados/encontrados e justificativa.
 - Mapeamento eGestor: categorias internas para categorias/tags/contas do eGestor.
 - Integracao eGestor V1: fechamento aprovado gera lancamentos consolidados em `egestor_lancamentos`; repasse mensal vira `recebimento`; comissao administrativa e despesas agrupadas viram `pagamentos`; envio real grava codigos eGestor e tentativas em auditoria tecnica.
+- Envio eGestor: `egestor_envios` registra acao, payload, resposta, status e erro de envio, retry de anexo e revalidacao.
+- Auditoria de status: `fechamento_status_eventos` registra status anterior, status novo, usuario, motivo e data/hora para aprovacao e transicoes eGestor.
+- Revalidacao eGestor: lancamento enviado pode gravar `revalidado_em`, `revalidacao_status` e `revalidacao_mensagem`; revalidacao nao cria novo lancamento financeiro.
 
 ## RBAC
 
@@ -52,3 +55,5 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Comissao realizada em percentual e calculada como comissao administrativa documentada dividida pela base de comissao administrativa.
 - Acordo/rescisao com mesma combinacao normalizada de tipo, inquilino, competencia original e valor ja vista no pacote ou no historico do mesmo par imobiliaria + empreendimento gera alerta bloqueante por possivel pagamento repetido.
 - Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.
+- Lancamento eGestor com `egestor_codigo` salvo e imutavel para reenvio V1; operador pode apenas revalidar status ou reenviar anexos pendentes.
+- Falha de anexo eGestor nao desfaz recebimento/pagamento criado; o lancamento fica `anexo_pendente` ate retry bem-sucedido.

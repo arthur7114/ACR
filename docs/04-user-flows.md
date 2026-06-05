@@ -64,3 +64,7 @@ Aprovacao exige:
 - despesas criticas conciliadas ou justificadas.
 
 Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. A V1 usa lancamento consolidado por fechamento: repasse mensal como recebimento, comissao/despesas como pagamentos separados. O envio real so ocorre por acao explicita do operador e fica bloqueado quando ha pendencia, configuracao incompleta ou lancamento ja enviado.
+
+Depois do envio, a revisao permite revalidar os codigos ja gravados no eGestor sem reenviar financeiro. Quando anexos falham, o operador pode reenviar apenas anexos pendentes; falha nesse retry mantem o lancamento financeiro preservado e atualiza a mensagem operacional.
+
+A revisao tambem mostra os ultimos eventos tecnicos da integracao (`send`, `retry_anexo`, `revalidar_status`) e as transicoes de status do fechamento para auditoria.

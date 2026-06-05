@@ -7,6 +7,8 @@ import {
   CheckCircle,
   Download,
   FileText,
+  History,
+  Paperclip,
   ReceiptText,
   RefreshCw,
   Send,
@@ -16,10 +18,19 @@ import {
   Info
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import type { EgestorLancamento } from "@/lib/egestor-types"
+import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
+
+type StatusEvento = {
+  id: string
+  status_anterior: string | null
+  status_novo: string
+  usuario: string
+  motivo: string | null
+  criado_em: string
+}
 
 interface RevisaoViewProps {
   fechamentoId: string
@@ -36,6 +47,8 @@ interface RevisaoViewProps {
     } | null
   } | null
   egestorLancamentos?: EgestorLancamento[]
+  egestorEnvios?: EgestorEnvio[]
+  statusEventos?: StatusEvento[]
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
   onRefresh?: () => void
 }
@@ -239,6 +252,17 @@ function formatDateBR(value: string | null | undefined) {
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(date)
 }
 
+function formatDateTimeBR(value: string | null | undefined) {
+  if (!value) return "-"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Fortaleza",
+  }).format(date)
+}
+
 function getEgestorStatusClasses(status: EgestorLancamento["status"]) {
   if (status === "validado") return "bg-[#DCFCE7] text-[#166534]"
   if (status === "enviado") return "bg-[#DBEAFE] text-[#1E40AF]"
@@ -255,7 +279,16 @@ function getEgestorStatusLabel(lancamento: EgestorLancamento) {
   return "Configuração pendente"
 }
 
-export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, analysisResult, egestorLancamentos = [] }: RevisaoViewProps) {
+export function RevisaoView({
+  fechamentoId,
+  fechamento,
+  onOpenModal,
+  onRefresh,
+  analysisResult,
+  egestorLancamentos = [],
+  egestorEnvios = [],
+  statusEventos = [],
+}: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
     id: string
     fechamento_id: string
@@ -272,7 +305,7 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
 
   const [comentario, setComentario] = useState(fechamento?.comentario_operador ?? "")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
-  const [egestorAction, setEgestorAction] = useState<"idle" | "approving" | "previewing" | "sending">("idle")
+  const [egestorAction, setEgestorAction] = useState<"idle" | "approving" | "previewing" | "sending" | "retrying" | "revalidating">("idle")
   const [egestorError, setEgestorError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -331,17 +364,26 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
   const canPreviewEgestor = isApproved && !hasBlocking
   const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
   const hasSentEgestor = egestorLancamentos.some((l) => l.egestor_codigo !== null)
+  const hasPendingAnexos = egestorLancamentos.some((l) => l.status === "anexo_pendente")
 
-  async function runEgestorAction(action: "approve" | "preview" | "send") {
+  async function runEgestorAction(action: "approve" | "preview" | "send" | "retry" | "revalidate") {
     setEgestorError(null)
-    setEgestorAction(action === "approve" ? "approving" : action === "preview" ? "previewing" : "sending")
-    const url =
-      action === "approve"
-        ? `/api/fechamentos/${fechamentoId}/aprovar`
-        : action === "preview"
-          ? `/api/fechamentos/${fechamentoId}/egestor/preview`
-          : `/api/fechamentos/${fechamentoId}/egestor/send`
-    const response = await fetch(url, {
+    const states = {
+      approve: "approving",
+      preview: "previewing",
+      send: "sending",
+      retry: "retrying",
+      revalidate: "revalidating",
+    } as const
+    const urls = {
+      approve: `/api/fechamentos/${fechamentoId}/aprovar`,
+      preview: `/api/fechamentos/${fechamentoId}/egestor/preview`,
+      send: `/api/fechamentos/${fechamentoId}/egestor/send`,
+      retry: `/api/fechamentos/${fechamentoId}/egestor/retry-anexos`,
+      revalidate: `/api/fechamentos/${fechamentoId}/egestor/revalidar`,
+    }
+    setEgestorAction(states[action])
+    const response = await fetch(urls[action], {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: action === "send" ? JSON.stringify({ confirmation: "ENVIAR_EGESTOR" }) : "{}",
@@ -876,7 +918,7 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
             <h3 className="text-[16px] font-bold text-[#1A2B1C]">Comentários da Revisão</h3>
           </div>
           <span className="text-[11px] font-medium text-[#6B7F6E] bg-[#F8FAF8] px-2 py-1 rounded">
-            {saveStatus === "saving" ? "Salvando..." : saveStatus === "saved" ? "Salvo automanticamente" : saveStatus === "error" ? "Erro ao salvar" : ""}
+            {saveStatus === "saving" ? "Salvando..." : saveStatus === "saved" ? "Salvo automaticamente" : saveStatus === "error" ? "Erro ao salvar" : ""}
           </span>
         </div>
         <textarea
@@ -893,23 +935,43 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
             title="Prévia eGestor"
             description="Lançamentos consolidados para envio após a aprovação do fechamento."
           />
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => runEgestorAction("preview")}
-              disabled={!canPreviewEgestor || egestorAction !== "idle" || hasSentEgestor}
-              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
-            >
-              <ReceiptText size={14} />
-              {egestorAction === "previewing" ? "Gerando..." : "Gerar prévia"}
-            </button>
-            <button
-              onClick={() => runEgestorAction("send")}
-              disabled={!canSendEgestor || egestorAction !== "idle" || hasSentEgestor}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2D8C3A] px-3 text-[13px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
-            >
-              <Send size={14} />
-              {hasSentEgestor ? "Enviado" : egestorAction === "sending" ? "Enviando..." : "Enviar ao eGestor"}
-            </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => runEgestorAction("preview")}
+                disabled={!canPreviewEgestor || egestorAction !== "idle" || hasSentEgestor}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+              >
+                <ReceiptText size={14} />
+                {egestorAction === "previewing" ? "Gerando..." : "Gerar prévia"}
+              </button>
+              <button
+                onClick={() => runEgestorAction("send")}
+                disabled={!canSendEgestor || egestorAction !== "idle" || hasSentEgestor}
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2D8C3A] px-3 text-[13px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
+              >
+                <Send size={14} />
+                {hasSentEgestor ? "Enviado" : egestorAction === "sending" ? "Enviando..." : "Enviar ao eGestor"}
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-[#EEF1EE] pt-2 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0">
+              <button
+                onClick={() => runEgestorAction("revalidate")}
+                disabled={!hasSentEgestor || egestorAction !== "idle"}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+              >
+                <Search size={14} />
+                {egestorAction === "revalidating" ? "Revalidando..." : "Revalidar status"}
+              </button>
+              <button
+                onClick={() => runEgestorAction("retry")}
+                disabled={!hasPendingAnexos || egestorAction !== "idle"}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+              >
+                <Paperclip size={14} />
+                {egestorAction === "retrying" ? "Reenviando..." : "Reenviar anexos"}
+              </button>
+            </div>
           </div>
         </div>
         {egestorError && (
@@ -923,8 +985,8 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
         ) : egestorLancamentos.length === 0 ? (
           <p className="mt-4 text-[13px] text-[#6B7F6E]">Nenhuma prévia gerada ainda.</p>
         ) : (
-          <div className="mt-4 overflow-hidden rounded-lg border border-[#EEF1EE]">
-            <table className="w-full text-sm">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-[#EEF1EE]">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-[#F8FAF8] text-[11px] uppercase tracking-wide text-[#6B7F6E]">
                 <tr>
                   {["Tipo", "Categoria", "Descrição", "Valor", "Plano", "Status"].map((header) => (
@@ -946,11 +1008,80 @@ export function RevisaoView({ fechamentoId, fechamento, onOpenModal, onRefresh, 
                       </span>
                       {lancamento.validacao_mensagem && <p className="mt-1 text-[11px] text-[#991B1B]">{lancamento.validacao_mensagem}</p>}
                       {lancamento.anexo_mensagem && <p className="mt-1 text-[11px] text-[#92400E]">{lancamento.anexo_mensagem}</p>}
+                      {lancamento.revalidacao_status && (
+                        <p className={`mt-1 text-[11px] ${lancamento.revalidacao_status === "ok" ? "text-[#166534]" : "text-[#991B1B]"}`}>
+                          {lancamento.revalidacao_status === "ok" ? "Revalidado" : "Falha na revalidação"}: {lancamento.revalidacao_mensagem ?? lancamento.revalidacao_status}
+                        </p>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {(egestorEnvios.length > 0 || statusEventos.length > 0) && (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            {egestorEnvios.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-[#EEF1EE]">
+                <div className="flex items-center gap-2 border-b border-[#EEF1EE] bg-[#F8FAF8] px-3 py-2">
+                  <History size={14} className="text-[#2D8C3A]" />
+                  <h4 className="text-[13px] font-bold text-[#1A2B1C]">Envios eGestor</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="bg-white text-[11px] uppercase tracking-wide text-[#6B7F6E]">
+                      <tr>
+                        {["Data", "Ação", "Status", "Erro"].map((header) => (
+                          <th key={header} className="px-3 py-2 text-left font-medium">{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EEF1EE]">
+                      {egestorEnvios.map((envio) => (
+                        <tr key={envio.id}>
+                          <td className="px-3 py-2 text-[12px] text-[#3D4F3F]">{formatDateTimeBR(envio.criado_em)}</td>
+                          <td className="px-3 py-2 font-medium text-[#1A2B1C]">{envio.acao}</td>
+                          <td className="px-3 py-2 text-[#3D4F3F]">{envio.status}</td>
+                          <td className={`px-3 py-2 text-[12px] ${envio.erro ? "text-[#991B1B]" : "text-[#6B7F6E]"}`}>{envio.erro ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {statusEventos.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-[#EEF1EE]">
+                <div className="flex items-center gap-2 border-b border-[#EEF1EE] bg-[#F8FAF8] px-3 py-2">
+                  <ShieldCheck size={14} className="text-[#2D8C3A]" />
+                  <h4 className="text-[13px] font-bold text-[#1A2B1C]">Auditoria do fechamento</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="bg-white text-[11px] uppercase tracking-wide text-[#6B7F6E]">
+                      <tr>
+                        {["Data", "Status", "Usuário", "Motivo"].map((header) => (
+                          <th key={header} className="px-3 py-2 text-left font-medium">{header}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EEF1EE]">
+                      {statusEventos.map((evento) => (
+                        <tr key={evento.id}>
+                          <td className="px-3 py-2 text-[12px] text-[#3D4F3F]">{formatDateTimeBR(evento.criado_em)}</td>
+                          <td className="px-3 py-2 font-medium text-[#1A2B1C]">
+                            {evento.status_anterior ?? "-"} &gt; {evento.status_novo}
+                          </td>
+                          <td className="px-3 py-2 text-[#3D4F3F]">{evento.usuario}</td>
+                          <td className="px-3 py-2 text-[12px] text-[#6B7F6E]">{evento.motivo ?? "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
