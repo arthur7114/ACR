@@ -68,10 +68,10 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 
 Status: done
 Job: Corrigir a lógica de bloqueio da revisão para ignorar rechecks resolvidos manualmente e tornar mais explícita a necessidade de aprovação antes da prévia do eGestor.
-Outcome entregue: Atualizada a lógica em `RevisaoView` para que `hasBlocking` desconsidere bloqueios marcados como resolvidos; substituído o texto descritivo por um banner de alerta amarelo sobre o bloqueio da prévia e adicionado botão para rolar até a aprovação. Corrigido erro de tipagem no script temporário `test-egestor.ts`.
+Outcome entregue: Atualizada a lógica em `RevisaoView` para que `hasBlocking` desconsidere bloqueios marcados como resolvidos; substituído o texto descritivo por um banner de alerta amarelo sobre o bloqueio da prévia e adicionado botão para rolar até a aprovação; removida a coluna "Q. Leitura" da tabela de receitas por imóvel. Corrigido erro de tipagem no script temporário `test-egestor.ts`. No backend, endpoints de aprovação e resolução de pendências foram ajustados para ignorar `guardrails` inativos que travavam a aprovação de fechamentos resolvidos manualmente.
 Validacao: `pnpm lint` e `pnpm build` passaram localmente.
-Decisoes: O frontend confia na contagem de bloqueios não resolvidos (`validationSummary.blocked > 0`) para ditar o travamento da tela, não ficando refém apenas do status estático gerado pela análise automática.
-Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `test-egestor.ts`, `docs/12-execution-roadmap.md`.
+Decisoes: O frontend confia na contagem de bloqueios não resolvidos (`validationSummary.blocked > 0`) para ditar o travamento da tela, não ficando refém apenas do status estático gerado pela análise automática. Guardrails de sumarização não são interativos e não devem impedir o fluxo se as pendências acionáveis já foram resolvidas.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `lib/server/egestor.ts`, `app/api/validacoes/[id]/resolver/route.ts`, `test-egestor.ts`, `docs/12-execution-roadmap.md`.
 Proxima acao: Validar o destravamento visualmente após a resolução de uma pendência bloqueante e realizar o ciclo completo.
 
 ### 2026-06-05 - Integracao eGestor V1

@@ -99,7 +99,7 @@ export async function POST(
       .eq("fechamento_id", validacao.fechamento_id)
       .eq("status", "aberta")
       .eq("severidade", "bloqueante")
-      .neq("tipo_validacao", "parecer_tecnico")
+      .not("tipo_validacao", "in", '("parecer_tecnico","deterministic_validation","documents_received","package_schema")')
 
     if (openError) throw openError
 

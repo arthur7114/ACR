@@ -453,7 +453,7 @@ async function getOpenBlockingCount(supabase: SupabaseClient, fechamentoId: stri
     .eq("fechamento_id", fechamentoId)
     .eq("status", "aberta")
     .eq("severidade", "bloqueante")
-    .neq("tipo_validacao", "parecer_tecnico")
+    .not("tipo_validacao", "in", '("parecer_tecnico","deterministic_validation","documents_received","package_schema")')
   if (error) throw error
   return count ?? 0
 }
