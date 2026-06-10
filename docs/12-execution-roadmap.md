@@ -65,6 +65,16 @@ Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGesto
 
 ## Historico de ciclos
 
+### 2026-06-10 - Suporte aos layouts Plural (extrato agrupado) e Cesar Rego (consolidado por lancamentos)
+
+Status: done (layout B completo; layout C parcial)
+Job: Testar o pipeline com PDFs de imobiliarias de layout diferente do Alive e implementar o suporte.
+Outcome entregue: classificador atualizado para reconhecer os tres layouts de prestacao de contas e para nao confundir demonstrativo com comprovante bancario (antes o extrato Plural era classificado como comprovante_repasse com 0.9 de confianca e nenhuma receita era extraida). Agente de prestacao agora descreve LAYOUT A (tabela Alive), LAYOUT B (Extrato agrupado simplificado - Plural) e LAYOUT C (Extrato de Conta Consolidado por Lancamentos - Cesar Rego), com mapeamento por bloco/contrato e exemplo concreto. Teste real Plural 03/2026: classificacao correta, 2 contratos extraidos com valores exatos (alugueis 3000/3200, taxas 355,34/256, repasses 2580,56/2944), resumo perfeito (6200 - 675,44 = 5524,56) e unicos bloqueios remanescentes legitimos (comprovante bancario ausente do pacote). Teste real Cesar Rego 03/2026: classificacao correta, 4 imoveis extraidos incluindo o sem lancamentos no mes (inadimplente, ultimo pg 12/2025), recebidos (13.132,74) e total liquido (12.566,32) exatos; porem a matematica do razao por linha (saldos, creditos IPTU de passagem) e os nomes de inquilino (vieram do endereco, nao do agrupador) ainda saem imprecisos e os rechecks bloqueiam corretamente.
+Validacao: `pnpm exec tsc --noEmit`, testes 14/14, processamentos reais via `/api/fechamentos/process/stream` com contexto de fechamento para Plural (d756ee76) e Cesar Rego (ceab6a67).
+Decisoes: extrato agrupado/consolidado das imobiliarias e prestacao_contas (nao comprovante_repasse); comprovante_repasse fica reservado a recibo bancario de transferencia. Layout C (razao contabil) deve evoluir para parser deterministico proprio (como o excel-parser) em vez de mais iteracao de prompt.
+Arquivos/docs impactados: `lib/server/ai-agents/document-classifier-agent.ts`, `lib/server/ai-agents/prestacao-alive-agent.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: parser deterministico para o layout C e definicao de conciliacao para imobiliarias sem comprovante bancario separado (o proprio extrato traz banco/agencia/conta e valor liquido).
+
 ### 2026-06-10 - Primeiro envio real eGestor + correcoes pos-reuniao (Airbnb, vagas, null, inadimplencia acumulada)
 
 Status: done
