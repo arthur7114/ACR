@@ -75,6 +75,8 @@ Decisoes: unidade com "airbnb" na observacao/inquilino nao conta como vaga nem i
 Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `lib/prestacao-types.ts`, `lib/server/analyze-prestacao.ts`, `lib/server/ai-agents/prestacao-alive-agent.ts`, `lib/server/excel-parser.ts`, `docs/12-execution-roadmap.md`.
 Proxima acao: habilitar permissao Disco Virtual no eGestor e rodar retry de anexos; reprocessar PDF Alive para validar novas extracoes em producao.
 
+Atualizacao operacional 2026-06-10 (E2E de upload): pacote completo GM II marco/2026 (4 PDFs reais) processado pelo `/api/fechamentos/process/stream` com contexto do fechamento `83b319f8`. Classificador acertou os 4 tipos (prestacao_contas, comprovante_repasse, relatorio_reajuste, despesas_comprovantes). Comprovante de repasse extraido perfeito (R$ 17.058,86, 15/04/2026, protocolo 447512390) e conciliado com diferenca zero. Prestacao: 27/27 linhas, soma da coluna TOTAL correta (20.046,19), vagas por veiculo ok (apto 23 = 2), inadimplencias acumuladas extraidas parcialmente (5 linhas). Prompt do agente Alive reforcado (coluna TOTAL por linha, todas as linhas da secao INADIMPLENCIAS, conferencia do resumo e do numero de linhas) apos uma rodada com extracao parcial — modelo apresenta variancia em documento denso e os rechecks deterministicos bloquearam corretamente as divergencias residuais (consolidado com digito trocado, ENEL ausente nas outras despesas). Revisao validada no navegador com a nova secao de inadimplencia acumulada. Pendente: validar layout "extrato agrupado" (Cesar Rego/Plural), que ainda nao tem agente proprio.
+
 ### 2026-06-05 - Correcoes UX e bug bloqueio na Revisao
 
 Status: done
