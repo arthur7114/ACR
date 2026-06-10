@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGestor e executar "Tentar anexos novamente" no fechamento GM I 04/2026 para concluir o anexo dos PDFs aos lancamentos 8750/8751. Depois, reprocessar um PDF Alive para validar as novas extracoes (Airbnb, vagas por veiculo, inadimplencias acumuladas).
+Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGestor e executar "Tentar anexos novamente" no fechamento GM I 04/2026 para concluir o anexo dos PDFs aos lancamentos 8750/8751. Depois, reprocessar um PDF Alive para validar as novas extracoes (Airbnb, vagas por veiculo, inadimplencias acumuladas). No layout C (Cesar Rego), definir a conciliacao para imobiliarias sem comprovante bancario separado e validar o parser deterministico com outros meses do mesmo layout.
 
 ## Progresso por etapa
 
@@ -62,8 +62,19 @@ Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGesto
 - Possivel acordo/rescisao repetido, por tipo + inquilino + competencia + valor, e bloqueante ate resolucao ou justificativa.
 - Tela de revisao deve ser retrocompativel com analises persistidas antes de campos novos; arrays opcionais do payload devem ser normalizados para lista vazia na renderizacao.
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
+- Prestacao em PDF no layout C (Extrato de Conta - Consolidado por Lancamentos, Cesar Rego) e extraida pelo parser deterministico `cesar-rego-parser.ts` (texto via pdfjs-dist), nunca pelo agente de visao; o agente de IA fica como fallback apenas se a deteccao/parse local falhar.
 
 ## Historico de ciclos
+
+### 2026-06-10 - Parser deterministico para o layout C (Cesar Rego - consolidado por lancamentos)
+
+Status: done
+Job: substituir o agente de visao pelo parser deterministico no layout C, eliminando a imprecisao do modelo na matematica do razao por linha (saldos por imovel, IPTU credito+debito de passagem) e nos nomes de inquilino.
+Outcome entregue: novo `lib/server/cesar-rego-parser.ts` nos moldes do `excel-parser.ts`, extraindo o texto do PDF via `pdfjs-dist` (itens com coordenadas, reconstruidos em linhas/colunas por posicao x/y). Parser cobre as tres secoes: Relacao de Imoveis (codigo, endereco, aluguel, ult. pg, situacao), Lancamentos Efetuados (razao DEBITO/CREDITO classificado pela geometria das colunas do cabecalho, com fallback no indicador D/C; descricoes quebradas em duas linhas sao reanexadas pelo gap vertical; linhas agrupadoras de inquilino sao reconhecidas quando existirem na camada de texto) e RESUMO (rotulos pareados aos valores por coordenada). Mapeamento por imovel: apto=codigo, aluguel=credito de ALUGUEL, comissao=debito de COMISSAO, iptu=IPTU creditado, total=soma dos creditos, repasse=saldo final do razao; imovel da Relacao sem lancamentos vira linha com valores null, total 0 e observacao "Sem lancamentos no mes (ult. pg X)". Resumo: recebidos_em_nome_locador=ALUGUEIS CREDITADOS, total_a_repassar=TOTAL LIQUIDO, total_comissao_despesas=recebidos-liquido, comissao_administracao=COMISSOES, outros debitos/creditos e taxas PIX/TED/TX em outras_comissoes_despesas. `extractPrestacaoAliveFromPdf` detecta o layout C pelo texto do PDF antes de chamar a OpenAI e usa o parser local (fallback para o agente de IA se a deteccao/parse falhar). `serverExternalPackages: ["pdfjs-dist"]` adicionado ao next.config.
+Validacao: teste real com `extratoagrupado - cesar rego - REF 03-26 (1).pdf` via `npx tsx scripts/test-cesar-rego-parser.ts` e via `POST /api/fechamentos/process/stream` (log confirma `[CESAR REGO PARSER]`, sem chamada de visao): recebidos 13.132,74 e total liquido 12.566,32 exatos, saldos por imovel 1.039,67/6.409,74/5.128,01 exatos, IPTU creditado 106,65/193,02/149,02, imovel 0002521 sem lancamentos (inadimplente) com observacao correta; rechecks financeiros `total_linhas_receitas` e `resumo_financeiro` passaram, bloqueios remanescentes apenas por comprovante de repasse ausente do pacote (esperado no teste de arquivo unico). `pnpm lint` e `pnpm build` passaram.
+Decisoes: no PDF real deste layout os nomes agrupadores de inquilino nao existem na camada de texto (apenas no render visual), entao o parser preenche inquilino="" quando o agrupador nao for extraivel; a heuristica de linha agrupadora permanece para documentos que tragam o nome como texto. Dependencia `pdfjs-dist` adicionada (apenas extracao de texto, sem render).
+Arquivos/docs impactados: `lib/server/cesar-rego-parser.ts`, `lib/server/analyze-prestacao.ts`, `next.config.mjs`, `package.json`, `scripts/test-cesar-rego-parser.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: definir conciliacao para imobiliarias sem comprovante bancario separado (o extrato Cesar Rego traz banco/agencia/conta e valor liquido no proprio documento) e validar o parser com outros meses/PDFs do mesmo layout (inclusive um que traga agrupadores de inquilino no texto).
 
 ### 2026-06-10 - Suporte aos layouts Plural (extrato agrupado) e Cesar Rego (consolidado por lancamentos)
 

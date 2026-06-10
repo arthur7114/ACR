@@ -5,6 +5,7 @@ import { prestacaoAnalysisSchema, type PrestacaoAnalysis } from "@/lib/prestacao
 import { prestacaoAliveAgent } from "./ai-agents/prestacao-alive-agent"
 import { getOptionalEnv, requireEnv } from "./env"
 import { createResponseWithRetry } from "./openai-responses"
+import { extractPdfTextLines, isCesarRegoConsolidado, parseCesarRegoPrestacao } from "./cesar-rego-parser"
 import { parseExcelPrestacao } from "./excel-parser"
 
 const schema = {
@@ -196,6 +197,20 @@ export async function extractPrestacaoAliveFromPdf(
     console.log("[EXCEL PARSER] Local parsing Excel file:", input.fileName)
     const fileBuffer = Buffer.from(input.fileBase64, "base64")
     return parseExcelPrestacao(fileBuffer, competencia)
+  }
+
+  const isPdf = input.fileName.toLowerCase().endsWith(".pdf") || input.fileType.includes("pdf")
+  if (isPdf) {
+    try {
+      const fileBuffer = Buffer.from(input.fileBase64, "base64")
+      const lines = await extractPdfTextLines(fileBuffer)
+      if (isCesarRegoConsolidado(lines)) {
+        console.log("[CESAR REGO PARSER] Local parsing layout C PDF:", input.fileName)
+        return prestacaoAnalysisSchema.parse(parseCesarRegoPrestacao(lines, competencia))
+      }
+    } catch (error) {
+      console.warn("[CESAR REGO PARSER] Deteccao/parse local falhou; usando agente de IA.", error)
+    }
   }
   if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
     console.log("[MOCK IA] Intercepting extractPrestacaoAliveFromPdf...")
