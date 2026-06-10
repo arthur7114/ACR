@@ -645,13 +645,7 @@ export function RevisaoView({
             )}
 
             {linhasImoveis.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <MetricTile
-                  label="Regra x documento"
-                  value={comissaoCalculada === null ? "-" : formatBRL(Math.abs(comissaoCalculada - totals.total_comissoes))}
-                  subtext={comissaoCalculada === null ? "Sem regra ativa" : `Cálculo: ${formatBRL(comissaoCalculada)}`}
-                  tone={comissaoCalculada !== null && Math.abs(comissaoCalculada - totals.total_comissoes) > 0.01 ? "warning" : "default"}
-                />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <MetricTile
                   label="Aluguel médio"
                   value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
