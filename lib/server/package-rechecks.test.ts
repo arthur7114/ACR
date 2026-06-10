@@ -73,6 +73,7 @@ function createPrestacao(overrides: Partial<PrestacaoAnalysis> = {}): PrestacaoA
       },
     ],
     acordos_rescisoes_recebidos: [],
+    inadimplencias_acumuladas: [],
     resumo_financeiro: {
       total_linhas_receitas: 3000,
       total_linhas_comissoes: 30,

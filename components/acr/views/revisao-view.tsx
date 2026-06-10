@@ -174,28 +174,48 @@ function getObjectiveOpinionCopy(summary: { blocked: number; warnings: number; p
   return "Validações principais concluídas. O fechamento não possui bloqueios operacionais."
 }
 
-const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--"])
+const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--", "null", ": null", "nulo", "undefined"])
 
 function isInquilinoVazio(inquilino: string | null | undefined) {
   if (!inquilino) return true
   return VAGO_INQUILINO_TOKENS.has(inquilino.trim().toLowerCase())
 }
 
+function displayInquilino(inquilino: string | null | undefined) {
+  if (!inquilino?.trim()) return "-"
+  const trimmed = inquilino.trim()
+  return /^[:\s]*(null|nulo|undefined)$/i.test(trimmed) ? "-" : trimmed
+}
+
+function isAirbnbRow(row: ReceitaPorImovel) {
+  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
+  return /air\s*bnb/.test(text)
+}
+
 function isVacantRow(row: ReceitaPorImovel) {
+  if (isAirbnbRow(row)) return false
   const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
   return isInquilinoVazio(row.inquilino) || /\b(vago|vacancia|vacância|disponivel|disponível)\b/.test(text)
 }
 
 function isDelinquentRow(row: ReceitaPorImovel) {
+  if (isAirbnbRow(row)) return false
   const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
   return !isVacantRow(row) && ((row.aluguel === null || row.aluguel === 0) || /inadimpl/.test(text))
 }
 
 function isRentedCurrentRow(row: ReceitaPorImovel) {
-  return !isVacantRow(row) && !isDelinquentRow(row)
+  return !isAirbnbRow(row) && !isVacantRow(row) && !isDelinquentRow(row)
 }
 
 function getRowBadge(row: ReceitaPorImovel) {
+  if (isAirbnbRow(row)) {
+    return {
+      label: "Airbnb",
+      classes: "border-[#C4B5FD] bg-[#EDE9FE] text-[#5B21B6]",
+    }
+  }
+
   if (isVacantRow(row)) {
     return {
       label: "Vago",
@@ -301,7 +321,7 @@ export function RevisaoView({
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false)
 
   const [filtroTexto, setFiltroTexto] = useState("")
-  const [filtroStatus, setFiltroStatus] = useState<"todos" | "alugados" | "vagos" | "inadimplentes">("todos")
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "alugados" | "vagos" | "inadimplentes" | "airbnb">("todos")
 
   const [comentario, setComentario] = useState(fechamento?.comentario_operador ?? "")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
@@ -403,14 +423,22 @@ export function RevisaoView({
   const resumo = prestacao?.resumo_financeiro
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
   const acordosRescisoesRecebidos = prestacao?.acordos_rescisoes_recebidos ?? []
+  const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
+  const totalInadimplenciaAcumulada = inadimplenciasAcumuladas.reduce((sum, item) => sum + item.valor, 0)
   const totalLinhas = linhasImoveis.reduce((sum, row) => sum + row.total, 0)
   const rowTotals = sumRows(linhasImoveis)
   const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
-  const taxaIntermediacao = totals.taxa_intermediacao_percent ?? fechamento?.regra_comercial?.taxa_intermediacao_percent ?? null
   const comissaoCalculada = totals.comissao_administracao_calculada ?? null
   const baseComissao = totals.base_comissao_administracao ?? 0
   const comissaoRealizadaPercent = totals.comissao_realizada_percent ?? (baseComissao > 0 ? (totals.total_comissoes / baseComissao) * 100 : null)
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
+  // Intermediação vem do documento (quando existir), nunca do cadastro da imobiliária
+  const intermediacaoDocumento = (() => {
+    const item = outrasComissoesDespesas.find((d) => /intermedia/i.test(d.descricao))
+    if (!item) return null
+    const match = item.descricao.match(/(\d+(?:[.,]\d+)?)\s*%/)
+    return { percent: match ? Number(match[1].replace(",", ".")) : null, valor: item.valor }
+  })()
   const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
@@ -418,6 +446,7 @@ export function RevisaoView({
     : 0
   const inadimplentes = linhasImoveis.filter(isDelinquentRow).length
   const vagos = linhasImoveis.filter(isVacantRow).length
+  const airbnb = linhasImoveis.filter(isAirbnbRow).length
 
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
     const textMatch = !filtroTexto || 
@@ -428,6 +457,7 @@ export function RevisaoView({
     if (filtroStatus === "vagos") return isVacantRow(row)
     if (filtroStatus === "inadimplentes") return isDelinquentRow(row)
     if (filtroStatus === "alugados") return isRentedCurrentRow(row)
+    if (filtroStatus === "airbnb") return isAirbnbRow(row)
     return true
   })
 
@@ -531,7 +561,11 @@ export function RevisaoView({
           />
           <div className="flex flex-wrap gap-2 text-[12px] text-[#3D4F3F]">
             <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Admin. {formatPercent(taxaAdministracao)}</span>
-            <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Intermediação {formatPercent(taxaIntermediacao)}</span>
+            {intermediacaoDocumento && (
+              <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">
+                Intermediação {intermediacaoDocumento.percent !== null ? formatPercent(intermediacaoDocumento.percent) : formatBRL(intermediacaoDocumento.valor)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -581,8 +615,8 @@ export function RevisaoView({
 
             {linhasImoveis.length > 0 && (
               <div className="space-y-3">
-                <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência e vacância são contagens separadas." />
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância e Airbnb são contagens separadas." />
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                   <MetricTile
                     label="Alugadas"
                     value={`${linhasAlugadas.length}`}
@@ -601,12 +635,17 @@ export function RevisaoView({
                     subtext="Apartamentos vagos ou disponíveis"
                     tone={vagos > 0 ? "warning" : "default"}
                   />
+                  <MetricTile
+                    label="Airbnb"
+                    value={`${airbnb}`}
+                    subtext="Operadas como Airbnb (não contam como vagas)"
+                  />
                 </div>
               </div>
             )}
 
             {linhasImoveis.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <MetricTile
                   label="Regra x documento"
                   value={comissaoCalculada === null ? "-" : formatBRL(Math.abs(comissaoCalculada - totals.total_comissoes))}
@@ -617,6 +656,13 @@ export function RevisaoView({
                   label="Aluguel médio"
                   value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
                   subtext={`${linhasAluguelValido.length} unidade(s) alugadas com valor`}
+                />
+                <MetricTile
+                  label="Inadimplência acumulada"
+                  value={inadimplenciasAcumuladas.length > 0 ? formatBRL(totalInadimplenciaAcumulada) : "-"}
+                  subtext={inadimplenciasAcumuladas.length > 0 ? `${inadimplenciasAcumuladas.length} débito(s) de meses anteriores` : "Sem seção de inadimplências no documento"}
+                  tone={inadimplenciasAcumuladas.length > 0 ? "danger" : "default"}
+                  tooltip="Dívidas acumuladas de competências anteriores listadas na seção INADIMPLÊNCIAS do documento. Não compõem a receita do mês."
                 />
               </div>
             )}
@@ -732,7 +778,7 @@ export function RevisaoView({
                 />
               </div>
               <div className="flex bg-[#F4F9F5] rounded-md p-1 border border-[#D1E7D6]">
-                {(["todos", "alugados", "vagos", "inadimplentes"] as const).map((status) => (
+                {(["todos", "alugados", "vagos", "inadimplentes", "airbnb"] as const).map((status) => (
                   <button
                     key={status}
                     onClick={() => setFiltroStatus(status)}
@@ -767,7 +813,7 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
                     <td className="px-4 py-3.5 text-[#3D4F3F]">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span>{row.inquilino?.trim() ? row.inquilino : "-"}</span>
+                        <span>{displayInquilino(row.inquilino)}</span>
                         {badge && (
                           <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${badge.classes}`}>
                             {badge.label}
@@ -777,6 +823,9 @@ export function RevisaoView({
                     </td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
                       {row.aluguel !== null ? formatBRL(row.aluguel) : "-"}
+                      {(row.desconto ?? 0) > 0 && (
+                        <span className="block text-[10px] font-medium text-[#B45309]">desconto {formatBRL(row.desconto as number)}</span>
+                      )}
                     </td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.garagem !== null ? formatBRL(row.garagem) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.vagas_garagem ?? "-"}</td>
@@ -786,7 +835,7 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
-                    <td className="max-w-[220px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] truncate" title={row.observacao?.trim() || ""}>{row.observacao?.trim() || "-"}</td>
+                    <td className="min-w-[260px] max-w-[420px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{row.observacao?.trim() || "-"}</td>
                   </tr>
                   )
                 })
@@ -845,6 +894,42 @@ export function RevisaoView({
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? competencia}</td>
                     <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {inadimplenciasAcumuladas.length > 0 && (
+        <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
+            <div>
+              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Inadimplência acumulada</h3>
+              <p className="text-[12px] text-[#6B7F6E]">Débitos de competências anteriores — não compõem a receita do mês</p>
+            </div>
+            <span className="text-[13px] font-semibold text-[#991B1B]">{formatBRL(totalInadimplenciaAcumulada)}</span>
+          </div>
+          <div className="max-h-[360px] overflow-auto">
+            <table className="w-full min-w-[860px] text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
+                  {["Apto", "Inquilino", "Valor devido", "Condição", "Obs"].map((header) => (
+                    <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {inadimplenciasAcumuladas.map((item, index) => (
+                  <tr key={`${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#FEF5F5]">
+                    <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                    <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
+                    <td className="px-4 py-3 tabular-nums font-semibold text-[#991B1B]">{formatBRL(item.valor)}</td>
+                    <td className="max-w-[280px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{item.condicao ?? "-"}</td>
+                    <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{item.observacao ?? "-"}</td>
                   </tr>
                 ))}
               </tbody>

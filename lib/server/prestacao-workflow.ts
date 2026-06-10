@@ -196,6 +196,7 @@ export async function runPrestacaoAliveWorkflow(file: File): Promise<AnalyzePres
     analysis: {
       ...result.result.analysis,
       acordos_rescisoes_recebidos: result.result.analysis.acordos_rescisoes_recebidos ?? [],
+      inadimplencias_acumuladas: result.result.analysis.inadimplencias_acumuladas ?? [],
     },
   }
 }

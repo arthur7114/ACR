@@ -80,6 +80,19 @@ export const acordoRescisaoRecebidoSchema = z
 
 export type AcordoRescisaoRecebido = z.infer<typeof acordoRescisaoRecebidoSchema>
 
+export const inadimplenciaAcumuladaSchema = z
+  .object({
+    apto: z.string().nullable(),
+    inquilino: z.string().nullable(),
+    valor: z.number(),
+    condicao: z.string().nullable(),
+    observacao: z.string().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type InadimplenciaAcumulada = z.infer<typeof inadimplenciaAcumuladaSchema>
+
 export const extractionPlanSchema = z
   .object({
     documento_lido_integralmente: z.boolean(),
@@ -127,6 +140,7 @@ export const prestacaoAnalysisSchema = z
     plano_extracao: extractionPlanSchema,
     receitas_por_imovel: z.array(receitaPorImovelSchema),
     acordos_rescisoes_recebidos: z.array(acordoRescisaoRecebidoSchema).default([]),
+    inadimplencias_acumuladas: z.array(inadimplenciaAcumuladaSchema).default([]),
     resumo_financeiro: prestacaoResumoFinanceiroSchema,
     totais: z
       .object({
@@ -149,6 +163,7 @@ export interface PrestacaoAnalysis {
   plano_extracao: ExtractionPlan
   receitas_por_imovel: ReceitaPorImovel[]
   acordos_rescisoes_recebidos: AcordoRescisaoRecebido[]
+  inadimplencias_acumuladas: InadimplenciaAcumulada[]
   resumo_financeiro: PrestacaoResumoFinanceiro
   totais: {
     total_receitas: number | null

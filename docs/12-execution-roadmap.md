@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Validar manualmente no navegador um fechamento antigo e um fechamento novo apos deploy para confirmar que a revisao carrega com payloads historicos e atuais.
+Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGestor e executar "Tentar anexos novamente" no fechamento GM I 04/2026 para concluir o anexo dos PDFs aos lancamentos 8750/8751. Depois, reprocessar um PDF Alive para validar as novas extracoes (Airbnb, vagas por veiculo, inadimplencias acumuladas).
 
 ## Progresso por etapa
 
@@ -18,7 +18,7 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 | 1 - App vivo sem IA | concluida | Schema inicial, Storage, CRUD de cadastros, importação CSV de imóveis e UI conectada aos dados reais. |
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
-| 4 - eGestor e layouts futuros | em andamento | Integracao eGestor V1 implementada com configuracao, previa dry-run, envio controlado, retry de anexos, revalidacao e auditoria tecnica. |
+| 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
 
 ## Decisoes registradas
 
@@ -40,6 +40,7 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 - A tela `imoveis` deixa de ser placeholder e passa a concentrar os cadastros de imoveis, imobiliarias e empreendimentos.
 - Upload, processamento, topbar e persistencia do pacote devem usar o contexto do fechamento ativo; labels demonstrativos fixos nao devem aparecer no fluxo real.
 - Badge "Inadimplente" e derivado de `aluguel === 0 || aluguel === null` com inquilino nao-vazio; badge "Vago" e a contrapartida com inquilino vazio/`vago`/`disponivel`. Badges sao puramente derivados na view; nenhum campo de status por linha e persistido.
+- Unidade com "airbnb" no inquilino ou na observacao recebe badge/contagem "Airbnb" e nao conta como vaga nem inadimplente; vagas de garagem sem numero explicito sao contadas por veiculo citado (carro e/ou moto); inadimplencia acumulada (secao INADIMPLENCIAS) e insight separado e nao compoe receita do mes; taxa de intermediacao exibida na revisao vem do documento, nunca do cadastro.
 - `garagem` permanece sendo o valor monetario em reais; `vagas_garagem` (inteiro >= 0) e a quantidade de vagas, extraida do texto da observacao pelo agente Alive. Nao inferir vagas a partir do valor monetario.
 - Documento avulso (sem fechamento ativo previo) abre modal de alocacao no UploadView antes de iniciar o processamento; o pipeline servidor continua sincrono, sem evento `awaiting_user_action`.
 - App passa a usar URLs reais: cada view tem um path proprio em `app/(app)/*`, com Sidebar/Topbar derivados de `usePathname`. Estado compartilhado vive em `lib/contexts/cadastros-context.tsx` e `lib/contexts/processing-context.tsx`. PackageAnalysis completa fica persistida em `fechamentos.analise_completa` (JSONB) para sobreviver a refresh em `/fechamentos/{id}/revisao`.
@@ -63,6 +64,16 @@ Validar manualmente no navegador um fechamento antigo e um fechamento novo apos 
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 
 ## Historico de ciclos
+
+### 2026-06-10 - Primeiro envio real eGestor + correcoes pos-reuniao (Airbnb, vagas, null, inadimplencia acumulada)
+
+Status: done
+Job: Validar a integracao eGestor de ponta a ponta com lancamentos reais e implementar as correcoes da reuniao: Airbnb nao e vago/inadimplente, vagas de garagem contadas por veiculo, "null" literal na revisao, desconto visivel na tabela, observacao completa, inadimplencia acumulada como insight e taxa de intermediacao derivada do documento.
+Outcome entregue: smoke test eGestor criou e excluiu recebimentos reais (8748/8749, confirmados 410 apos delete); envio real do fechamento GM I 04/2026 criou recebimento 8751 (R$ 11.257,04) e pagamento 8750 (R$ 726,13), com status `lancado_egestor`, auditoria em `egestor_envios` e revalidacao ok; anexos ficaram `anexo_pendente` porque o usuario do token nao tem permissao Disco Virtual no eGestor (GET /v1/discoVirtual retorna 401 "Usuario nao possui acesso"), nao e bug de codigo. Na revisao: novo status/badge/filtro/contador Airbnb derivado de "airbnb" em inquilino/observacao (GRAND MARACANAU valida 15 alugadas + 1 inadimplente + 1 vago + 13 airbnb); `displayInquilino` sanitiza strings "null"/": null"; coluna Obs sem truncamento; celula Aluguel mostra "desconto R$ X" quando houver; chip Intermediacao agora deriva de linha de intermediacao em `outras_comissoes_despesas` do documento (sem fallback de cadastro); nova secao + card "Inadimplencia acumulada" com `inadimplencias_acumuladas` adicionado ao schema zod, ao JSON Schema da OpenAI e ao prompt do agente Alive; prompt tambem passou a contar vagas por veiculo ("CARRO E MOTO" = 2, "GARAGEM PARA CARRO" = 1) e a proibir strings "null"; `parseVagasGaragem` do parser XLSX acompanha a mesma regra.
+Validacao: smoke test real `npx tsx test-egestor.ts` passou; envio real via `POST /api/fechamentos/{id}/egestor/send` passou; revalidacao via `POST .../egestor/revalidar` passou; `npx tsx --test lib/server/egestor.test.ts lib/server/package-rechecks.test.ts` 14/14; `pnpm lint` e `pnpm build` passaram; UI validada via preview no navegador em `/fechamentos/1242c468-aa49-4aa2-bf8c-d66ec56498d2/revisao`.
+Decisoes: unidade com "airbnb" na observacao/inquilino nao conta como vaga nem inadimplente e tem contagem propria; inadimplencia acumulada e divida de meses anteriores e nunca compoe receita do mes; taxa de intermediacao exibida vem exclusivamente do documento; lancamento eGestor permanece consolidado por categoria (1 recebimento de repasse conciliavel com o comprovante bancario).
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `lib/prestacao-types.ts`, `lib/server/analyze-prestacao.ts`, `lib/server/ai-agents/prestacao-alive-agent.ts`, `lib/server/excel-parser.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: habilitar permissao Disco Virtual no eGestor e rodar retry de anexos; reprocessar PDF Alive para validar novas extracoes em producao.
 
 ### 2026-06-05 - Correcoes UX e bug bloqueio na Revisao
 

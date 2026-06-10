@@ -131,6 +131,7 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
     },
     receitas_por_imovel: receitas,
     acordos_rescisoes_recebidos: [],
+    inadimplencias_acumuladas: [],
     resumo_financeiro: {
       total_linhas_receitas: total_receitas,
       total_linhas_comissoes: total_comissoes,
@@ -167,8 +168,11 @@ function parseVagasGaragem(observacao: string | null): number | null {
   if (match) {
     return parseInt(match[1], 10)
   }
-  if (obsLower.includes("vaga")) {
-    return 1
+  if (obsLower.includes("vaga") || obsLower.includes("garagem")) {
+    // Sem número explícito: 1 vaga por veículo citado ("carro e moto" = 2)
+    const veiculos = (obsLower.includes("carro") ? 1 : 0) + (obsLower.includes("moto") ? 1 : 0)
+    if (veiculos > 0) return veiculos
+    return obsLower.includes("vaga") ? 1 : null
   }
   return null
 }
