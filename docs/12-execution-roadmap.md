@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGestor e executar "Tentar anexos novamente" no fechamento GM I 04/2026 para concluir o anexo dos PDFs aos lancamentos 8750/8751. Depois, reprocessar um PDF Alive para validar as novas extracoes (Airbnb, vagas por veiculo, inadimplencias acumuladas). No layout C (Cesar Rego), definir a conciliacao para imobiliarias sem comprovante bancario separado e validar o parser deterministico com outros meses do mesmo layout.
+Validar no navegador a revisao ajustada (coluna de valor com desconto, vagas no mini dash e despesas abaixo do comprovante), reprocessar um pacote real para confirmar que a persistencia nao cria imobiliarias duplicadas e habilitar a permissao "Disco Virtual" no eGestor para concluir o retry de anexos pendentes.
 
 ## Progresso por etapa
 
@@ -63,8 +63,21 @@ Habilitar a permissao "Disco Virtual" para o usuario do personal_token no eGesto
 - Tela de revisao deve ser retrocompativel com analises persistidas antes de campos novos; arrays opcionais do payload devem ser normalizados para lista vazia na renderizacao.
 - Percentual de confianca do parecer automatico e campo tecnico interno, nao indicador operacional; a revisao deve exibir contagem objetiva de bloqueios, alertas e validacoes ok. Percentuais de extracao ficam rotulados como qualidade da leitura.
 - Prestacao em PDF no layout C (Extrato de Conta - Consolidado por Lancamentos, Cesar Rego) e extraida pelo parser deterministico `cesar-rego-parser.ts` (texto via pdfjs-dist), nunca pelo agente de visao; o agente de IA fica como fallback apenas se a deteccao/parse local falhar.
+- Percentual de comissao realizada e `total_comissoes / total_receitas * 100`; a base de comissao cadastrada continua existindo apenas para validar a taxa comercial esperada.
+- Previa eGestor deve lancar o recebimento bruto (`total_receitas`) e lancar comissoes/despesas separadamente como pagamentos, evitando descontar despesas duas vezes.
+- Listas e seletores de cadastros ocultam registros `ativo=false` por padrao; fechamentos historicos continuam exibindo nomes via relacionamento salvo.
 
 ## Historico de ciclos
+
+### 2026-06-10 - Ajustes financeiros, UI de revisao e previa eGestor
+
+Status: done
+Job: corrigir taxa de comissao, valor com desconto na tabela, vagas no mini dash, ordem visual de despesas, lancamento bruto no eGestor, deduplicacao de imobiliarias e ocultacao de cadastros inativos.
+Outcome entregue: `comissao_realizada_percent` passou a usar comissao sobre total recebido; a previa eGestor passou a criar recebimento bruto e manter comissoes/despesas como pagamentos separados; persistencia de pacote/prestacao passou a localizar cadastros por nome normalizado antes de criar/reactivar; provider de cadastros deixou de carregar inativos por padrao; revisao ganhou coluna "Valor c/ desc.", total de vagas de garagem no mini dash e despesas abaixo do comprovante.
+Validacao: `pnpm dlx tsx --test lib/server/package-rechecks.test.ts lib/server/egestor.test.ts` passou (15/15); `pnpm exec tsc --noEmit` passou; `pnpm lint` passou; `pnpm build` passou com warning conhecido de root do Turbopack por lockfiles no workspace raiz e no worktree; `.agent/scripts/checklist.py .` passou em security, lint, schema, tests, UX e SEO.
+Decisoes: "valor total com desconto" e exibido como coluna propria sem substituir o total final da linha; vagas sem quantidade explicita contam 1 quando ha valor de garagem; cadastros ocultos sao `ativo=false`.
+Arquivos/docs impactados: `lib/server/package-rechecks.ts`, `lib/server/egestor.ts`, `lib/server/persist-package.ts`, `lib/server/persist-prestacao.ts`, `lib/contexts/cadastros-context.tsx`, `components/acr/views/revisao-view.tsx`, testes de package/eGestor, `lib/server/cesar-rego-parser.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: validar a revisao no navegador com um fechamento real e reprocessar pacote real para confirmar deduplicacao/reativacao de imobiliarias.
 
 ### 2026-06-10 - Parser deterministico para o layout C (Cesar Rego - consolidado por lancamentos)
 

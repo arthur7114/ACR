@@ -4,6 +4,7 @@ import type {
   PrestacaoRecheck,
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
+import { normalizeCadastroKey } from "./cadastros"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
@@ -33,21 +34,8 @@ export async function persistPrestacao(input: PersistPrestacaoInput) {
     throw upload.error
   }
 
-  const { data: imobiliaria, error: imobiliariaError } = await supabase
-    .from("imobiliarias")
-    .upsert({ nome: analysis.imobiliaria || "Alive Imoveis", layout: "alive", ativo: true }, { onConflict: "nome" })
-    .select("id")
-    .single()
-
-  if (imobiliariaError) throw imobiliariaError
-
-  const { data: empreendimento, error: empreendimentoError } = await supabase
-    .from("empreendimentos")
-    .upsert({ nome: analysis.empreendimento || "Grand Messejana II", ativo: true }, { onConflict: "nome" })
-    .select("id")
-    .single()
-
-  if (empreendimentoError) throw empreendimentoError
+  const imobiliaria = await findOrCreateImobiliaria(supabase, analysis.imobiliaria || "Alive Imoveis")
+  const empreendimento = await findOrCreateEmpreendimento(supabase, analysis.empreendimento || "Grand Messejana II")
 
   const { data: fechamento, error: fechamentoError } = await supabase
     .from("fechamentos")
@@ -185,4 +173,44 @@ function normalizeCompetencia(value: string) {
   if (/mar/i.test(normalized) && /2026/.test(normalized)) return "2026-03-01"
 
   return "2026-03-01"
+}
+
+async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
+  const { data: rows, error: lookupError } = await supabase
+    .from("imobiliarias")
+    .select("id,nome,ativo,criado_em")
+    .order("ativo", { ascending: false })
+    .order("criado_em", { ascending: true })
+
+  if (lookupError) throw lookupError
+
+  const normalized = normalizeCadastroKey(nome)
+  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const query = existing
+    ? supabase.from("imobiliarias").update({ nome, layout: "alive", ativo: true }).eq("id", existing.id)
+    : supabase.from("imobiliarias").insert({ nome, layout: "alive", ativo: true })
+
+  const { data, error } = await query.select("id").single()
+  if (error) throw error
+  return data
+}
+
+async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
+  const { data: rows, error: lookupError } = await supabase
+    .from("empreendimentos")
+    .select("id,nome,ativo,criado_em")
+    .order("ativo", { ascending: false })
+    .order("criado_em", { ascending: true })
+
+  if (lookupError) throw lookupError
+
+  const normalized = normalizeCadastroKey(nome)
+  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const query = existing
+    ? supabase.from("empreendimentos").update({ nome, ativo: true }).eq("id", existing.id)
+    : supabase.from("empreendimentos").insert({ nome, ativo: true })
+
+  const { data, error } = await query.select("id").single()
+  if (error) throw error
+  return data
 }

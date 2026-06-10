@@ -237,7 +237,7 @@ test("valida comissao administrativa pela regra comercial sobre total pago", () 
   assert.equal(check?.difference, 1)
 })
 
-test("calcula percentual de comissao realizada e base cadastrada", () => {
+test("calcula percentual de comissao realizada sobre o total recebido e preserva base cadastrada", () => {
   const result = validatePackage({
     documents: requiredDocuments,
     prestacao: createPrestacao(),
@@ -253,6 +253,59 @@ test("calcula percentual de comissao realizada e base cadastrada", () => {
   assert.equal(result.totals.base_comissao_administracao, 3000)
   assert.equal(result.totals.comissao_realizada_percent, 1)
   assert.equal(result.totals.taxa_administracao_percent, 1)
+})
+
+test("calcula percentual de comissao realizada dividindo comissao pelo total recebido", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      receitas_por_imovel: [
+        {
+          apto: "101",
+          inquilino: "Maria",
+          aluguel: 1000,
+          desconto: 100,
+          aluguel_com_desconto: 900,
+          garagem: null,
+          vagas_garagem: null,
+          agua: null,
+          iptu: null,
+          seguro_incendio: null,
+          total: 1000,
+          comissao: 100,
+          repasse: 900,
+          vencimento: null,
+          observacao: null,
+          confianca: 0.95,
+        },
+      ],
+      resumo_financeiro: {
+        ...createPrestacao().resumo_financeiro,
+        total_linhas_receitas: 1000,
+        total_linhas_comissoes: 100,
+        total_linhas_repasse: 900,
+        comissao_administracao: 100,
+        recebidos_em_nome_locador: 1000,
+        total_comissao_despesas: 100,
+        total_a_repassar: 900,
+      },
+      totais: {
+        total_receitas: 1000,
+        total_comissoes: 100,
+        total_repassar: 900,
+      },
+    }),
+    repasse: createRepasse(900),
+    despesas: null,
+    reajuste: null,
+    commercialRule: {
+      taxa_administracao_percent: 10,
+      taxa_intermediacao_percent: 0,
+    },
+  })
+
+  assert.equal(result.totals.base_comissao_administracao, 900)
+  assert.equal(result.totals.comissao_realizada_percent, 10)
 })
 
 test("alerta quando acordo recebido no mes tem competencia original diferente", () => {

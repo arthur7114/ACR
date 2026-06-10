@@ -42,9 +42,9 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     try {
       const [imobiliarias, empreendimentos, imoveis, regrasComerciais] = await Promise.all([
-        fetchJson("/api/cadastros/imobiliarias?include_inactive=true"),
-        fetchJson("/api/cadastros/empreendimentos?include_inactive=true"),
-        fetchJson("/api/cadastros/imoveis?include_inactive=true"),
+        fetchJson("/api/cadastros/imobiliarias"),
+        fetchJson("/api/cadastros/empreendimentos"),
+        fetchJson("/api/cadastros/imoveis"),
         fetchJson("/api/cadastros/regras-comerciais"),
       ])
       setCadastros({

@@ -63,8 +63,10 @@ export async function extractPdfTextLines(fileBuffer: Buffer): Promise<TextLine[
       const page = await doc.getPage(pageNumber)
       const content = await page.getTextContent()
       const items = content.items
-        .filter((item): item is { str: string; transform: number[]; width: number } => "str" in item)
-        .map((item) => ({ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }))
+        .flatMap((item) => {
+          if (!("str" in item)) return []
+          return [{ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }]
+        })
         .filter((item) => item.text.trim().length > 0)
         .sort((a, b) => b.y - a.y || a.x - b.x)
 

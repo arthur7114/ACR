@@ -10,6 +10,7 @@ import type {
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
 import type { FechamentoContext } from "@/lib/fechamento-context"
+import { normalizeCadastroKey } from "./cadastros"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
@@ -43,21 +44,8 @@ export async function persistPackage(input: PersistPackageInput) {
   const empreendimentoNome = input.fechamentoContext?.empreendimentoNome ?? analysis.prestacao?.empreendimento ?? "Empreendimento nao identificado"
   const competencia = normalizeCompetencia(input.fechamentoContext?.competencia ?? analysis.prestacao?.competencia ?? "")
 
-  const { data: imobiliaria, error: imobiliariaError } = await supabase
-    .from("imobiliarias")
-    .upsert({ nome: imobiliariaNome, layout: "alive", ativo: true }, { onConflict: "nome" })
-    .select("id")
-    .single()
-
-  if (imobiliariaError) throw imobiliariaError
-
-  const { data: empreendimento, error: empreendimentoError } = await supabase
-    .from("empreendimentos")
-    .upsert({ nome: empreendimentoNome, ativo: true }, { onConflict: "nome" })
-    .select("id")
-    .single()
-
-  if (empreendimentoError) throw empreendimentoError
+  const imobiliaria = await findOrCreateImobiliaria(supabase, imobiliariaNome)
+  const empreendimento = await findOrCreateEmpreendimento(supabase, empreendimentoNome)
 
   // Fetch existing resolved validations to decide status and preserve them
   const { data: existingFechamento } = await supabase
@@ -429,4 +417,44 @@ function normalizeCompetencia(value: string) {
   if (/mar/i.test(normalized) && /2026/.test(normalized)) return "2026-03-01"
 
   throw new Error(`Competencia do fechamento invalida: ${value}.`)
+}
+
+async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
+  const { data: rows, error: lookupError } = await supabase
+    .from("imobiliarias")
+    .select("id,nome,ativo,criado_em")
+    .order("ativo", { ascending: false })
+    .order("criado_em", { ascending: true })
+
+  if (lookupError) throw lookupError
+
+  const normalized = normalizeCadastroKey(nome)
+  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const query = existing
+    ? supabase.from("imobiliarias").update({ nome, layout: "alive", ativo: true }).eq("id", existing.id)
+    : supabase.from("imobiliarias").insert({ nome, layout: "alive", ativo: true })
+
+  const { data, error } = await query.select("id").single()
+  if (error) throw error
+  return data
+}
+
+async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
+  const { data: rows, error: lookupError } = await supabase
+    .from("empreendimentos")
+    .select("id,nome,ativo,criado_em")
+    .order("ativo", { ascending: false })
+    .order("criado_em", { ascending: true })
+
+  if (lookupError) throw lookupError
+
+  const normalized = normalizeCadastroKey(nome)
+  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const query = existing
+    ? supabase.from("empreendimentos").update({ nome, ativo: true }).eq("id", existing.id)
+    : supabase.from("empreendimentos").insert({ nome, ativo: true })
+
+  const { data, error } = await query.select("id").single()
+  if (error) throw error
+  return data
 }

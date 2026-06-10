@@ -330,9 +330,9 @@ function buildDrafts(fechamento: FechamentoRow) {
 
 export function buildEgestorDrafts(analysis: PackageAnalysis) {
   const drafts: DraftLancamento[] = []
-  const repasse = analysis.totals.valor_comprovado ?? analysis.totals.total_a_repassar
-  if (repasse > 0) {
-    drafts.push({ tipo: "recebimento", categoria: "repasse_mensal", descricao: "Repasse mensal consolidado", valor: repasse })
+  const recebidoBruto = analysis.totals.total_receitas
+  if (recebidoBruto > 0) {
+    drafts.push({ tipo: "recebimento", categoria: "repasse_mensal", descricao: "Recebimento mensal bruto", valor: recebidoBruto })
   }
 
   const comissao = analysis.totals.comissao_administracao_calculada ?? analysis.prestacao?.resumo_financeiro.comissao_administracao ?? 0

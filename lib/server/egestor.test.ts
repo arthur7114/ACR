@@ -50,13 +50,13 @@ function createAnalysis(overrides: Partial<PackageAnalysis> = {}): PackageAnalys
   }
 }
 
-test("gera previa consolidada com repasse, comissao e despesas agrupadas", () => {
+test("gera previa consolidada com recebimento bruto, comissao e despesas agrupadas", () => {
   const drafts = buildEgestorDrafts(createAnalysis())
 
   assert.deepEqual(
     drafts.map((draft) => [draft.tipo, draft.categoria, draft.valor]),
     [
-      ["recebimento", "repasse_mensal", 640],
+      ["recebimento", "repasse_mensal", 1000],
       ["pagamento", "comissao_administrativa", 100],
       ["pagamento", "energia", 200],
       ["pagamento", "agua", 50],
@@ -64,12 +64,12 @@ test("gera previa consolidada com repasse, comissao e despesas agrupadas", () =>
   )
 })
 
-test("usa total a repassar quando nao existe comprovante", () => {
+test("usa total recebido bruto mesmo quando nao existe comprovante", () => {
   const drafts = buildEgestorDrafts(createAnalysis({
     totals: { ...createAnalysis().totals, valor_comprovado: null, total_a_repassar: 650 },
   }))
 
-  assert.equal(drafts[0].valor, 650)
+  assert.equal(drafts[0].valor, 1000)
 })
 
 function jsonResponse(payload: Record<string, unknown>, init?: ResponseInit) {
