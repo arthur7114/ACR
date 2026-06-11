@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Validar no navegador a revisao ajustada (coluna de valor com desconto, vagas no mini dash e despesas abaixo do comprovante), reprocessar um pacote real para confirmar que a persistencia nao cria imobiliarias duplicadas e habilitar a permissao "Disco Virtual" no eGestor para concluir o retry de anexos pendentes.
+Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imoveis alugados deixam de aparecer como Vago, desconto abatido na coluna "Valor c/ desc." e nova coluna "Ref." com o mes do aluguel destacado quando de competencia anterior), reprocessar um pacote real para confirmar que a persistencia nao cria imobiliarias duplicadas e habilitar a permissao "Disco Virtual" no eGestor para concluir o retry de anexos pendentes.
 
 ## Progresso por etapa
 
@@ -66,8 +66,19 @@ Validar no navegador a revisao ajustada (coluna de valor com desconto, vagas no 
 - Percentual de comissao realizada e `total_comissoes / total_receitas * 100`; a base de comissao cadastrada continua existindo apenas para validar a taxa comercial esperada.
 - Previa eGestor deve lancar o recebimento bruto (`total_receitas`) e lancar comissoes/despesas separadamente como pagamentos, evitando descontar despesas duas vezes.
 - Listas e seletores de cadastros ocultam registros `ativo=false` por padrao; fechamentos historicos continuam exibindo nomes via relacionamento salvo.
+- No layout C (Cesar Rego) o nome do inquilino nao existe na camada de texto: o parser usa o endereco do imovel como identificacao da unidade na coluna Inquilino (e remove o endereco da observacao), evitando que imoveis alugados (com creditos de ALUGUEL) sejam marcados como Vago; imovel sem lancamentos no mes continua com inquilino vazio. Descontos (debitos `DESCONTO`/`DESC.`, ex.: "DESC. LOCATARIO") viram as colunas `desconto`/`aluguel_com_desconto`, sem confundir com o credito de "ENCARGOS FINANCEIROS POR ATRASO". O mes/ano do lancamento de ALUGUEL alimenta `vencimento`, e a tabela de receitas ganha a coluna `Ref.` destacando quando o aluguel e de competencia anterior (ex.: apto pago com atraso).
 
 ## Historico de ciclos
+
+### 2026-06-11 - Correcoes do layout Cesar Rego (vago, desconto, mes de referencia)
+
+Status: done
+Job: corrigir tres falhas reportadas na revisao do pacote "Galpao Pompilio Gomes" (Cesar Rego, 05/2026): todos os imoveis apareciam como "Vago", o desconto vinha so na observacao (sem abater na coluna "Valor c/ desc.") e o mes de referencia do aluguel nao era informado (apto B pago referente a 03/2026).
+Outcome entregue: no `cesar-rego-parser.ts`, `buildReceitas` passou a (1) preencher `inquilino` com o endereco do imovel quando nao ha nome na camada de texto e remover o endereco da observacao - imovel com creditos de ALUGUEL deixa de cair como Vago e vira "Alugado"; (2) classificar lancamentos de desconto (`isDescontoLancamento`: debito com `DESCONTO`/`DESC.`) em `desconto`, calculando `aluguel_com_desconto = aluguel - desconto` (clamp >= 0), retirando-os da observacao e sem capturar o credito de encargos por atraso; (3) gravar em `vencimento` o mes/ano do lancamento de ALUGUEL. `buildReceita` foi ampliado para aceitar `desconto`/`aluguel_com_desconto`/`vencimento`. Na `revisao-view.tsx` foi adicionada a coluna "Ref." (header/corpo/rodape/colSpan) exibindo `vencimento`, com destaque ambar quando difere da competencia do fechamento (helper `competenciaParaMesAno` converte "YYYY-MM"/"MM/YYYY"). A subtracao do desconto na coluna "Valor c/ desc." e o badge "Alugado" ja eram suportados pela UI. `scripts/test-cesar-rego-parser.ts` passou a aceitar a competencia como 2o argumento.
+Validacao: `npx tsx scripts/test-cesar-rego-parser.ts "PRESTACAO ... GALPAO POMPILIO GOMES CESAR REGO.pdf" 2026-05` retornou os 4 imoveis com inquilino=endereco, desconto 113,27/0,26 e aluguel_com_desconto 1.100,00/787,96, `vencimento` 03/2026 no 0002521 (demais 05/2026), credito de encargos por atraso (94,42) mantido como credito no total 882,64, recebidos 14.015,38 e total liquido 13.409,90 exatos, payload valido no `prestacaoAnalysisSchema`. `pnpm lint`, `pnpm build` e `pnpm exec tsc --noEmit` passaram.
+Decisoes: ver entradas adicionadas em "Decisoes registradas" sobre o tratamento de inquilino/endereco, desconto e mes de referencia no layout C.
+Arquivos/docs impactados: `lib/server/cesar-rego-parser.ts`, `components/acr/views/revisao-view.tsx`, `scripts/test-cesar-rego-parser.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: validar no navegador a revisao do pacote Galpao Pompilio Gomes (nenhum imovel "Vago", "Valor c/ desc." abatido em A/B, coluna "Ref." com 03/2026 destacado no apto B) e confirmar o lancamento no eGestor.
 
 ### 2026-06-10 - Ajustes financeiros, UI de revisao e previa eGestor
 

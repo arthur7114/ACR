@@ -274,6 +274,18 @@ function getVagasGaragem(row: ReceitaPorImovel) {
   return (row.garagem ?? 0) > 0 ? 1 : 0
 }
 
+// Normaliza a competencia ("2026-05" ou "05/2026") para "MM/YYYY", de forma a
+// comparar com o mes de referencia do aluguel (campo vencimento). Retorna null
+// quando o formato nao for numerico (ex.: "Maio/2026").
+function competenciaParaMesAno(competencia: string | null | undefined): string | null {
+  if (!competencia) return null
+  const ymd = /^(\d{4})-(\d{2})/.exec(competencia)
+  if (ymd) return `${ymd[2]}/${ymd[1]}`
+  const my = /^(\d{2})\/(\d{4})/.exec(competencia)
+  if (my) return `${my[1]}/${my[2]}`
+  return null
+}
+
 function formatPercent(value: number | null | undefined) {
   if (typeof value !== "number") return "-"
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
@@ -433,6 +445,7 @@ export function RevisaoView({
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento nao identificado"
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
   const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competencia nao identificada"
+  const competenciaMesAno = competenciaParaMesAno(prestacao?.competencia ?? fechamento?.competencia)
   const title = `${empreendimentoNome} - ${competencia}`
   const resumo = prestacao?.resumo_financeiro
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
@@ -806,7 +819,7 @@ export function RevisaoView({
           <table className="w-full min-w-[1220px] text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Obs"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -847,13 +860,16 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
+                    <td className={`px-4 py-3.5 tabular-nums whitespace-nowrap ${row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "font-semibold text-[#B45309]" : "text-[#3D4F3F]"}`} title={row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "Aluguel referente a mês anterior" : undefined}>
+                      {row.vencimento ?? "-"}
+                    </td>
                     <td className="min-w-[260px] max-w-[420px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{row.observacao?.trim() || "-"}</td>
                   </tr>
                   )
                 })
               ) : (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
+                  <td colSpan={14} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
               )}
             </tbody>
@@ -872,6 +888,7 @@ export function RevisaoView({
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>
+                <td className="px-4 py-3"></td>
                 <td className="px-4 py-3"></td>
               </tr>
             </tfoot>

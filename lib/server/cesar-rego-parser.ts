@@ -335,6 +335,12 @@ function isTenantGroupLine(line: TextLine): boolean {
   return /^[A-ZÀ-Ü][A-ZÀ-Ü0-9 .,&\-\/]+$/.test(text) && !/\d{3,}/.test(text)
 }
 
+function isDescontoLancamento(item: Lancamento): boolean {
+  if (item.debito === null) return false
+  const descricao = normalize(item.descricao)
+  return /\bDESCONTO\b/.test(descricao) || /\bDESC\./.test(descricao)
+}
+
 function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): ReceitaPorImovel[] {
   const porImovel = new Map<string, Lancamento[]>()
   for (const lancamento of lancamentos) {
@@ -365,8 +371,15 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
     const comissoes = grupo.filter(
       (item) => item.debito !== null && normalize(item.descricao).includes("COMISSAO"),
     )
+    // Descontos sao debitos (ex.: "DESC. LOCATARIO", "DESCONTO FORNECIDO"); o
+    // credito de "ENCARGOS FINANCEIROS POR ATRASO" nao entra aqui.
+    const descontos = grupo.filter((item) => isDescontoLancamento(item) && !comissoes.includes(item))
     const outros = grupo.filter(
-      (item) => !aluguelCreditos.includes(item) && !iptuCreditos.includes(item) && !comissoes.includes(item),
+      (item) =>
+        !aluguelCreditos.includes(item) &&
+        !iptuCreditos.includes(item) &&
+        !comissoes.includes(item) &&
+        !descontos.includes(item),
     )
 
     const detalhes = outros.map((item) => {
@@ -375,13 +388,30 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
       return `${item.descricao}: ${natureza} de ${formatBRL(valor)}`
     })
 
-    return buildReceita(codigo, grupo[0].inquilino, {
-      aluguel: sumOrNull(aluguelCreditos.map((item) => item.credito ?? 0)),
+    const aluguel = sumOrNull(aluguelCreditos.map((item) => item.credito ?? 0))
+    const desconto = sumOrNull(descontos.map((item) => item.debito ?? 0))
+    const aluguelComDesconto =
+      desconto === null ? null : aluguel === null ? null : roundMoney(Math.max(aluguel - desconto, 0))
+
+    // Mes de referencia do aluguel (competencia do proprio lancamento). Quando
+    // difere da competencia do fechamento, sinaliza pagamento de mes anterior.
+    const vencimento =
+      aluguelCreditos.map((item) => item.mesAno).find((mes): mes is string => Boolean(mes)) ?? null
+
+    // O nome do inquilino nao consta neste layout: usa o endereco como
+    // identificacao da unidade (por isso o endereco sai da observacao).
+    const inquilino = grupo[0].inquilino.trim() || imovel?.endereco?.trim() || ""
+
+    return buildReceita(codigo, inquilino, {
+      aluguel,
+      desconto,
+      aluguel_com_desconto: aluguelComDesconto,
       iptu: sumOrNull(iptuCreditos.map((item) => item.credito ?? 0)),
       comissao: sumOrNull(comissoes.map((item) => item.debito ?? 0)),
       total: roundMoney(creditos.reduce((total, item) => total + (item.credito ?? 0), 0)),
       repasse: grupo[grupo.length - 1].saldo,
-      observacao: joinObservacao(imovel?.endereco, detalhes.join("; ") || null),
+      vencimento,
+      observacao: detalhes.join("; ") || null,
     })
   })
 }
@@ -389,14 +419,27 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
 function buildReceita(
   codigo: string,
   inquilino: string,
-  values: Partial<Pick<ReceitaPorImovel, "aluguel" | "iptu" | "comissao" | "total" | "repasse" | "observacao">>,
+  values: Partial<
+    Pick<
+      ReceitaPorImovel,
+      | "aluguel"
+      | "desconto"
+      | "aluguel_com_desconto"
+      | "iptu"
+      | "comissao"
+      | "total"
+      | "repasse"
+      | "vencimento"
+      | "observacao"
+    >
+  >,
 ): ReceitaPorImovel {
   return {
     apto: codigo,
     inquilino,
     aluguel: values.aluguel ?? null,
-    desconto: null,
-    aluguel_com_desconto: null,
+    desconto: values.desconto ?? null,
+    aluguel_com_desconto: values.aluguel_com_desconto ?? null,
     garagem: null,
     vagas_garagem: null,
     agua: null,
@@ -405,7 +448,7 @@ function buildReceita(
     total: values.total ?? 0,
     comissao: values.comissao ?? null,
     repasse: values.repasse ?? null,
-    vencimento: null,
+    vencimento: values.vencimento ?? null,
     observacao: values.observacao ?? null,
     confianca: 1.0,
   }
