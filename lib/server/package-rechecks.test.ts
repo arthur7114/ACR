@@ -365,3 +365,34 @@ test("bloqueia possivel acordo ou rescisao repetido", () => {
   assert.equal(check?.actual, 1)
   assert.equal(result.parecer.status, "bloqueado")
 })
+
+test("nao bloqueia parcelas do mesmo acordo recebidas em meses diferentes", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "303",
+          inquilino: "Natan",
+          valor: 500,
+          competencia_original: "2026-01",
+          competencia_recebimento: "2026-04",
+          observacao: "Parcela recebida em abril.",
+          confianca: 0.95,
+        },
+      ],
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+    // Parcela do mesmo acordo (origem 2026-01) recebida no mes anterior, ja
+    // lancada e chaveada pelo recebimento de marco.
+    historicalAgreementKeys: ["acordo|natan|2026-03|500.00"],
+  })
+
+  const check = result.rechecks.find((item) => item.id === "duplicate_agreement_payment")
+
+  assert.equal(check?.status, "passed")
+  assert.equal(check?.actual, 0)
+})

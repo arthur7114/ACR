@@ -681,7 +681,12 @@ function roundPercent(value: number) {
 
 export function buildAgreementPaymentKey(item: AcordoRescisaoRecebido) {
   const inquilino = normalizeText(item.inquilino)
-  const competencia = normalizeCompetenciaKey(item.competencia_original ?? item.competencia_recebimento)
+  // Um pagamento de acordo/rescisao e unico pelo MES EM QUE FOI RECEBIDO. Um
+  // acordo parcelado tem competencia de origem fixa e parcela de valor igual
+  // todo mes; chavear pela origem marcaria cada parcela mensal como repetida e
+  // bloquearia o fechamento todo mes. A competencia de recebimento distingue as
+  // parcelas legitimas e ainda pega uma reimportacao real no mesmo mes.
+  const competencia = normalizeCompetenciaKey(item.competencia_recebimento ?? item.competencia_original)
   if (!inquilino || !competencia || !Number.isFinite(item.valor)) return null
   return [item.tipo, inquilino, competencia, roundMoney(item.valor).toFixed(2)].join("|")
 }
