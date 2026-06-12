@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
+import { purgeFechamentos } from "@/lib/server/cadastros-delete"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -127,16 +128,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   try {
     const body = await request.json()
-    const { comentario_operador } = body
+
+    const changes: Record<string, unknown> = { atualizado_em: new Date().toISOString() }
+    if ("comentario_operador" in body) changes.comentario_operador = body.comentario_operador ?? null
+    if (typeof body.arquivado === "boolean") changes.arquivado = body.arquivado
 
     const { data, error } = await supabase
       .from("fechamentos")
-      .update({
-        comentario_operador: comentario_operador ?? null,
-        atualizado_em: new Date().toISOString()
-      })
+      .update(changes)
       .eq("id", id)
-      .select("id, comentario_operador")
+      .select("id, comentario_operador, arquivado")
       .single()
 
     if (error) {
@@ -146,6 +147,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ fechamento: data })
   } catch (err) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
+  }
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params
+  const supabase = createSupabaseAdmin()
+
+  try {
+    await purgeFechamentos(supabase, [id])
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao excluir fechamento." }, { status: 500 })
   }
 }
 

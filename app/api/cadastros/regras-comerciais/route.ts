@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { parseJson, regraComercialInputSchema, regraComercialPatchSchema } from "@/lib/server/cadastros"
+import { hardDeleteRegraComercial } from "@/lib/server/cadastros-delete"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 const selectFields = `
@@ -60,10 +61,22 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const id = new URL(request.url).searchParams.get("id")
+  const url = new URL(request.url)
+  const id = url.searchParams.get("id")
+  const mode = url.searchParams.get("mode") ?? "soft"
   if (!id) return NextResponse.json({ error: "id e obrigatorio" }, { status: 400 })
 
   const supabase = createSupabaseAdmin()
+
+  if (mode === "hard") {
+    try {
+      await hardDeleteRegraComercial(supabase, id)
+      return NextResponse.json({ ok: true })
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao excluir." }, { status: 500 })
+    }
+  }
+
   const { data, error } = await supabase
     .from("regras_comerciais")
     .update({ ativo: false })

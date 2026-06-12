@@ -2,15 +2,17 @@ import { NextResponse } from "next/server"
 import { fechamentoInputSchema, parseJson } from "@/lib/server/cadastros"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = createSupabaseAdmin()
+  const includeArquivados = new URL(request.url).searchParams.get("include_arquivados") === "true"
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("fechamentos")
     .select(`
       id,
       competencia,
       status,
+      arquivado,
       total_repassar,
       valor_repassado_comprovante,
       diferenca_total,
@@ -19,6 +21,10 @@ export async function GET() {
       empreendimentos ( nome )
     `)
     .order("criado_em", { ascending: false })
+
+  if (!includeArquivados) query = query.eq("arquivado", false)
+
+  const { data, error } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

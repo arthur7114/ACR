@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { empreendimentoInputSchema, empreendimentoPatchSchema, normalizeCadastroKey, parseJson } from "@/lib/server/cadastros"
+import { hardDeleteEmpreendimento } from "@/lib/server/cadastros-delete"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 export async function GET(request: Request) {
@@ -61,10 +62,22 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const id = new URL(request.url).searchParams.get("id")
+  const url = new URL(request.url)
+  const id = url.searchParams.get("id")
+  const mode = url.searchParams.get("mode") ?? "soft"
   if (!id) return NextResponse.json({ error: "id e obrigatorio" }, { status: 400 })
 
   const supabase = createSupabaseAdmin()
+
+  if (mode === "hard") {
+    try {
+      await hardDeleteEmpreendimento(supabase, id)
+      return NextResponse.json({ ok: true })
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Falha ao excluir." }, { status: 500 })
+    }
+  }
+
   const { data, error } = await supabase.from("empreendimentos").update({ ativo: false }).eq("id", id).select().single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
