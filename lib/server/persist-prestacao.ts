@@ -187,7 +187,7 @@ async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabas
   const normalized = normalizeCadastroKey(nome)
   const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
   const query = existing
-    ? supabase.from("imobiliarias").update({ nome, layout: "alive", ativo: true }).eq("id", existing.id)
+    ? supabase.from("imobiliarias").update({ ativo: true }).eq("id", existing.id)
     : supabase.from("imobiliarias").insert({ nome, layout: "alive", ativo: true })
 
   const { data, error } = await query.select("id").single()
@@ -207,7 +207,7 @@ async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupa
   const normalized = normalizeCadastroKey(nome)
   const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
   const query = existing
-    ? supabase.from("empreendimentos").update({ nome, ativo: true }).eq("id", existing.id)
+    ? supabase.from("empreendimentos").update({ ativo: true }).eq("id", existing.id)
     : supabase.from("empreendimentos").insert({ nome, ativo: true })
 
   const { data, error } = await query.select("id").single()

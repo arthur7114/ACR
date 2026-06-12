@@ -44,8 +44,16 @@ export async function persistPackage(input: PersistPackageInput) {
   const empreendimentoNome = input.fechamentoContext?.empreendimentoNome ?? analysis.prestacao?.empreendimento ?? "Empreendimento nao identificado"
   const competencia = normalizeCompetencia(input.fechamentoContext?.competencia ?? analysis.prestacao?.competencia ?? "")
 
-  const imobiliaria = await findOrCreateImobiliaria(supabase, imobiliariaNome)
-  const empreendimento = await findOrCreateEmpreendimento(supabase, empreendimentoNome)
+  // O fechamento ja foi criado no upload referenciando imobiliaria/empreendimento
+  // existentes. Usar esses IDs evita re-resolver por nome (que colide com a
+  // constraint unique(nome) quando ha cadastros com a mesma chave normalizada e
+  // tambem garante que o upsert do fechamento atinja a linha correta).
+  const imobiliaria = input.fechamentoContext?.imobiliariaId
+    ? { id: input.fechamentoContext.imobiliariaId }
+    : await findOrCreateImobiliaria(supabase, imobiliariaNome)
+  const empreendimento = input.fechamentoContext?.empreendimentoId
+    ? { id: input.fechamentoContext.empreendimentoId }
+    : await findOrCreateEmpreendimento(supabase, empreendimentoNome)
 
   // Fetch existing resolved validations to decide status and preserve them
   const { data: existingFechamento } = await supabase
@@ -430,8 +438,10 @@ async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabas
 
   const normalized = normalizeCadastroKey(nome)
   const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  // Em correspondencia, nao sobrescrever `nome` (renomear para o valor de
+  // entrada colide com unique(nome) quando ha duplicatas de mesma chave).
   const query = existing
-    ? supabase.from("imobiliarias").update({ nome, layout: "alive", ativo: true }).eq("id", existing.id)
+    ? supabase.from("imobiliarias").update({ ativo: true }).eq("id", existing.id)
     : supabase.from("imobiliarias").insert({ nome, layout: "alive", ativo: true })
 
   const { data, error } = await query.select("id").single()
@@ -450,8 +460,10 @@ async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupa
 
   const normalized = normalizeCadastroKey(nome)
   const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  // Em correspondencia, nao sobrescrever `nome` (renomear para o valor de
+  // entrada colide com unique(nome) quando ha duplicatas de mesma chave).
   const query = existing
-    ? supabase.from("empreendimentos").update({ nome, ativo: true }).eq("id", existing.id)
+    ? supabase.from("empreendimentos").update({ ativo: true }).eq("id", existing.id)
     : supabase.from("empreendimentos").insert({ nome, ativo: true })
 
   const { data, error } = await query.select("id").single()
