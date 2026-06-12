@@ -135,7 +135,8 @@ export async function* runPackageWorkflowWithEvents(
       result,
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Falha desconhecida no processamento."
+    console.error("[PACKAGE WORKFLOW] Falha no processamento:", error)
+    const message = describeError(error)
     yield {
       type: "workflow_failed",
       message,
@@ -143,6 +144,28 @@ export async function* runPackageWorkflowWithEvents(
       error: message,
     }
   }
+}
+
+// Erros do Supabase (PostgrestError, StorageError) sao objetos planos e nao
+// instancias de Error, entao `error instanceof Error` falha e a causa real se
+// perde. Esta funcao extrai a melhor mensagem disponivel em cada formato.
+function describeError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message
+
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown; error?: unknown }
+    const parts = [candidate.message, candidate.details, candidate.hint]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+    if (typeof candidate.error === "string" && candidate.error.length > 0) parts.push(candidate.error)
+    if (parts.length > 0) {
+      const code = typeof candidate.code === "string" || typeof candidate.code === "number" ? ` (${candidate.code})` : ""
+      return `${parts.join(" — ")}${code}`
+    }
+  }
+
+  if (typeof error === "string" && error.length > 0) return error
+
+  return "Falha desconhecida no processamento."
 }
 
 async function readAndValidateFiles(files: File[]) {
