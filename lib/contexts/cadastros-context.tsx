@@ -10,6 +10,10 @@ interface CadastrosContextValue {
   reload: () => Promise<void>
   saveCadastro: (url: string, input: Record<string, unknown>) => Promise<void>
   deactivateCadastro: (url: string, id: string) => Promise<void>
+  reactivateCadastro: (url: string, id: string) => Promise<void>
+  deleteCadastro: (url: string, id: string) => Promise<void>
+  includeInactive: boolean
+  setIncludeInactive: (value: boolean) => void
   importImoveis: (file: File) => Promise<CsvImportResult>
   importResult: CsvImportResult | null
   resetImportResult: () => void
@@ -36,15 +40,17 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<CsvImportResult | null>(null)
+  const [includeInactive, setIncludeInactive] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      const inactive = includeInactive ? "?include_inactive=true" : ""
       const [imobiliarias, empreendimentos, imoveis, regrasComerciais] = await Promise.all([
-        fetchJson("/api/cadastros/imobiliarias"),
-        fetchJson("/api/cadastros/empreendimentos"),
-        fetchJson("/api/cadastros/imoveis"),
+        fetchJson(`/api/cadastros/imobiliarias${inactive}`),
+        fetchJson(`/api/cadastros/empreendimentos${inactive}`),
+        fetchJson(`/api/cadastros/imoveis${inactive}`),
         fetchJson("/api/cadastros/regras-comerciais"),
       ])
       setCadastros({
@@ -58,7 +64,7 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [includeInactive])
 
   useEffect(() => {
     void reload()
@@ -82,6 +88,28 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
     async (url: string, id: string) => {
       setError(null)
       await fetchJson(`${url}?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      await reload()
+    },
+    [reload],
+  )
+
+  const reactivateCadastro = useCallback(
+    async (url: string, id: string) => {
+      setError(null)
+      await fetchJson(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, ativo: true }),
+      })
+      await reload()
+    },
+    [reload],
+  )
+
+  const deleteCadastro = useCallback(
+    async (url: string, id: string) => {
+      setError(null)
+      await fetchJson(`${url}?id=${encodeURIComponent(id)}&mode=hard`, { method: "DELETE" })
       await reload()
     },
     [reload],
@@ -118,11 +146,15 @@ export function CadastrosProvider({ children }: { children: React.ReactNode }) {
       reload,
       saveCadastro,
       deactivateCadastro,
+      reactivateCadastro,
+      deleteCadastro,
+      includeInactive,
+      setIncludeInactive,
       importImoveis,
       importResult,
       resetImportResult,
     }),
-    [cadastros, loading, error, reload, saveCadastro, deactivateCadastro, importImoveis, importResult, resetImportResult],
+    [cadastros, loading, error, reload, saveCadastro, deactivateCadastro, reactivateCadastro, deleteCadastro, includeInactive, importImoveis, importResult, resetImportResult],
   )
 
   return <CadastrosContext.Provider value={value}>{children}</CadastrosContext.Provider>

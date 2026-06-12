@@ -8,6 +8,8 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
+Rodar a limpeza de cadastros duplicados/nulos em producao (merge de "Cesar Rego"/"Alive Imoveis"/"Galpao Pompilio Gomes" com re-apontamento de fechamentos e regras) e validar o novo CRUD: ocultar/reativar/excluir (cascata) de cadastros e arquivar/excluir de fechamentos, com confirmacao por digitacao do nome. Migration `202606120001_fechamento_arquivado.sql` precisa ser aplicada (coluna `arquivado`).
+
 Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imoveis alugados deixam de aparecer como Vago, desconto abatido na coluna "Valor c/ desc." e nova coluna "Ref." com o mes do aluguel destacado quando de competencia anterior), reprocessar um pacote real para confirmar que a persistencia nao cria imobiliarias duplicadas e habilitar a permissao "Disco Virtual" no eGestor para concluir o retry de anexos pendentes.
 
 ## Progresso por etapa

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { AlertTriangle, Building2, CheckCircle, Edit3, FileUp, Home, Loader2, Plus, Power, Save, Search } from "lucide-react"
+import { AlertTriangle, Building2, CheckCircle, Edit3, EyeOff, FileUp, Home, Loader2, RotateCcw, Save, Search, Trash2 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus, RegraComercial } from "@/lib/cadastros-types"
 
@@ -65,15 +65,34 @@ interface ImoveisViewProps {
   loading: boolean
   error: string | null
   importResult: CsvImportResult | null
+  includeInactive: boolean
+  onToggleInactive: (value: boolean) => void
   onSaveImovel: (input: Record<string, unknown>) => Promise<void>
   onDeactivateImovel: (id: string) => Promise<void>
+  onReactivateImovel: (id: string) => Promise<void>
+  onDeleteImovel: (id: string) => Promise<void>
   onSaveImobiliaria: (input: Record<string, unknown>) => Promise<void>
   onDeactivateImobiliaria: (id: string) => Promise<void>
+  onReactivateImobiliaria: (id: string) => Promise<void>
+  onDeleteImobiliaria: (id: string) => Promise<void>
   onSaveEmpreendimento: (input: Record<string, unknown>) => Promise<void>
   onDeactivateEmpreendimento: (id: string) => Promise<void>
+  onReactivateEmpreendimento: (id: string) => Promise<void>
+  onDeleteEmpreendimento: (id: string) => Promise<void>
   onSaveRegraComercial: (input: Record<string, unknown>) => Promise<void>
   onDeactivateRegraComercial: (id: string) => Promise<void>
+  onReactivateRegraComercial: (id: string) => Promise<void>
+  onDeleteRegraComercial: (id: string) => Promise<void>
   onImportImoveis: (file: File) => Promise<void>
+}
+
+type ConfirmState = {
+  title: string
+  description: string
+  confirmLabel: string
+  danger?: boolean
+  requireText?: string
+  onConfirm: () => Promise<void>
 }
 
 const inputClass =
@@ -144,17 +163,28 @@ export function ImoveisView({
   loading,
   error,
   importResult,
+  includeInactive,
+  onToggleInactive,
   onSaveImovel,
   onDeactivateImovel,
+  onReactivateImovel,
+  onDeleteImovel,
   onSaveImobiliaria,
   onDeactivateImobiliaria,
+  onReactivateImobiliaria,
+  onDeleteImobiliaria,
   onSaveEmpreendimento,
   onDeactivateEmpreendimento,
+  onReactivateEmpreendimento,
+  onDeleteEmpreendimento,
   onSaveRegraComercial,
   onDeactivateRegraComercial,
+  onReactivateRegraComercial,
+  onDeleteRegraComercial,
   onImportImoveis,
 }: ImoveisViewProps) {
   const [tab, setTab] = useState<Tab>("imoveis")
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [query, setQuery] = useState("")
   const [imobiliariaFilter, setImobiliariaFilter] = useState("")
   const [empreendimentoFilter, setEmpreendimentoFilter] = useState("")
@@ -231,6 +261,26 @@ export function ImoveisView({
     }
   }
 
+  function askHide(label: string, name: string, action: () => Promise<void>) {
+    setConfirm({
+      title: `Ocultar ${label}`,
+      description: `"${name}" será ocultado da lista. Você pode reativá-lo depois marcando "Mostrar ocultos".`,
+      confirmLabel: "Ocultar",
+      onConfirm: () => action(),
+    })
+  }
+
+  function askDelete(label: string, name: string, action: () => Promise<void>, extra?: string) {
+    setConfirm({
+      title: `Excluir ${label}`,
+      description: `Isto apaga "${name}" DEFINITIVAMENTE e não pode ser desfeito.${extra ? ` ${extra}` : ""} Digite o nome para confirmar.`,
+      confirmLabel: "Excluir definitivamente",
+      danger: true,
+      requireText: name,
+      onConfirm: () => action(),
+    })
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-start justify-between">
@@ -238,24 +288,35 @@ export function ImoveisView({
           <h1 className="text-[24px] font-bold tracking-tight text-[#1A2B1C]">Imóveis</h1>
           <p className="mt-1 text-[14px] text-[#6B7F6E]">Cadastros base para conciliação por unidade</p>
         </div>
-        <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[14px] font-medium text-[#3D4F3F] transition-colors hover:bg-[#EEF1EE]">
-          <FileUp size={16} />
-          Importar CSV
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) {
-                void onImportImoveis(file).catch((error) => {
-                  setActionError(error instanceof Error ? error.message : "Nao foi possivel importar o CSV.")
-                })
-              }
-              event.currentTarget.value = ""
-            }}
-          />
-        </label>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] font-medium text-[#3D4F3F]">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-[#D5DDD6] accent-[#2D8C3A]"
+              checked={includeInactive}
+              onChange={(event) => onToggleInactive(event.target.checked)}
+            />
+            Mostrar ocultos
+          </label>
+          <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[14px] font-medium text-[#3D4F3F] transition-colors hover:bg-[#EEF1EE]">
+            <FileUp size={16} />
+            Importar CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) {
+                  void onImportImoveis(file).catch((error) => {
+                    setActionError(error instanceof Error ? error.message : "Nao foi possivel importar o CSV.")
+                  })
+                }
+                event.currentTarget.value = ""
+              }}
+            />
+          </label>
+        </div>
       </div>
 
       <div className="mb-4 flex border-b border-[#D5DDD6]">
@@ -354,9 +415,11 @@ export function ImoveisView({
                           <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{imovel.taxa_administracao_percent ?? "-"}%</td>
                           <td className="px-4 py-3">
                             <RowActions
+                              active={imovel.ativo}
                               onEdit={() => setImovelForm(fromImovel(imovel))}
-                              onDeactivate={() => void runAction(() => onDeactivateImovel(imovel.id), setActionError)}
-                              inactive={!imovel.ativo}
+                              onHide={() => askHide("imóvel", `${imovel.codigo_imobiliaria} · ${imovel.unidade}`, () => onDeactivateImovel(imovel.id))}
+                              onReactivate={() => void runAction(() => onReactivateImovel(imovel.id), setActionError)}
+                              onDelete={() => askDelete("imóvel", `${imovel.codigo_imobiliaria} · ${imovel.unidade}`, () => onDeleteImovel(imovel.id))}
                             />
                           </td>
                         </tr>
@@ -448,7 +511,13 @@ export function ImoveisView({
                   <td className="px-4 py-3 text-[#3D4F3F]">{item.janela_antes_dias}/{item.janela_depois_dias} dias</td>
                   <td className="px-4 py-3"><ActiveBadge active={item.ativo} /></td>
                   <td className="px-4 py-3">
-                    <RowActions onEdit={() => setImobiliariaForm(fromImobiliaria(item))} onDeactivate={() => void runAction(() => onDeactivateImobiliaria(item.id), setActionError)} inactive={!item.ativo} />
+                    <RowActions
+                      active={item.ativo}
+                      onEdit={() => setImobiliariaForm(fromImobiliaria(item))}
+                      onHide={() => askHide("imobiliária", item.nome, () => onDeactivateImobiliaria(item.id))}
+                      onReactivate={() => void runAction(() => onReactivateImobiliaria(item.id), setActionError)}
+                      onDelete={() => askDelete("imobiliária", item.nome, () => onDeleteImobiliaria(item.id), "Fechamentos e imóveis vinculados também serão excluídos em cascata.")}
+                    />
                   </td>
                 </tr>
               )}
@@ -488,7 +557,13 @@ export function ImoveisView({
                   <td className="px-4 py-3 text-[#3D4F3F]">{item.endereco || "-"}</td>
                   <td className="px-4 py-3"><ActiveBadge active={item.ativo} /></td>
                   <td className="px-4 py-3">
-                    <RowActions onEdit={() => setEmpreendimentoForm(fromEmpreendimento(item))} onDeactivate={() => void runAction(() => onDeactivateEmpreendimento(item.id), setActionError)} inactive={!item.ativo} />
+                    <RowActions
+                      active={item.ativo}
+                      onEdit={() => setEmpreendimentoForm(fromEmpreendimento(item))}
+                      onHide={() => askHide("empreendimento", item.nome, () => onDeactivateEmpreendimento(item.id))}
+                      onReactivate={() => void runAction(() => onReactivateEmpreendimento(item.id), setActionError)}
+                      onDelete={() => askDelete("empreendimento", item.nome, () => onDeleteEmpreendimento(item.id), "Fechamentos e imóveis vinculados também serão excluídos em cascata.")}
+                    />
                   </td>
                 </tr>
               )}
@@ -518,7 +593,13 @@ export function ImoveisView({
                   <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(item.taxa_intermediacao_percent)}</td>
                   <td className="px-4 py-3"><ActiveBadge active={item.ativo} /></td>
                   <td className="px-4 py-3">
-                    <RowActions onEdit={() => setRegraComercialForm(fromRegraComercial(item))} onDeactivate={() => void runAction(() => onDeactivateRegraComercial(item.id), setActionError)} inactive={!item.ativo} />
+                    <RowActions
+                      active={item.ativo}
+                      onEdit={() => setRegraComercialForm(fromRegraComercial(item))}
+                      onHide={() => askHide("regra", `${item.imobiliarias?.nome ?? "?"} / ${item.empreendimentos?.nome ?? "?"}`, () => onDeactivateRegraComercial(item.id))}
+                      onReactivate={() => void runAction(() => onReactivateRegraComercial(item.id), setActionError)}
+                      onDelete={() => askDelete("regra comercial", `${item.imobiliarias?.nome ?? "?"} / ${item.empreendimentos?.nome ?? "?"}`, () => onDeleteRegraComercial(item.id))}
+                    />
                   </td>
                 </tr>
               )}
@@ -553,6 +634,14 @@ export function ImoveisView({
             />
           )}
         </>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          state={confirm}
+          onClose={() => setConfirm(null)}
+          onError={setActionError}
+        />
       )}
     </div>
   )
@@ -652,20 +741,102 @@ function RegistrySection<T>({ rows, headers, renderRow, form }: { rows: T[]; hea
   )
 }
 
-function RowActions({ onEdit, onDeactivate, inactive }: { onEdit: () => void; onDeactivate: () => void; inactive: boolean }) {
+function RowActions({
+  active,
+  onEdit,
+  onHide,
+  onReactivate,
+  onDelete,
+}: {
+  active: boolean
+  onEdit: () => void
+  onHide: () => void
+  onReactivate: () => void
+  onDelete: () => void
+}) {
+  const iconBtn = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white hover:bg-[#EEF1EE]"
   return (
     <div className="flex items-center gap-2">
-      <button onClick={onEdit} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white text-[#3D4F3F] hover:bg-[#EEF1EE]" title="Editar">
+      <button onClick={onEdit} className={`${iconBtn} text-[#3D4F3F]`} title="Editar">
         <Edit3 size={14} />
       </button>
-      <button
-        onClick={onDeactivate}
-        disabled={inactive}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white text-[#DC2626] hover:bg-[#FEF2F2] disabled:cursor-not-allowed disabled:opacity-40"
-        title="Desativar"
-      >
-        <Power size={14} />
+      {active ? (
+        <button onClick={onHide} className={`${iconBtn} text-[#92400E] hover:bg-[#FEF3C7]`} title="Ocultar">
+          <EyeOff size={14} />
+        </button>
+      ) : (
+        <button onClick={onReactivate} className={`${iconBtn} text-[#166534] hover:bg-[#DCFCE7]`} title="Reativar">
+          <RotateCcw size={14} />
+        </button>
+      )}
+      <button onClick={onDelete} className={`${iconBtn} text-[#DC2626] hover:bg-[#FEF2F2]`} title="Excluir definitivamente">
+        <Trash2 size={14} />
       </button>
+    </div>
+  )
+}
+
+function ConfirmDialog({
+  state,
+  onClose,
+  onError,
+}: {
+  state: ConfirmState
+  onClose: () => void
+  onError: (message: string | null) => void
+}) {
+  const [text, setText] = useState("")
+  const [working, setWorking] = useState(false)
+  const blocked = Boolean(state.requireText) && normalize(text.trim()) !== normalize(state.requireText!.trim())
+
+  async function handleConfirm() {
+    if (blocked || working) return
+    setWorking(true)
+    onError(null)
+    try {
+      await state.onConfirm()
+      onClose()
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "A ação não foi concluída.")
+      onClose()
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-[#EEF1EE] bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div className="mb-2 flex items-center gap-2">
+          {state.danger && <AlertTriangle size={18} className="text-[#DC2626]" />}
+          <h2 className="text-[16px] font-bold text-[#1A2B1C]">{state.title}</h2>
+        </div>
+        <p className="text-[13px] leading-relaxed text-[#6B7F6E]">{state.description}</p>
+        {state.requireText && (
+          <input
+            autoFocus
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={state.requireText}
+            className={`${inputClass} mt-3`}
+          />
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="h-9 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE]">
+            Cancelar
+          </button>
+          <button
+            onClick={() => void handleConfirm()}
+            disabled={blocked || working}
+            className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+              state.danger ? "bg-[#DC2626] hover:bg-[#991B1B]" : "bg-[#2D8C3A] hover:bg-[#1A5C24]"
+            }`}
+          >
+            {working && <Loader2 size={14} className="animate-spin" />}
+            {state.confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

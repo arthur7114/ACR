@@ -3,6 +3,13 @@
 import { ImoveisView } from "@/components/acr/views/imoveis-view"
 import { useCadastros } from "@/lib/contexts/cadastros-context"
 
+const URLS = {
+  imoveis: "/api/cadastros/imoveis",
+  imobiliarias: "/api/cadastros/imobiliarias",
+  empreendimentos: "/api/cadastros/empreendimentos",
+  regras: "/api/cadastros/regras-comerciais",
+} as const
+
 export default function ImoveisPage() {
   const {
     cadastros,
@@ -11,6 +18,10 @@ export default function ImoveisPage() {
     importResult,
     saveCadastro,
     deactivateCadastro,
+    reactivateCadastro,
+    deleteCadastro,
+    includeInactive,
+    setIncludeInactive,
     importImoveis,
   } = useCadastros()
 
@@ -23,14 +34,24 @@ export default function ImoveisPage() {
       loading={loading}
       error={error}
       importResult={importResult}
-      onSaveImovel={(input) => saveCadastro("/api/cadastros/imoveis", input)}
-      onDeactivateImovel={(id) => deactivateCadastro("/api/cadastros/imoveis", id)}
-      onSaveImobiliaria={(input) => saveCadastro("/api/cadastros/imobiliarias", input)}
-      onDeactivateImobiliaria={(id) => deactivateCadastro("/api/cadastros/imobiliarias", id)}
-      onSaveEmpreendimento={(input) => saveCadastro("/api/cadastros/empreendimentos", input)}
-      onDeactivateEmpreendimento={(id) => deactivateCadastro("/api/cadastros/empreendimentos", id)}
-      onSaveRegraComercial={(input) => saveCadastro("/api/cadastros/regras-comerciais", input)}
-      onDeactivateRegraComercial={(id) => deactivateCadastro("/api/cadastros/regras-comerciais", id)}
+      includeInactive={includeInactive}
+      onToggleInactive={setIncludeInactive}
+      onSaveImovel={(input) => saveCadastro(URLS.imoveis, input)}
+      onDeactivateImovel={(id) => deactivateCadastro(URLS.imoveis, id)}
+      onReactivateImovel={(id) => reactivateCadastro(URLS.imoveis, id)}
+      onDeleteImovel={(id) => deleteCadastro(URLS.imoveis, id)}
+      onSaveImobiliaria={(input) => saveCadastro(URLS.imobiliarias, input)}
+      onDeactivateImobiliaria={(id) => deactivateCadastro(URLS.imobiliarias, id)}
+      onReactivateImobiliaria={(id) => reactivateCadastro(URLS.imobiliarias, id)}
+      onDeleteImobiliaria={(id) => deleteCadastro(URLS.imobiliarias, id)}
+      onSaveEmpreendimento={(input) => saveCadastro(URLS.empreendimentos, input)}
+      onDeactivateEmpreendimento={(id) => deactivateCadastro(URLS.empreendimentos, id)}
+      onReactivateEmpreendimento={(id) => reactivateCadastro(URLS.empreendimentos, id)}
+      onDeleteEmpreendimento={(id) => deleteCadastro(URLS.empreendimentos, id)}
+      onSaveRegraComercial={(input) => saveCadastro(URLS.regras, input)}
+      onDeactivateRegraComercial={(id) => deactivateCadastro(URLS.regras, id)}
+      onReactivateRegraComercial={(id) => reactivateCadastro(URLS.regras, id)}
+      onDeleteRegraComercial={(id) => deleteCadastro(URLS.regras, id)}
       onImportImoveis={async (file) => {
         await importImoveis(file)
       }}
