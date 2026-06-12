@@ -357,7 +357,7 @@ function buildLancamentoRow(fechamento: FechamentoRow, config: DbConfig, maps: M
   const codContato = fechamento.imobiliarias?.egestor_contato_id ?? null
   const codDisponivel = config.cod_disponivel_padrao
   const codPlanoContas = map?.cod_plano_contas ?? null
-  const tags = buildTags(fechamento, draft, map)
+  const tags = buildTags(fechamento)
   const validation = validateLancamento(codContato, codDisponivel, codPlanoContas)
   const payload = buildPayload(fechamento, draft, codContato, codDisponivel, codPlanoContas, tags)
 
@@ -415,17 +415,13 @@ function buildPayload(
   return payload
 }
 
-function buildTags(fechamento: FechamentoRow, draft: DraftLancamento, map?: DbMapeamento) {
-  return [
-    "ACR",
-    formatCompetencia(fechamento.competencia),
-    fechamento.imobiliarias?.nome ?? "",
-    fechamento.empreendimentos?.nome ?? "",
-    fechamento.imobiliarias?.egestor_tag_id ?? "",
-    fechamento.empreendimentos?.egestor_tag_id ?? "",
-    draft.categoria,
-    ...(map?.tags ?? []),
-  ].map((tag) => tag.trim()).filter(Boolean)
+function buildTags(fechamento: FechamentoRow) {
+  // Decisao de projeto: lancamentos sobem com exatamente 2 tags — "ACR" e a tag
+  // do empreendimento (egestor_tag_id, com fallback para o nome). NAO usar tag
+  // de imobiliaria, competencia nem categoria.
+  const empreendimento =
+    fechamento.empreendimentos?.egestor_tag_id?.trim() || fechamento.empreendimentos?.nome?.trim() || ""
+  return ["ACR", empreendimento].filter(Boolean)
 }
 
 function validateLancamento(codContato: number | null, codDisponivel: number | null, codPlanoContas: number | null) {
