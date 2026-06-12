@@ -2,13 +2,19 @@
 
 import type React from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { AlertTriangle, CheckCircle, Loader2, Save, ShieldCheck } from "lucide-react"
-import type { EgestorConfigPayload } from "@/lib/egestor-types"
+import { AlertTriangle, CheckCircle, Loader2, Plus, Save, ShieldCheck } from "lucide-react"
+import type { EgestorConfigPayload, EgestorConta } from "@/lib/egestor-types"
+
+type ContaDraft = {
+  id?: string
+  nome: string
+  personal_token: string
+  cod_disponivel_padrao: string
+  ativo: boolean
+}
 
 type Draft = {
-  personal_token: string
-  ativo: boolean
-  cod_disponivel_padrao: string
+  contas: ContaDraft[]
   mapeamentos: EgestorConfigPayload["mapeamentos"]
   imobiliarias: EgestorConfigPayload["imobiliarias"]
   empreendimentos: EgestorConfigPayload["empreendimentos"]
@@ -24,6 +30,21 @@ const categoriaLabels: Record<string, string> = {
   outras_despesas: "Outras despesas",
 }
 
+function toDraft(data: EgestorConfigPayload): Draft {
+  return {
+    contas: data.contas.map((conta) => ({
+      id: conta.id,
+      nome: conta.nome,
+      personal_token: "",
+      cod_disponivel_padrao: conta.cod_disponivel_padrao ? String(conta.cod_disponivel_padrao) : "",
+      ativo: conta.ativo,
+    })),
+    mapeamentos: data.mapeamentos,
+    imobiliarias: data.imobiliarias,
+    empreendimentos: data.empreendimentos,
+  }
+}
+
 export function ConfiguracoesView() {
   const [payload, setPayload] = useState<EgestorConfigPayload | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -32,8 +53,12 @@ export function ConfiguracoesView() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const hasToken = Boolean(payload?.configuracao.token_configurado || draft?.personal_token)
   const canSave = useMemo(() => Boolean(draft && !saving), [draft, saving])
+  const contaMetaById = useMemo(() => {
+    const map = new Map<string, EgestorConta>()
+    for (const conta of payload?.contas ?? []) map.set(conta.id, conta)
+    return map
+  }, [payload])
 
   const loadConfig = useCallback(() => {
     setLoading(true)
@@ -42,14 +67,7 @@ export function ConfiguracoesView() {
       .then((data) => {
         if (data.error) throw new Error(data.error)
         setPayload(data)
-        setDraft({
-          personal_token: "",
-          ativo: data.configuracao.ativo,
-          cod_disponivel_padrao: data.configuracao.cod_disponivel_padrao ? String(data.configuracao.cod_disponivel_padrao) : "",
-          mapeamentos: data.mapeamentos,
-          imobiliarias: data.imobiliarias,
-          empreendimentos: data.empreendimentos,
-        })
+        setDraft(toDraft(data))
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar configurações."))
       .finally(() => setLoading(false))
@@ -59,7 +77,7 @@ export function ConfiguracoesView() {
     loadConfig()
   }, [loadConfig])
 
-  async function save(testarConexao = false) {
+  async function save(testarContaId?: string) {
     if (!draft) return
     setSaving(true)
     setError(null)
@@ -68,10 +86,17 @@ export function ConfiguracoesView() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...draft,
-        cod_disponivel_padrao: draft.cod_disponivel_padrao ? Number(draft.cod_disponivel_padrao) : null,
-        personal_token: draft.personal_token || undefined,
-        testar_conexao: testarConexao,
+        contas: draft.contas.map((conta) => ({
+          id: conta.id,
+          nome: conta.nome,
+          personal_token: conta.personal_token || undefined,
+          cod_disponivel_padrao: conta.cod_disponivel_padrao ? Number(conta.cod_disponivel_padrao) : null,
+          ativo: conta.ativo,
+        })),
+        mapeamentos: draft.mapeamentos,
+        imobiliarias: draft.imobiliarias,
+        empreendimentos: draft.empreendimentos,
+        testar_conexao_conta_id: testarContaId,
       }),
     })
     const data = await response.json()
@@ -81,15 +106,8 @@ export function ConfiguracoesView() {
       return
     }
     setPayload(data)
-    setDraft({
-      personal_token: "",
-      ativo: data.configuracao.ativo,
-      cod_disponivel_padrao: data.configuracao.cod_disponivel_padrao ? String(data.configuracao.cod_disponivel_padrao) : "",
-      mapeamentos: data.mapeamentos,
-      imobiliarias: data.imobiliarias,
-      empreendimentos: data.empreendimentos,
-    })
-    setMessage(testarConexao ? "Configuração salva e conexão validada." : "Configuração salva.")
+    setDraft(toDraft(data))
+    setMessage(testarContaId ? "Configuração salva e conexão validada." : "Configuração salva.")
   }
 
   if (loading || !draft) {
@@ -108,24 +126,14 @@ export function ConfiguracoesView() {
           <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">Configurações</h1>
           <p className="mt-1 text-[14px] text-[#6B7F6E]">Integrações e mapeamentos operacionais do fechamento.</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => save(true)}
-            disabled={!canSave || !hasToken}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[14px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
-          >
-            <ShieldCheck size={15} />
-            Testar conexão
-          </button>
-          <button
-            onClick={() => save(false)}
-            disabled={!canSave}
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#2D8C3A] px-4 text-[14px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
-          >
-            {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-            Salvar
-          </button>
-        </div>
+        <button
+          onClick={() => save()}
+          disabled={!canSave}
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#2D8C3A] px-4 text-[14px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
+        >
+          {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+          Salvar
+        </button>
       </div>
 
       {(error || message) && (
@@ -135,94 +143,273 @@ export function ConfiguracoesView() {
         </div>
       )}
 
-      <section className="rounded-xl border border-[#EEF1EE] bg-white p-5">
-        <h2 className="text-[16px] font-bold text-[#1A2B1C]">Integração eGestor</h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_160px]">
-          <Field label={`Personal token${payload?.configuracao.token_mascarado ? ` (${payload.configuracao.token_mascarado})` : ""}`}>
-            <input value={draft.personal_token} onChange={(e) => setDraft({ ...draft, personal_token: e.target.value })} type="password" placeholder="Cole um novo token para substituir" className={inputClass} />
-          </Field>
-          <Field label="Conta disponível">
-            <input value={draft.cod_disponivel_padrao} onChange={(e) => setDraft({ ...draft, cod_disponivel_padrao: e.target.value })} inputMode="numeric" className={inputClass} />
-          </Field>
-          <label className="flex items-end gap-2 pb-2 text-[13px] font-medium text-[#1A2B1C]">
-            <input type="checkbox" checked={draft.ativo} onChange={(e) => setDraft({ ...draft, ativo: e.target.checked })} className="h-4 w-4 accent-[#2D8C3A]" />
-            Integração ativa
-          </label>
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-[16px] font-bold text-[#1A2B1C]">Contas eGestor</h2>
+          <button
+            onClick={addConta}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE]"
+          >
+            <Plus size={14} />
+            Adicionar conta
+          </button>
         </div>
+        {draft.contas.map((conta, index) => (
+          <ContaCard
+            key={conta.id ?? `nova-${index}`}
+            conta={conta}
+            meta={conta.id ? contaMetaById.get(conta.id) : undefined}
+            mapeamentos={conta.id ? draft.mapeamentos.filter((map) => map.conta_id === conta.id) : []}
+            saving={saving}
+            onChange={(changes) => updateConta(index, changes)}
+            onTest={conta.id ? () => save(conta.id) : undefined}
+            onMapChange={(categoria, changes) => conta.id && updateMap(conta.id, categoria, changes)}
+          />
+        ))}
       </section>
 
-      <section className="rounded-xl border border-[#EEF1EE] bg-white p-5">
-        <h2 className="text-[16px] font-bold text-[#1A2B1C]">Planos de contas por categoria</h2>
+      <section className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+          <h2 className="text-[16px] font-bold text-[#1A2B1C]">Empreendimentos</h2>
+          <p className="mt-1 text-[12px] text-[#6B7F6E]">Conta define para qual eGestor o empreendimento é lançado.</p>
+          <div className="mt-4 space-y-3">
+            {draft.empreendimentos.map((emp) => (
+              <div key={emp.id} className="grid items-end gap-3 md:grid-cols-[minmax(0,1fr)_160px_160px]">
+                <p className="truncate text-[13px] font-medium text-[#1A2B1C]">{emp.nome}</p>
+                <Field label="Conta">
+                  <select
+                    value={emp.egestor_conta_id ?? ""}
+                    onChange={(e) => updateEmpreendimento(emp.id, { egestor_conta_id: e.target.value || null })}
+                    className={inputClass}
+                  >
+                    <option value="">Global (padrão)</option>
+                    {draft.contas
+                      .filter((conta) => conta.id)
+                      .map((conta) => (
+                        <option key={conta.id} value={conta.id}>{conta.nome}</option>
+                      ))}
+                  </select>
+                </Field>
+                <Field label="Tag">
+                  <input
+                    value={emp.egestor_tag_id ?? ""}
+                    onChange={(e) => updateEmpreendimento(emp.id, { egestor_tag_id: e.target.value })}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+          <h2 className="text-[16px] font-bold text-[#1A2B1C]">Imobiliárias</h2>
+          <p className="mt-1 text-[12px] text-[#6B7F6E]">Contato eGestor por conta + tag da imobiliária.</p>
+          <div className="mt-4 space-y-4">
+            {draft.imobiliarias.map((imob) => (
+              <div key={imob.id} className="rounded-lg border border-[#EEF1EE] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="truncate text-[13px] font-semibold text-[#1A2B1C]">{imob.nome}</p>
+                  <div className="w-[180px]">
+                    <Field label="Tag">
+                      <input
+                        value={imob.egestor_tag_id ?? ""}
+                        onChange={(e) => updateImobiliaria(imob.id, { egestor_tag_id: e.target.value })}
+                        className={inputClass}
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {draft.contas
+                    .filter((conta) => conta.id)
+                    .map((conta) => (
+                      <Field key={conta.id} label={`Contato · ${conta.nome}`}>
+                        <input
+                          value={contatoValue(imob.contatos, conta.id!)}
+                          onChange={(e) => updateContato(imob.id, conta.id!, e.target.value ? Number(e.target.value) : null)}
+                          inputMode="numeric"
+                          className={inputClass}
+                        />
+                      </Field>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+
+  function addConta() {
+    setDraft((current) =>
+      current
+        ? { ...current, contas: [...current.contas, { nome: "Nova conta", personal_token: "", cod_disponivel_padrao: "", ativo: true }] }
+        : current,
+    )
+  }
+
+  function updateConta(index: number, changes: Partial<ContaDraft>) {
+    setDraft((current) => {
+      if (!current) return current
+      const contas = current.contas.map((conta, i) => (i === index ? { ...conta, ...changes } : conta))
+      return { ...current, contas }
+    })
+  }
+
+  function updateMap(contaId: string, categoria: string, changes: Partial<Draft["mapeamentos"][number]>) {
+    setDraft((current) => {
+      if (!current) return current
+      const mapeamentos = current.mapeamentos.map((map) =>
+        map.conta_id === contaId && map.categoria === categoria ? { ...map, ...changes } : map,
+      )
+      return { ...current, mapeamentos }
+    })
+  }
+
+  function updateEmpreendimento(id: string, changes: Partial<Draft["empreendimentos"][number]>) {
+    setDraft((current) => {
+      if (!current) return current
+      const empreendimentos = current.empreendimentos.map((emp) => (emp.id === id ? { ...emp, ...changes } : emp))
+      return { ...current, empreendimentos }
+    })
+  }
+
+  function updateImobiliaria(id: string, changes: Partial<Draft["imobiliarias"][number]>) {
+    setDraft((current) => {
+      if (!current) return current
+      const imobiliarias = current.imobiliarias.map((imob) => (imob.id === id ? { ...imob, ...changes } : imob))
+      return { ...current, imobiliarias }
+    })
+  }
+
+  function updateContato(imobId: string, contaId: string, value: number | null) {
+    setDraft((current) => {
+      if (!current) return current
+      const imobiliarias = current.imobiliarias.map((imob) => {
+        if (imob.id !== imobId) return imob
+        const exists = imob.contatos.some((contato) => contato.conta_id === contaId)
+        const contatos = exists
+          ? imob.contatos.map((contato) => (contato.conta_id === contaId ? { ...contato, egestor_contato_id: value } : contato))
+          : [...imob.contatos, { conta_id: contaId, egestor_contato_id: value }]
+        return { ...imob, contatos }
+      })
+      return { ...current, imobiliarias }
+    })
+  }
+}
+
+function ContaCard({
+  conta,
+  meta,
+  mapeamentos,
+  saving,
+  onChange,
+  onTest,
+  onMapChange,
+}: {
+  conta: ContaDraft
+  meta?: EgestorConta
+  mapeamentos: EgestorConfigPayload["mapeamentos"]
+  saving: boolean
+  onChange: (changes: Partial<ContaDraft>) => void
+  onTest?: () => void
+  onMapChange: (categoria: string, changes: Partial<EgestorConfigPayload["mapeamentos"][number]>) => void
+}) {
+  const hasToken = Boolean(meta?.token_configurado || conta.personal_token)
+  const testStatus = meta?.ultimo_teste_status
+
+  return (
+    <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+      <div className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)_160px_140px]">
+        <Field label="Nome da conta">
+          <input value={conta.nome} onChange={(e) => onChange({ nome: e.target.value })} className={inputClass} />
+        </Field>
+        <Field label={`Personal token${meta?.token_mascarado ? ` (${meta.token_mascarado})` : ""}`}>
+          <input
+            value={conta.personal_token}
+            onChange={(e) => onChange({ personal_token: e.target.value })}
+            type="password"
+            placeholder={meta?.token_configurado ? "Cole um novo token para substituir" : "Cole o token desta conta"}
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Conta disponível">
+          <input
+            value={conta.cod_disponivel_padrao}
+            onChange={(e) => onChange({ cod_disponivel_padrao: e.target.value })}
+            inputMode="numeric"
+            className={inputClass}
+          />
+        </Field>
+        <div className="flex flex-col justify-end gap-2 pb-1">
+          <label className="flex items-center gap-2 text-[13px] font-medium text-[#1A2B1C]">
+            <input type="checkbox" checked={conta.ativo} onChange={(e) => onChange({ ativo: e.target.checked })} className="h-4 w-4 accent-[#2D8C3A]" />
+            Ativa
+          </label>
+          {onTest && (
+            <button
+              onClick={onTest}
+              disabled={saving || !hasToken}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60"
+            >
+              <ShieldCheck size={14} />
+              Testar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {testStatus && (
+        <p className={`mt-2 text-[12px] ${testStatus === "ok" ? "text-[#1A5C24]" : "text-[#991B1B]"}`}>
+          Último teste: {testStatus === "ok" ? "OK" : "erro"}
+          {meta?.ultimo_teste_mensagem ? ` — ${meta.ultimo_teste_mensagem}` : ""}
+        </p>
+      )}
+
+      {conta.id ? (
         <div className="mt-4 overflow-hidden rounded-lg border border-[#EEF1EE]">
           <table className="w-full text-sm">
             <thead className="bg-[#F8FAF8] text-[11px] uppercase tracking-wide text-[#6B7F6E]">
-              <tr><th className="px-3 py-2 text-left">Categoria</th><th className="px-3 py-2 text-left">Tipo</th><th className="px-3 py-2 text-left">Plano</th><th className="px-3 py-2 text-left">Tags extras</th></tr>
+              <tr>
+                <th className="px-3 py-2 text-left">Categoria</th>
+                <th className="px-3 py-2 text-left">Tipo</th>
+                <th className="px-3 py-2 text-left">Plano</th>
+                <th className="px-3 py-2 text-left">Tags extras</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-[#EEF1EE]">
-              {draft.mapeamentos.map((map, index) => (
+              {mapeamentos.map((map) => (
                 <tr key={map.categoria}>
                   <td className="px-3 py-2 font-medium text-[#1A2B1C]">{categoriaLabels[map.categoria] ?? map.categoria}</td>
                   <td className="px-3 py-2 text-[#3D4F3F]">{map.tipo_lancamento}</td>
-                  <td className="px-3 py-2"><input value={map.cod_plano_contas ?? ""} onChange={(e) => updateMap(index, { cod_plano_contas: e.target.value ? Number(e.target.value) : null })} className={inputClass} /></td>
-                  <td className="px-3 py-2"><input value={map.tags.join(", ")} onChange={(e) => updateMap(index, { tags: splitTags(e.target.value) })} className={inputClass} /></td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={map.cod_plano_contas ?? ""}
+                      onChange={(e) => onMapChange(map.categoria, { cod_plano_contas: e.target.value ? Number(e.target.value) : null })}
+                      inputMode="numeric"
+                      className={inputClass}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input value={map.tags.join(", ")} onChange={(e) => onMapChange(map.categoria, { tags: splitTags(e.target.value) })} className={inputClass} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section className="grid gap-5 lg:grid-cols-2">
-        <MappingPanel title="Imobiliárias" rows={draft.imobiliarias} contact onChange={(rows) => setDraft({ ...draft, imobiliarias: rows })} />
-        <MappingPanel title="Empreendimentos" rows={draft.empreendimentos} onChange={(rows) => setDraft({ ...draft, empreendimentos: rows })} />
-      </section>
+      ) : (
+        <p className="mt-3 text-[12px] text-[#6B7F6E]">Salve a conta para configurar os planos de contas.</p>
+      )}
     </div>
   )
-
-  function updateMap(index: number, changes: Partial<Draft["mapeamentos"][number]>) {
-    setDraft((current) => {
-      if (!current) return current
-      const mapeamentos = current.mapeamentos.map((map, i) => i === index ? { ...map, ...changes } : map)
-      return { ...current, mapeamentos }
-    })
-  }
 }
 
-function MappingPanel<T extends { id: string; nome: string; egestor_tag_id: string | null; egestor_contato_id?: number | null }>({
-  title,
-  rows,
-  contact,
-  onChange,
-}: {
-  title: string
-  rows: T[]
-  contact?: boolean
-  onChange: (rows: T[]) => void
-}) {
-  return (
-    <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
-      <h2 className="text-[16px] font-bold text-[#1A2B1C]">{title}</h2>
-      <div className="mt-4 space-y-3">
-        {rows.map((row, index) => (
-          <div key={row.id} className={`grid gap-3 ${contact ? "md:grid-cols-[minmax(0,1fr)_120px_160px]" : "md:grid-cols-[minmax(0,1fr)_180px]"} items-end`}>
-            <p className="truncate text-[13px] font-medium text-[#1A2B1C]">{row.nome}</p>
-            {contact && (
-              <Field label="Contato">
-                <input value={row.egestor_contato_id ?? ""} onChange={(e) => updateRow(index, { egestor_contato_id: e.target.value ? Number(e.target.value) : null } as Partial<T>)} className={inputClass} />
-              </Field>
-            )}
-            <Field label="Tag">
-              <input value={row.egestor_tag_id ?? ""} onChange={(e) => updateRow(index, { egestor_tag_id: e.target.value } as Partial<T>)} className={inputClass} />
-            </Field>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-
-  function updateRow(index: number, changes: Partial<T>) {
-    onChange(rows.map((row, i) => i === index ? { ...row, ...changes } : row))
-  }
+function contatoValue(contatos: EgestorConfigPayload["imobiliarias"][number]["contatos"], contaId: string) {
+  const found = contatos.find((contato) => contato.conta_id === contaId)
+  return found?.egestor_contato_id != null ? String(found.egestor_contato_id) : ""
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

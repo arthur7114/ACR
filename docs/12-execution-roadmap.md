@@ -8,6 +8,8 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
+Aplicar a migration `202606130001_egestor_multi_conta.sql` (multiplas contas eGestor) no Supabase SQL Editor e, na tela de Configuracoes, colar o token da conta "MMC Participacoes", apontar os empreendimentos da MMC (Grand Messejana/Maracanau/Castelao) para essa conta e preencher o contato da Alive (=41) na conta MMC. Depois gerar a previa eGestor de um fechamento Alive e confirmar que os lancamentos saem `validado` (plano 52/23, contato 41, disponivel 2) em vez de `pendente_config`. Validar tambem que empreendimento sem conta definida (null) continua usando a conta Global.
+
 Rodar a limpeza de cadastros duplicados/nulos em producao (merge de "Cesar Rego"/"Alive Imoveis"/"Galpao Pompilio Gomes" com re-apontamento de fechamentos e regras) e validar o novo CRUD: ocultar/reativar/excluir (cascata) de cadastros e arquivar/excluir de fechamentos, com confirmacao por digitacao do nome. Migration `202606120001_fechamento_arquivado.sql` precisa ser aplicada (coluna `arquivado`).
 
 Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imoveis alugados deixam de aparecer como Vago, desconto abatido na coluna "Valor c/ desc." e nova coluna "Ref." com o mes do aluguel destacado quando de competencia anterior), reprocessar um pacote real para confirmar que a persistencia nao cria imobiliarias duplicadas e habilitar a permissao "Disco Virtual" no eGestor para concluir o retry de anexos pendentes.
@@ -70,7 +72,19 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Listas e seletores de cadastros ocultam registros `ativo=false` por padrao; fechamentos historicos continuam exibindo nomes via relacionamento salvo.
 - No layout C (Cesar Rego) o nome do inquilino nao existe na camada de texto: o parser usa o endereco do imovel como identificacao da unidade na coluna Inquilino (e remove o endereco da observacao), evitando que imoveis alugados (com creditos de ALUGUEL) sejam marcados como Vago; imovel sem lancamentos no mes continua com inquilino vazio. Descontos (debitos `DESCONTO`/`DESC.`, ex.: "DESC. LOCATARIO") viram as colunas `desconto`/`aluguel_com_desconto`, sem confundir com o credito de "ENCARGOS FINANCEIROS POR ATRASO". O mes/ano do lancamento de ALUGUEL alimenta `vencimento`, e a tabela de receitas ganha a coluna `Ref.` destacando quando o aluguel e de competencia anterior (ex.: apto pago com atraso).
 
+- Integracao eGestor suporta multiplas contas com roteamento por empreendimento: `empreendimentos.egestor_conta_id` (null = conta Global) decide o token, a conta disponivel, o plano de contas e o contato usados no lancamento. Plano de contas, conta disponivel e contato sao especificos por conta (ex.: codigo 44 e repasse na conta Global, mas "PESSOAS E ENCARGOS" na MMC) - cruzar contas lancaria na conta de plano errada. O singleton `egestor_configuracoes` migra para a conta "Global" (id fixo `...0001`); contato da imobiliaria passa a viver em `egestor_imobiliaria_contatos (imobiliaria_id, conta_id)`, mantendo `imobiliarias.egestor_contato_id` como legado/fallback apenas para a conta Global. Token nunca trafega no GET (so mascarado) nem em migration (so pela UI).
+
 ## Historico de ciclos
+
+### 2026-06-12 - Multiplas contas eGestor (roteamento por empreendimento)
+
+Status: done
+Job: a integracao eGestor usava um unico token global, mas o cliente tem contas distintas (Global e MMC `mmcparticipacoes`). Teste ao vivo no navegador confirmou que o fechamento Alive/GM II fica em `erro_egestor` por falta de contato eGestor da imobiliaria, e que o contato/planos vivem em outra conta. Era preciso rotear conta por empreendimento.
+Outcome entregue: migration `202606130001_egestor_multi_conta.sql` cria `egestor_contas`, migra o singleton para a conta "Global", adiciona `conta_id` em `egestor_mapeamentos_categoria` (PK `conta_id,categoria`), `empreendimentos.egestor_conta_id` e a tabela `egestor_imobiliaria_contatos`, e faz seed da conta "MMC Participacoes" (disponivel 2; planos repasse 52/comissao 23/energia 47/agua 13/iptu 69/seguro 51/outras 67) - token e contato pela UI. `lib/server/egestor.ts` ganhou `resolveContaForFechamento`, `getMapeamentos(contaId)`, `resolveContato(imob,conta)` e `getContaById`, com `buildLancamentoRow(conta, codContato)` e as 5 funcoes resolvendo a conta do fechamento; `testEgestorConnection(supabase, contaId)` testa uma conta especifica. `app/api/egestor/config/route.ts` (GET/PATCH) e `lib/egestor-types.ts` viraram multi-conta com fallback resiliente ao singleton pre-migration. `components/acr/views/configuracoes-view.tsx` virou um card por conta (token/disponivel/planos/testar), seletor de conta por empreendimento e contato por conta nas imobiliarias.
+Validacao: `pnpm lint`, `pnpm build` e `pnpm exec tsc --noEmit` passaram. Os codigos da conta MMC (disponivel, planos e contato Alive=41) foram lidos da API real do eGestor via token.
+Decisoes: ver entrada em "Decisoes registradas" sobre multiplas contas eGestor com roteamento por empreendimento.
+Arquivos/docs impactados: `supabase/migrations/202606130001_egestor_multi_conta.sql`, `lib/server/egestor.ts`, `app/api/egestor/config/route.ts`, `lib/egestor-types.ts`, `components/acr/views/configuracoes-view.tsx`, `docs/12-execution-roadmap.md`.
+Proxima acao: aplicar a migration em producao, colar o token da MMC na UI, apontar os empreendimentos da MMC para a conta e preencher o contato da Alive, depois validar a previa eGestor saindo `validado`.
 
 ### 2026-06-11 - Correcoes do layout Cesar Rego (vago, desconto, mes de referencia)
 

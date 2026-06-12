@@ -4,6 +4,8 @@ import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-type
 import { EgestorApiError, EgestorClient } from "./egestor-client"
 
 const BUCKET = "fechamento-documentos"
+// Conta "Global" criada pela migration a partir do singleton legado.
+const GLOBAL_CONTA_ID = "00000000-0000-0000-0000-000000000001"
 const CATEGORIAS_DESPESA: Record<string, EgestorCategoria> = {
   energia: "energia",
   agua: "agua",
@@ -13,6 +15,14 @@ const CATEGORIAS_DESPESA: Record<string, EgestorCategoria> = {
 }
 
 type DbConfig = {
+  personal_token: string | null
+  cod_disponivel_padrao: number | null
+  ativo: boolean
+}
+
+type DbConta = {
+  id: string
+  nome: string
   personal_token: string | null
   cod_disponivel_padrao: number | null
   ativo: boolean
@@ -32,8 +42,8 @@ type FechamentoRow = {
   competencia: string
   status: string
   analise_completa: PackageAnalysis | null
-  imobiliarias: { nome: string; egestor_contato_id: number | null; egestor_tag_id: string | null } | null
-  empreendimentos: { nome: string; egestor_tag_id: string | null } | null
+  imobiliarias: { id: string; nome: string; egestor_contato_id: number | null; egestor_tag_id: string | null } | null
+  empreendimentos: { nome: string; egestor_tag_id: string | null; egestor_conta_id: string | null } | null
 }
 
 type DraftLancamento = {
@@ -82,10 +92,11 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   const openBlocking = await getOpenBlockingCount(supabase, fechamentoId)
   if (openBlocking > 0) throw new Error("Fechamento possui pendencias bloqueantes abertas.")
 
-  const config = await getConfig(supabase)
-  const maps = await getMapeamentos(supabase)
+  const conta = await resolveContaForFechamento(supabase, fechamento)
+  const maps = await getMapeamentos(supabase, conta.id)
+  const codContato = await resolveContato(supabase, fechamento, conta.id)
   const drafts = buildDrafts(fechamento)
-  const rows = drafts.map((draft) => buildLancamentoRow(fechamento, config, maps, draft))
+  const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft))
   const { data: sentRows, error: sentError } = await supabase
     .from("egestor_lancamentos")
     .select("id")
@@ -113,9 +124,10 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
 export async function sendEgestorLancamentos(supabase: SupabaseClient, fechamentoId: string, confirmation: string) {
   if (confirmation !== "ENVIAR_EGESTOR") throw new Error("Confirmacao obrigatoria para envio real.")
 
-  const config = await getConfig(supabase)
-  const token = config.personal_token
-  if (!token) throw new Error("Configure o personal_token do eGestor antes do envio.")
+  const fechamento = await getFechamento(supabase, fechamentoId)
+  const conta = await resolveContaForFechamento(supabase, fechamento)
+  const token = conta.personal_token
+  if (!token) throw new Error(`Configure o personal_token da conta eGestor "${conta.nome}" antes do envio.`)
 
   const { data: existingSent } = await supabase
     .from("egestor_lancamentos")
@@ -153,23 +165,25 @@ export async function sendEgestorLancamentos(supabase: SupabaseClient, fechament
   return getLancamentos(supabase, fechamentoId)
 }
 
-export async function testEgestorConnection(supabase: SupabaseClient) {
-  const config = await getConfig(supabase)
-  if (!config.personal_token) throw new Error("personal_token nao configurado.")
+export async function testEgestorConnection(supabase: SupabaseClient, contaId: string = GLOBAL_CONTA_ID) {
+  const conta = await getContaById(supabase, contaId)
+  if (!conta) throw new Error("Conta eGestor nao encontrada.")
+  if (!conta.personal_token) throw new Error("personal_token nao configurado.")
 
   try {
-    await new EgestorClient({ personalToken: config.personal_token }).testConnection()
-    await updateConnectionStatus(supabase, "ok", "Conexao validada com sucesso.")
+    await new EgestorClient({ personalToken: conta.personal_token }).testConnection()
+    await updateConnectionStatus(supabase, contaId, "ok", "Conexao validada com sucesso.")
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao testar eGestor."
-    await updateConnectionStatus(supabase, "erro", message)
+    await updateConnectionStatus(supabase, contaId, "erro", message)
     throw error
   }
 }
 
 export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId: string) {
-  const config = await getConfig(supabase)
-  if (!config.personal_token) throw new Error("Configure o personal_token do eGestor antes do retry.")
+  const fechamento = await getFechamento(supabase, fechamentoId)
+  const conta = await resolveContaForFechamento(supabase, fechamento)
+  if (!conta.personal_token) throw new Error(`Configure o personal_token da conta eGestor "${conta.nome}" antes do retry.`)
 
   const { data: lancamentos, error } = await supabase
     .from("egestor_lancamentos")
@@ -181,7 +195,7 @@ export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId:
   if (error) throw error
   if (!lancamentos || lancamentos.length === 0) throw new Error("Nao ha anexos pendentes para retry.")
 
-  const client = new EgestorClient({ personalToken: config.personal_token })
+  const client = new EgestorClient({ personalToken: conta.personal_token })
   for (const lancamento of lancamentos as PersistedLancamento[]) {
     await uploadAnexos(supabase, client, lancamento, Number(lancamento.egestor_cod_modulo))
     const { data: current } = await supabase
@@ -200,8 +214,9 @@ export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId:
 }
 
 export async function revalidateEgestorLancamentos(supabase: SupabaseClient, fechamentoId: string) {
-  const config = await getConfig(supabase)
-  if (!config.personal_token) throw new Error("Configure o personal_token do eGestor antes de revalidar.")
+  const fechamento = await getFechamento(supabase, fechamentoId)
+  const conta = await resolveContaForFechamento(supabase, fechamento)
+  if (!conta.personal_token) throw new Error(`Configure o personal_token da conta eGestor "${conta.nome}" antes de revalidar.`)
 
   const { data: lancamentos, error } = await supabase
     .from("egestor_lancamentos")
@@ -212,7 +227,7 @@ export async function revalidateEgestorLancamentos(supabase: SupabaseClient, fec
   if (error) throw error
   if (!lancamentos || lancamentos.length === 0) throw new Error("Nenhum lancamento enviado para revalidar.")
 
-  const client = new EgestorClient({ personalToken: config.personal_token })
+  const client = new EgestorClient({ personalToken: conta.personal_token })
   for (const lancamento of lancamentos as PersistedLancamento[]) {
     await revalidateLancamento(supabase, client, lancamento)
   }
@@ -352,10 +367,15 @@ export function buildEgestorDrafts(analysis: PackageAnalysis) {
   return drafts
 }
 
-function buildLancamentoRow(fechamento: FechamentoRow, config: DbConfig, maps: Map<string, DbMapeamento>, draft: DraftLancamento) {
+function buildLancamentoRow(
+  fechamento: FechamentoRow,
+  conta: DbConta,
+  maps: Map<string, DbMapeamento>,
+  codContato: number | null,
+  draft: DraftLancamento,
+) {
   const map = maps.get(draft.categoria)
-  const codContato = fechamento.imobiliarias?.egestor_contato_id ?? null
-  const codDisponivel = config.cod_disponivel_padrao
+  const codDisponivel = conta.cod_disponivel_padrao
   const codPlanoContas = map?.cod_plano_contas ?? null
   const tags = buildTags(fechamento)
   const validation = validateLancamento(codContato, codDisponivel, codPlanoContas)
@@ -433,11 +453,22 @@ function validateLancamento(codContato: number | null, codDisponivel: number | n
 }
 
 async function getFechamento(supabase: SupabaseClient, fechamentoId: string) {
-  const { data, error } = await supabase
-    .from("fechamentos")
-    .select("id,competencia,status,analise_completa,imobiliarias(nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id)")
-    .eq("id", fechamentoId)
-    .single()
+  const withConta =
+    "id,competencia,status,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id,egestor_conta_id)"
+  const withoutConta =
+    "id,competencia,status,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id)"
+
+  const primary = await supabase.from("fechamentos").select(withConta).eq("id", fechamentoId).single()
+  let data: unknown = primary.data
+  let error = primary.error
+
+  // Resiliencia: antes da migration multi-conta, empreendimentos.egestor_conta_id nao existe.
+  if (error && isMissingRelation(error, "egestor_conta_id")) {
+    const fallback = await supabase.from("fechamentos").select(withoutConta).eq("id", fechamentoId).single()
+    data = fallback.data
+    error = fallback.error
+  }
+
   if (error) throw error
   return data as unknown as FechamentoRow
 }
@@ -464,23 +495,103 @@ async function getFechamentoStatus(supabase: SupabaseClient, fechamentoId: strin
   return data.status as string
 }
 
-async function getConfig(supabase: SupabaseClient) {
+function isMissingRelation(error: unknown, name: string) {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { message?: unknown; code?: unknown }
+  // 42P01 = undefined_table, 42703 = undefined_column.
+  if (candidate.code === "42P01" || candidate.code === "42703") return true
+  return typeof candidate.message === "string" && new RegExp(name, "i").test(candidate.message)
+}
+
+// Fallback resiliente (pre-migration): le o singleton egestor_configuracoes como conta Global.
+async function getContaFromSingleton(supabase: SupabaseClient): Promise<DbConta> {
   const { data, error } = await supabase
     .from("egestor_configuracoes")
     .select("personal_token,cod_disponivel_padrao,ativo")
     .eq("id", true)
     .single()
   if (error) throw error
-  return data as DbConfig
+  const config = data as DbConfig
+  return { id: GLOBAL_CONTA_ID, nome: "Global", ...config }
 }
 
-async function getMapeamentos(supabase: SupabaseClient) {
+async function getContaById(supabase: SupabaseClient, contaId: string): Promise<DbConta | null> {
   const { data, error } = await supabase
+    .from("egestor_contas")
+    .select("id,nome,personal_token,cod_disponivel_padrao,ativo")
+    .eq("id", contaId)
+    .maybeSingle()
+  if (error) {
+    if (isMissingRelation(error, "egestor_contas")) {
+      return contaId === GLOBAL_CONTA_ID ? getContaFromSingleton(supabase).catch(() => null) : null
+    }
+    throw error
+  }
+  return (data as DbConta) ?? null
+}
+
+async function resolveContaForFechamento(supabase: SupabaseClient, fechamento: FechamentoRow): Promise<DbConta> {
+  const desiredId = fechamento.empreendimentos?.egestor_conta_id ?? GLOBAL_CONTA_ID
+  const ids = desiredId === GLOBAL_CONTA_ID ? [GLOBAL_CONTA_ID] : [desiredId, GLOBAL_CONTA_ID]
+
+  const { data, error } = await supabase
+    .from("egestor_contas")
+    .select("id,nome,personal_token,cod_disponivel_padrao,ativo")
+    .in("id", ids)
+
+  if (error) {
+    if (isMissingRelation(error, "egestor_contas")) return getContaFromSingleton(supabase)
+    throw error
+  }
+
+  const rows = (data ?? []) as DbConta[]
+  // Conta do empreendimento; se ela nao existir, cai na Global.
+  const conta = rows.find((row) => row.id === desiredId) ?? rows.find((row) => row.id === GLOBAL_CONTA_ID)
+  if (conta) return conta
+  return getContaFromSingleton(supabase)
+}
+
+// Contato eGestor por (imobiliaria, conta). Fallback para a coluna legada apenas na conta Global.
+async function resolveContato(supabase: SupabaseClient, fechamento: FechamentoRow, contaId: string): Promise<number | null> {
+  const imobiliariaId = fechamento.imobiliarias?.id ?? null
+  const legacyContato = contaId === GLOBAL_CONTA_ID ? fechamento.imobiliarias?.egestor_contato_id ?? null : null
+  if (!imobiliariaId) return legacyContato
+
+  const { data, error } = await supabase
+    .from("egestor_imobiliaria_contatos")
+    .select("egestor_contato_id")
+    .eq("imobiliaria_id", imobiliariaId)
+    .eq("conta_id", contaId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingRelation(error, "egestor_imobiliaria_contatos")) return legacyContato
+    throw error
+  }
+
+  return (data?.egestor_contato_id as number | null | undefined) ?? legacyContato
+}
+
+async function getMapeamentos(supabase: SupabaseClient, contaId: string) {
+  const baseSelect = "categoria,tipo_lancamento,cod_plano_contas,tags,descricao,ativo"
+  const primary = await supabase
     .from("egestor_mapeamentos_categoria")
-    .select("categoria,tipo_lancamento,cod_plano_contas,tags,descricao,ativo")
+    .select(baseSelect)
     .eq("ativo", true)
-  if (error) throw error
-  return new Map((data as DbMapeamento[]).map((row) => [row.categoria, row]))
+    .eq("conta_id", contaId)
+
+  // Resiliencia: antes da migration, mapeamentos sao globais (sem coluna conta_id).
+  if (primary.error && isMissingRelation(primary.error, "conta_id")) {
+    const fallback = await supabase
+      .from("egestor_mapeamentos_categoria")
+      .select(baseSelect)
+      .eq("ativo", true)
+    if (fallback.error) throw fallback.error
+    return new Map((fallback.data as DbMapeamento[]).map((row) => [row.categoria, row]))
+  }
+
+  if (primary.error) throw primary.error
+  return new Map((primary.data as DbMapeamento[]).map((row) => [row.categoria, row]))
 }
 
 async function getLancamentos(supabase: SupabaseClient, fechamentoId: string) {
@@ -532,12 +643,16 @@ async function markAnexoPendente(supabase: SupabaseClient, lancamentoId: string,
   }).eq("id", lancamentoId)
 }
 
-async function updateConnectionStatus(supabase: SupabaseClient, status: string, message: string) {
-  await supabase.from("egestor_configuracoes").update({
+async function updateConnectionStatus(supabase: SupabaseClient, contaId: string, status: string, message: string) {
+  const patch = {
     ultimo_teste_status: status,
     ultimo_teste_mensagem: message,
     ultimo_teste_em: new Date().toISOString(),
-  }).eq("id", true)
+  }
+  const { error } = await supabase.from("egestor_contas").update(patch).eq("id", contaId)
+  if (error && isMissingRelation(error, "egestor_contas")) {
+    await supabase.from("egestor_configuracoes").update(patch).eq("id", true)
+  }
 }
 
 function labelCategoria(categoria: EgestorCategoria) {

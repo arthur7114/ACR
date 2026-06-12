@@ -11,23 +11,31 @@ export type EgestorCategoria =
 
 export type EgestorLancamentoStatus = "validado" | "pendente_config" | "enviado" | "erro" | "anexo_pendente"
 
-export type EgestorConfiguracao = {
-  ativo: boolean
+export type EgestorConta = {
+  id: string
+  nome: string
   token_configurado: boolean
   token_mascarado: string | null
   cod_disponivel_padrao: number | null
+  ativo: boolean
   ultimo_teste_status: string | null
   ultimo_teste_mensagem: string | null
   ultimo_teste_em: string | null
 }
 
 export type EgestorMapeamentoCategoria = {
+  conta_id: string
   categoria: EgestorCategoria
   tipo_lancamento: EgestorTipoLancamento
   cod_plano_contas: number | null
   tags: string[]
   descricao: string | null
   ativo: boolean
+}
+
+export type EgestorImobiliariaContato = {
+  conta_id: string
+  egestor_contato_id: number | null
 }
 
 export type EgestorLancamento = {
@@ -66,8 +74,8 @@ export type EgestorEnvio = {
 }
 
 export type EgestorConfigPayload = {
-  configuracao: EgestorConfiguracao
+  contas: EgestorConta[]
   mapeamentos: EgestorMapeamentoCategoria[]
-  imobiliarias: Array<{ id: string; nome: string; egestor_contato_id: number | null; egestor_tag_id: string | null }>
-  empreendimentos: Array<{ id: string; nome: string; egestor_tag_id: string | null }>
+  imobiliarias: Array<{ id: string; nome: string; egestor_tag_id: string | null; contatos: EgestorImobiliariaContato[] }>
+  empreendimentos: Array<{ id: string; nome: string; egestor_tag_id: string | null; egestor_conta_id: string | null }>
 }
