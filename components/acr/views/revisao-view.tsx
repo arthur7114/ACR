@@ -18,8 +18,9 @@ import {
   Info
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
+import { contarVagasDeTexto } from "@/lib/vagas"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
-import type { PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
+import type { AcordoRescisaoRecebido, PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 
@@ -208,7 +209,7 @@ function isRentedCurrentRow(row: ReceitaPorImovel) {
   return !isAirbnbRow(row) && !isVacantRow(row) && !isDelinquentRow(row)
 }
 
-function getRowBadge(row: ReceitaPorImovel) {
+function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()) {
   if (isAirbnbRow(row)) {
     return {
       label: "Airbnb",
@@ -224,6 +225,13 @@ function getRowBadge(row: ReceitaPorImovel) {
   }
 
   if (isDelinquentRow(row)) {
+    // Apto quitado via acordo/rescisao no mes nao e inadimplente.
+    if (acordoAptos.has(aptoKey(row.apto))) {
+      return {
+        label: "Acordo",
+        classes: "border-[#BFDBFE] bg-[#DBEAFE] text-[#1E40AF]",
+      }
+    }
     return {
       label: "Inadimplente",
       classes: "border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]",
@@ -255,11 +263,28 @@ function sumRows(rows: ReceitaPorImovel[]) {
       iptu: totals.iptu + (row.iptu ?? 0),
       seguro: totals.seguro + (row.seguro_incendio ?? 0),
       total: totals.total + row.total,
+      totalComDesconto: totals.totalComDesconto + getTotalComDesconto(row),
       comissao: totals.comissao + (row.comissao ?? 0),
       repasse: totals.repasse + (row.repasse ?? 0),
     }),
-    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, total: 0, comissao: 0, repasse: 0 },
+    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, total: 0, totalComDesconto: 0, comissao: 0, repasse: 0 },
   )
+}
+
+// Total da unidade ja com o desconto aplicado (total bruto menos o desconto da linha).
+function getTotalComDesconto(row: ReceitaPorImovel) {
+  return Math.max(row.total - (row.desconto ?? 0), 0)
+}
+
+// Normaliza o numero do apto para comparar receitas x acordos/rescisoes.
+function aptoKey(apto: string | null | undefined) {
+  return (apto ?? "").trim().toLowerCase()
+}
+
+// Vagas de garagem informadas dentro de um acordo/rescisao (campo extraido ou parse da observacao).
+function vagasDoAcordo(item: AcordoRescisaoRecebido) {
+  if (typeof item.vagas_garagem === "number") return item.vagas_garagem
+  return contarVagasDeTexto(item.observacao) ?? 0
 }
 
 function getAluguelComDesconto(row: ReceitaPorImovel) {
@@ -450,28 +475,50 @@ export function RevisaoView({
   const resumo = prestacao?.resumo_financeiro
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
   const acordosRescisoesRecebidos = prestacao?.acordos_rescisoes_recebidos ?? []
+  // Aptos que foram quitados via acordo/rescisao no mes (nao contam como inadimplentes).
+  const acordoAptos = new Set(acordosRescisoesRecebidos.map((item) => aptoKey(item.apto)).filter(Boolean))
+  // Vagas de garagem informadas dentro dos acordos/rescisoes (ex.: "GARAGEM MOTO + GARAGEM CARRO").
+  const vagasAcordos = acordosRescisoesRecebidos.reduce((sum, item) => sum + vagasDoAcordo(item), 0)
   const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
   const totalInadimplenciaAcumulada = inadimplenciasAcumuladas.reduce((sum, item) => sum + item.valor, 0)
   const totalLinhas = linhasImoveis.reduce((sum, row) => sum + row.total, 0)
   const rowTotals = sumRows(linhasImoveis)
+  // Total de vagas = vagas das receitas + vagas informadas nos acordos/rescisoes.
+  const vagasTotais = rowTotals.vagas + vagasAcordos
   const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
   const comissaoCalculada = totals.comissao_administracao_calculada ?? null
   const baseComissao = totals.base_comissao_administracao ?? 0
-  const comissaoRealizadaPercent = totals.comissao_realizada_percent ?? (totals.total_receitas > 0 ? (totals.total_comissoes / totals.total_receitas) * 100 : null)
+  // Comissao realizada = comissao das linhas da tabela / total das linhas da tabela
+  // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
+  const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
   // Intermediação vem do documento (quando existir), nunca do cadastro da imobiliária
   const intermediacaoDocumento = (() => {
     const item = outrasComissoesDespesas.find((d) => /intermedia/i.test(d.descricao))
     if (!item) return null
-    const match = item.descricao.match(/(\d+(?:[.,]\d+)?)\s*%/)
-    return { percent: match ? Number(match[1].replace(",", ".")) : null, valor: item.valor }
+    const matchPercent = (texto: string | null | undefined) => {
+      const m = texto?.match(/(\d+(?:[.,]\d+)?)\s*%/)
+      return m ? Number(m[1].replace(",", ".")) : null
+    }
+    let percent = matchPercent(item.descricao)
+    // Fallback (ainda do documento): procurar o % nas observacoes de acordos de intermediacao.
+    if (percent === null) {
+      for (const acordo of acordosRescisoesRecebidos) {
+        if (/intermedia/i.test(acordo.observacao ?? "")) {
+          percent = matchPercent(acordo.observacao)
+          if (percent !== null) break
+        }
+      }
+    }
+    return { percent, valor: item.valor }
   })()
   const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
     ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
     : 0
-  const inadimplentes = linhasImoveis.filter(isDelinquentRow).length
+  const isInadimplenteEfetivo = (row: ReceitaPorImovel) => isDelinquentRow(row) && !acordoAptos.has(aptoKey(row.apto))
+  const inadimplentes = linhasImoveis.filter(isInadimplenteEfetivo).length
   const vagos = linhasImoveis.filter(isVacantRow).length
   const airbnb = linhasImoveis.filter(isAirbnbRow).length
 
@@ -482,7 +529,7 @@ export function RevisaoView({
     if (!textMatch) return false
     
     if (filtroStatus === "vagos") return isVacantRow(row)
-    if (filtroStatus === "inadimplentes") return isDelinquentRow(row)
+    if (filtroStatus === "inadimplentes") return isInadimplenteEfetivo(row)
     if (filtroStatus === "alugados") return isRentedCurrentRow(row)
     if (filtroStatus === "airbnb") return isAirbnbRow(row)
     return true
@@ -613,9 +660,29 @@ export function RevisaoView({
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {/* Topo: receita recebida + total de vagas de garagem (receitas + acordos). */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               <MetricTile label="Recebido" value={formatBRL(totals.total_receitas)} tone="positive" subtext="Em nome do locador" tooltip="Soma de todos os aluguéis e encargos (água, IPTU, etc.) efetivamente pagos pelos inquilinos nesta competência." />
-              <MetricTile label="Comissão admin." value={formatBRL(totals.total_comissoes)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Nenhuma taxa cadastrada na regra comercial."} />
+              <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Receitas + acordos do mês" tooltip="Total de vagas de garagem das receitas mais as vagas informadas nos acordos/rescisões." />
+            </div>
+
+            {linhasImoveis.length > 0 && (
+              <div className="space-y-3">
+                <SectionTitle title="Composição do recebido" description="Soma das colunas pagas pelo inquilino." />
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                  <MetricTile label="Aluguel" value={formatBRL(totals.total_aluguel ?? rowTotals.aluguelComDesconto)} />
+                  <MetricTile label="Garagem" value={formatBRL(totals.total_garagem ?? rowTotals.garagem)} />
+                  <MetricTile label="Vagas garagem" value={`${vagasTotais}`} />
+                  <MetricTile label="Água" value={formatBRL(totals.total_agua ?? rowTotals.agua)} />
+                  <MetricTile label="IPTU" value={formatBRL(totals.total_iptu ?? rowTotals.iptu)} />
+                  <MetricTile label="Seguro incêndio" value={formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)} />
+                </div>
+              </div>
+            )}
+
+            {/* Deduções (comissão e despesas) abaixo da discriminação das receitas. */}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
               <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
               <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
               <MetricTile
@@ -626,20 +693,6 @@ export function RevisaoView({
                 tooltip="Diferença entre o Total a Repassar (calculado) e o valor pago encontrado no comprovante de repasse."
               />
             </div>
-
-            {linhasImoveis.length > 0 && (
-              <div className="space-y-3">
-                <SectionTitle title="Composição do recebido" description="Soma das colunas pagas pelo inquilino." />
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-                  <MetricTile label="Aluguel" value={formatBRL(totals.total_aluguel ?? rowTotals.aluguelComDesconto)} />
-                  <MetricTile label="Garagem" value={formatBRL(totals.total_garagem ?? rowTotals.garagem)} />
-                  <MetricTile label="Vagas garagem" value={`${rowTotals.vagas}`} />
-                  <MetricTile label="Água" value={formatBRL(totals.total_agua ?? rowTotals.agua)} />
-                  <MetricTile label="IPTU" value={formatBRL(totals.total_iptu ?? rowTotals.iptu)} />
-                  <MetricTile label="Seguro incêndio" value={formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)} />
-                </div>
-              </div>
-            )}
 
             {linhasImoveis.length > 0 && (
               <div className="space-y-3">
@@ -816,10 +869,10 @@ export function RevisaoView({
           </div>
 
           <div className="max-h-[70vh] overflow-auto">
-          <table className="w-full min-w-[1220px] text-sm">
+          <table className="w-full min-w-[1320px] text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Total c/ desc.", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -829,7 +882,7 @@ export function RevisaoView({
             <tbody>
               {linhasImoveisExibicao.length > 0 ? (
                 linhasImoveisExibicao.map((row) => {
-                  const badge = getRowBadge(row)
+                  const badge = getRowBadge(row, acordoAptos)
                   return (
                   <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                     <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
@@ -858,6 +911,7 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
+                    <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(getTotalComDesconto(row))}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
                     <td className={`px-4 py-3.5 tabular-nums whitespace-nowrap ${row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "font-semibold text-[#B45309]" : "text-[#3D4F3F]"}`} title={row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "Aluguel referente a mês anterior" : undefined}>
@@ -869,7 +923,7 @@ export function RevisaoView({
                 })
               ) : (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
+                  <td colSpan={15} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
               )}
             </tbody>
@@ -886,6 +940,7 @@ export function RevisaoView({
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.iptu)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.seguro)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.totalComDesconto)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>
                 <td className="px-4 py-3"></td>

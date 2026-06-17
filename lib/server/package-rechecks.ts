@@ -173,7 +173,9 @@ function calculateTotals(
   const totalComissaoDespesas = roundMoney(resumo?.total_comissao_despesas ?? (resumo?.comissao_administracao ?? lineTotalComissoes) + totalDespesas)
   const totalReceitas = roundMoney(resumo?.recebidos_em_nome_locador ?? resumo?.total_linhas_receitas ?? lineTotalReceitas)
   const totalComissoes = roundMoney(resumo?.comissao_administracao ?? lineTotalComissoes)
-  const realizedCommissionPercent = totalReceitas > 0 ? roundPercent((totalComissoes / totalReceitas) * 100) : null
+  // Comissao realizada = comissao das linhas / total das linhas da tabela (mensal regular),
+  // sem misturar comissao de acordos nem o recebido bruto com acordos.
+  const realizedCommissionPercent = lineTotalReceitas > 0 ? roundPercent((lineTotalComissoes / lineTotalReceitas) * 100) : null
   const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
   const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas)
   const valorComprovado = repasse?.valor ?? null

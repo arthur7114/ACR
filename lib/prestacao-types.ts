@@ -71,6 +71,7 @@ export const acordoRescisaoRecebidoSchema = z
     apto: z.string().nullable(),
     inquilino: z.string().nullable(),
     valor: z.number(),
+    vagas_garagem: z.number().int().min(0).nullable().optional(),
     competencia_original: z.string().nullable(),
     competencia_recebimento: z.string().nullable(),
     observacao: z.string().nullable(),

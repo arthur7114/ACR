@@ -1,5 +1,6 @@
 import * as xlsx from "xlsx"
 import type { PrestacaoAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+import { contarVagasDeTexto } from "@/lib/vagas"
 
 const MONTH_MAP: Record<string, string> = {
   "01": "JAN",
@@ -162,17 +163,5 @@ function parseNumber(val: unknown): number | null {
 }
 
 function parseVagasGaragem(observacao: string | null): number | null {
-  if (!observacao) return null
-  const obsLower = observacao.toLowerCase()
-  const match = obsLower.match(/(\d+)\s*vagas?/)
-  if (match) {
-    return parseInt(match[1], 10)
-  }
-  if (obsLower.includes("vaga") || obsLower.includes("garagem")) {
-    // Sem número explícito: 1 vaga por veículo citado ("carro e moto" = 2)
-    const veiculos = (obsLower.includes("carro") ? 1 : 0) + (obsLower.includes("moto") ? 1 : 0)
-    if (veiculos > 0) return veiculos
-    return obsLower.includes("vaga") ? 1 : null
-  }
-  return null
+  return contarVagasDeTexto(observacao)
 }
