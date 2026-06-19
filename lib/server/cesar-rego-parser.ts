@@ -218,6 +218,7 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
       total_comissao_despesas: resumo.totalComissaoDespesas,
       recebidos_em_nome_locador: resumo.recebidosEmNomeLocador,
       total_a_repassar: resumo.totalARepassar,
+      repasse_embutido: true,
       confianca: 1.0,
     },
     totais: {

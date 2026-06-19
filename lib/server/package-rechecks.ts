@@ -2,10 +2,12 @@ import type {
   AcordoRescisaoRecebido,
   ClassifiedDocument,
   DespesasAnalysis,
+  InadimplenciaAcumulada,
   PackageTotals,
   PrestacaoAnalysis,
   PrestacaoGuardrail,
   PrestacaoRecheck,
+  ReceitaPorImovel,
   ReajusteAnalysis,
   RepasseAnalysis,
   TechnicalOpinion,
@@ -40,11 +42,19 @@ export interface PackageValidationInput {
 }
 
 export function validatePackage(input: PackageValidationInput) {
-  const normalizedPrestacao = input.prestacao ? normalizePrestacao(input.prestacao) : null
+  const sanitizedPrestacao = input.prestacao ? sanitizeInadimplenciaRows(input.prestacao) : null
+  const normalizedPrestacao = sanitizedPrestacao ? normalizePrestacao(sanitizedPrestacao) : null
   const normalizedDespesas = input.despesas ? normalizeDespesas(input.despesas) : null
   const normalizedRepasse = input.repasse ? normalizeRepasse(input.repasse) : null
   const normalizedReajuste = input.reajuste ? normalizeReajuste(input.reajuste) : null
-  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse, input.commercialRule ?? null)
+  // Extrato consolidado (Cesar Rego/Plural): o repasse vem dentro do proprio
+  // documento. Sinal explicito do parser OU pacote de documento unico que e a
+  // propria prestacao (sem comprovante separado). Se houver comprovante de
+  // repasse de verdade, ele tem precedencia (a conciliacao bancaria continua).
+  const repasseEmbutido =
+    normalizedPrestacao?.resumo_financeiro.repasse_embutido === true ||
+    (!input.repasse && input.documents.length === 1 && input.documents[0]?.documentType === "prestacao_contas")
+  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse, input.commercialRule ?? null, repasseEmbutido)
   const rechecks = buildRechecks({
     documents: input.documents,
     prestacao: normalizedPrestacao,
@@ -54,6 +64,7 @@ export function validatePackage(input: PackageValidationInput) {
     commercialRule: input.commercialRule ?? null,
     historicalAgreementKeys: input.historicalAgreementKeys ?? [],
     totals,
+    repasseEmbutido,
   })
   const guardrails = buildGuardrails(input.documents, rechecks)
   const parecer = buildTechnicalOpinion(rechecks, guardrails)
@@ -152,6 +163,7 @@ function calculateTotals(
   despesas: DespesasAnalysis | null,
   repasse: RepasseAnalysis | null,
   commercialRule: CommercialRuleForValidation | null,
+  repasseEmbutido: boolean = false,
 ): PackageTotals {
   const rows = prestacao?.receitas_por_imovel ?? []
   const lineTotalReceitas = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? []))
@@ -178,7 +190,9 @@ function calculateTotals(
   const realizedCommissionPercent = lineTotalReceitas > 0 ? roundPercent((lineTotalComissoes / lineTotalReceitas) * 100) : null
   const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
   const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas)
-  const valorComprovado = repasse?.valor ?? null
+  // Sem comprovante separado, mas com repasse embutido no extrato: o proprio
+  // total a repassar do documento e a referencia conciliada.
+  const valorComprovado = repasse?.valor ?? (repasseEmbutido ? totalARepassar : null)
 
   return {
     total_receitas: totalReceitas,
@@ -199,6 +213,7 @@ function calculateTotals(
     comissao_administracao_calculada: calculatedAdminCommission,
     base_comissao_administracao: commissionBase,
     comissao_realizada_percent: realizedCommissionPercent,
+    repasse_embutido: repasseEmbutido,
   }
 }
 
@@ -211,10 +226,11 @@ function buildRechecks({
   commercialRule,
   historicalAgreementKeys,
   totals,
-}: PackageValidationInput & { totals: PackageTotals; historicalAgreementKeys: string[] }) {
+  repasseEmbutido,
+}: PackageValidationInput & { totals: PackageTotals; historicalAgreementKeys: string[]; repasseEmbutido: boolean }) {
   const checks: PrestacaoRecheck[] = [
     checkRequiredDocument(documents, "prestacao_contas", "Prestacao de contas"),
-    checkRequiredDocument(documents, "comprovante_repasse", "Comprovante de repasse"),
+    checkRequiredComprovante(documents, repasseEmbutido),
     checkOptionalDocument(documents, "relatorio_reajuste", "Relatorio de locacao/reajuste"),
     checkOptionalDocument(documents, "despesas_comprovantes", "Despesas e comprovantes"),
     checkUnknownDocuments(documents),
@@ -246,7 +262,19 @@ function buildRechecks({
     checkConfidence("reajuste_confidence", "Confianca do relatorio", getLowestReajusteConfidence(reajuste)),
   ]
 
-  return checks.filter((check) => check.id !== "skip")
+  // B3: a divergencia entre a soma das linhas e o consolidado reportado pela IA e
+  // sinal de qualidade de leitura, nao de erro de repasse — rebaixa de bloqueio
+  // para alerta. A formula do resumo so vira alerta quando a conciliacao com o
+  // comprovante ja passou (a IA leu um agregado errado, mas o dinheiro confere).
+  const repassePassou = checks.find((c) => c.id === "repasse_conciliation")?.status === "passed"
+  const lineTotalIds = new Set(["total_linhas_receitas", "total_linhas_comissoes", "total_linhas_repasse"])
+  const adjusted = checks.map((check) => {
+    if (lineTotalIds.has(check.id) && check.status === "failed") return { ...check, status: "warning" as const }
+    if (check.id === "resumo_financeiro" && check.status === "failed" && repassePassou) return { ...check, status: "warning" as const }
+    return check
+  })
+
+  return adjusted.filter((check) => check.id !== "skip")
 }
 
 function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
@@ -382,6 +410,77 @@ function checkRequiredDocument(documents: ClassifiedDocument[], documentType: st
     label,
     status: found ? "passed" : "failed",
     message: found ? `${label} presente no pacote.` : `${label} nao foi enviado. Envie o documento antes de aprovar.`,
+  }
+}
+
+// Comprovante de repasse: extratos consolidados (Cesar Rego/Plural) trazem o
+// repasse dentro do proprio documento, sem comprovante bancario separado.
+function checkRequiredComprovante(documents: ClassifiedDocument[], repasseEmbutido: boolean): PrestacaoRecheck {
+  const found = documents.some((document) => document.documentType === "comprovante_repasse")
+
+  if (found) {
+    return {
+      id: "required_comprovante_repasse",
+      label: "Comprovante de repasse",
+      status: "passed",
+      message: "Comprovante de repasse presente no pacote.",
+    }
+  }
+
+  if (repasseEmbutido) {
+    return {
+      id: "required_comprovante_repasse",
+      label: "Comprovante de repasse",
+      status: "passed",
+      message: "Repasse informado no proprio extrato consolidado; sem comprovante separado.",
+    }
+  }
+
+  return {
+    id: "required_comprovante_repasse",
+    label: "Comprovante de repasse",
+    status: "failed",
+    message: "Comprovante de repasse nao foi enviado. Envie o documento antes de aprovar.",
+  }
+}
+
+// B1: linhas de inadimplencia (aluguel nao pago) nao podem entrar em receitas.
+// Detector conservador: linha sem dinheiro recebido (total/comissao/repasse zerados)
+// E marcada como inadimplencia na observacao/inquilino, exceto unidades Airbnb.
+function isInadimplenciaRow(row: ReceitaPorImovel): boolean {
+  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+  if (text.includes("AIRBNB") || text.includes("AIR BNB")) return false
+  if (!/INADIMPL/.test(text)) return false
+  const semEntrada = (row.total ?? 0) === 0 && (row.comissao ?? 0) === 0 && (row.repasse ?? 0) === 0
+  return semEntrada
+}
+
+// Move linhas de inadimplencia indevidamente classificadas como receita para
+// inadimplencias_acumuladas (divida em aberto, nao receita do mes).
+function sanitizeInadimplenciaRows(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
+  const movidas: InadimplenciaAcumulada[] = []
+  const receitas = analysis.receitas_por_imovel.filter((row) => {
+    if (!isInadimplenciaRow(row)) return true
+    movidas.push({
+      apto: row.apto || null,
+      inquilino: row.inquilino || null,
+      valor: row.total || 0,
+      condicao: null,
+      observacao: row.observacao,
+      confianca: row.confianca,
+    })
+    return false
+  })
+
+  if (movidas.length === 0) return analysis
+
+  return {
+    ...analysis,
+    receitas_por_imovel: receitas,
+    inadimplencias_acumuladas: [...(analysis.inadimplencias_acumuladas ?? []), ...movidas],
   }
 }
 
@@ -604,7 +703,9 @@ function compareRepasse(totals: PackageTotals): PrestacaoRecheck {
     status,
     message:
       status === "passed"
-        ? "Valor a repassar bate com o comprovante bancario."
+        ? totals.repasse_embutido
+          ? "Repasse conferido com o total do proprio extrato consolidado."
+          : "Valor a repassar bate com o comprovante bancario."
         : status === "warning"
           ? `O total a repassar calculado e ${formatBRL(totals.total_a_repassar)}, mas o comprovante bancario tem ${formatBRL(totals.valor_comprovado)}. Diferenca de ${formatBRL(totals.diferenca_repasse)}. Verifique manualmente.`
           : `O total a repassar calculado e ${formatBRL(totals.total_a_repassar)}, mas o comprovante bancario tem ${formatBRL(totals.valor_comprovado)}. Diferenca de ${formatBRL(totals.diferenca_repasse)}. Verifique manualmente.`,
@@ -659,7 +760,12 @@ function getLowestReajusteConfidence(reajuste: ReajusteAnalysis | null) {
 function isOperationalRecheck(check: PrestacaoRecheck) {
   if (!OPERATIONAL_RECHECK_IDS.has(check.id)) return false
   if (check.status === "passed") return true
-  if (check.id === "total_linhas_comissoes" || check.id === "total_linhas_repasse" || check.id === "comissao_administracao_regra") {
+  if (
+    check.id === "total_linhas_receitas" ||
+    check.id === "total_linhas_comissoes" ||
+    check.id === "total_linhas_repasse" ||
+    check.id === "comissao_administracao_regra"
+  ) {
     return typeof check.difference === "number"
   }
   return true
@@ -683,14 +789,17 @@ function roundPercent(value: number) {
 
 export function buildAgreementPaymentKey(item: AcordoRescisaoRecebido) {
   const inquilino = normalizeText(item.inquilino)
-  // Um pagamento de acordo/rescisao e unico pelo MES EM QUE FOI RECEBIDO. Um
-  // acordo parcelado tem competencia de origem fixa e parcela de valor igual
-  // todo mes; chavear pela origem marcaria cada parcela mensal como repetida e
-  // bloquearia o fechamento todo mes. A competencia de recebimento distingue as
-  // parcelas legitimas e ainda pega uma reimportacao real no mesmo mes.
-  const competencia = normalizeCompetenciaKey(item.competencia_recebimento ?? item.competencia_original)
-  if (!inquilino || !competencia || !Number.isFinite(item.valor)) return null
-  return [item.tipo, inquilino, competencia, roundMoney(item.valor).toFixed(2)].join("|")
+  const apto = normalizeText(item.apto)
+  // Um pagamento de acordo/rescisao e unico por: tipo + apto + inquilino +
+  // competencia de recebimento + competencia de origem + valor. Incluir apto e a
+  // competencia de origem evita falso "pagamento repetido" quando varias parcelas
+  // de meses-origem diferentes (ex.: jan, fev, mar) sao recebidas no mesmo mes —
+  // tem origem distinta e sao legitimas. Uma reimportacao real (mesma origem,
+  // mesmo recebimento, mesmo valor) ainda colide e e detectada.
+  const recebimento = normalizeCompetenciaKey(item.competencia_recebimento ?? item.competencia_original)
+  const origem = normalizeCompetenciaKey(item.competencia_original) ?? ""
+  if (!inquilino || !recebimento || !Number.isFinite(item.valor)) return null
+  return [item.tipo, apto, inquilino, recebimento, origem, roundMoney(item.valor).toFixed(2)].join("|")
 }
 
 function normalizeCompetenciaKey(value: string | null | undefined) {

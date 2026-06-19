@@ -126,6 +126,9 @@ export const prestacaoResumoFinanceiroSchema = z
     total_comissao_despesas: z.number().nullable(),
     recebidos_em_nome_locador: z.number().nullable(),
     total_a_repassar: z.number().nullable(),
+    // Layouts de extrato consolidado (Cesar Rego, Plural) trazem o repasse dentro
+    // do proprio documento; nao ha comprovante bancario separado.
+    repasse_embutido: z.boolean().optional(),
     confianca: z.number().min(0).max(1),
   })
   .strict()
@@ -314,6 +317,8 @@ export const packageTotalsSchema = z
     comissao_administracao_calculada: z.number().nullable(),
     base_comissao_administracao: z.number(),
     comissao_realizada_percent: z.number().nullable(),
+    // Repasse informado no proprio extrato (sem comprovante bancario separado).
+    repasse_embutido: z.boolean().optional(),
   })
   .strict()
 

@@ -315,7 +315,7 @@ async function persistMovimentacoes({
   if (error) throw error
 }
 
-async function persistValidacoes({
+export async function persistValidacoes({
   fechamentoId,
   documents,
   parecer,

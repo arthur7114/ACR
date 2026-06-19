@@ -22,6 +22,17 @@ import { contarVagasDeTexto } from "@/lib/vagas"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { AcordoRescisaoRecebido, PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 
 type StatusEvento = {
@@ -175,6 +186,59 @@ function getObjectiveOpinionCopy(summary: { blocked: number; warnings: number; p
   return "Validações principais concluídas. O fechamento não possui bloqueios operacionais."
 }
 
+// Faixa lateral colorida do card de parecer (em vez de tingir o card inteiro).
+function getOpinionAccentClass(status: TechnicalOpinion["status"]) {
+  if (status === "aprovado_tecnico") return "border-l-[#22C55E]"
+  if (status === "aprovado_com_ressalvas") return "border-l-[#F59E0B]"
+  return "border-l-[#DC2626]"
+}
+
+type RepasseTone = "ok" | "alerta" | "divergente" | "pendente"
+
+// O tom do número-herói vem APENAS da conciliação do repasse (recheck dedicado +
+// diferença), nunca de um bloqueio não-relacionado. Assim o valor correto não
+// aparece vermelho só porque falta um documento ou uma regra de comissão.
+function getRepasseConciliacao(
+  rechecks: PrestacaoRecheck[],
+  totals: PackageAnalysis["totals"],
+): { tone: RepasseTone; message: string } {
+  if (totals.valor_comprovado === null) {
+    return { tone: "pendente", message: "Comprovante de repasse ainda não conciliado." }
+  }
+  const check = rechecks.find((c) => c.id === "repasse_conciliation")
+  const diff = totals.diferenca_repasse
+  const tone: RepasseTone =
+    check?.status === "passed"
+      ? "ok"
+      : check?.status === "warning"
+        ? "alerta"
+        : check?.status === "failed"
+          ? "divergente"
+          : diff === null
+            ? "pendente"
+            : diff <= 0.01
+              ? "ok"
+              : diff <= 5
+                ? "alerta"
+                : "divergente"
+  if (tone === "ok")
+    return {
+      tone,
+      message: totals.repasse_embutido
+        ? "Repasse conforme o total do próprio extrato (sem comprovante separado)."
+        : "Repasse conciliado com o comprovante bancário.",
+    }
+  if (tone === "alerta") return { tone, message: `Diferença de ${formatBRL(diff ?? 0)} dentro da tolerância — confira.` }
+  if (tone === "divergente") return { tone, message: `Divergência de ${formatBRL(diff ?? 0)} entre o cálculo e o comprovante.` }
+  return { tone, message: "Comprovante de repasse ainda não conciliado." }
+}
+
+function getHeroToneClasses(tone: RepasseTone) {
+  if (tone === "alerta") return { card: "border-[#FDE68A] bg-[#FFFBEB]", value: "text-[#B45309]" }
+  if (tone === "divergente") return { card: "border-[#FCA5A5] bg-[#FEF2F2]", value: "text-[#DC2626]" }
+  return { card: "border-[#BFE4C7] bg-[#F4F9F5]", value: "text-[#2D8C3A]" }
+}
+
 const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--", "null", ": null", "nulo", "undefined"])
 
 function isInquilinoVazio(inquilino: string | null | undefined) {
@@ -249,6 +313,62 @@ function CheckValue({ label, value }: { label: string; value: number | null | un
       {label}
       <strong className="font-semibold text-[#1A2B1C] tabular-nums">{formatBRL(value)}</strong>
     </span>
+  )
+}
+
+// Linha de uma pendência (bloqueio, alerta ou resolvido). Extraída para reuso
+// nos três grupos da seção de pendências.
+function RecheckRow({
+  check,
+  onResolve,
+  onRefresh,
+}: {
+  check: PrestacaoRecheck
+  onResolve: (check: PrestacaoRecheck) => void
+  onRefresh?: () => void
+}) {
+  const isResolved = isResolvedCheck(check)
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${getCheckClasses(check)}`}>
+            {getCheckLabel(check)}
+          </span>
+          <p className="truncate text-[13px] font-bold text-[#1A2B1C]">{check.label}</p>
+        </div>
+        <p className="mt-1.5 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
+        {isResolved && check.justificativa && (
+          <div className="mt-2 text-[12px] bg-[#F4F9F5] text-[#1A5C24] px-3 py-2 rounded-lg border border-[#D1E7D6]">
+            <span className="font-semibold block text-[11px] uppercase tracking-wide text-[#2D8C3A] mb-0.5">Pendência resolvida</span>
+            <span className="italic">{check.justificativa}</span>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="hidden flex-col items-end gap-0.5 md:flex text-right">
+          <CheckValue label="Correto" value={check.expected} />
+          <CheckValue label="Consolidado" value={check.actual} />
+          <CheckValue label="Dif." value={check.difference} />
+        </div>
+        {!isResolved &&
+          (check.databaseId ? (
+            <button
+              onClick={() => onResolve(check)}
+              className="h-8 px-3 rounded-md bg-[#2D8C3A]/10 text-[#2D8C3A] hover:bg-[#2D8C3A] hover:text-white text-[12px] font-medium transition-colors"
+            >
+              Resolver
+            </button>
+          ) : (
+            <button
+              onClick={() => onRefresh && onRefresh()}
+              className="h-8 px-3 rounded-md border border-[#D5DDD6] bg-white text-[#3D4F3F] hover:bg-[#EEF1EE] text-[12px] font-medium transition-colors"
+            >
+              Atualizar
+            </button>
+          ))}
+      </div>
+    </div>
   )
 }
 
@@ -425,7 +545,6 @@ export function RevisaoView({
   const { prestacao, repasse, despesas, reajuste, totals, parecer } = analysisResult
   const documents = analysisResult.documents ?? []
   const rechecks = analysisResult.rechecks ?? []
-  const motivosParecer = parecer.motivos ?? []
   const actionableRechecks = rechecks.filter(isActionableWarning)
   const failedRechecks = actionableRechecks.filter((check) => check.status === "failed" && !isResolvedCheck(check))
   const warningRechecks = actionableRechecks.filter((check) => check.status === "warning" && !isResolvedCheck(check))
@@ -436,6 +555,24 @@ export function RevisaoView({
   const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
   const hasSentEgestor = egestorLancamentos.some((l) => l.egestor_codigo !== null)
   const hasPendingAnexos = egestorLancamentos.some((l) => l.status === "anexo_pendente")
+  const repasseConciliacao = getRepasseConciliacao(rechecks, totals)
+  const heroTone = getHeroToneClasses(repasseConciliacao.tone)
+  const bannerState: "blocked" | "warning" | "ok" = hasBlocking ? "blocked" : validationSummary.warnings > 0 ? "warning" : "ok"
+  const resolvedRechecks = actionableRechecks.filter(isResolvedCheck)
+  const pendenciasDefault = failedRechecks.length > 0 ? ["bloqueios"] : warningRechecks.length > 0 ? ["alertas"] : []
+
+  const openResolve = (check: PrestacaoRecheck) => {
+    setActiveValidation({
+      id: check.databaseId || "",
+      fechamento_id: fechamentoId,
+      tipo_validacao: check.id,
+      mensagem: check.message,
+      valor_esperado: check.expected ?? null,
+      valor_encontrado: check.actual ?? null,
+      diferenca: check.difference ?? null,
+    })
+    setIsResolveModalOpen(true)
+  }
 
   async function runEgestorAction(action: "approve" | "preview" | "send" | "retry" | "revalidate") {
     setEgestorError(null)
@@ -467,9 +604,9 @@ export function RevisaoView({
     }
     if (onRefresh) await onRefresh()
   }
-  const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento nao identificado"
-  const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
-  const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competencia nao identificada"
+  const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
+  const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliária não identificada"
+  const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competência não identificada"
   const competenciaMesAno = competenciaParaMesAno(prestacao?.competencia ?? fechamento?.competencia)
   const title = `${empreendimentoNome} - ${competencia}`
   const resumo = prestacao?.resumo_financeiro
@@ -555,17 +692,33 @@ export function RevisaoView({
     <div className="space-y-6">
       <div
         className={`rounded-lg p-3 flex items-center justify-between border ${
-          hasBlocking ? "bg-[#FEE2E2] border-[#DC2626]" : "bg-[#EFF7F1] border-[#2D8C3A]"
+          bannerState === "blocked"
+            ? "bg-[#FEE2E2] border-[#DC2626]"
+            : bannerState === "warning"
+              ? "bg-[#FFFBEB] border-[#F59E0B]"
+              : "bg-[#EFF7F1] border-[#2D8C3A]"
         }`}
       >
         <div className="flex items-center gap-2">
-          {hasBlocking ? (
+          {bannerState === "blocked" ? (
             <AlertTriangle size={18} className="text-[#DC2626] shrink-0" />
+          ) : bannerState === "warning" ? (
+            <AlertTriangle size={18} className="text-[#B45309] shrink-0" />
           ) : (
             <CheckCircle size={18} className="text-[#2D8C3A] shrink-0" />
           )}
-          <span className={`text-[14px] ${hasBlocking ? "text-[#991B1B]" : "text-[#1A5C24]"}`}>
-            {hasBlocking ? "Há pendências que precisam de decisão antes da aprovação." : "Sem pendências bloqueantes no fechamento."}
+          <span
+            className={`text-[14px] ${
+              bannerState === "blocked" ? "text-[#991B1B]" : bannerState === "warning" ? "text-[#92400E]" : "text-[#1A5C24]"
+            }`}
+          >
+            {bannerState === "blocked"
+              ? `${pluralize(validationSummary.blocked, "pendência bloqueante", "pendências bloqueantes")} a resolver antes de aprovar${
+                  validationSummary.warnings > 0 ? ` · ${pluralize(validationSummary.warnings, "alerta", "alertas")}` : ""
+                }.`
+              : bannerState === "warning"
+                ? `Sem bloqueios · ${pluralize(validationSummary.warnings, "alerta", "alertas")} para revisar antes de aprovar.`
+                : "Sem pendências bloqueantes no fechamento."}
           </span>
         </div>
       </div>
@@ -575,7 +728,7 @@ export function RevisaoView({
           <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">{title}</h1>
           <p className="text-[14px] text-[#6B7F6E] mt-1">{imobiliariaNome} - conciliação da competência</p>
           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium mt-2 border ${getOpinionClasses(parecer.status)}`}>
-            {hasBlocking ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
+            {parecer.status === "aprovado_tecnico" ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
             {getOpinionLabel(parecer.status)}
           </span>
         </div>
@@ -602,13 +755,13 @@ export function RevisaoView({
         </div>
       </div>
 
-      <div className={`bg-white border rounded-xl p-5 ${getOpinionClasses(parecer.status)}`}>
+      <div className={`bg-white border border-[#EEF1EE] border-l-4 rounded-xl p-5 ${getOpinionAccentClass(parecer.status)}`}>
         <div className="flex items-start gap-3">
-          <ShieldCheck size={20} className="mt-0.5 shrink-0" />
+          <ShieldCheck size={20} className="mt-0.5 shrink-0 text-[#3D4F3F]" />
           <div className="flex-1">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-[16px] font-bold text-[#1A2B1C]">Parecer automático</h3>
-              <span className="w-fit rounded-full border border-current bg-white/70 px-2.5 py-1 text-[12px] font-medium">
+              <span className="w-fit rounded-full border border-[#D5DDD6] bg-[#F8FAF8] px-2.5 py-1 text-[12px] font-medium text-[#3D4F3F]">
                 {getValidationSummaryLabel(validationSummary)}
               </span>
             </div>
@@ -616,13 +769,15 @@ export function RevisaoView({
             <p className="text-[12px] text-[#6B7F6E] mt-1">
               Este resumo vem das validações automáticas do fechamento, não da confiança da IA.
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {motivosParecer.map((motivo) => (
-                <span key={motivo} className="inline-flex rounded-full bg-white/70 border border-current px-2.5 py-1 text-[11px]">
-                  {motivo}
-                </span>
-              ))}
-            </div>
+            {actionableRechecks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => document.getElementById("pendencias-revisao")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                className="mt-3 inline-flex items-center gap-1 text-[12px] font-semibold text-[#2D8C3A] hover:underline"
+              >
+                Ver pendências →
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -644,17 +799,23 @@ export function RevisaoView({
         </div>
 
         <div className="grid gap-5 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <div className={`rounded-xl border p-5 ${hasBlocking ? "border-[#FCA5A5] bg-[#FEF2F2]" : "border-[#BFE4C7] bg-[#F4F9F5]"}`}>
+          <div className={`rounded-xl border p-5 ${heroTone.card}`}>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Total a repassar</p>
-            <p className={`mt-2 text-[34px] font-bold leading-none tabular-nums ${hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>
+            <p className={`mt-2 text-[34px] font-bold leading-none tabular-nums ${heroTone.value}`}>
               {formatBRL(totals.total_a_repassar)}
             </p>
-            <p className="mt-3 text-[13px] leading-relaxed text-[#3D4F3F]">
-              {totals.valor_comprovado === null
-                ? "Comprovante de repasse ainda não conciliado."
-                : `Comprovante encontrado: ${formatBRL(totals.valor_comprovado)}.`}
-            </p>
+            <div className="mt-3 flex items-start gap-1.5">
+              {repasseConciliacao.tone === "ok" ? (
+                <CheckCircle size={14} className="mt-0.5 shrink-0 text-[#2D8C3A]" />
+              ) : repasseConciliacao.tone === "pendente" ? (
+                <Info size={14} className="mt-0.5 shrink-0 text-[#6B7F6E]" />
+              ) : (
+                <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${repasseConciliacao.tone === "divergente" ? "text-[#DC2626]" : "text-[#B45309]"}`} />
+              )}
+              <p className="text-[13px] leading-relaxed text-[#3D4F3F]">{repasseConciliacao.message}</p>
+            </div>
             <p className="mt-2 text-[12px] leading-relaxed text-[#6B7F6E]">
+              {totals.valor_comprovado !== null ? `Comprovante: ${formatBRL(totals.valor_comprovado)} · ` : ""}
               Data do repasse: <span className="font-semibold text-[#1A2B1C]">{formatDateBR(repasse?.data)}</span>
             </p>
           </div>
@@ -683,7 +844,7 @@ export function RevisaoView({
             {/* Deduções (comissão e despesas) abaixo da discriminação das receitas. */}
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
-              <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
+              <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${pluralize(outrasComissoesDespesas.length, "item", "itens")} no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
               <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
               <MetricTile
                 label="Diferença"
@@ -730,12 +891,12 @@ export function RevisaoView({
                 <MetricTile
                   label="Aluguel médio"
                   value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-                  subtext={`${linhasAluguelValido.length} unidade(s) alugadas com valor`}
+                  subtext={`${pluralize(linhasAluguelValido.length, "unidade alugada", "unidades alugadas")} com valor`}
                 />
                 <MetricTile
                   label="Inadimplência acumulada"
                   value={inadimplenciasAcumuladas.length > 0 ? formatBRL(totalInadimplenciaAcumulada) : "-"}
-                  subtext={inadimplenciasAcumuladas.length > 0 ? `${inadimplenciasAcumuladas.length} débito(s) de meses anteriores` : "Sem seção de inadimplências no documento"}
+                  subtext={inadimplenciasAcumuladas.length > 0 ? `${pluralize(inadimplenciasAcumuladas.length, "débito", "débitos")} de meses anteriores` : "Sem seção de inadimplências no documento"}
                   tone={inadimplenciasAcumuladas.length > 0 ? "danger" : "default"}
                   tooltip="Dívidas acumuladas de competências anteriores listadas na seção INADIMPLÊNCIAS do documento. Não compõem a receita do mês."
                 />
@@ -745,92 +906,89 @@ export function RevisaoView({
         </div>
       </section>
 
-      <section className={`bg-white border rounded-xl px-4 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
-        <Accordion type="single" collapsible>
-          <AccordionItem value="warnings" className="border-0">
-            <AccordionTrigger className="py-3 hover:no-underline">
-              <div className="flex w-full items-center gap-3">
-                <AlertTriangle size={16} className={hasBlocking ? "text-[#DC2626]" : actionableRechecks.length > 0 ? "text-[#F59E0B]" : "text-[#2D8C3A]"} />
-                <div className="min-w-0 text-left">
-                  <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Pendências de revisão</h3>
-                  <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">
-                    {actionableRechecks.length > 0 ? "Itens que precisam de decisão ou documento" : "Sem pendências acionáveis"}
-                  </p>
-                </div>
-                <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#EEF1EE] px-3 text-[12px] font-medium text-[#3D4F3F]">
-                  {failedRechecks.length} bloqueante(s) · {warningRechecks.length} alerta(s)
-                </span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="pb-3">
-              {actionableRechecks.length > 0 ? (
-                <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
-                  {actionableRechecks.map((check) => {
-                    const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
-                    return (
-                      <div key={check.id} className="flex items-start justify-between gap-4 py-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${getCheckClasses(check)}`}>
-                              {getCheckLabel(check)}
-                            </span>
-                            <p className="truncate text-[13px] font-bold text-[#1A2B1C]">{check.label}</p>
-                          </div>
-                          <p className="mt-1.5 text-[12px] leading-snug text-[#3D4F3F]">{check.message}</p>
-                          {isResolved && check.justificativa && (
-                            <div className="mt-2 text-[12px] bg-[#F4F9F5] text-[#1A5C24] px-3 py-2 rounded-lg border border-[#D1E7D6]">
-                              <span className="font-semibold block text-[11px] uppercase tracking-wide text-[#2D8C3A] mb-0.5">Pendência resolvida</span>
-                              <span className="italic">{check.justificativa}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 shrink-0">
-                          <div className="hidden flex-col items-end gap-0.5 md:flex text-right">
-                            <CheckValue label="Correto" value={check.expected} />
-                            <CheckValue label="Consolidado" value={check.actual} />
-                            <CheckValue label="Dif." value={check.difference} />
-                          </div>
-                          {!isResolved && (
-                            check.databaseId ? (
-                              <button
-                                onClick={() => {
-                                  setActiveValidation({
-                                    id: check.databaseId || "",
-                                    fechamento_id: fechamentoId,
-                                    tipo_validacao: check.id,
-                                    mensagem: check.message,
-                                    valor_esperado: check.expected ?? null,
-                                    valor_encontrado: check.actual ?? null,
-                                    diferenca: check.difference ?? null
-                                  })
-                                  setIsResolveModalOpen(true)
-                                }}
-                                className="h-8 px-3 rounded-md bg-[#2D8C3A]/10 text-[#2D8C3A] hover:bg-[#2D8C3A] hover:text-white text-[12px] font-medium transition-colors"
-                              >
-                                Resolver
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => onRefresh && onRefresh()}
-                                className="h-8 px-3 rounded-md border border-[#D5DDD6] bg-white text-[#3D4F3F] hover:bg-[#EEF1EE] text-[12px] font-medium transition-colors"
-                              >
-                                Atualizar
-                              </button>
-                            )
-                          )}
-                        </div>
+      <section id="pendencias-revisao" className={`bg-white border rounded-xl px-4 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
+        {actionableRechecks.length > 0 ? (
+          <Accordion type="multiple" defaultValue={pendenciasDefault}>
+            {failedRechecks.length > 0 && (
+              <AccordionItem value="bloqueios" className="border-0">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="flex w-full items-center gap-3">
+                    <AlertTriangle size={16} className="text-[#DC2626]" />
+                    <div className="min-w-0 text-left">
+                      <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Bloqueios</h3>
+                      <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">Impedem a aprovação — resolva primeiro</p>
+                    </div>
+                    <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#FEE2E2] px-3 text-[12px] font-semibold text-[#991B1B]">
+                      {pluralize(failedRechecks.length, "bloqueio", "bloqueios")}
+                    </span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-3">
+                  <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
+                    {failedRechecks.map((check, index) => (
+                      <div key={check.id} className={index === 0 ? "border-l-2 border-[#DC2626] bg-[#FEF2F2] pl-3" : ""}>
+                        {index === 0 && (
+                          <p className="pt-2 text-[10px] font-bold uppercase tracking-wide text-[#DC2626]">Resolva primeiro</p>
+                        )}
+                        <RecheckRow check={check} onResolve={openResolve} onRefresh={onRefresh} />
                       </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="border-t border-[#EEF1EE] py-3 text-[13px] text-[#3D4F3F]">
-                  Nenhuma pendência financeira ou ausência de documento obrigatório foi encontrada.
-                </p>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+            {warningRechecks.length > 0 && (
+              <AccordionItem value="alertas" className="border-0">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="flex w-full items-center gap-3">
+                    <AlertTriangle size={16} className="text-[#F59E0B]" />
+                    <div className="min-w-0 text-left">
+                      <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Alertas</h3>
+                      <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">Revise antes de aprovar — não bloqueiam</p>
+                    </div>
+                    <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#FEF3C7] px-3 text-[12px] font-semibold text-[#92400E]">
+                      {pluralize(warningRechecks.length, "alerta", "alertas")}
+                    </span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-3">
+                  <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
+                    {warningRechecks.map((check) => (
+                      <RecheckRow key={check.id} check={check} onResolve={openResolve} onRefresh={onRefresh} />
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+            {resolvedRechecks.length > 0 && (
+              <AccordionItem value="resolvidos" className="border-0">
+                <AccordionTrigger className="py-3 hover:no-underline">
+                  <div className="flex w-full items-center gap-3">
+                    <CheckCircle size={16} className="text-[#2D8C3A]" />
+                    <div className="min-w-0 text-left">
+                      <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Resolvidos</h3>
+                      <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">Pendências já justificadas</p>
+                    </div>
+                    <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#E6F4EA] px-3 text-[12px] font-semibold text-[#137333]">
+                      {pluralize(resolvedRechecks.length, "resolvido", "resolvidos")}
+                    </span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-3">
+                  <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
+                    {resolvedRechecks.map((check) => (
+                      <RecheckRow key={check.id} check={check} onResolve={openResolve} onRefresh={onRefresh} />
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
+        ) : (
+          <p className="py-3 text-[13px] text-[#3D4F3F]">
+            Nenhuma pendência financeira ou ausência de documento obrigatório foi encontrada.
+          </p>
+        )}
       </section>
 
       {prestacao && (
@@ -956,7 +1114,7 @@ export function RevisaoView({
         <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="p-4 border-b border-[#EEF1EE] flex justify-between items-center">
             <h3 className="text-[16px] font-bold text-[#1A2B1C]">Acordos e rescisões recebidos no mês</h3>
-            <span className="text-[13px] text-[#6B7F6E]">{acordosRescisoesRecebidos.length} item(ns)</span>
+            <span className="text-[13px] text-[#6B7F6E]">{pluralize(acordosRescisoesRecebidos.length, "item", "itens")}</span>
           </div>
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full min-w-[920px] text-sm">
@@ -1043,7 +1201,7 @@ export function RevisaoView({
               <dd className="text-[#1A2B1C] text-right">{repasse.protocolo ?? "-"}</dd>
             </dl>
           ) : (
-            <p className="text-[13px] text-[#991B1B]">Comprovante nao extraido no pacote real.</p>
+            <p className="text-[13px] text-[#991B1B]">Comprovante não extraído no pacote real.</p>
           )}
         </div>
 
@@ -1115,14 +1273,35 @@ export function RevisaoView({
                 <ReceiptText size={14} />
                 {egestorAction === "previewing" ? "Gerando..." : "Gerar prévia"}
               </button>
-              <button
-                onClick={() => runEgestorAction("send")}
-                disabled={!canSendEgestor || egestorAction !== "idle" || hasSentEgestor}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2D8C3A] px-3 text-[13px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60"
-              >
-                <Send size={14} />
-                {hasSentEgestor ? "Enviado" : egestorAction === "sending" ? "Enviando..." : "Enviar ao eGestor"}
-              </button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    disabled={!canSendEgestor || egestorAction !== "idle" || hasSentEgestor}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#2D8C3A] px-3 text-[13px] font-medium text-white hover:bg-[#1A5C24] disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Send size={14} />
+                    {hasSentEgestor ? "Enviado" : egestorAction === "sending" ? "Enviando..." : "Enviar ao eGestor"}
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Confirmar envio ao eGestor</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {pluralize(egestorLancamentos.length, "lançamento será enviado", "lançamentos serão enviados")} ao eGestor, somando{" "}
+                      {formatBRL(egestorLancamentos.reduce((sum, l) => sum + l.valor, 0))}. Esta ação é externa e não pode ser desfeita.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => runEgestorAction("send")}
+                      className="bg-[#2D8C3A] hover:bg-[#1A5C24]"
+                    >
+                      Confirmar envio
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-[#EEF1EE] pt-2 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0">
               <button
@@ -1277,7 +1456,7 @@ export function RevisaoView({
               <div key={`${item.descricao}-${index}`} className="border border-[#EEF1EE] rounded-lg p-3">
                 <p className="text-[13px] font-bold text-[#1A2B1C]">{item.descricao}</p>
                 <p className="text-[12px] text-[#6B7F6E] mt-1">
-                  {item.apto ?? "Apto nao identificado"} - {item.inquilino ?? "Inquilino nao identificado"}
+                  {item.apto ?? "Apto não identificado"} - {item.inquilino ?? "Inquilino não identificado"}
                 </p>
               </div>
             ))}
@@ -1396,12 +1575,12 @@ export function RevisaoView({
 
       <div className="bg-white border border-[#EEF1EE] rounded-xl p-4 flex justify-between items-center">
         <Link href="/fechamentos" className="text-[14px] text-[#6B7F6E] hover:text-[#3D4F3F] font-medium">
-          Voltar a lista
+          Voltar à lista
         </Link>
         <div className="flex gap-2">
           <button className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors">
             <Download size={14} />
-            Exportar relatorio
+            Exportar relatório
           </button>
           <button
             onClick={() => runEgestorAction("approve")}

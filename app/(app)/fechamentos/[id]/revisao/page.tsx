@@ -110,9 +110,12 @@ export default function RevisaoPage({ params }: PageProps) {
       <CorrectionModal
         open={modal.open}
         onClose={() => setModal((m) => ({ ...m, open: false }))}
+        fechamentoId={id}
         apto={modal.apto}
         inquilino={modal.inquilino}
         valorLido={formatBRL(modal.valor)}
+        valorInicial={modal.valor}
+        onSaved={loadFromApi}
       />
     </>
   )

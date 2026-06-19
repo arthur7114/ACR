@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { Bell } from "lucide-react"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { NotificationsPanel } from "./notifications-panel"
+import { useNotifications } from "@/lib/contexts/notifications-context"
 
 type Crumb = {
   label: string
@@ -96,6 +97,16 @@ export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps
   const fechamentoId = extractFechamentoId(pathname)
   const summary = useFechamentoSummary(fechamentoId)
   const crumbs = buildCrumbs(pathname, summary)
+  const { naoLidas, marcarLidas, pedirPermissaoNavegador } = useNotifications()
+
+  const handleToggleNotifications = () => {
+    if (!showNotifications) {
+      // Gesto do usuario: bom momento para pedir permissao de notificacao do SO.
+      pedirPermissaoNavegador()
+      void marcarLidas()
+    }
+    onToggleNotifications()
+  }
 
   return (
     <header className="fixed top-0 left-[220px] right-0 h-14 bg-white border-b border-[#EEF1EE] pl-6 pr-6 flex items-center justify-between z-30">
@@ -121,11 +132,16 @@ export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps
       <div className="flex items-center gap-4">
         <div className="relative">
           <button
-            onClick={onToggleNotifications}
+            onClick={handleToggleNotifications}
             className="relative p-2 rounded-lg hover:bg-[#EEF1EE] transition-colors"
             aria-label="Notificações"
           >
             <Bell size={18} className="text-[#3D4F3F]" />
+            {naoLidas > 0 && (
+              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#DC2626] text-white text-[10px] font-bold flex items-center justify-center">
+                {naoLidas > 9 ? "9+" : naoLidas}
+              </span>
+            )}
           </button>
 
           {showNotifications && <NotificationsPanel onClose={onToggleNotifications} />}
