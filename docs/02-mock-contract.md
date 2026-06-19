@@ -31,6 +31,14 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 - `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
+- `indicadores`: painel de KPIs da carteira, com sub-abas Visao geral, Receita & repasse, Mapa de calor e Registro de pagamentos. Filtros por competencia, empreendimento e imovel; alternancia valor x percentual. Todos os numeros derivam de dados ja existentes (fechamentos processados, `analise_completa`/PackageTotals e cadastro de imoveis).
+
+### Adicao registrada — tela `indicadores` (2026-06-19)
+
+- Ponto alterado: o contrato nao previa uma tela de indicadores; foi adicionada a partir do prototipo `dashboard-acr-final.html` aprovado pelo usuario.
+- Por que: consolidar a carteira (ocupacao, receita, despesa operacional, repasse, taxa total, cascata potencial x realizado, mapa de calor e registro de pagamentos por apto/inquilino) num unico painel.
+- Decisoes de produto: KPIs principais = ocupacao, receita, despesa, repasse, taxa total (sem card de inadimplencia); despesa operacional = agua + IPTU + seguro incendio; despesa de venda = taxa de intermediacao; inadimplencia acumulada vira insight (nao entra na cascata do mes); itens sem dado (reajustes, historico mensal) aparecem como "aguardando dados"; escala do mapa verde -> amarelo -> vermelho com a linha de media seguindo a mesma escala.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
 ## Fluxo contratado
 

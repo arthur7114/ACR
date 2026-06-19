@@ -76,6 +76,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-06-19 - Tela de Indicadores (KPIs da carteira)
+
+Status: done
+Job: transformar o prototipo `dashboard-acr-final.html` numa tela real `/indicadores`, aplicando os 15 ajustes pedidos e usando apenas dados ja existentes no sistema.
+Outcome entregue: rota `/indicadores` no route-group `(app)` com `IndicadoresView` (4 sub-abas: Visao geral, Receita & repasse, Mapa de calor, Registro de pagamentos). Camada de agregacao `lib/server/indicadores.ts` + `GET /api/indicadores` que le `fechamentos` (colunas planas + `analise_completa`/PackageTotals), `imoveis` (ocupacao/vacancia/potencial) e `regras_comerciais` (taxas). Ajustes aplicados: KPIs reordenados (ocupacao, receita, despesa, repasse, taxa total) sem inadimplencia; despesa operacional = agua+IPTU+seguro e despesa de venda = intermediacao; totalizadores de despesa por categoria; % de despesa operacional; cascata potencial x realizado reconstruida (recebido + vacancia + descontos) com ofensores explicitos; inadimplencia acumulada como insight separado; grafico com ano (Mai/26); toggle valor x percentual; filtro por empreendimento e por imovel; mapa de calor com escala verde->amarelo->vermelho e linha de media seguindo a escala; novo Registro de pagamentos por apto/inquilino. Itens sem dado (reajustes, historico mensal, cadastro de imoveis vazio) aparecem como "aguardando dados". Sidebar e breadcrumb ganharam o item Indicadores. Helpers `formatBRLk`/`formatPercent`/`formatCompetenciaShort` em `lib/format.ts`.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build` passaram. `next start` + `GET /api/indicadores` retornou dados reais de Maio/2026 (receita R$ 68.049,84, despesa operacional R$ 4.636,68, repasse R$ 55.287,97, taxa R$ 4.557,30, cascata reconciliada em 100%); filtros de competencia e empreendimento conferidos; `/indicadores` carregou (HTTP 200). Sem migration (apenas leitura das tabelas existentes).
+Decisoes: aba Insights IA ficou de fora desta entrega; dados ausentes seguem o padrao "aguardando dados"; nenhuma alteracao de schema/extracao.
+Arquivos/docs impactados: `app/(app)/indicadores/page.tsx`, `app/api/indicadores/route.ts`, `lib/server/indicadores.ts`, `lib/indicadores-types.ts`, `components/acr/views/indicadores-view.tsx`, `lib/format.ts`, `components/acr/sidebar.tsx`, `components/acr/topbar.tsx`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: cadastrar imoveis (com `valor_aluguel_esperado`) para destravar ocupacao/vacancia/faturamento potencial; opcionalmente construir a aba Insights IA e expandir extracao de reajustes para remover os "aguardando dados".
+
 ### 2026-06-12 - Multiplas contas eGestor (roteamento por empreendimento)
 
 Status: done
