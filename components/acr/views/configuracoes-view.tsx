@@ -45,6 +45,9 @@ function toDraft(data: EgestorConfigPayload): Draft {
   }
 }
 
+type ContatoItem = { codigo: number; nome: string }
+type ContatosState = Record<string, ContatoItem[] | "loading" | "error">
+
 export function ConfiguracoesView() {
   const [payload, setPayload] = useState<EgestorConfigPayload | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -52,6 +55,7 @@ export function ConfiguracoesView() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [contatosPorConta, setContatosPorConta] = useState<ContatosState>({})
 
   const canSave = useMemo(() => Boolean(draft && !saving), [draft, saving])
   const contaMetaById = useMemo(() => {
@@ -68,6 +72,20 @@ export function ConfiguracoesView() {
         if (data.error) throw new Error(data.error)
         setPayload(data)
         setDraft(toDraft(data))
+        // Busca contatos para cada conta com token configurado.
+        for (const conta of (data as EgestorConfigPayload).contas) {
+          if (!conta.token_configurado) continue
+          setContatosPorConta((prev) => ({ ...prev, [conta.id]: "loading" }))
+          fetch(`/api/egestor/contatos?conta_id=${conta.id}`)
+            .then((res) => res.json())
+            .then((items) => {
+              setContatosPorConta((prev) => ({
+                ...prev,
+                [conta.id]: Array.isArray(items) ? items : "error",
+              }))
+            })
+            .catch(() => setContatosPorConta((prev) => ({ ...prev, [conta.id]: "error" })))
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar configurações."))
       .finally(() => setLoading(false))
@@ -223,16 +241,39 @@ export function ConfiguracoesView() {
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {draft.contas
                     .filter((conta) => conta.id)
-                    .map((conta) => (
-                      <Field key={conta.id} label={`Contato · ${conta.nome}`}>
-                        <input
-                          value={contatoValue(imob.contatos, conta.id!)}
-                          onChange={(e) => updateContato(imob.id, conta.id!, e.target.value ? Number(e.target.value) : null)}
-                          inputMode="numeric"
-                          className={inputClass}
-                        />
-                      </Field>
-                    ))}
+                    .map((conta) => {
+                      const listaContatos = contatosPorConta[conta.id!]
+                      const currentValue = contatoValue(imob.contatos, conta.id!)
+                      return (
+                        <Field key={conta.id} label={`Contato · ${conta.nome}`}>
+                          {Array.isArray(listaContatos) ? (
+                            <select
+                              value={currentValue}
+                              onChange={(e) => updateContato(imob.id, conta.id!, e.target.value ? Number(e.target.value) : null)}
+                              className={inputClass}
+                            >
+                              <option value="">— selecione —</option>
+                              {/* mantém opção do valor atual mesmo que não esteja na lista */}
+                              {currentValue && !listaContatos.some((c) => String(c.codigo) === currentValue) && (
+                                <option value={currentValue}>{currentValue}</option>
+                              )}
+                              {listaContatos.map((c) => (
+                                <option key={c.codigo} value={String(c.codigo)}>{c.nome}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              value={currentValue}
+                              onChange={(e) => updateContato(imob.id, conta.id!, e.target.value ? Number(e.target.value) : null)}
+                              inputMode="numeric"
+                              placeholder={listaContatos === "loading" ? "Carregando…" : undefined}
+                              disabled={listaContatos === "loading"}
+                              className={inputClass}
+                            />
+                          )}
+                        </Field>
+                      )
+                    })}
                 </div>
               </div>
             ))}

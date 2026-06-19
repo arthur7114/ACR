@@ -43,6 +43,14 @@ export class EgestorClient {
     return this.request("GET", "/v1/contatos?fields=nome")
   }
 
+  async getContatos(busca?: string) {
+    const params = new URLSearchParams({ fields: "codigo,nome", orderBy: "nome", limit: "500" })
+    if (busca) params.set("busca", busca)
+    const data = await this.request("GET", `/v1/contatos?${params}`)
+    const rows = Array.isArray(data) ? data : ((data as Record<string, unknown>).dados as unknown[]) ?? []
+    return rows as Array<{ codigo: number; nome: string }>
+  }
+
   async createRecebimento(payload: Record<string, unknown>) {
     return this.request("POST", "/v1/recebimentos", payload) as Promise<EgestorCreateResponse>
   }

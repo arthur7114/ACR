@@ -1368,7 +1368,17 @@ export function RevisaoView({
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getEgestorStatusClasses(lancamento.status)}`}>
                         {getEgestorStatusLabel(lancamento)}
                       </span>
-                      {lancamento.validacao_mensagem && <p className="mt-1 text-[11px] text-[#991B1B]">{lancamento.validacao_mensagem}</p>}
+                      {lancamento.validacao_mensagem && (
+                        lancamento.status === "pendente_config" ? (
+                          <p className="mt-1 text-[11px]">
+                            <Link href="/configuracoes" className="text-[#991B1B] underline underline-offset-2">
+                              {lancamento.validacao_mensagem}
+                            </Link>
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-[#991B1B]">{lancamento.validacao_mensagem}</p>
+                        )
+                      )}
                       {lancamento.anexo_mensagem && <p className="mt-1 text-[11px] text-[#92400E]">{lancamento.anexo_mensagem}</p>}
                       {lancamento.revalidacao_status && (
                         <p className={`mt-1 text-[11px] ${lancamento.revalidacao_status === "ok" ? "text-[#166534]" : "text-[#991B1B]"}`}>
