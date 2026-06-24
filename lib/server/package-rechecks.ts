@@ -117,13 +117,39 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       repasse: nullableMoney(row.repasse),
       confianca: clampConfidence(row.confianca),
     })),
-    acordos_rescisoes_recebidos: (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
-      ...item,
-      valor: roundMoney(item.valor),
-      comissao: item.comissao === null || item.comissao === undefined ? item.comissao ?? null : roundMoney(item.comissao),
-      confianca: clampConfidence(item.confianca),
-    })),
+    acordos_rescisoes_recebidos: dropHallucinatedIntermediacoes(
+      (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
+        ...item,
+        valor: roundMoney(item.valor),
+        comissao: item.comissao === null || item.comissao === undefined ? item.comissao ?? null : roundMoney(item.comissao),
+        confianca: clampConfidence(item.confianca),
+      })),
+      analysis.resumo_financeiro.outras_comissoes_despesas ?? [],
+    ),
   }
+}
+
+// Guarda deterministica: a IA as vezes "inventa" uma intermediacao copiando o
+// valor de uma despesa de utilidade (CAGECE, ENEL, agua...) que aparece em
+// OUTRAS COMISSOES E DESPESAS. Esses fantasmas vem sem apto e sem inquilino e
+// com valor/comissao identicos a uma despesa listada. Quando os tres sinais
+// batem, removemos a linha (intermediacao real tem apto/inquilino ou valor
+// proprio que nao coincide com uma despesa).
+function dropHallucinatedIntermediacoes(
+  items: AcordoRescisaoRecebido[],
+  outrasDespesas: Array<{ valor: number }>,
+): AcordoRescisaoRecebido[] {
+  if (outrasDespesas.length === 0) return items
+  const despesaValores = outrasDespesas.map((d) => roundMoney(d.valor))
+  const bateDespesa = (valor: number | null | undefined) =>
+    typeof valor === "number" && despesaValores.some((d) => Math.abs(d - roundMoney(valor)) <= MONEY_TOLERANCE)
+
+  return items.filter((item) => {
+    if (item.tipo !== "intermediacao") return true
+    const semIdentificacao = !normalizeText(item.apto) && !normalizeText(item.inquilino)
+    if (semIdentificacao && (bateDespesa(item.comissao) || bateDespesa(item.valor))) return false
+    return true
+  })
 }
 
 function normalizeRepasse(analysis: RepasseAnalysis): RepasseAnalysis {
