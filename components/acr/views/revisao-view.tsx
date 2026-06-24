@@ -821,85 +821,162 @@ export function RevisaoView({
           </div>
 
           <div className="space-y-4">
-            {/* Topo: receita recebida + total de vagas de garagem (receitas + acordos). */}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <MetricTile label="Recebido" value={formatBRL(totals.total_receitas)} tone="positive" subtext="Em nome do locador" tooltip="Soma de todos os aluguéis e encargos (água, IPTU, etc.) efetivamente pagos pelos inquilinos nesta competência." />
-              <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Receitas + acordos do mês" tooltip="Total de vagas de garagem das receitas mais as vagas informadas nos acordos/rescisões." />
+            {/* Equação de fluxo: Receitas − Comissão − Despesas = Repasse */}
+            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-center gap-2 rounded-xl border border-[#EEF1EE] bg-[#F8FAF8] px-4 py-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#2D8C3A]">Receitas</p>
+                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#2D8C3A]">{formatBRL(totals.total_receitas)}</p>
+                <p className="text-[11px] text-[#6B7F6E]">Em nome do locador</p>
+              </div>
+              <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#4F46E5]">Comissão</p>
+                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#4F46E5]">{formatBRL(rowTotals.comissao)}</p>
+                <p className="text-[11px] text-[#6B7F6E]">{formatPercent(comissaoRealizadaPercent)} realizada</p>
+              </div>
+              <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">Despesas</p>
+                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#D97706]">{formatBRL(totals.total_despesas)}</p>
+                <p className="text-[11px] text-[#6B7F6E]">{outrasComissoesDespesas.length} item(ns)</p>
+              </div>
+              <span className="px-1 text-[18px] font-light text-[#A0B2A3]">=</span>
+              <div>
+                <p className={`text-[10px] font-semibold uppercase tracking-wide ${hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>Repasse</p>
+                <p className={`mt-0.5 text-[15px] font-bold tabular-nums ${hasBlocking ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>{formatBRL(totals.total_a_repassar)}</p>
+                <p className="text-[11px] text-[#6B7F6E]">
+                  {totals.diferenca_repasse === null
+                    ? "Comprovante pendente"
+                    : totals.diferenca_repasse === 0
+                    ? "Comprovante confere"
+                    : `Diferença: ${formatBRL(totals.diferenca_repasse)}`}
+                </p>
+              </div>
             </div>
 
-            {linhasImoveis.length > 0 && (
-              <div className="space-y-3">
-                <SectionTitle title="Composição do recebido" description="Soma das colunas pagas pelo inquilino." />
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-                  <MetricTile label="Aluguel" value={formatBRL(totals.total_aluguel ?? rowTotals.aluguelComDesconto)} />
-                  <MetricTile label="Garagem" value={formatBRL(totals.total_garagem ?? rowTotals.garagem)} />
-                  <MetricTile label="Vagas garagem" value={`${vagasTotais}`} />
-                  <MetricTile label="Água" value={formatBRL(totals.total_agua ?? rowTotals.agua)} />
-                  <MetricTile label="IPTU" value={formatBRL(totals.total_iptu ?? rowTotals.iptu)} />
-                  <MetricTile label="Seguro incêndio" value={formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)} />
+            {/* Três grupos: Receitas | Comissão | Despesas */}
+            {linhasImoveis.length > 0 ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {/* Receitas */}
+                <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #2D8C3A" }}>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#2D8C3A]">Receitas</p>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Aluguel</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_aluguel ?? rowTotals.aluguelComDesconto)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Garagem</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_garagem ?? rowTotals.garagem)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Vagas garagem</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{vagasTotais}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Água</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_agua ?? rowTotals.agua)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">IPTU</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_iptu ?? rowTotals.iptu)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Seguro incêndio</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comissão */}
+                <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #4F46E5" }}>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#4F46E5]">Comissão de administração</p>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Taxa realizada</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatPercent(comissaoRealizadaPercent)}</span>
+                    </div>
+                    {taxaAdministracao && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Taxa cadastrada</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatPercent(taxaAdministracao)}</span>
+                      </div>
+                    )}
+                    {comissaoCalculada !== null && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Valor calculado</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(comissaoCalculada)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
+                    <span className="font-semibold text-[#4F46E5]">Abatido do repasse</span>
+                    <span className="font-bold tabular-nums text-[#4F46E5]">− {formatBRL(rowTotals.comissao)}</span>
+                  </div>
+                </div>
+
+                {/* Despesas */}
+                <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #D97706" }}>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#D97706]">Outras despesas</p>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Itens no resumo</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{outrasComissoesDespesas.length}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Diferença cálculo x comprovante</span>
+                      <span className={`font-medium tabular-nums ${totals.diferenca_repasse ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>
+                        {totals.diferenca_repasse === null ? "—" : formatBRL(totals.diferenca_repasse)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
+                    <span className="font-semibold text-[#D97706]">Abatido do repasse</span>
+                    <span className="font-bold tabular-nums text-[#D97706]">− {formatBRL(totals.total_despesas)}</span>
+                  </div>
                 </div>
               </div>
+            ) : (
+              /* Fallback sem linhas de imóveis */
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
+                <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
+                <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
+                <MetricTile
+                  label="Diferença"
+                  value={totals.diferenca_repasse === null ? "-" : formatBRL(totals.diferenca_repasse)}
+                  tone={totals.diferenca_repasse ? "danger" : "positive"}
+                  subtext="Entre cálculo e comprovante"
+                  tooltip="Diferença entre o Total a Repassar (calculado) e o valor pago encontrado no comprovante de repasse."
+                />
+              </div>
             )}
-
-            {/* Deduções (comissão e despesas) abaixo da discriminação das receitas. */}
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
-              <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${pluralize(outrasComissoesDespesas.length, "item", "itens")} no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
-              <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
-              <MetricTile
-                label="Diferença"
-                value={totals.diferenca_repasse === null ? "-" : formatBRL(totals.diferenca_repasse)}
-                tone={totals.diferenca_repasse ? "danger" : "positive"}
-                subtext="Entre cálculo e comprovante"
-                tooltip="Diferença entre o Total a Repassar (calculado) e o valor pago encontrado no comprovante de repasse."
-              />
-            </div>
 
             {linhasImoveis.length > 0 && (
               <div className="space-y-3">
                 <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância e Airbnb são contagens separadas." />
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <MetricTile
-                    label="Alugadas"
-                    value={`${linhasAlugadas.length}`}
-                    subtext="Com pagamento ou cobrança ativa"
-                    tone="positive"
-                  />
-                  <MetricTile
-                    label="Inadimplentes"
-                    value={`${inadimplentes}`}
-                    subtext="Unidades com inquilino e aluguel zerado/obs"
-                    tone={inadimplentes > 0 ? "danger" : "default"}
-                  />
-                  <MetricTile
-                    label="Aptos vagos"
-                    value={`${vagos}`}
-                    subtext="Apartamentos vagos ou disponíveis"
-                    tone={vagos > 0 ? "warning" : "default"}
-                  />
-                  <MetricTile
-                    label="Airbnb"
-                    value={`${airbnb}`}
-                    subtext="Operadas como Airbnb (não contam como apartamentos vagos)"
-                  />
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                  <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
+                  <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
+                  <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
+                  <MetricTile label="Airbnb" value={`${airbnb}`} subtext="Não contam como vagos" />
+                  <div className="col-span-2">
+                    <MetricTile
+                      label="Aluguel médio"
+                      value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
+                      subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {linhasImoveis.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <MetricTile
-                  label="Aluguel médio"
-                  value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-                  subtext={`${pluralize(linhasAluguelValido.length, "unidade alugada", "unidades alugadas")} com valor`}
-                />
-                <MetricTile
-                  label="Inadimplência acumulada"
-                  value={inadimplenciasAcumuladas.length > 0 ? formatBRL(totalInadimplenciaAcumulada) : "-"}
-                  subtext={inadimplenciasAcumuladas.length > 0 ? `${pluralize(inadimplenciasAcumuladas.length, "débito", "débitos")} de meses anteriores` : "Sem seção de inadimplências no documento"}
-                  tone={inadimplenciasAcumuladas.length > 0 ? "danger" : "default"}
-                  tooltip="Dívidas acumuladas de competências anteriores listadas na seção INADIMPLÊNCIAS do documento. Não compõem a receita do mês."
-                />
+                {inadimplenciasAcumuladas.length > 0 && (
+                  <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#DC2626]">Inadimplência acumulada</p>
+                      <p className="mt-0.5 text-[12px] text-[#991B1B]">{inadimplenciasAcumuladas.length} débito(s) de meses anteriores</p>
+                    </div>
+                    <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">{formatBRL(totalInadimplenciaAcumulada)}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
