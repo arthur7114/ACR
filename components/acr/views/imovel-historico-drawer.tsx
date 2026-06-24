@@ -142,7 +142,7 @@ export function ImovelHistoricoDrawer({
               <AlertTriangle size={16} />
               {error}
             </div>
-          ) : !historico || historico.eventos.length === 0 ? (
+          ) : (!historico || historico.eventos.length === 0) && acordos.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#D5DDD6] bg-white px-4 py-12 text-center text-[14px] text-[#6B7F6E]">
               Nenhum lançamento encontrado para esta unidade nas prestações já processadas.
             </div>
@@ -168,7 +168,7 @@ export function ImovelHistoricoDrawer({
               )}
 
               {/* Métricas */}
-              {resumo && (
+              {resumo && historico && historico.eventos.length > 0 && (
                 <div className="mb-4 grid grid-cols-3 gap-2">
                   <Metric label="Meses obs." value={resumo.mesesObservados} />
                   <Metric label="Pago" value={resumo.mesesPago} tone="#166534" />
@@ -182,7 +182,7 @@ export function ImovelHistoricoDrawer({
               )}
 
               {/* Inquilinos */}
-              {historico.inquilinos.length > 0 && (
+              {historico && historico.inquilinos.length > 0 && (
                 <div className="mb-4 rounded-xl border border-[#EEF1EE] bg-white p-4">
                   <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">
                     <User size={13} /> Inquilinos
@@ -216,13 +216,17 @@ export function ImovelHistoricoDrawer({
               )}
 
               {/* Linha do tempo */}
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Linha do tempo</p>
-              <div className="relative pl-7">
-                <div className="absolute left-[10px] top-1 bottom-1 w-0.5 bg-[#E1E8E2]" />
-                {historico.eventos.map((evento, index) => (
-                  <TimelineItem key={`${evento.competencia}-${evento.tipo}-${index}`} evento={evento} />
-                ))}
-              </div>
+              {historico && historico.eventos.length > 0 && (
+                <>
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Linha do tempo</p>
+                  <div className="relative pl-7">
+                    <div className="absolute left-[10px] top-1 bottom-1 w-0.5 bg-[#E1E8E2]" />
+                    {historico.eventos.map((evento, index) => (
+                      <TimelineItem key={`${evento.competencia}-${evento.tipo}-${index}`} evento={evento} />
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

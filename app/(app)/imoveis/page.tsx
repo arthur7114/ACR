@@ -64,6 +64,12 @@ export default function ImoveisPage() {
         })
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? "Falha ao sincronizar imóveis.")
+        // Sincroniza tambem os acordos parcelados (best-effort; nao falha o fluxo).
+        await fetch("/api/acordos/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        }).catch(() => {})
         await reload()
         return { criados: json.criados, atualizados: json.atualizados, totalUnidades: json.totalUnidades }
       }}
