@@ -34,6 +34,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
+import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 
 type StatusEvento = {
   id: string
@@ -50,6 +51,7 @@ interface RevisaoViewProps {
   fechamento?: {
     imobiliarias?: { nome: string } | null
     empreendimentos?: { nome: string } | null
+    empreendimento_id?: string
     competencia: string
     comentario_operador?: string | null
     status?: string
@@ -543,6 +545,7 @@ export function RevisaoView({
 
   const [filtroTexto, setFiltroTexto] = useState("")
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "alugados" | "vagos" | "inadimplentes" | "airbnb">("todos")
+  const [historicoUnidade, setHistoricoUnidade] = useState<string | null>(null)
 
   const [comentario, setComentario] = useState(fechamento?.comentario_operador ?? "")
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
@@ -655,6 +658,7 @@ export function RevisaoView({
     if (onRefresh) await onRefresh()
   }
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
+  const empreendimentoId = fechamento?.empreendimento_id ?? null
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliária não identificada"
   const competencia = prestacao?.competencia ?? fechamento?.competencia ?? "Competência não identificada"
   const competenciaMesAno = competenciaParaMesAno(prestacao?.competencia ?? fechamento?.competencia)
@@ -1256,7 +1260,19 @@ export function RevisaoView({
                   const badge = getRowBadge(row, acordoAptos)
                   return (
                   <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
-                    <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">{row.apto}</td>
+                    <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">
+                      {empreendimentoId && row.apto?.trim() ? (
+                        <button
+                          onClick={() => setHistoricoUnidade(row.apto)}
+                          className="text-[#2D8C3A] hover:underline"
+                          title="Ver histórico do imóvel"
+                        >
+                          {row.apto}
+                        </button>
+                      ) : (
+                        row.apto
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-[#3D4F3F]">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span>{displayInquilino(row.inquilino)}</span>
@@ -1345,7 +1361,15 @@ export function RevisaoView({
                   return (
                     <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                       <td className="px-4 py-3 font-medium text-[#1A2B1C]">{labelTipoAcordo(item.tipo)}</td>
-                      <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">
+                        {empreendimentoId && item.apto?.trim() ? (
+                          <button onClick={() => setHistoricoUnidade(item.apto as string)} className="text-[#2D8C3A] hover:underline" title="Ver histórico do imóvel">
+                            {item.apto}
+                          </button>
+                        ) : (
+                          item.apto ?? "-"
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(item.valor)}</td>
@@ -1837,6 +1861,15 @@ export function RevisaoView({
         validation={activeValidation}
         onResolveSuccess={() => onRefresh && onRefresh()}
       />
+
+      {empreendimentoId && historicoUnidade && (
+        <ImovelHistoricoDrawer
+          empreendimentoId={empreendimentoId}
+          empreendimentoNome={empreendimentoNome}
+          unidade={historicoUnidade}
+          onClose={() => setHistoricoUnidade(null)}
+        />
+      )}
     </div>
   )
 }
