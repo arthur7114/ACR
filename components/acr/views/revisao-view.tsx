@@ -257,20 +257,35 @@ function isAirbnbRow(row: ReceitaPorImovel) {
   return /air\s*bnb/.test(text)
 }
 
+// Linha de INTERMEDIACAO na tabela (apto com observacao 'INTERMEDIACAO'): tem
+// categoria propria (tabela de Intermediacao). Nao e alugada, vaga nem inadimplente.
+function isIntermediacaoRow(row: ReceitaPorImovel) {
+  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
+  return /intermedia/.test(text)
+}
+
 function isVacantRow(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row)) return false
+  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
   const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
   return isInquilinoVazio(row.inquilino) || /\b(vago|vacancia|vacância|disponivel|disponível)\b/.test(text)
 }
 
 function isDelinquentRow(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row)) return false
+  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
   const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
   return !isVacantRow(row) && ((row.aluguel === null || row.aluguel === 0) || /inadimpl/.test(text))
 }
 
 function isRentedCurrentRow(row: ReceitaPorImovel) {
-  return !isAirbnbRow(row) && !isVacantRow(row) && !isDelinquentRow(row)
+  return !isAirbnbRow(row) && !isIntermediacaoRow(row) && !isVacantRow(row) && !isDelinquentRow(row)
+}
+
+// Linha explicitamente marcada como INADIMPLENCIA (vigencia do mes nao paga). Um
+// acordo de mes anterior (ex.: pagou abril) nao descaracteriza essa inadimplencia.
+function isExplicitInadimplencia(row: ReceitaPorImovel) {
+  if (isAirbnbRow(row)) return false
+  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
+  return /inadimpl/.test(text)
 }
 
 function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()) {
@@ -278,6 +293,13 @@ function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()
     return {
       label: "Airbnb",
       classes: "border-[#99F6E4] bg-[#CCFBF1] text-[#0F766E]",
+    }
+  }
+
+  if (isIntermediacaoRow(row)) {
+    return {
+      label: "Intermediação",
+      classes: "border-[#E9D5FF] bg-[#F3E8FF] text-[#7C3AED]",
     }
   }
 
@@ -289,8 +311,9 @@ function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()
   }
 
   if (isDelinquentRow(row)) {
-    // Apto quitado via acordo/rescisao no mes nao e inadimplente.
-    if (acordoAptos.has(aptoKey(row.apto))) {
+    // Linha marcada INADIMPLENCIA e sempre inadimplente, mesmo que o apto tenha um
+    // acordo (de mes anterior) recebido no mes — sao competencias distintas.
+    if (acordoAptos.has(aptoKey(row.apto)) && !isExplicitInadimplencia(row)) {
       return {
         label: "Acordo",
         classes: "border-[#BFDBFE] bg-[#DBEAFE] text-[#1E40AF]",
@@ -611,9 +634,19 @@ export function RevisaoView({
   const title = `${empreendimentoNome} - ${competencia}`
   const resumo = prestacao?.resumo_financeiro
   const linhasImoveis = prestacao?.receitas_por_imovel ?? []
-  const acordosRescisoesRecebidos = prestacao?.acordos_rescisoes_recebidos ?? []
-  // Aptos que foram quitados via acordo/rescisao no mes (nao contam como inadimplentes).
+  const acordosRescisoesRecebidosTodos = prestacao?.acordos_rescisoes_recebidos ?? []
+  // Intermediacao tem categoria propria (tabela separada acima das receitas).
+  const intermediacoes = acordosRescisoesRecebidosTodos.filter((item) => item.tipo === "intermediacao")
+  // Acordos/rescisoes "puros" (sem intermediacao) para a tabela de acordos.
+  const acordosRescisoesRecebidos = acordosRescisoesRecebidosTodos.filter((item) => item.tipo !== "intermediacao")
+  // Aptos quitados via acordo/rescisao do PROPRIO mes nao contam como inadimplentes;
+  // acordos de competencia anterior (ex.: pagou abril, devendo maio) NAO removem a inadimplencia.
   const acordoAptos = new Set(acordosRescisoesRecebidos.map((item) => aptoKey(item.apto)).filter(Boolean))
+  // #3: comissao retida nos acordos/rescisoes do mes soma-se a comissao de administracao.
+  const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
+  // Total da intermediacao (taxa retida) e seu percentual, quando houver.
+  const intermediacaoValor = intermediacoes.reduce((sum, item) => sum + (item.comissao ?? item.valor ?? 0), 0)
+  const intermediacaoPercent = intermediacoes.find((item) => typeof item.percentual === "number")?.percentual ?? null
   // Vagas de garagem informadas dentro dos acordos/rescisoes (ex.: "GARAGEM MOTO + GARAGEM CARRO").
   const vagasAcordos = acordosRescisoesRecebidos.reduce((sum, item) => sum + vagasDoAcordo(item), 0)
   const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
@@ -629,32 +662,27 @@ export function RevisaoView({
   // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
   const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
-  // Intermediação vem do documento (quando existir), nunca do cadastro da imobiliária
+  // Intermediação: categoria própria (acordos tipo "intermediacao"). Fallback para
+  // dado antigo que ainda trazia intermediação dentro de outras_comissoes_despesas.
   const intermediacaoDocumento = (() => {
+    if (intermediacoes.length > 0) return { percent: intermediacaoPercent, valor: intermediacaoValor }
     const item = outrasComissoesDespesas.find((d) => /intermedia/i.test(d.descricao))
     if (!item) return null
     const matchPercent = (texto: string | null | undefined) => {
       const m = texto?.match(/(\d+(?:[.,]\d+)?)\s*%/)
       return m ? Number(m[1].replace(",", ".")) : null
     }
-    let percent = matchPercent(item.descricao)
-    // Fallback (ainda do documento): procurar o % nas observacoes de acordos de intermediacao.
-    if (percent === null) {
-      for (const acordo of acordosRescisoesRecebidos) {
-        if (/intermedia/i.test(acordo.observacao ?? "")) {
-          percent = matchPercent(acordo.observacao)
-          if (percent !== null) break
-        }
-      }
-    }
-    return { percent, valor: item.valor }
+    return { percent: matchPercent(item.descricao), valor: item.valor }
   })()
+  // #3: comissão de administração exibida = comissão das linhas + comissão dos acordos do mês.
+  const comissaoAdminExibida = rowTotals.comissao + acordosComissao
   const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
     ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
     : 0
-  const isInadimplenteEfetivo = (row: ReceitaPorImovel) => isDelinquentRow(row) && !acordoAptos.has(aptoKey(row.apto))
+  const isInadimplenteEfetivo = (row: ReceitaPorImovel) =>
+    isDelinquentRow(row) && (isExplicitInadimplencia(row) || !acordoAptos.has(aptoKey(row.apto)))
   const inadimplentes = linhasImoveis.filter(isInadimplenteEfetivo).length
   const vagos = linhasImoveis.filter(isVacantRow).length
   const airbnb = linhasImoveis.filter(isAirbnbRow).length
@@ -821,8 +849,8 @@ export function RevisaoView({
           </div>
 
           <div className="space-y-4">
-            {/* Equação de fluxo: Receitas − Comissão − Despesas = Repasse */}
-            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr] items-center gap-2 rounded-xl border border-[#EEF1EE] bg-[#F8FAF8] px-4 py-3">
+            {/* Equação de fluxo: Receitas − Comissão − Intermediação − Despesas = Repasse */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-3 rounded-xl border border-[#EEF1EE] bg-[#F8FAF8] px-4 py-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#2D8C3A]">Receitas</p>
                 <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#2D8C3A]">{formatBRL(totals.total_receitas)}</p>
@@ -831,9 +859,19 @@ export function RevisaoView({
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#4F46E5]">Comissão</p>
-                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#4F46E5]">{formatBRL(rowTotals.comissao)}</p>
+                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#4F46E5]">{formatBRL(comissaoAdminExibida)}</p>
                 <p className="text-[11px] text-[#6B7F6E]">{formatPercent(comissaoRealizadaPercent)} realizada</p>
               </div>
+              {intermediacaoDocumento && intermediacaoDocumento.valor > 0 && (
+                <>
+                  <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[#7C3AED]">Intermediação</p>
+                    <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#7C3AED]">{formatBRL(intermediacaoDocumento.valor)}</p>
+                    <p className="text-[11px] text-[#6B7F6E]">{intermediacaoDocumento.percent !== null ? `${formatPercent(intermediacaoDocumento.percent)} retida` : "taxa retida"}</p>
+                  </div>
+                </>
+              )}
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">Despesas</p>
@@ -870,10 +908,6 @@ export function RevisaoView({
                       <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_garagem ?? rowTotals.garagem)}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
-                      <span className="text-[#6B7F6E]">Vagas garagem</span>
-                      <span className="font-medium tabular-nums text-[#1A2B1C]">{vagasTotais}</span>
-                    </div>
-                    <div className="flex justify-between text-[13px]">
                       <span className="text-[#6B7F6E]">Água</span>
                       <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_agua ?? rowTotals.agua)}</span>
                     </div>
@@ -908,10 +942,20 @@ export function RevisaoView({
                         <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(comissaoCalculada)}</span>
                       </div>
                     )}
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-[#6B7F6E]">Comissão das linhas</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(rowTotals.comissao)}</span>
+                    </div>
+                    {acordosComissao > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Comissão de acordos</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">+ {formatBRL(acordosComissao)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
                     <span className="font-semibold text-[#4F46E5]">Abatido do repasse</span>
-                    <span className="font-bold tabular-nums text-[#4F46E5]">− {formatBRL(rowTotals.comissao)}</span>
+                    <span className="font-bold tabular-nums text-[#4F46E5]">− {formatBRL(comissaoAdminExibida)}</span>
                   </div>
                 </div>
 
@@ -960,13 +1004,12 @@ export function RevisaoView({
                   <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
                   <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
                   <MetricTile label="Airbnb" value={`${airbnb}`} subtext="Não contam como vagos" />
-                  <div className="col-span-2">
-                    <MetricTile
-                      label="Aluguel médio"
-                      value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-                      subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
-                    />
-                  </div>
+                  <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
+                  <MetricTile
+                    label="Aluguel médio"
+                    value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
+                    subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
+                  />
                 </div>
                 {inadimplenciasAcumuladas.length > 0 && (
                   <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
@@ -1068,6 +1111,44 @@ export function RevisaoView({
         )}
       </section>
 
+      {intermediacoes.length > 0 && (
+        <section className="bg-white rounded-xl border border-[#E9D5FF] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#EEF1EE] bg-[#FAF5FF] p-4">
+            <div>
+              <h3 className="text-[16px] font-bold text-[#1A2B1C]">Intermediação</h3>
+              <p className="text-[12px] text-[#6B7F6E]">Comissão de intermediação recebida no mês — categoria separada das receitas e da inadimplência</p>
+            </div>
+            <span className="text-[13px] font-semibold text-[#7C3AED] tabular-nums">{formatBRL(intermediacaoValor)}</span>
+          </div>
+          <div className="max-h-[320px] overflow-auto">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
+                  {["Apto", "Inquilino", "Valor recebido", "Comissão interm.", "%", "Competência", "Obs"].map((header) => (
+                    <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {intermediacoes.map((item, index) => (
+                  <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#FAF5FF]">
+                    <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                    <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
+                    <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(item.valor)}</td>
+                    <td className="px-4 py-3 tabular-nums font-semibold text-[#7C3AED]">{typeof item.comissao === "number" ? formatBRL(item.comissao) : "-"}</td>
+                    <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{typeof item.percentual === "number" ? formatPercent(item.percentual) : "-"}</td>
+                    <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
+                    <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {prestacao && (
         <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="p-4 border-b border-[#EEF1EE] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -1107,7 +1188,7 @@ export function RevisaoView({
           <table className="w-full min-w-[1320px] text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Total c/ desc.", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
+                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
                   <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
                     {header}
                   </th>
@@ -1146,7 +1227,6 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
-                    <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(getTotalComDesconto(row))}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
                     <td className={`px-4 py-3.5 tabular-nums whitespace-nowrap ${row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "font-semibold text-[#B45309]" : "text-[#3D4F3F]"}`} title={row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "Aluguel referente a mês anterior" : undefined}>
@@ -1158,7 +1238,7 @@ export function RevisaoView({
                 })
               ) : (
                 <tr>
-                  <td colSpan={15} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
+                  <td colSpan={14} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
               )}
             </tbody>
@@ -1175,7 +1255,6 @@ export function RevisaoView({
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.iptu)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.seguro)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
-                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.totalComDesconto)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>
                 <td className="px-4 py-3"></td>

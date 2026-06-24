@@ -67,10 +67,15 @@ export interface ReceitaPorImovel {
 
 export const acordoRescisaoRecebidoSchema = z
   .object({
-    tipo: z.enum(["acordo", "rescisao", "outro"]),
+    tipo: z.enum(["acordo", "rescisao", "intermediacao", "outro"]),
     apto: z.string().nullable(),
     inquilino: z.string().nullable(),
     valor: z.number(),
+    // Comissao retida sobre este recebimento (ex.: comissao do acordo, taxa de
+    // intermediacao). Soma-se a comissao de administracao das linhas regulares.
+    comissao: z.number().nullable().optional(),
+    // Percentual de intermediacao impresso no documento (ex.: 60). null quando ausente.
+    percentual: z.number().nullable().optional(),
     vagas_garagem: z.number().int().min(0).nullable().optional(),
     competencia_original: z.string().nullable(),
     competencia_recebimento: z.string().nullable(),

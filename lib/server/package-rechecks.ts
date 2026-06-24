@@ -2,12 +2,10 @@ import type {
   AcordoRescisaoRecebido,
   ClassifiedDocument,
   DespesasAnalysis,
-  InadimplenciaAcumulada,
   PackageTotals,
   PrestacaoAnalysis,
   PrestacaoGuardrail,
   PrestacaoRecheck,
-  ReceitaPorImovel,
   ReajusteAnalysis,
   RepasseAnalysis,
   TechnicalOpinion,
@@ -42,8 +40,11 @@ export interface PackageValidationInput {
 }
 
 export function validatePackage(input: PackageValidationInput) {
-  const sanitizedPrestacao = input.prestacao ? sanitizeInadimplenciaRows(input.prestacao) : null
-  const normalizedPrestacao = sanitizedPrestacao ? normalizePrestacao(sanitizedPrestacao) : null
+  // A inadimplencia da vigencia do mes corrente PERMANECE em receitas_por_imovel
+  // (linha zerada, marcada INADIMPLENCIA) para contar como inadimplente do mes.
+  // Apenas a secao dedicada de dividas acumuladas vai para inadimplencias_acumuladas
+  // (responsabilidade da extracao). Por isso nao movemos mais linhas aqui.
+  const normalizedPrestacao = input.prestacao ? normalizePrestacao(input.prestacao) : null
   const normalizedDespesas = input.despesas ? normalizeDespesas(input.despesas) : null
   const normalizedRepasse = input.repasse ? normalizeRepasse(input.repasse) : null
   const normalizedReajuste = input.reajuste ? normalizeReajuste(input.reajuste) : null
@@ -119,6 +120,7 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
     acordos_rescisoes_recebidos: (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
       ...item,
       valor: roundMoney(item.valor),
+      comissao: item.comissao === null || item.comissao === undefined ? item.comissao ?? null : roundMoney(item.comissao),
       confianca: clampConfidence(item.confianca),
     })),
   }
@@ -441,46 +443,6 @@ function checkRequiredComprovante(documents: ClassifiedDocument[], repasseEmbuti
     label: "Comprovante de repasse",
     status: "failed",
     message: "Comprovante de repasse nao foi enviado. Envie o documento antes de aprovar.",
-  }
-}
-
-// B1: linhas de inadimplencia (aluguel nao pago) nao podem entrar em receitas.
-// Detector conservador: linha sem dinheiro recebido (total/comissao/repasse zerados)
-// E marcada como inadimplencia na observacao/inquilino, exceto unidades Airbnb.
-function isInadimplenciaRow(row: ReceitaPorImovel): boolean {
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toUpperCase()
-  if (text.includes("AIRBNB") || text.includes("AIR BNB")) return false
-  if (!/INADIMPL/.test(text)) return false
-  const semEntrada = (row.total ?? 0) === 0 && (row.comissao ?? 0) === 0 && (row.repasse ?? 0) === 0
-  return semEntrada
-}
-
-// Move linhas de inadimplencia indevidamente classificadas como receita para
-// inadimplencias_acumuladas (divida em aberto, nao receita do mes).
-function sanitizeInadimplenciaRows(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
-  const movidas: InadimplenciaAcumulada[] = []
-  const receitas = analysis.receitas_por_imovel.filter((row) => {
-    if (!isInadimplenciaRow(row)) return true
-    movidas.push({
-      apto: row.apto || null,
-      inquilino: row.inquilino || null,
-      valor: row.total || 0,
-      condicao: null,
-      observacao: row.observacao,
-      confianca: row.confianca,
-    })
-    return false
-  })
-
-  if (movidas.length === 0) return analysis
-
-  return {
-    ...analysis,
-    receitas_por_imovel: receitas,
-    inadimplencias_acumuladas: [...(analysis.inadimplencias_acumuladas ?? []), ...movidas],
   }
 }
 
