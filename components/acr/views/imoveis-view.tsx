@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { AlertTriangle, Building2, CheckCircle, Edit3, EyeOff, FileUp, Home, Loader2, RotateCcw, Save, Search, Trash2 } from "lucide-react"
+import { AlertTriangle, Building2, CheckCircle, Edit3, EyeOff, FileUp, History, Home, Loader2, RotateCcw, Save, Search, Trash2 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus, RegraComercial } from "@/lib/cadastros-types"
+import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 
 type Tab = "imoveis" | "imobiliarias" | "empreendimentos" | "regras"
 
@@ -84,6 +85,7 @@ interface ImoveisViewProps {
   onReactivateRegraComercial: (id: string) => Promise<void>
   onDeleteRegraComercial: (id: string) => Promise<void>
   onImportImoveis: (file: File) => Promise<void>
+  onSyncImoveis: () => Promise<{ criados: number; atualizados: number; totalUnidades: number }>
 }
 
 type ConfirmState = {
@@ -182,6 +184,7 @@ export function ImoveisView({
   onReactivateRegraComercial,
   onDeleteRegraComercial,
   onImportImoveis,
+  onSyncImoveis,
 }: ImoveisViewProps) {
   const [tab, setTab] = useState<Tab>("imoveis")
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
@@ -195,6 +198,23 @@ export function ImoveisView({
   const [regraComercialForm, setRegraComercialForm] = useState<RegraComercialForm>(emptyRegraComercial)
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [historicoImovel, setHistoricoImovel] = useState<Imovel | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  async function handleSync() {
+    setSyncing(true)
+    setActionError(null)
+    setSyncMsg(null)
+    try {
+      const r = await onSyncImoveis()
+      setSyncMsg(`Sincronizado: ${r.criados} criados, ${r.atualizados} atualizados (${r.totalUnidades} unidades).`)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Não foi possível sincronizar imóveis.")
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const filteredImoveis = useMemo(() => {
     const normalized = normalize(query)
@@ -298,6 +318,15 @@ export function ImoveisView({
             />
             Mostrar ocultos
           </label>
+          <button
+            onClick={() => void handleSync()}
+            disabled={syncing}
+            title="Cria/atualiza imóveis a partir das prestações já processadas"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[14px] font-medium text-[#3D4F3F] transition-colors hover:bg-[#EEF1EE] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {syncing ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}
+            Sincronizar dos fechamentos
+          </button>
           <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-4 text-[14px] font-medium text-[#3D4F3F] transition-colors hover:bg-[#EEF1EE]">
             <FileUp size={16} />
             Importar CSV
@@ -330,6 +359,13 @@ export function ImoveisView({
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-[13px] text-[#DC2626]">
           <AlertTriangle size={16} />
           {actionError ?? error}
+        </div>
+      )}
+
+      {syncMsg && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#BBF7D0] bg-[#EFF7F1] px-3 py-2 text-[13px] text-[#166534]">
+          <CheckCircle size={16} />
+          {syncMsg}
         </div>
       )}
 
@@ -405,7 +441,13 @@ export function ImoveisView({
                         <tr key={imovel.id} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                           <td className="px-4 py-3 font-medium text-[#3D4F3F]">{imovel.codigo_imobiliaria}</td>
                           <td className="px-4 py-3 text-[#3D4F3F]">
-                            <div className="font-medium">{imovel.unidade}</div>
+                            <button
+                              onClick={() => setHistoricoImovel(imovel)}
+                              className="text-left font-medium text-[#2D8C3A] hover:underline"
+                              title="Ver histórico do imóvel"
+                            >
+                              {imovel.unidade}
+                            </button>
                             <div className="text-[12px] text-[#6B7F6E]">{imovel.inquilino_nome || "-"}</div>
                           </td>
                           <td className="px-4 py-3 text-[#3D4F3F]">{imovel.imobiliarias?.nome ?? "-"}</td>
@@ -416,6 +458,7 @@ export function ImoveisView({
                           <td className="px-4 py-3">
                             <RowActions
                               active={imovel.ativo}
+                              onHistory={() => setHistoricoImovel(imovel)}
                               onEdit={() => setImovelForm(fromImovel(imovel))}
                               onHide={() => askHide("imóvel", `${imovel.codigo_imobiliaria} · ${imovel.unidade}`, () => onDeactivateImovel(imovel.id))}
                               onReactivate={() => void runAction(() => onReactivateImovel(imovel.id), setActionError)}
@@ -643,6 +686,16 @@ export function ImoveisView({
           onError={setActionError}
         />
       )}
+
+      {historicoImovel && (
+        <ImovelHistoricoDrawer
+          empreendimentoId={historicoImovel.empreendimento_id}
+          empreendimentoNome={historicoImovel.empreendimentos?.nome ?? "Empreendimento"}
+          unidade={historicoImovel.unidade}
+          codigo={historicoImovel.codigo_imobiliaria}
+          onClose={() => setHistoricoImovel(null)}
+        />
+      )}
     </div>
   )
 }
@@ -747,16 +800,23 @@ function RowActions({
   onHide,
   onReactivate,
   onDelete,
+  onHistory,
 }: {
   active: boolean
   onEdit: () => void
   onHide: () => void
   onReactivate: () => void
   onDelete: () => void
+  onHistory?: () => void
 }) {
   const iconBtn = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white hover:bg-[#EEF1EE]"
   return (
     <div className="flex items-center gap-2">
+      {onHistory && (
+        <button onClick={onHistory} className={`${iconBtn} text-[#2D8C3A] hover:bg-[#EFF7F1]`} title="Histórico do imóvel">
+          <History size={14} />
+        </button>
+      )}
       <button onClick={onEdit} className={`${iconBtn} text-[#3D4F3F]`} title="Editar">
         <Edit3 size={14} />
       </button>

@@ -23,6 +23,7 @@ export default function ImoveisPage() {
     includeInactive,
     setIncludeInactive,
     importImoveis,
+    reload,
   } = useCadastros()
 
   return (
@@ -54,6 +55,17 @@ export default function ImoveisPage() {
       onDeleteRegraComercial={(id) => deleteCadastro(URLS.regras, id)}
       onImportImoveis={async (file) => {
         await importImoveis(file)
+      }}
+      onSyncImoveis={async () => {
+        const response = await fetch("/api/cadastros/imoveis/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? "Falha ao sincronizar imóveis.")
+        await reload()
+        return { criados: json.criados, atualizados: json.atualizados, totalUnidades: json.totalUnidades }
       }}
     />
   )
