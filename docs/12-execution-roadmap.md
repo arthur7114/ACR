@@ -84,6 +84,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-06-24 - Historico por imovel (linha do tempo) + ajustes pos-reuniao
+
+Status: done
+Job: pos-reuniao com o cliente — corrigir comissao+despesas/8-itens, espelhar colunas de acordos do PDF, impedir intermediacao fantasma, e iniciar o "gerenciador de imoveis" com historico por imovel.
+Outcome entregue: (1) revisao — comissao de administracao passa a somar a comissao retida em acordos/atrasos (display), tabela de acordos/rescisoes ganhou colunas Comissao e Repasse + linha de Total (espelha o PDF). (2) Extracao — guarda deterministica `dropHallucinatedIntermediacoes` em `package-rechecks` descarta itens tipo=intermediacao sem apto/inquilino cujo valor coincide com uma despesa (CAGECE/ENEL); prompt reforcado. GM II reprocessado e batendo com a planilha. (3) Historico por imovel (Nivel 1, derivado de `analise_completa`): `lib/server/imovel-historico.ts` + `GET /api/imoveis/historico`, drawer `ImovelHistoricoDrawer` com linha do tempo de eventos (pago/inadimplente/vago/acordo/rescisao/atraso/intermediacao), resumo e periodos por inquilino; aba Imoveis com unidade clicavel. (4) `lib/server/sync-imoveis.ts` + `POST /api/cadastros/imoveis/sync` + botao "Sincronizar dos fechamentos" que popula/atualiza o cadastro de imoveis (unidade, inquilino, status, aluguel) a partir das prestacoes.
+Validacao: `tsc --noEmit`, `pnpm lint` e `pnpm build` passaram; `GET /api/imoveis/historico` retornou a trajetoria real da unidade 8 do GM II (proporcional + rescisao 935,98 com comissao 65,52). Sem migration (apenas leitura/escrita das tabelas existentes). Layout escolhido com o cliente via brainstorm (Versao A — linha do tempo).
+Decisoes: Nivel 1 (derivado) primeiro, sem tabela de eventos persistida (Nivel 2 fica para depois); sync nao sobrescreve taxa/observacoes editadas manualmente; populacao em massa do cadastro depende de acao do usuario na tela.
+Arquivos/docs impactados: `lib/imovel-historico-types.ts`, `lib/server/imovel-historico.ts`, `lib/server/sync-imoveis.ts`, `app/api/imoveis/historico/route.ts`, `app/api/cadastros/imoveis/sync/route.ts`, `components/acr/views/imovel-historico-drawer.tsx`, `components/acr/views/imoveis-view.tsx`, `app/(app)/imoveis/page.tsx`, `components/acr/views/revisao-view.tsx`, `lib/server/package-rechecks.ts`, `lib/server/ai-agents/prestacao-alive-agent.ts`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: clicar "Sincronizar dos fechamentos" para popular o cadastro; depois, Nivel 2 (tabela de eventos persistida + baixa de parcelas de acordo), relatorio de locacao na analise e valores editaveis.
+
 ### 2026-06-19 - Tela de Indicadores (KPIs da carteira)
 
 Status: done
