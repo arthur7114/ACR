@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   AlertTriangle,
   ArrowLeftRight,
   CalendarClock,
   CheckCircle,
+  Circle,
   DoorOpen,
   Handshake,
   Loader2,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import type { EventoImovel, EventoTipo, ImovelHistorico } from "@/lib/imovel-historico-types"
+import type { Acordo } from "@/lib/acordos-types"
 
 interface ImovelHistoricoDrawerProps {
   empreendimentoId: string
@@ -44,6 +46,38 @@ export function ImovelHistoricoDrawer({
   const [historico, setHistorico] = useState<ImovelHistorico | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [acordos, setAcordos] = useState<Acordo[]>([])
+  const [baixando, setBaixando] = useState<string | null>(null)
+
+  const loadAcordos = useCallback(() => {
+    const url = `/api/acordos?empreendimento_id=${encodeURIComponent(empreendimentoId)}&unidade=${encodeURIComponent(unidade)}`
+    return fetch(url)
+      .then(async (response) => {
+        const json = await response.json()
+        if (!response.ok) return [] as Acordo[]
+        return (json.acordos ?? []) as Acordo[]
+      })
+      .then(setAcordos)
+      .catch(() => setAcordos([]))
+  }, [empreendimentoId, unidade])
+
+  useEffect(() => {
+    void loadAcordos()
+  }, [loadAcordos])
+
+  async function toggleParcela(parcelaId: string, pago: boolean) {
+    setBaixando(parcelaId)
+    try {
+      await fetch("/api/acordos/parcelas", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parcela_id: parcelaId, pago }),
+      })
+      await loadAcordos()
+    } finally {
+      setBaixando(null)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -169,6 +203,18 @@ export function ImovelHistoricoDrawer({
                 </div>
               )}
 
+              {/* Acordos parcelados (Nível 2) */}
+              {acordos.length > 0 && (
+                <div className="mb-4">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Acordos parcelados</p>
+                  <div className="space-y-3">
+                    {acordos.map((acordo) => (
+                      <AcordoCard key={acordo.id} acordo={acordo} baixando={baixando} onToggle={toggleParcela} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Linha do tempo */}
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Linha do tempo</p>
               <div className="relative pl-7">
@@ -181,6 +227,80 @@ export function ImovelHistoricoDrawer({
           )}
         </div>
       </aside>
+    </div>
+  )
+}
+
+function AcordoCard({
+  acordo,
+  baixando,
+  onToggle,
+}: {
+  acordo: Acordo
+  baixando: string | null
+  onToggle: (parcelaId: string, pago: boolean) => void
+}) {
+  const total = acordo.totalParcelas ?? acordo.parcelas.length
+  const pct = total > 0 ? Math.round((acordo.parcelasPagas / total) * 100) : 0
+  const quitado = acordo.status === "quitado"
+  return (
+    <div className="rounded-xl border border-[#EEF1EE] bg-white p-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] font-semibold text-[#1A2B1C]">
+              {acordo.tipo === "rescisao" ? "Acordo de rescisão" : "Acordo"}
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={quitado ? { background: "#EFF7F1", color: "#166534" } : { background: "#FFF7ED", color: "#9A3412" }}
+            >
+              {quitado ? "Quitado" : "Em aberto"}
+            </span>
+          </div>
+          {acordo.inquilino && <p className="text-[13px] text-[#3D4F3F]">{acordo.inquilino}</p>}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[13px] font-bold tabular-nums text-[#1A2B1C]">
+            {formatBRL(acordo.valorPago)}
+            {acordo.valorTotal ? <span className="font-normal text-[#6B7F6E]"> / {formatBRL(acordo.valorTotal)}</span> : null}
+          </p>
+          <p className="text-[11px] tabular-nums text-[#6B7F6E]">{acordo.parcelasPagas}/{total} parcelas</p>
+        </div>
+      </div>
+
+      {/* barra de progresso */}
+      <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#EEF1EE]">
+        <div className="h-full rounded-full bg-[#2D8C3A]" style={{ width: `${pct}%` }} />
+      </div>
+
+      {/* parcelas */}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {acordo.parcelas.map((parcela) => {
+          const pago = parcela.status === "pago"
+          const isBusy = baixando === parcela.id
+          return (
+            <button
+              key={parcela.id}
+              onClick={() => onToggle(parcela.id, !pago)}
+              disabled={isBusy}
+              title={
+                pago
+                  ? `Parcela ${parcela.numero} paga${parcela.competenciaPagamento ? ` (${mesAno(parcela.competenciaPagamento)})` : ""} — clique para estornar`
+                  : `Marcar parcela ${parcela.numero} como paga`
+              }
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                pago
+                  ? "border-[#BBF7D0] bg-[#EFF7F1] text-[#166534] hover:bg-[#DCFCE7]"
+                  : "border-[#D5DDD6] bg-white text-[#6B7F6E] hover:bg-[#EEF1EE]"
+              }`}
+            >
+              {isBusy ? <Loader2 size={12} className="animate-spin" /> : pago ? <CheckCircle size={12} /> : <Circle size={12} />}
+              {parcela.numero}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
