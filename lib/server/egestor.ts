@@ -94,7 +94,7 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
 
   const conta = await resolveContaForFechamento(supabase, fechamento)
   const maps = await getMapeamentos(supabase, conta.id)
-  const codContato = await resolveContato(supabase, fechamento, conta.id)
+  const codContato = await resolveContato(supabase, fechamento, conta)
   const drafts = buildDrafts(fechamento)
   const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft))
   const { data: sentRows, error: sentError } = await supabase
@@ -297,8 +297,8 @@ async function uploadAnexos(supabase: SupabaseClient, client: EgestorClient, lan
         tags: lancamento.tags ?? [],
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao anexar documento."
-      await markAnexoPendente(supabase, lancamento.id, message)
+      const raw = error instanceof Error ? error.message : "Falha ao anexar documento."
+      await markAnexoPendente(supabase, lancamento.id, friendlyAnexoError(raw))
       return
     }
   }
@@ -551,25 +551,113 @@ async function resolveContaForFechamento(supabase: SupabaseClient, fechamento: F
   return getContaFromSingleton(supabase)
 }
 
-// Contato eGestor por (imobiliaria, conta). Fallback para a coluna legada apenas na conta Global.
-async function resolveContato(supabase: SupabaseClient, fechamento: FechamentoRow, contaId: string): Promise<number | null> {
+// Contato eGestor por (imobiliaria, conta). Ordem de resolucao:
+// 1) mapeamento explicito (egestor_imobiliaria_contatos);
+// 2) coluna legada (apenas na conta Global);
+// 3) busca automatica na API do eGestor pelo nome/tag da imobiliaria, cacheando
+//    o resultado. Assim qualquer imobiliaria que tenha contato cadastrado no
+//    eGestor fica lancavel sem mapeamento manual, e imobiliarias duplicadas
+//    passam a resolver sozinhas (cada registro recebe seu proprio contato).
+async function resolveContato(supabase: SupabaseClient, fechamento: FechamentoRow, conta: DbConta): Promise<number | null> {
   const imobiliariaId = fechamento.imobiliarias?.id ?? null
-  const legacyContato = contaId === GLOBAL_CONTA_ID ? fechamento.imobiliarias?.egestor_contato_id ?? null : null
-  if (!imobiliariaId) return legacyContato
+  const legacyContato = conta.id === GLOBAL_CONTA_ID ? fechamento.imobiliarias?.egestor_contato_id ?? null : null
 
-  const { data, error } = await supabase
-    .from("egestor_imobiliaria_contatos")
-    .select("egestor_contato_id")
-    .eq("imobiliaria_id", imobiliariaId)
-    .eq("conta_id", contaId)
-    .maybeSingle()
-
-  if (error) {
-    if (isMissingRelation(error, "egestor_imobiliaria_contatos")) return legacyContato
-    throw error
+  if (imobiliariaId) {
+    const { data, error } = await supabase
+      .from("egestor_imobiliaria_contatos")
+      .select("egestor_contato_id")
+      .eq("imobiliaria_id", imobiliariaId)
+      .eq("conta_id", conta.id)
+      .maybeSingle()
+    if (error && !isMissingRelation(error, "egestor_imobiliaria_contatos")) throw error
+    const mapped = (data?.egestor_contato_id as number | null | undefined) ?? null
+    if (mapped !== null) return mapped
   }
 
-  return (data?.egestor_contato_id as number | null | undefined) ?? legacyContato
+  if (legacyContato !== null) return legacyContato
+
+  return resolveContatoViaApi(supabase, fechamento, conta, imobiliariaId)
+}
+
+// Busca o contato no eGestor pelo nome/tag da imobiliaria quando nao ha mapeamento.
+// Sucesso -> grava em egestor_imobiliaria_contatos para reuso. Ambiguo/sem token
+// -> retorna null (nao chuta um contato errado; o lancamento fica pendente_config).
+async function resolveContatoViaApi(
+  supabase: SupabaseClient,
+  fechamento: FechamentoRow,
+  conta: DbConta,
+  imobiliariaId: string | null,
+): Promise<number | null> {
+  if (!conta.personal_token) return null
+  const nome = (fechamento.imobiliarias?.egestor_tag_id || fechamento.imobiliarias?.nome || "").trim()
+  if (!nome) return null
+
+  let codigo: number | null = null
+  try {
+    const client = new EgestorClient({ personalToken: conta.personal_token })
+    // Busca todos os contatos (o filtro do servidor e ignorado e o filtro local
+    // seria sensivel a acento) e casa de forma normalizada/por tokens.
+    const contatos = await client.getContatos()
+    codigo = matchContatoPorNome(contatos, nome)
+  } catch {
+    return null
+  }
+  if (codigo === null) return null
+
+  if (imobiliariaId) {
+    await supabase
+      .from("egestor_imobiliaria_contatos")
+      .upsert(
+        { imobiliaria_id: imobiliariaId, conta_id: conta.id, egestor_contato_id: codigo },
+        { onConflict: "imobiliaria_id,conta_id" },
+      )
+      .then(() => undefined, () => undefined)
+  }
+  return codigo
+}
+
+function normalizeNomeContato(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+const CONTATO_STOPWORDS = new Set([
+  "imobiliaria", "imoveis", "imovel", "ltda", "me", "epp", "eireli", "sa", "s", "a",
+  "e", "de", "da", "do", "dos", "das",
+])
+
+function tokensSignificativos(norm: string): string[] {
+  return norm.split(" ").filter((t) => t.length > 1 && !CONTATO_STOPWORDS.has(t))
+}
+
+// Match conservador, em camadas: (1) nome exato normalizado; (2) o nome do
+// contato contem o nome buscado por inteiro; (3) todos os tokens significativos
+// do nome buscado (ignorando "imobiliaria/imoveis/ltda"...) presentes em um unico
+// contato. Qualquer ambiguidade -> null (nao chuta contato errado).
+function matchContatoPorNome(contatos: Array<{ codigo: number; nome: string }>, nome: string): number | null {
+  if (!contatos.length) return null
+  const alvo = normalizeNomeContato(nome)
+  if (!alvo) return null
+
+  const exatos = contatos.filter((c) => normalizeNomeContato(c.nome) === alvo)
+  if (exatos.length >= 1) return exatos.length === 1 ? exatos[0].codigo : null
+
+  const contemAlvo = contatos.filter((c) => normalizeNomeContato(c.nome).includes(alvo))
+  if (contemAlvo.length === 1) return contemAlvo[0].codigo
+
+  const tokensAlvo = tokensSignificativos(alvo)
+  if (tokensAlvo.length > 0) {
+    const candidatos = contatos.filter((c) => {
+      const tc = tokensSignificativos(normalizeNomeContato(c.nome))
+      return tc.length > 0 && tokensAlvo.every((t) => tc.includes(t))
+    })
+    if (candidatos.length === 1) return candidatos[0].codigo
+  }
+  return null
 }
 
 async function getMapeamentos(supabase: SupabaseClient, contaId: string) {
@@ -633,6 +721,15 @@ async function logStatusEvento(
     usuario,
     motivo,
   })
+}
+
+// Traduz erros comuns do upload de anexo (Disco Virtual) em orientacao acionavel.
+// O lancamento financeiro ja foi enviado; isto afeta apenas o anexo do documento.
+function friendlyAnexoError(raw: string): string {
+  if (/acesso|permiss/i.test(raw)) {
+    return 'eGestor: o usuario do token nao tem permissao de "Disco Virtual" (anexos). Habilite o Disco Virtual para esse usuario no eGestor e clique em "Reenviar anexos". O lancamento ja foi enviado.'
+  }
+  return raw
 }
 
 async function markAnexoPendente(supabase: SupabaseClient, lancamentoId: string, message: string) {

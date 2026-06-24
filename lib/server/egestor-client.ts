@@ -44,11 +44,25 @@ export class EgestorClient {
   }
 
   async getContatos(busca?: string) {
-    const params = new URLSearchParams({ fields: "codigo,nome", orderBy: "nome", limit: "500" })
-    if (busca) params.set("busca", busca)
-    const data = await this.request("GET", `/v1/contatos?${params}`)
-    const rows = Array.isArray(data) ? data : ((data as Record<string, unknown>).dados as unknown[]) ?? []
-    return rows as Array<{ codigo: number; nome: string }>
+    // A API do eGestor pagina (~50/pagina) e IGNORA o parametro de busca, entao
+    // percorremos todas as paginas (via data.data + next_page_url) e filtramos
+    // localmente. A resposta usa a chave "data" (nao "dados").
+    const all: Array<{ codigo: number; nome: string }> = []
+    const MAX_PAGES = 30
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const params = new URLSearchParams({ fields: "codigo,nome", orderBy: "nome", page: String(page) })
+      const data = await this.request("GET", `/v1/contatos?${params}`)
+      const obj = (data ?? {}) as Record<string, unknown>
+      const rows = (Array.isArray(data) ? data : (obj.data ?? obj.dados ?? [])) as Array<{ codigo: number; nome: string }>
+      all.push(...rows)
+      const lastPage = Number(obj.last_page ?? 1)
+      if (rows.length === 0 || !obj.next_page_url || page >= lastPage) break
+    }
+    if (busca) {
+      const q = busca.trim().toLowerCase()
+      return all.filter((c) => (c.nome ?? "").toLowerCase().includes(q))
+    }
+    return all
   }
 
   async createRecebimento(payload: Record<string, unknown>) {
