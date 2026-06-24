@@ -25,7 +25,8 @@ function isAirbnb(row: ReceitaPorImovel): boolean {
 function statusDaLinha(row: ReceitaPorImovel): string {
   if (isAirbnb(row)) return "ocupado"
   const obs = (row.observacao ?? "").toLowerCase()
-  if (/desocupad|vag[ao]\b|vazio|sem inquilino/.test(obs)) return "vago"
+  // Atencao: "VAGA DE GARAGEM" e vaga de estacionamento, NAO imovel vago.
+  if (/desocupad|vazio|sem inquilino|\bvago\b/.test(obs)) return "vago"
   if (/inadimpl/.test(obs)) return "inadimplente"
   if (num(row.total) <= 0 && num(row.aluguel) <= 0) return "vago"
   return "ocupado"

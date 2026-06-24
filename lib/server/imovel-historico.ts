@@ -52,7 +52,8 @@ function isAirbnb(row: ReceitaPorImovel): boolean {
 function classificarReceita(row: ReceitaPorImovel): EventoTipo {
   if (isAirbnb(row)) return "pago"
   const obs = (row.observacao ?? "").toLowerCase()
-  if (/desocupad|vag[ao]\b|vazio|sem inquilino/.test(obs)) return "vago"
+  // Atencao: "VAGA DE GARAGEM" e vaga de estacionamento, NAO imovel vago.
+  if (/desocupad|vazio|sem inquilino|\bvago\b/.test(obs)) return "vago"
   if (/inadimpl/.test(obs)) return "inadimplente"
   const total = num(row.total)
   const aluguel = num(row.aluguel)
