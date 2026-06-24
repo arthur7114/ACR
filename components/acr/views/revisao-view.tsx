@@ -291,7 +291,7 @@ function isExplicitInadimplencia(row: ReceitaPorImovel) {
 function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()) {
   if (isAirbnbRow(row)) {
     return {
-      label: "Airbnb",
+      label: "Aplicativo",
       classes: "border-[#99F6E4] bg-[#CCFBF1] text-[#0F766E]",
     }
   }
@@ -842,29 +842,9 @@ export function RevisaoView({
           </div>
         </div>
 
-        <div className="grid gap-5 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
-          <div className={`rounded-xl border p-5 ${heroTone.card}`}>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Total a repassar</p>
-            <p className={`mt-2 text-[34px] font-bold leading-none tabular-nums ${heroTone.value}`}>
-              {formatBRL(totals.total_a_repassar)}
-            </p>
-            <div className="mt-3 flex items-start gap-1.5">
-              {repasseConciliacao.tone === "ok" ? (
-                <CheckCircle size={14} className="mt-0.5 shrink-0 text-[#2D8C3A]" />
-              ) : repasseConciliacao.tone === "pendente" ? (
-                <Info size={14} className="mt-0.5 shrink-0 text-[#6B7F6E]" />
-              ) : (
-                <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${repasseConciliacao.tone === "divergente" ? "text-[#DC2626]" : "text-[#B45309]"}`} />
-              )}
-              <p className="text-[13px] leading-relaxed text-[#3D4F3F]">{repasseConciliacao.message}</p>
-            </div>
-            <p className="mt-2 text-[12px] leading-relaxed text-[#6B7F6E]">
-              {totals.valor_comprovado !== null ? `Comprovante: ${formatBRL(totals.valor_comprovado)} · ` : ""}
-              Data do repasse: <span className="font-semibold text-[#1A2B1C]">{formatDateBR(repasse?.data)}</span>
-            </p>
-          </div>
-
-          <div className="space-y-4">
+        <div className="space-y-5 p-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="space-y-4">
             {/* Equação de fluxo: Receitas − Comissão − Intermediação − Despesas = Repasse */}
             <div className="flex flex-wrap items-center gap-x-2 gap-y-3 rounded-xl border border-[#EEF1EE] bg-[#F8FAF8] px-4 py-3">
               <div>
@@ -1011,34 +991,65 @@ export function RevisaoView({
                 />
               </div>
             )}
+            </div>
 
-            {linhasImoveis.length > 0 && (
-              <div className="space-y-3">
-                <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância e Airbnb são contagens separadas." />
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-                  <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
-                  <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
-                  <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
-                  <MetricTile label="Airbnb" value={`${airbnb}`} subtext="Não contam como vagos" />
-                  <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
-                  <MetricTile
-                    label="Aluguel médio"
-                    value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-                    subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
-                  />
+            {/* Lateral: total a repassar + recebido (conforme o layout aprovado) */}
+            <aside className="space-y-4">
+              <div className={`rounded-xl border p-5 ${heroTone.card}`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Total a repassar</p>
+                <p className={`mt-2 text-[30px] font-bold leading-none tabular-nums ${heroTone.value}`}>
+                  {formatBRL(totals.total_a_repassar)}
+                </p>
+                <div className="mt-3 flex items-start gap-1.5">
+                  {repasseConciliacao.tone === "ok" ? (
+                    <CheckCircle size={14} className="mt-0.5 shrink-0 text-[#2D8C3A]" />
+                  ) : repasseConciliacao.tone === "pendente" ? (
+                    <Info size={14} className="mt-0.5 shrink-0 text-[#6B7F6E]" />
+                  ) : (
+                    <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${repasseConciliacao.tone === "divergente" ? "text-[#DC2626]" : "text-[#B45309]"}`} />
+                  )}
+                  <p className="text-[13px] leading-relaxed text-[#3D4F3F]">{repasseConciliacao.message}</p>
                 </div>
-                {inadimplenciasAcumuladas.length > 0 && (
-                  <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#DC2626]">Inadimplência acumulada</p>
-                      <p className="mt-0.5 text-[12px] text-[#991B1B]">{inadimplenciasAcumuladas.length} débito(s) de meses anteriores</p>
-                    </div>
-                    <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">{formatBRL(totalInadimplenciaAcumulada)}</p>
-                  </div>
-                )}
+                <p className="mt-2 text-[12px] leading-relaxed text-[#6B7F6E]">
+                  {totals.valor_comprovado !== null ? `Comprovante: ${formatBRL(totals.valor_comprovado)} · ` : ""}
+                  Data do repasse: <span className="font-semibold text-[#1A2B1C]">{formatDateBR(repasse?.data)}</span>
+                </p>
               </div>
-            )}
+
+              <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Recebido</p>
+                <p className="mt-2 text-[24px] font-bold leading-none tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_receitas)}</p>
+                <p className="mt-1 text-[12px] text-[#6B7F6E]">Em nome do locador</p>
+              </div>
+            </aside>
           </div>
+
+          {linhasImoveis.length > 0 && (
+            <div className="space-y-3">
+              <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância e aplicativos são contagens separadas." />
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
+                <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
+                <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
+                <MetricTile label="Aplicativos" value={`${airbnb}`} subtext="Não contam como vagos" />
+                <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
+                <MetricTile
+                  label="Aluguel médio"
+                  value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
+                  subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
+                />
+              </div>
+              {inadimplenciasAcumuladas.length > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#DC2626]">Inadimplência acumulada</p>
+                    <p className="mt-0.5 text-[12px] text-[#991B1B]">{inadimplenciasAcumuladas.length} débito(s) de meses anteriores</p>
+                  </div>
+                  <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">{formatBRL(totalInadimplenciaAcumulada)}</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -1193,7 +1204,7 @@ export function RevisaoView({
                       filtroStatus === status ? "bg-white text-[#1A5C24] shadow-sm border border-[#C3DEC9]" : "text-[#6B7F6E] hover:text-[#3D4F3F]"
                     }`}
                   >
-                    {status}
+                    {status === "airbnb" ? "Aplicativos" : status}
                   </button>
                 ))}
               </div>
