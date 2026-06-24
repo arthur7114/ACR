@@ -695,6 +695,10 @@ export function RevisaoView({
   // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
   const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
+  // A intermediação tem categoria própria (acima das receitas). Quando ela aparece
+  // dentro de outras_comissoes_despesas (dado antigo), removemos da lista/contagem
+  // de "outras despesas" — o total monetario do documento ja a desconsidera.
+  const outrasDespesasExibicao = outrasComissoesDespesas.filter((d) => !/intermedia/i.test(d.descricao))
   // Intermediação: categoria própria (acordos tipo "intermediacao"). Fallback para
   // dado antigo que ainda trazia intermediação dentro de outras_comissoes_despesas.
   const intermediacaoDocumento = (() => {
@@ -707,8 +711,12 @@ export function RevisaoView({
     }
     return { percent: matchPercent(item.descricao), valor: item.valor }
   })()
-  // #3: comissão de administração exibida = comissão das linhas + comissão dos acordos do mês.
-  const comissaoAdminExibida = rowTotals.comissao + acordosComissao
+  // #3: comissão de administração exibida = total de comissões do documento (inclui a
+  // comissão sobre recebimentos de acordos/atrasos). Fallback: comissão das linhas +
+  // comissão dos acordos, quando o documento não trouxer o consolidado.
+  const comissaoAdminExibida = resumo?.comissao_administracao ?? rowTotals.comissao + acordosComissao
+  // Parte da comissão que vem além das linhas regulares (acordos/atrasos do mês).
+  const comissaoOutras = Math.max(Math.round((comissaoAdminExibida - rowTotals.comissao) * 100) / 100, 0)
   const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
@@ -889,7 +897,7 @@ export function RevisaoView({
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">Despesas</p>
                 <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#D97706]">{formatBRL(totals.total_despesas)}</p>
-                <p className="text-[11px] text-[#6B7F6E]">{outrasComissoesDespesas.length} item(ns)</p>
+                <p className="text-[11px] text-[#6B7F6E]">{outrasDespesasExibicao.length} item(ns)</p>
               </div>
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">=</span>
               <div>
@@ -959,10 +967,10 @@ export function RevisaoView({
                       <span className="text-[#6B7F6E]">Comissão das linhas</span>
                       <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(rowTotals.comissao)}</span>
                     </div>
-                    {acordosComissao > 0 && (
+                    {comissaoOutras > 0 && (
                       <div className="flex justify-between text-[13px]">
-                        <span className="text-[#6B7F6E]">Comissão de acordos</span>
-                        <span className="font-medium tabular-nums text-[#1A2B1C]">+ {formatBRL(acordosComissao)}</span>
+                        <span className="text-[#6B7F6E]">Comissão de acordos/atrasos</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">+ {formatBRL(comissaoOutras)}</span>
                       </div>
                     )}
                   </div>
@@ -978,7 +986,7 @@ export function RevisaoView({
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[#6B7F6E]">Itens no resumo</span>
-                      <span className="font-medium tabular-nums text-[#1A2B1C]">{outrasComissoesDespesas.length}</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{outrasDespesasExibicao.length}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[#6B7F6E]">Diferença cálculo x comprovante</span>
@@ -997,7 +1005,7 @@ export function RevisaoView({
               /* Fallback sem linhas de imóveis */
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
-                <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasComissoesDespesas.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
+                <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasDespesasExibicao.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
                 <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
                 <MetricTile
                   label="Diferença"
@@ -1736,11 +1744,11 @@ export function RevisaoView({
                   </dl>
                 </div>
 
-                {outrasComissoesDespesas.length > 0 && (
+                {outrasDespesasExibicao.length > 0 && (
                   <div className="mt-5 border-t border-[#EEF1EE] pt-4">
                     <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">Outras comissões e despesas no resumo</p>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
-                      {outrasComissoesDespesas.map((item) => (
+                      {outrasDespesasExibicao.map((item) => (
                         <div key={`${item.descricao}-${item.valor}`} className="flex justify-between gap-3 rounded-lg border border-[#EEF1EE] px-3 py-2">
                           <span className="text-[13px] text-[#3D4F3F]">{item.descricao}</span>
                           <span className="text-[13px] font-bold text-[#1A2B1C] tabular-nums">{formatBRL(item.valor)}</span>
