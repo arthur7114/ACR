@@ -94,6 +94,16 @@ Decisoes: Nivel 1 (derivado) primeiro, sem tabela de eventos persistida (Nivel 2
 Arquivos/docs impactados: `lib/imovel-historico-types.ts`, `lib/server/imovel-historico.ts`, `lib/server/sync-imoveis.ts`, `app/api/imoveis/historico/route.ts`, `app/api/cadastros/imoveis/sync/route.ts`, `components/acr/views/imovel-historico-drawer.tsx`, `components/acr/views/imoveis-view.tsx`, `app/(app)/imoveis/page.tsx`, `components/acr/views/revisao-view.tsx`, `lib/server/package-rechecks.ts`, `lib/server/ai-agents/prestacao-alive-agent.ts`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
 Proxima acao: clicar "Sincronizar dos fechamentos" para popular o cadastro; depois, Nivel 2 (tabela de eventos persistida + baixa de parcelas de acordo), relatorio de locacao na analise e valores editaveis.
 
+### 2026-06-24 - Nivel 2: acordos parcelados + baixa de parcelas
+
+Status: done
+Job: persistir acordos/rescisoes parcelados e permitir dar baixa nas parcelas (ata: "dar baixa nas parcelas acordadas").
+Outcome entregue: migration `202606240001_acordos_parcelas.sql` (tabelas `acordos` + `acordo_parcelas`) aplicada em producao. `lib/server/acordos.ts`: `syncAcordosFromFechamentos` detecta acordos parcelados em `acordos_rescisoes_recebidos` E `inadimplencias_acumuladas` (padrao "PARCELA x/y"), persiste e da baixa automatica nas parcelas recebidas (idempotente; nao desfaz baixa manual). `GET /api/acordos`, `POST /api/acordos/sync`, `PATCH /api/acordos/parcelas` (baixa/estorno manual). Drawer ganhou a secao "Acordos parcelados" com barra de progresso e baixa por parcela; aparece mesmo quando a unidade so tem dados em inadimplencias (timeline vazia). Botao "Sincronizar dos fechamentos" passou a sincronizar imoveis + acordos.
+Validacao: migration aplicada via pooler; sync do GM II = 1 acordo, 2 parcelas baixadas; `GET /api/acordos` da unidade 17 (FRANCIVALDO) retornou 7 parcelas, 2 pagas (2/7 e 3/7 em mai/26), valorPago 600 / valorTotal 2100 (estimado); baixa manual da parcela 1 e estorno conferidos; re-sync idempotente (0 baixas novas). `tsc`/`lint`/`build` limpos. Degradacao graciosa antes da migration confirmada.
+Decisoes: parcela detectada tanto na secao de acordos quanto na de inadimplencias; valor_total estimado por valor_parcela*total quando o documento nao traz a quebra; baixa manual marca origem='manual' e nao e revertida pelo sync.
+Arquivos/docs impactados: `supabase/migrations/202606240001_acordos_parcelas.sql`, `lib/acordos-types.ts`, `lib/server/acordos.ts`, `app/api/acordos/route.ts`, `app/api/acordos/sync/route.ts`, `app/api/acordos/parcelas/route.ts`, `components/acr/views/imovel-historico-drawer.tsx`, `app/(app)/imoveis/page.tsx`, `docs/02-mock-contract.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: relatorio de locacao na analise; valores editaveis; alinhar a formula da taxa realizada (6,64%) com o Marcio.
+
 ### 2026-06-19 - Tela de Indicadores (KPIs da carteira)
 
 Status: done
