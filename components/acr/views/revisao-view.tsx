@@ -469,6 +469,23 @@ function intermediacaoPercentDe(item: AcordoRescisaoRecebido) {
   return null
 }
 
+// Rotulo do tipo de recebimento do mes. "atraso" = aluguel de mes anterior
+// quitado agora (inadimplencia paga); distinto de acordo/rescisao negociados.
+function labelTipoAcordo(tipo: AcordoRescisaoRecebido["tipo"]) {
+  switch (tipo) {
+    case "atraso":
+      return "Inadimplência paga"
+    case "intermediacao":
+      return "Intermediação"
+    case "rescisao":
+      return "Rescisão"
+    case "acordo":
+      return "Acordo"
+    default:
+      return "Outro"
+  }
+}
+
 function formatDateBR(value: string | null | undefined) {
   if (!value) return "-"
   const date = new Date(`${value}T00:00:00`)
@@ -1313,7 +1330,7 @@ export function RevisaoView({
               <tbody>
                 {acordosRescisoesRecebidos.map((item, index) => (
                   <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
-                    <td className="px-4 py-3 font-medium capitalize text-[#1A2B1C]">{item.tipo}</td>
+                    <td className="px-4 py-3 font-medium text-[#1A2B1C]">{labelTipoAcordo(item.tipo)}</td>
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                     <td className="px-4 py-3 tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(item.valor)}</td>

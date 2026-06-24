@@ -67,7 +67,7 @@ export interface ReceitaPorImovel {
 
 export const acordoRescisaoRecebidoSchema = z
   .object({
-    tipo: z.enum(["acordo", "rescisao", "intermediacao", "outro"]),
+    tipo: z.enum(["acordo", "rescisao", "intermediacao", "atraso", "outro"]),
     apto: z.string().nullable(),
     inquilino: z.string().nullable(),
     valor: z.number(),

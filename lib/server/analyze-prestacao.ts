@@ -103,7 +103,7 @@ const schema = {
           "confianca",
         ],
         properties: {
-          tipo: { type: "string", enum: ["acordo", "rescisao", "intermediacao", "outro"] },
+          tipo: { type: "string", enum: ["acordo", "rescisao", "intermediacao", "atraso", "outro"] },
           apto: { type: ["string", "null"] },
           inquilino: { type: ["string", "null"] },
           valor: { type: "number" },
