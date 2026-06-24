@@ -671,6 +671,9 @@ export function RevisaoView({
   const acordoAptos = new Set(acordosRescisoesRecebidos.map((item) => aptoKey(item.apto)).filter(Boolean))
   // #3: comissao retida nos acordos/rescisoes do mes soma-se a comissao de administracao.
   const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
+  // Totais para o rodape da tabela de acordos (espelha o TOTAL impresso no documento).
+  const acordosValorTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
+  const acordosRepasseTotal = acordosValorTotal - acordosComissao
   // Total da intermediacao (taxa retida) e seu percentual, quando houver.
   const intermediacaoValor = intermediacoes.reduce((sum, item) => sum + (item.comissao ?? item.valor ?? 0), 0)
   const intermediacaoPercent = (() => {
@@ -1325,29 +1328,44 @@ export function RevisaoView({
             <span className="text-[13px] text-[#6B7F6E]">{pluralize(acordosRescisoesRecebidos.length, "item", "itens")}</span>
           </div>
           <div className="max-h-[360px] overflow-auto">
-            <table className="w-full min-w-[920px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
-                  {["Tipo", "Apto", "Inquilino", "Valor", "Competência original", "Recebido em", "Obs"].map((header) => (
-                    <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
+                  {["Tipo", "Apto", "Inquilino", "Competência original", "Valor", "Comissão", "Repasse", "Recebido em", "Obs"].map((header) => (
+                    <th key={header} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${["Valor", "Comissão", "Repasse"].includes(header) ? "text-right" : "text-left"}`}>
                       {header}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {acordosRescisoesRecebidos.map((item, index) => (
-                  <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
-                    <td className="px-4 py-3 font-medium text-[#1A2B1C]">{labelTipoAcordo(item.tipo)}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                    <td className="px-4 py-3 tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(item.valor)}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? competencia}</td>
-                    <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
-                  </tr>
-                ))}
+                {acordosRescisoesRecebidos.map((item, index) => {
+                  const temComissao = typeof item.comissao === "number"
+                  const repasse = temComissao ? item.valor - (item.comissao ?? 0) : null
+                  return (
+                    <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
+                      <td className="px-4 py-3 font-medium text-[#1A2B1C]">{labelTipoAcordo(item.tipo)}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(item.valor)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{temComissao ? formatBRL(item.comissao ?? 0) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]">{repasse !== null ? formatBRL(repasse) : "-"}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? competencia}</td>
+                      <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
+              <tfoot className="sticky bottom-0 z-10">
+                <tr className="border-t border-[#EEF1EE] bg-[#F8FAF8] font-semibold text-[#1A2B1C]">
+                  <td className="px-4 py-3" colSpan={4}>Total</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosValorTotal)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{acordosComissao > 0 ? formatBRL(acordosComissao) : "-"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{acordosComissao > 0 ? formatBRL(acordosRepasseTotal) : "-"}</td>
+                  <td className="px-4 py-3" colSpan={2} />
+                </tr>
+              </tfoot>
             </table>
           </div>
         </section>
