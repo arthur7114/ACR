@@ -459,6 +459,16 @@ function formatPercent(value: number | null | undefined) {
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
 }
 
+// Percentual de intermediação: usa o impresso no documento; quando ausente,
+// calcula a taxa retida sobre a base (comissão ÷ valor).
+function intermediacaoPercentDe(item: AcordoRescisaoRecebido) {
+  if (typeof item.percentual === "number") return item.percentual
+  if (typeof item.comissao === "number" && item.valor > 0) {
+    return Math.round((item.comissao / item.valor) * 10000) / 100
+  }
+  return null
+}
+
 function formatDateBR(value: string | null | undefined) {
   if (!value) return "-"
   const date = new Date(`${value}T00:00:00`)
@@ -646,7 +656,13 @@ export function RevisaoView({
   const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
   // Total da intermediacao (taxa retida) e seu percentual, quando houver.
   const intermediacaoValor = intermediacoes.reduce((sum, item) => sum + (item.comissao ?? item.valor ?? 0), 0)
-  const intermediacaoPercent = intermediacoes.find((item) => typeof item.percentual === "number")?.percentual ?? null
+  const intermediacaoPercent = (() => {
+    for (const item of intermediacoes) {
+      const p = intermediacaoPercentDe(item)
+      if (p !== null) return p
+    }
+    return null
+  })()
   // Vagas de garagem informadas dentro dos acordos/rescisoes (ex.: "GARAGEM MOTO + GARAGEM CARRO").
   const vagasAcordos = acordosRescisoesRecebidos.reduce((sum, item) => sum + vagasDoAcordo(item), 0)
   const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
@@ -1138,7 +1154,7 @@ export function RevisaoView({
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                     <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(item.valor)}</td>
                     <td className="px-4 py-3 tabular-nums font-semibold text-[#7C3AED]">{typeof item.comissao === "number" ? formatBRL(item.comissao) : "-"}</td>
-                    <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{typeof item.percentual === "number" ? formatPercent(item.percentual) : "-"}</td>
+                    <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(intermediacaoPercentDe(item))}</td>
                     <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
                     <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
                   </tr>
