@@ -104,11 +104,13 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   const conta = await resolveContaForFechamento(supabase, fechamento)
   // Conta de origem (disponivel): usa o cod_disponivel_padrao; se ausente e a
   // conta tiver disponivel_busca, resolve pelo nome via API do eGestor e cacheia.
-  conta.cod_disponivel_padrao = await resolveCodDisponivel(supabase, conta)
+  // Tambem captura o NOME do disponivel para exibir na previa (ex.: "Sicredi MMC").
+  const { cod: codDisponivel, nome: disponivelNome } = await resolveDisponivel(supabase, conta)
+  conta.cod_disponivel_padrao = codDisponivel
   const maps = await getMapeamentos(supabase, conta.id)
   const codContato = await resolveContato(supabase, fechamento, conta)
   const drafts = buildDrafts(fechamento, conta)
-  const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft))
+  const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome))
   const { data: sentRows, error: sentError } = await supabase
     .from("egestor_lancamentos")
     .select("id")
@@ -390,28 +392,38 @@ function contaTagPrefix(conta: DbConta) {
   return conta.tag_padrao?.trim() || "ACR"
 }
 
-// Resolve a conta de origem (disponivel). Prioriza o cod_disponivel_padrao ja
-// configurado; se ausente e houver disponivel_busca + token, busca pelo nome na
-// API do eGestor (ex.: "06394" -> "Sicredi MMC - 06394 - 0") e cacheia o codigo.
-async function resolveCodDisponivel(supabase: SupabaseClient, conta: DbConta): Promise<number | null> {
-  if (conta.cod_disponivel_padrao != null) return conta.cod_disponivel_padrao
-  const busca = conta.disponivel_busca?.trim()
-  if (!busca || !conta.personal_token) return conta.cod_disponivel_padrao ?? null
+// Resolve a conta de origem (disponivel): retorna o codigo E o nome do disponivel
+// para exibicao na previa. Prioriza o cod_disponivel_padrao ja configurado; se
+// ausente e houver disponivel_busca + token, busca pelo nome na API do eGestor
+// (ex.: "06394" -> "Sicredi MMC - 06394-0") e cacheia o codigo.
+async function resolveDisponivel(
+  supabase: SupabaseClient,
+  conta: DbConta,
+): Promise<{ cod: number | null; nome: string | null }> {
+  if (!conta.personal_token) return { cod: conta.cod_disponivel_padrao ?? null, nome: null }
 
+  let disponiveis: Array<{ codigo: number; nome: string }>
   try {
-    const client = new EgestorClient({ personalToken: conta.personal_token })
-    const disponiveis = await client.getDisponiveis()
-    const codigo = matchDisponivelPorNome(disponiveis, busca)
-    if (codigo === null) return null
-    await supabase
-      .from("egestor_contas")
-      .update({ cod_disponivel_padrao: codigo })
-      .eq("id", conta.id)
-      .then(() => undefined, () => undefined)
-    return codigo
+    disponiveis = await new EgestorClient({ personalToken: conta.personal_token }).getDisponiveis()
   } catch {
-    return null
+    return { cod: conta.cod_disponivel_padrao ?? null, nome: null }
   }
+
+  let cod = conta.cod_disponivel_padrao
+  const busca = conta.disponivel_busca?.trim()
+  if (cod == null && busca) {
+    const matched = matchDisponivelPorNome(disponiveis, busca)
+    if (matched !== null) {
+      cod = matched
+      await supabase
+        .from("egestor_contas")
+        .update({ cod_disponivel_padrao: cod })
+        .eq("id", conta.id)
+        .then(() => undefined, () => undefined)
+    }
+  }
+  const nome = cod != null ? disponiveis.find((d) => d.codigo === cod)?.nome ?? null : null
+  return { cod, nome }
 }
 
 // Match conservador: o disponivel cujo nome normalizado contem o termo buscado.
@@ -429,13 +441,14 @@ function buildLancamentoRow(
   maps: Map<string, DbMapeamento>,
   codContato: number | null,
   draft: DraftLancamento,
+  disponivelNome: string | null = null,
 ) {
   const map = maps.get(draft.categoria)
   const codDisponivel = conta.cod_disponivel_padrao
   const codPlanoContas = map?.cod_plano_contas ?? null
   const tags = buildTags(fechamento, conta)
   const validation = validateLancamento(codContato, codDisponivel, codPlanoContas)
-  const payload = buildPayload(fechamento, conta, draft, codContato, codDisponivel, codPlanoContas, tags)
+  const payload = buildPayload(fechamento, conta, draft, codContato, codDisponivel, codPlanoContas, tags, disponivelNome)
 
   return {
     fechamento_id: fechamento.id,
@@ -446,6 +459,9 @@ function buildLancamentoRow(
     cod_contato: codContato,
     cod_disponivel: codDisponivel,
     cod_plano_contas: codPlanoContas,
+    // Nome amigavel do disponivel (ex.: "Sicredi MMC - 06394-0") para exibir na
+    // previa; nao vai no payload enviado ao eGestor.
+    disponivel_nome: disponivelNome,
     tags,
     payload,
     status: validation ? "pendente_config" : "validado",
@@ -461,6 +477,7 @@ function buildPayload(
   codDisponivel: number | null,
   codPlanoContas: number | null,
   tags: string[],
+  disponivelNome: string | null = null,
 ) {
   const analysis = fechamento.analise_completa
   const repasseDate = analysis?.repasse?.data ?? null

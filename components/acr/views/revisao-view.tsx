@@ -1604,10 +1604,10 @@ export function RevisaoView({
           <p className="mt-4 text-[13px] text-[#6B7F6E]">Nenhuma prévia gerada ainda.</p>
         ) : (
           <div className="mt-4 overflow-x-auto rounded-lg border border-[#EEF1EE]">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[940px] text-sm">
               <thead className="bg-[#F8FAF8] text-[11px] uppercase tracking-wide text-[#6B7F6E]">
                 <tr>
-                  {["Tipo", "Categoria", "Descrição", "Valor", "Plano", "Status"].map((header) => (
+                  {["Tipo", "Categoria", "Descrição", "Valor", "Conta de origem", "Etiquetas", "Contato", "Plano", "Status"].map((header) => (
                     <th key={header} className="px-3 py-2 text-left font-medium">{header}</th>
                   ))}
                 </tr>
@@ -1619,6 +1619,27 @@ export function RevisaoView({
                     <td className="px-3 py-2 font-medium text-[#1A2B1C]">{lancamento.categoria}</td>
                     <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.descricao}</td>
                     <td className="px-3 py-2 tabular-nums text-[#1A2B1C]">{formatBRL(lancamento.valor)}</td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">
+                      {lancamento.disponivel_nome
+                        ? lancamento.disponivel_nome
+                        : lancamento.cod_disponivel != null
+                          ? `Disponível #${lancamento.cod_disponivel}`
+                          : "-"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {lancamento.tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {lancamento.tags.map((tag) => (
+                            <span key={tag} className="inline-flex rounded-full bg-[#EEF1EE] px-2 py-0.5 text-[11px] font-medium text-[#3D4F3F]">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[#6B7F6E]">-</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.cod_contato ?? "-"}</td>
                     <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.cod_plano_contas ?? "-"}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${getEgestorStatusClasses(lancamento.status)}`}>

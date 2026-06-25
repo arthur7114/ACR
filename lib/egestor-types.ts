@@ -48,6 +48,7 @@ export type EgestorLancamento = {
   cod_contato: number | null
   cod_disponivel: number | null
   cod_plano_contas: number | null
+  disponivel_nome?: string | null
   tags: string[]
   payload: Record<string, unknown>
   status: EgestorLancamentoStatus
