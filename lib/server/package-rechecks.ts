@@ -89,9 +89,18 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
   // linha e taxas bancarias entram no consolidado comissao+despesas. Removemos
   // esses itens da lista para o numero de "despesas" nao inflar (ponto #1).
   const outrasDespesasFiltradas = analysis.resumo_financeiro.outras_comissoes_despesas
-    .map((item) => ({ ...item, valor: roundMoney(item.valor), confianca: clampConfidence(item.confianca) }))
     .filter((item) => !isNaoDespesaLocador(item.descricao))
-  const totalOutrasDespesasRecalc = outrasDespesasFiltradas.length > 0 ? roundMoney(sum(outrasDespesasFiltradas.map((d) => d.valor))) : 0
+    .map((item) => ({
+      ...item,
+      // Itens de CREDITO (ex.: "OUTROS CREDITOS") reduzem a despesa; entram com
+      // sinal negativo para que o total de despesas reflita o liquido (debitos
+      // menos creditos), em vez de somar os dois lados que se anulam (ponto #1).
+      valor: isCreditoQueReduzDespesa(item.descricao)
+        ? -Math.abs(roundMoney(item.valor))
+        : roundMoney(item.valor),
+      confianca: clampConfidence(item.confianca),
+    }))
+  const totalOutrasDespesasRecalc = roundMoney(sum(outrasDespesasFiltradas.map((d) => d.valor)))
 
   const competenciaFechamento = normalizeCompetenciaKey(analysis.competencia)
 
@@ -151,6 +160,15 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
 function isNaoDespesaLocador(descricao: string): boolean {
   const texto = normalizeText(descricao)
   return /comiss|intermedia|\bted\b|\bpix\b|\btx\b|\bdesconto\b|\bdesc\.|reembolso/.test(texto)
+}
+
+// Itens de credito no bloco RESUMO (ex.: "OUTROS CREDITOS") REDUZEM a despesa
+// liquida — devem entrar com sinal negativo. "Debito" tem prioridade para nao
+// negar uma linha que cite ambos.
+function isCreditoQueReduzDespesa(descricao: string): boolean {
+  const texto = normalizeText(descricao)
+  if (/debito/.test(texto)) return false
+  return /credito|reduz/.test(texto)
 }
 
 // #3 Anula o IPTU "de passagem": IPTU cobrado do inquilino e repassado a
