@@ -83,6 +83,18 @@ export function validatePackage(input: PackageValidationInput) {
 }
 
 function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
+  // "Outras despesas" deve refletir apenas despesas reais do locador. Comissoes,
+  // intermediacao, taxas de transferencia (TED/PIX/TX) e descontos de inquilino
+  // NAO sao despesas: comissao tem balde proprio, descontos abatem o aluguel por
+  // linha e taxas bancarias entram no consolidado comissao+despesas. Removemos
+  // esses itens da lista para o numero de "despesas" nao inflar (ponto #1).
+  const outrasDespesasFiltradas = analysis.resumo_financeiro.outras_comissoes_despesas
+    .map((item) => ({ ...item, valor: roundMoney(item.valor), confianca: clampConfidence(item.confianca) }))
+    .filter((item) => !isNaoDespesaLocador(item.descricao))
+  const totalOutrasDespesasRecalc = outrasDespesasFiltradas.length > 0 ? roundMoney(sum(outrasDespesasFiltradas.map((d) => d.valor))) : 0
+
+  const competenciaFechamento = normalizeCompetenciaKey(analysis.competencia)
+
   return {
     ...analysis,
     confianca_geral: clampConfidence(analysis.confianca_geral),
@@ -92,31 +104,35 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       total_linhas_comissoes: nullableMoney(analysis.resumo_financeiro.total_linhas_comissoes),
       total_linhas_repasse: nullableMoney(analysis.resumo_financeiro.total_linhas_repasse),
       comissao_administracao: nullableMoney(analysis.resumo_financeiro.comissao_administracao),
-      total_outras_comissoes_despesas: nullableMoney(analysis.resumo_financeiro.total_outras_comissoes_despesas),
+      total_outras_comissoes_despesas: totalOutrasDespesasRecalc,
       total_comissao_despesas: nullableMoney(analysis.resumo_financeiro.total_comissao_despesas),
       recebidos_em_nome_locador: nullableMoney(analysis.resumo_financeiro.recebidos_em_nome_locador),
       total_a_repassar: nullableMoney(analysis.resumo_financeiro.total_a_repassar),
       confianca: clampConfidence(analysis.resumo_financeiro.confianca),
-      outras_comissoes_despesas: analysis.resumo_financeiro.outras_comissoes_despesas.map((item) => ({
-        ...item,
-        valor: roundMoney(item.valor),
-        confianca: clampConfidence(item.confianca),
-      })),
+      outras_comissoes_despesas: outrasDespesasFiltradas,
     },
-    receitas_por_imovel: analysis.receitas_por_imovel.map((row) => ({
-      ...row,
-      total: roundMoney(row.total),
-      aluguel: nullableMoney(row.aluguel),
-      desconto: nullableMoney(row.desconto),
-      aluguel_com_desconto: nullableMoney(row.aluguel_com_desconto),
-      garagem: nullableMoney(row.garagem),
-      agua: nullableMoney(row.agua),
-      iptu: nullableMoney(row.iptu),
-      seguro_incendio: nullableMoney(row.seguro_incendio),
-      comissao: nullableMoney(row.comissao),
-      repasse: nullableMoney(row.repasse),
-      confianca: clampConfidence(row.confianca),
-    })),
+    receitas_por_imovel: analysis.receitas_por_imovel.map((row) => {
+      const base = {
+        ...row,
+        total: roundMoney(row.total),
+        aluguel: nullableMoney(row.aluguel),
+        desconto: nullableMoney(row.desconto),
+        aluguel_com_desconto: nullableMoney(row.aluguel_com_desconto),
+        garagem: nullableMoney(row.garagem),
+        agua: nullableMoney(row.agua),
+        iptu: nullableMoney(row.iptu),
+        seguro_incendio: nullableMoney(row.seguro_incendio),
+        comissao: nullableMoney(row.comissao),
+        repasse: nullableMoney(row.repasse),
+        confianca: clampConfidence(row.confianca),
+      }
+      // #3 IPTU de passagem: quando o IPTU foi cobrado do inquilino e repassado
+      // (mesmo valor em credito e debito), ele se anula e nao e receita do locador.
+      const semIptuDePassagem = anularIptuDePassagem(base)
+      // #4 Inadimplencia por competencia: pagamento de ALUGUEL referente a um mes
+      // ANTERIOR ao fechamento => a unidade esta inadimplente no mes corrente.
+      return marcarInadimplenciaPorCompetencia(semIptuDePassagem, competenciaFechamento)
+    }),
     acordos_rescisoes_recebidos: dropHallucinatedIntermediacoes(
       (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
         ...item,
@@ -127,6 +143,68 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       analysis.resumo_financeiro.outras_comissoes_despesas ?? [],
     ),
   }
+}
+
+// #1 Itens que NAO sao "despesa do locador": comissao da administradora,
+// intermediacao, taxas de transferencia bancaria (TED/PIX/TX) e descontos/
+// reembolsos concedidos ao inquilino (estes abatem o aluguel por linha).
+function isNaoDespesaLocador(descricao: string): boolean {
+  const texto = normalizeText(descricao)
+  return /comiss|intermedia|\bted\b|\bpix\b|\btx\b|\bdesconto\b|\bdesc\.|reembolso/.test(texto)
+}
+
+// #3 Anula o IPTU "de passagem": IPTU cobrado do inquilino e repassado a
+// prefeitura no mesmo mes (aparece como credito E debito de mesmo valor no
+// razao). Ele nao e receita do locador, entao removemos sua contribuicao do
+// total e zeramos o campo iptu. Sinal: a observacao cita o IPTU sendo debitado/
+// repassado com valor igual ao iptu creditado da linha.
+function anularIptuDePassagem<T extends { iptu: number | null; total: number; observacao: string | null }>(row: T): T {
+  const iptu = row.iptu
+  if (iptu === null || iptu === 0) return row
+  const obs = row.observacao ?? ""
+  if (!/iptu/i.test(obs)) return row
+  // Procura no texto um valor de IPTU debitado/repassado igual ao iptu da linha.
+  const matchesIptuDebito = /iptu[^;]*?(?:debit|repass)/i.test(obs)
+  const valoresObs = (obs.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) ?? []).map((v) => roundMoney(Number(v.replace(/\./g, "").replace(",", "."))))
+  const temDebitoIgual = matchesIptuDebito && valoresObs.some((v) => Math.abs(v - iptu) <= MONEY_TOLERANCE)
+  if (!temDebitoIgual) return row
+  return {
+    ...row,
+    iptu: 0,
+    total: roundMoney(row.total - iptu),
+    observacao: appendObservacao(row.observacao, `IPTU de passagem (R$ ${iptu.toFixed(2)}) anulado: cobrado do inquilino e repassado.`),
+  }
+}
+
+// #4 Marca como inadimplente do mes corrente a unidade cujo pagamento de ALUGUEL
+// se refere a uma competencia ANTERIOR a do fechamento (ex.: recebeu em maio o
+// aluguel de marco => abril e maio em aberto). Nao mexe em unidades ja marcadas
+// inadimplencia, Airbnb, vagas ou sem aluguel.
+function marcarInadimplenciaPorCompetencia<T extends { aluguel: number | null; vencimento: string | null; inquilino: string | null; observacao: string | null }>(
+  row: T,
+  competenciaFechamento: string | null,
+): T {
+  if (!competenciaFechamento) return row
+  if (row.aluguel === null || row.aluguel <= 0) return row
+  const textoAtual = normalizeText(`${row.inquilino ?? ""} ${row.observacao ?? ""}`)
+  if (/inadimpl|air ?bnb|intermedia|\bvago\b|vacanci/.test(textoAtual)) return row
+  const competenciaAluguel = normalizeCompetenciaKey(row.vencimento)
+  // Compara apenas quando o vencimento esta no formato de competencia (AAAA-MM).
+  if (!competenciaAluguel || !/^\d{4}-\d{2}$/.test(competenciaAluguel)) return row
+  if (competenciaAluguel >= competenciaFechamento) return row
+  const [ano, mes] = competenciaAluguel.split("-")
+  return {
+    ...row,
+    observacao: appendObservacao(
+      row.observacao,
+      `INADIMPLENCIA: pagamento referente a ${mes}/${ano}; competencia ${competenciaFechamento} em aberto.`,
+    ),
+  }
+}
+
+function appendObservacao(atual: string | null, extra: string): string {
+  const base = (atual ?? "").trim()
+  return base.length > 0 ? `${base} | ${extra}` : extra
 }
 
 // Guarda deterministica: a IA as vezes "inventa" uma intermediacao copiando o
