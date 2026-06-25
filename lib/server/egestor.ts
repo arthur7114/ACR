@@ -392,6 +392,11 @@ function contaTagPrefix(conta: DbConta) {
   return conta.tag_padrao?.trim() || "ACR"
 }
 
+// Remove acentos preservando maiusculas/minusculas (ex.: "MARACANAÚ" -> "MARACANAU").
+function removerAcentos(value: string) {
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "")
+}
+
 // Resolve a conta de origem (disponivel): retorna o codigo E o nome do disponivel
 // para exibicao na previa. Prioriza o cod_disponivel_padrao ja configurado; se
 // ausente e houver disponivel_busca + token, busca pelo nome na API do eGestor
@@ -482,12 +487,13 @@ function buildPayload(
   const analysis = fechamento.analise_completa
   const repasseDate = analysis?.repasse?.data ?? null
   const competencia = toDateOnly(fechamento.competencia)
-  // Descricao = etiqueta da conta (ex.: MMC) + empreendimento + competencia + item.
+  // Descricao = etiqueta da conta (ex.: MMC) + empreendimento + item, sem
+  // competencia (ela ja vai em numDoc/dtComp) e sem acentos (ex.: MARACANAU).
   const prefixo = contaTagPrefix(conta)
   const empreendimentoNome = fechamento.empreendimentos?.nome?.trim() ?? ""
-  const descricao = [prefixo, empreendimentoNome, formatCompetencia(fechamento.competencia), "-", draft.descricao]
-    .filter((part) => part !== "")
-    .join(" ")
+  const descricao = removerAcentos(
+    [prefixo, empreendimentoNome, "-", draft.descricao].filter((part) => part !== "").join(" "),
+  )
   const payload: Record<string, unknown> = {
     codPlanoContas,
     codFormaPgto: 0,
