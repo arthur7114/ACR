@@ -64,6 +64,15 @@ test("gera previa consolidada com recebimento bruto, comissao e despesas agrupad
   )
 })
 
+test("conta somente_recebimento lanca apenas o recebimento (sem comissao nem despesas)", () => {
+  const drafts = buildEgestorDrafts(createAnalysis(), { somenteRecebimento: true })
+
+  assert.deepEqual(
+    drafts.map((draft) => [draft.tipo, draft.categoria, draft.valor]),
+    [["recebimento", "repasse_mensal", 1000]],
+  )
+})
+
 test("usa total recebido bruto mesmo quando nao existe comprovante", () => {
   const drafts = buildEgestorDrafts(createAnalysis({
     totals: { ...createAnalysis().totals, valor_comprovado: null, total_a_repassar: 650 },

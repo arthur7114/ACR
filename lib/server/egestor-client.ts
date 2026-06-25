@@ -65,6 +65,28 @@ export class EgestorClient {
     return all
   }
 
+  async getDisponiveis(busca?: string) {
+    // "Disponiveis" = contas/caixas do eGestor (ex.: "Sicredi MMC - 06394 - 0").
+    // Mesma paginacao/forma dos contatos: a API ignora o filtro do servidor,
+    // entao percorremos as paginas e filtramos localmente.
+    const all: Array<{ codigo: number; nome: string }> = []
+    const MAX_PAGES = 30
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const params = new URLSearchParams({ fields: "codigo,nome", orderBy: "nome", page: String(page) })
+      const data = await this.request("GET", `/v1/disponiveis?${params}`)
+      const obj = (data ?? {}) as Record<string, unknown>
+      const rows = (Array.isArray(data) ? data : (obj.data ?? obj.dados ?? [])) as Array<{ codigo: number; nome: string }>
+      all.push(...rows)
+      const lastPage = Number(obj.last_page ?? 1)
+      if (rows.length === 0 || !obj.next_page_url || page >= lastPage) break
+    }
+    if (busca) {
+      const q = busca.trim().toLowerCase()
+      return all.filter((c) => (c.nome ?? "").toLowerCase().includes(q))
+    }
+    return all
+  }
+
   async createRecebimento(payload: Record<string, unknown>) {
     return this.request("POST", "/v1/recebimentos", payload) as Promise<EgestorCreateResponse>
   }

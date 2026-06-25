@@ -26,6 +26,15 @@ type DbConta = {
   personal_token: string | null
   cod_disponivel_padrao: number | null
   ativo: boolean
+  // Etiqueta/prefixo da conta nos lancamentos (ex.: "ACR" para a Global, "MMC"
+  // para a MMC Participacoes). Fallback "ACR" quando ausente.
+  tag_padrao?: string | null
+  // Quando true, a conta lanca SOMENTE o recebimento no eGestor (comissoes e
+  // despesas sao conciliadas fora do eGestor). Ex.: MMC.
+  somente_recebimento?: boolean | null
+  // Termo para resolver o "disponivel" (conta de origem) via API do eGestor
+  // quando cod_disponivel_padrao ainda nao foi definido (ex.: "06394").
+  disponivel_busca?: string | null
 }
 
 type DbMapeamento = {
@@ -93,9 +102,12 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   if (openBlocking > 0) throw new Error("Fechamento possui pendencias bloqueantes abertas.")
 
   const conta = await resolveContaForFechamento(supabase, fechamento)
+  // Conta de origem (disponivel): usa o cod_disponivel_padrao; se ausente e a
+  // conta tiver disponivel_busca, resolve pelo nome via API do eGestor e cacheia.
+  conta.cod_disponivel_padrao = await resolveCodDisponivel(supabase, conta)
   const maps = await getMapeamentos(supabase, conta.id)
   const codContato = await resolveContato(supabase, fechamento, conta)
-  const drafts = buildDrafts(fechamento)
+  const drafts = buildDrafts(fechamento, conta)
   const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft))
   const { data: sentRows, error: sentError } = await supabase
     .from("egestor_lancamentos")
@@ -293,7 +305,7 @@ async function uploadAnexos(supabase: SupabaseClient, client: EgestorClient, lan
         fileName: doc.nome_arquivo,
         modulo: "financeiro",
         codModulo,
-        descricao: `ACR ${lancamento.descricao}`,
+        descricao: lancamento.descricao,
         tags: lancamento.tags ?? [],
       })
     } catch (error) {
@@ -337,17 +349,23 @@ async function revalidateLancamento(supabase: SupabaseClient, client: EgestorCli
   }
 }
 
-function buildDrafts(fechamento: FechamentoRow) {
+function buildDrafts(fechamento: FechamentoRow, conta?: DbConta) {
   const analysis = fechamento.analise_completa
   if (!analysis) throw new Error("Fechamento sem analise completa.")
-  return buildEgestorDrafts(analysis)
+  return buildEgestorDrafts(analysis, { somenteRecebimento: conta?.somente_recebimento === true })
 }
 
-export function buildEgestorDrafts(analysis: PackageAnalysis) {
+export function buildEgestorDrafts(analysis: PackageAnalysis, options: { somenteRecebimento?: boolean } = {}) {
   const drafts: DraftLancamento[] = []
   const recebidoBruto = analysis.totals.total_receitas
   if (recebidoBruto > 0) {
     drafts.push({ tipo: "recebimento", categoria: "repasse_mensal", descricao: "Recebimento mensal bruto", valor: recebidoBruto })
+  }
+
+  // Contas marcadas "somente recebimento" (ex.: MMC/Maracanau) nao lancam comissao
+  // nem despesas no eGestor — essas sao conciliadas fora dele.
+  if (options.somenteRecebimento) {
+    return drafts
   }
 
   const comissao = analysis.totals.comissao_administracao_calculada ?? analysis.prestacao?.resumo_financeiro.comissao_administracao ?? 0
@@ -367,6 +385,44 @@ export function buildEgestorDrafts(analysis: PackageAnalysis) {
   return drafts
 }
 
+// Etiqueta/prefixo da conta nos lancamentos. Default "ACR" (conta Global).
+function contaTagPrefix(conta: DbConta) {
+  return conta.tag_padrao?.trim() || "ACR"
+}
+
+// Resolve a conta de origem (disponivel). Prioriza o cod_disponivel_padrao ja
+// configurado; se ausente e houver disponivel_busca + token, busca pelo nome na
+// API do eGestor (ex.: "06394" -> "Sicredi MMC - 06394 - 0") e cacheia o codigo.
+async function resolveCodDisponivel(supabase: SupabaseClient, conta: DbConta): Promise<number | null> {
+  if (conta.cod_disponivel_padrao != null) return conta.cod_disponivel_padrao
+  const busca = conta.disponivel_busca?.trim()
+  if (!busca || !conta.personal_token) return conta.cod_disponivel_padrao ?? null
+
+  try {
+    const client = new EgestorClient({ personalToken: conta.personal_token })
+    const disponiveis = await client.getDisponiveis()
+    const codigo = matchDisponivelPorNome(disponiveis, busca)
+    if (codigo === null) return null
+    await supabase
+      .from("egestor_contas")
+      .update({ cod_disponivel_padrao: codigo })
+      .eq("id", conta.id)
+      .then(() => undefined, () => undefined)
+    return codigo
+  } catch {
+    return null
+  }
+}
+
+// Match conservador: o disponivel cujo nome normalizado contem o termo buscado.
+// Unico match -> codigo; zero ou ambiguo -> null (lancamento fica pendente).
+function matchDisponivelPorNome(disponiveis: Array<{ codigo: number; nome: string }>, busca: string): number | null {
+  const alvo = normalizeNomeContato(busca)
+  if (!alvo) return null
+  const matches = disponiveis.filter((d) => normalizeNomeContato(d.nome ?? "").includes(alvo))
+  return matches.length === 1 ? matches[0].codigo : null
+}
+
 function buildLancamentoRow(
   fechamento: FechamentoRow,
   conta: DbConta,
@@ -377,9 +433,9 @@ function buildLancamentoRow(
   const map = maps.get(draft.categoria)
   const codDisponivel = conta.cod_disponivel_padrao
   const codPlanoContas = map?.cod_plano_contas ?? null
-  const tags = buildTags(fechamento)
+  const tags = buildTags(fechamento, conta)
   const validation = validateLancamento(codContato, codDisponivel, codPlanoContas)
-  const payload = buildPayload(fechamento, draft, codContato, codDisponivel, codPlanoContas, tags)
+  const payload = buildPayload(fechamento, conta, draft, codContato, codDisponivel, codPlanoContas, tags)
 
   return {
     fechamento_id: fechamento.id,
@@ -399,6 +455,7 @@ function buildLancamentoRow(
 
 function buildPayload(
   fechamento: FechamentoRow,
+  conta: DbConta,
   draft: DraftLancamento,
   codContato: number | null,
   codDisponivel: number | null,
@@ -408,11 +465,16 @@ function buildPayload(
   const analysis = fechamento.analise_completa
   const repasseDate = analysis?.repasse?.data ?? null
   const competencia = toDateOnly(fechamento.competencia)
-  const descricao = `ACR ${formatCompetencia(fechamento.competencia)} - ${draft.descricao}`
+  // Descricao = etiqueta da conta (ex.: MMC) + empreendimento + competencia + item.
+  const prefixo = contaTagPrefix(conta)
+  const empreendimentoNome = fechamento.empreendimentos?.nome?.trim() ?? ""
+  const descricao = [prefixo, empreendimentoNome, formatCompetencia(fechamento.competencia), "-", draft.descricao]
+    .filter((part) => part !== "")
+    .join(" ")
   const payload: Record<string, unknown> = {
     codPlanoContas,
     codFormaPgto: 0,
-    numDoc: `ACR-${formatCompetencia(fechamento.competencia)}-${draft.categoria}`,
+    numDoc: `${prefixo}-${formatCompetencia(fechamento.competencia)}-${draft.categoria}`,
     descricao,
     valor: Number(draft.valor.toFixed(2)),
     dtVenc: repasseDate ?? competencia,
@@ -435,13 +497,14 @@ function buildPayload(
   return payload
 }
 
-function buildTags(fechamento: FechamentoRow) {
-  // Decisao de projeto: lancamentos sobem com exatamente 2 tags — "ACR" e a tag
-  // do empreendimento (egestor_tag_id, com fallback para o nome). NAO usar tag
-  // de imobiliaria, competencia nem categoria.
+function buildTags(fechamento: FechamentoRow, conta: DbConta) {
+  // Decisao de projeto: lancamentos sobem com exatamente 2 tags — a etiqueta da
+  // conta (ex.: "ACR" na Global, "MMC" na MMC Participacoes) e a tag do
+  // empreendimento (egestor_tag_id, com fallback para o nome). NAO usar tag de
+  // imobiliaria, competencia nem categoria.
   const empreendimento =
     fechamento.empreendimentos?.egestor_tag_id?.trim() || fechamento.empreendimentos?.nome?.trim() || ""
-  return ["ACR", empreendimento].filter(Boolean)
+  return [contaTagPrefix(conta), empreendimento].filter(Boolean)
 }
 
 function validateLancamento(codContato: number | null, codDisponivel: number | null, codPlanoContas: number | null) {
@@ -518,7 +581,7 @@ async function getContaFromSingleton(supabase: SupabaseClient): Promise<DbConta>
 async function getContaById(supabase: SupabaseClient, contaId: string): Promise<DbConta | null> {
   const { data, error } = await supabase
     .from("egestor_contas")
-    .select("id,nome,personal_token,cod_disponivel_padrao,ativo")
+    .select("*")
     .eq("id", contaId)
     .maybeSingle()
   if (error) {
@@ -536,7 +599,7 @@ async function resolveContaForFechamento(supabase: SupabaseClient, fechamento: F
 
   const { data, error } = await supabase
     .from("egestor_contas")
-    .select("id,nome,personal_token,cod_disponivel_padrao,ativo")
+    .select("*")
     .in("id", ids)
 
   if (error) {
