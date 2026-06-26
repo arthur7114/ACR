@@ -24,6 +24,8 @@ export function ViewReceita({
   const { potencial, realizado, realizadoPct, inadimplenciaAcumulada } = data.cascata
   const naoRealizado = potencial - realizado
   const naoRealizadoPct = potencial > 0 ? (naoRealizado / potencial) * 100 : 0
+  // Cascata só agrega quando há erosão relevante; abaixo de 1% a faixa de stats já resume.
+  const cascataRelevante = naoRealizadoPct >= 1
 
   return (
     <>
@@ -55,31 +57,43 @@ export function ViewReceita({
         </div>
       </Card>
 
-      <Card>
-        <ChartCardHeader
-          title="Faturamento potencial × realizado"
-          desc={data.competenciaLabel}
-          source="aluguel esperado vs. vacância + descontos"
-        />
-        <CascataWaterfall cascata={data.cascata} metric={metric} />
-        <CardNote icon={<Info size={15} className="shrink-0 text-acr-green" />}>
-          <b className="text-acr-ink tabular-nums">
-            {formatBRLk(naoRealizado)} ({formatPercent(naoRealizadoPct)})
-          </b>{" "}
-          de receita não realizada no mês (vacância + descontos). As barras vermelhas mostram cada ofensor que corrói o
-          percentual.
-        </CardNote>
-        {inadimplenciaAcumulada > 0 && (
-          <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-acr-amber/30 bg-acr-amber-soft p-3 text-xs text-acr-muted-2">
-            <AlertTriangle size={15} className="mt-px shrink-0 text-acr-amber" />
-            <span>
-              Inadimplência <b>acumulada</b> de{" "}
-              <b className="text-acr-red tabular-nums">{formatBRLk(inadimplenciaAcumulada)}</b> — saldo de meses
-              anteriores (insight), <b>não entra na cascata do mês</b>.
-            </span>
-          </div>
-        )}
-      </Card>
+      {cascataRelevante ? (
+        <Card>
+          <ChartCardHeader
+            title="Faturamento potencial × realizado"
+            desc={data.competenciaLabel}
+            source="aluguel esperado vs. vacância + descontos"
+          />
+          <CascataWaterfall cascata={data.cascata} metric={metric} />
+          <CardNote icon={<Info size={15} className="shrink-0 text-acr-green" />}>
+            <b className="text-acr-ink tabular-nums">
+              {formatBRLk(naoRealizado)} ({formatPercent(naoRealizadoPct)})
+            </b>{" "}
+            de receita não realizada no mês (vacância + descontos). As barras vermelhas mostram cada ofensor que corrói
+            o percentual.
+          </CardNote>
+        </Card>
+      ) : (
+        <Card>
+          <CardNote className="mt-0" icon={<Info size={15} className="shrink-0 text-acr-green" />}>
+            <b className="text-acr-ink tabular-nums">{formatPercent(realizadoPct)}</b> do faturamento potencial foi
+            realizado em {data.competenciaLabel} — sem ofensores relevantes no mês (vacância + descontos somam apenas{" "}
+            <b className="tabular-nums">{formatBRLk(naoRealizado)}</b>). A cascata aparece quando há perdas
+            significativas.
+          </CardNote>
+        </Card>
+      )}
+
+      {inadimplenciaAcumulada > 0 && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-acr-amber/30 bg-acr-amber-soft p-3 text-xs text-acr-muted-2">
+          <AlertTriangle size={15} className="mt-px shrink-0 text-acr-amber" />
+          <span>
+            Inadimplência <b>acumulada</b> de{" "}
+            <b className="text-acr-red tabular-nums">{formatBRLk(inadimplenciaAcumulada)}</b> — saldo de meses
+            anteriores (insight), <b>não entra na cascata do mês</b>.
+          </span>
+        </div>
+      )}
 
       <SectionHeader>Realização de receita por imóvel</SectionHeader>
       <Card>
