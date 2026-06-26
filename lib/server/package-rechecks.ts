@@ -303,12 +303,24 @@ function calculateTotals(
     ? roundMoney((commissionBase * commercialRule.taxa_administracao_percent) / 100)
     : null
   const resumo = prestacao?.resumo_financeiro
-  const resumoOutrasDespesas = resumo?.total_outras_comissoes_despesas ?? sum(resumo?.outras_comissoes_despesas.map((item) => item.valor) ?? [])
+  const resumoOutrasDespesas = roundMoney(resumo?.total_outras_comissoes_despesas ?? sum(resumo?.outras_comissoes_despesas.map((item) => item.valor) ?? []))
   const externalDespesas = roundMoney(sum(despesas?.despesas.map((despesa) => despesa.valor) ?? []))
-  const totalDespesas = roundMoney(resumoOutrasDespesas || externalDespesas)
-  const totalComissaoDespesas = roundMoney(resumo?.total_comissao_despesas ?? (resumo?.comissao_administracao ?? lineTotalComissoes) + totalDespesas)
   const totalReceitas = roundMoney(resumo?.recebidos_em_nome_locador ?? resumo?.total_linhas_receitas ?? lineTotalReceitas)
   const totalComissoes = roundMoney(resumo?.comissao_administracao ?? lineTotalComissoes)
+  // "Outras despesas" = tudo retido ALEM da comissao (taxas TED/PIX, descontos,
+  // outros). Quando o documento traz o consolidado retido (total_comissao_despesas),
+  // derivamos por diferenca para RECONCILIAR o repasse (receitas - comissao -
+  // despesas = repasse); a lista itemizada da IA e instavel e nao deve zerar o
+  // valor. Sem consolidado, cai no documento de despesas ou no detalhamento.
+  const consolidadoRetido = resumo?.total_comissao_despesas ?? null
+  const totalDespesas = roundMoney(
+    externalDespesas > 0
+      ? externalDespesas
+      : consolidadoRetido != null
+        ? Math.max(consolidadoRetido - totalComissoes, 0)
+        : resumoOutrasDespesas,
+  )
+  const totalComissaoDespesas = roundMoney(consolidadoRetido ?? totalComissoes + totalDespesas)
   // Comissao realizada = comissao das linhas / total das linhas da tabela (mensal regular),
   // sem misturar comissao de acordos nem o recebido bruto com acordos.
   const realizedCommissionPercent = lineTotalReceitas > 0 ? roundPercent((lineTotalComissoes / lineTotalReceitas) * 100) : null
