@@ -557,6 +557,9 @@ export function RevisaoView({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle")
   const [egestorAction, setEgestorAction] = useState<"idle" | "approving" | "previewing" | "sending" | "retrying" | "revalidating">("idle")
   const [egestorError, setEgestorError] = useState<string | null>(null)
+  const [editandoDescricaoId, setEditandoDescricaoId] = useState<string | null>(null)
+  const [descricaoEdicao, setDescricaoEdicao] = useState("")
+  const [salvandoDescricao, setSalvandoDescricao] = useState(false)
 
   useEffect(() => {
     if (fechamento?.comentario_operador !== undefined && comentario === "") {
@@ -663,6 +666,31 @@ export function RevisaoView({
     }
     if (onRefresh) await onRefresh()
   }
+
+  function iniciarEdicaoDescricao(lancamentoId: string, descricaoAtual: string) {
+    setEgestorError(null)
+    setEditandoDescricaoId(lancamentoId)
+    setDescricaoEdicao(descricaoAtual)
+  }
+
+  async function salvarDescricaoEgestor(lancamentoId: string) {
+    setSalvandoDescricao(true)
+    setEgestorError(null)
+    const response = await fetch(`/api/fechamentos/${fechamentoId}/egestor/lancamentos/${lancamentoId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ descricao: descricaoEdicao }),
+    })
+    const payload = await response.json()
+    setSalvandoDescricao(false)
+    if (!response.ok || payload.error) {
+      setEgestorError(payload.error ?? "Falha ao editar a descrição.")
+      return
+    }
+    setEditandoDescricaoId(null)
+    if (onRefresh) await onRefresh()
+  }
+
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
   const empreendimentoId = fechamento?.empreendimento_id ?? null
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliária não identificada"
@@ -1617,7 +1645,51 @@ export function RevisaoView({
                   <tr key={lancamento.id}>
                     <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.tipo}</td>
                     <td className="px-3 py-2 font-medium text-[#1A2B1C]">{lancamento.categoria}</td>
-                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.descricao}</td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">
+                      {editandoDescricaoId === lancamento.id ? (
+                        <div className="flex flex-col gap-1.5">
+                          <input
+                            type="text"
+                            maxLength={200}
+                            autoFocus
+                            value={descricaoEdicao}
+                            onChange={(e) => setDescricaoEdicao(e.target.value)}
+                            className="w-full min-w-[220px] rounded-md border border-[#BBD6BE] px-2 py-1 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => salvarDescricaoEgestor(lancamento.id)}
+                              disabled={salvandoDescricao || descricaoEdicao.trim().length === 0}
+                              className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                            >
+                              {salvandoDescricao ? "Salvando..." : "Salvar"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditandoDescricaoId(null)}
+                              disabled={salvandoDescricao}
+                              className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2">
+                          <span className="flex-1">{lancamento.descricao}</span>
+                          {lancamento.egestor_codigo == null && (
+                            <button
+                              type="button"
+                              onClick={() => iniciarEdicaoDescricao(lancamento.id, lancamento.descricao)}
+                              className="shrink-0 text-[11px] font-medium text-[#2D8C3A] underline underline-offset-2 hover:text-[#1A6B27]"
+                            >
+                              editar
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2 tabular-nums text-[#1A2B1C]">{formatBRL(lancamento.valor)}</td>
                     <td className="px-3 py-2 text-[#3D4F3F]">
                       {lancamento.disponivel_nome

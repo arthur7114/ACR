@@ -779,6 +779,42 @@ async function getLancamentos(supabase: SupabaseClient, fechamentoId: string) {
   return data ?? []
 }
 
+// Edita a descricao de um lancamento na previa, antes do envio. Atualiza tanto a
+// coluna descricao (exibicao) quanto payload.descricao (o que vai ao eGestor).
+// Bloqueado apos o envio (egestor_codigo definido).
+export async function updateEgestorLancamentoDescricao(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+  lancamentoId: string,
+  descricao: string,
+) {
+  const novaDescricao = descricao.trim()
+  if (!novaDescricao) throw new Error("A descricao nao pode ficar vazia.")
+  if (novaDescricao.length > 200) throw new Error("A descricao deve ter no maximo 200 caracteres.")
+
+  const { data: lancamento, error } = await supabase
+    .from("egestor_lancamentos")
+    .select("id, payload, egestor_codigo")
+    .eq("id", lancamentoId)
+    .eq("fechamento_id", fechamentoId)
+    .maybeSingle()
+  if (error) throw error
+  if (!lancamento) throw new Error("Lancamento nao encontrado.")
+  if (lancamento.egestor_codigo !== null) {
+    throw new Error("Lancamento ja enviado ao eGestor; a descricao nao pode mais ser editada.")
+  }
+
+  const payload = { ...((lancamento.payload as Record<string, unknown>) ?? {}), descricao: novaDescricao }
+  const { error: updateError } = await supabase
+    .from("egestor_lancamentos")
+    .update({ descricao: novaDescricao, payload })
+    .eq("id", lancamentoId)
+    .eq("fechamento_id", fechamentoId)
+  if (updateError) throw updateError
+
+  return getLancamentos(supabase, fechamentoId)
+}
+
 async function logEnvio(supabase: SupabaseClient, lancamento: PersistedLancamento, acao: string, status: string, response: unknown, erro?: string) {
   await supabase.from("egestor_envios").insert({
     fechamento_id: lancamento.fechamento_id,
