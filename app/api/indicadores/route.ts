@@ -6,6 +6,7 @@ export async function GET(request: Request) {
   try {
     const data = await getIndicadores({
       competencia: params.get("competencia"),
+      empresaId: params.get("empresa_id"),
       empreendimentoId: params.get("empreendimento_id"),
       imovel: params.get("imovel"),
     })

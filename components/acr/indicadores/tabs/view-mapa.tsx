@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { HeatRow, IndicadoresData } from "@/lib/indicadores-types"
@@ -7,6 +8,7 @@ import { Card, CardNote, ChartCardHeader } from "../primitives/chart-card"
 import { fmt1, heatClass, HEAT_SCALE_TOKENS } from "../lib/heat"
 
 export type HeatMetric = "inad" | "vac"
+type Grupo = "emp" | "apto"
 
 export function ViewMapa({
   data,
@@ -17,14 +19,34 @@ export function ViewMapa({
   heatMetric: HeatMetric
   setHeatMetric: (m: HeatMetric) => void
 }) {
+  const [grupo, setGrupo] = useState<Grupo>("emp")
   const meses = data.heat.meses
-  const rows: HeatRow[] = heatMetric === "inad" ? data.heat.inad : data.heat.vac
+  const porApto = grupo === "apto"
+
+  const rows: HeatRow[] =
+    heatMetric === "inad"
+      ? porApto
+        ? data.heat.inadApto
+        : data.heat.inad
+      : porApto
+        ? data.heat.vacApto
+        : data.heat.vac
   const max = heatMetric === "inad" ? data.heat.inadMax : data.heat.vacMax
-  const media = heatMetric === "inad" ? data.heat.inadMediaCarteira : data.heat.vacMediaCarteira
+  const media =
+    heatMetric === "inad"
+      ? porApto
+        ? data.heat.inadAptoMediaCarteira
+        : data.heat.inadMediaCarteira
+      : porApto
+        ? data.heat.vacAptoMediaCarteira
+        : data.heat.vacMediaCarteira
+
+  const escopo = porApto ? "apartamento" : "empreendimento"
   const titulo =
     heatMetric === "inad"
-      ? "Inadimplência acumulada (% da receita do mês) por empreendimento"
-      : "Vacância (%) por empreendimento"
+      ? `Inadimplência acumulada (% da receita do mês) por ${escopo}`
+      : `Vacância (%) por ${escopo}`
+  const colLabel = porApto ? "Apartamento" : "Empreendimento"
 
   return (
     <>
@@ -34,16 +56,26 @@ export function ViewMapa({
             {heatMetric === "inad" ? "Mapa de inadimplência" : "Mapa de vacância"}
           </h2>
           <p className="mt-1 text-[13.5px] text-acr-muted">
-            Por empreendimento, mês a mês — preenche conforme os fechamentos mensais são processados.
+            Por {escopo}, mês a mês — preenche conforme os fechamentos mensais são processados.
           </p>
         </div>
-        <div className="inline-flex rounded-xl border border-acr-line bg-white p-0.5">
-          <HeatBtn on={heatMetric === "inad"} dot="var(--acr-red)" onClick={() => setHeatMetric("inad")}>
-            Inadimplência
-          </HeatBtn>
-          <HeatBtn on={heatMetric === "vac"} dot="var(--acr-amber)" onClick={() => setHeatMetric("vac")}>
-            Vacância
-          </HeatBtn>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-acr-line bg-white p-0.5">
+            <Seg on={heatMetric === "inad"} dot="var(--acr-red)" onClick={() => setHeatMetric("inad")}>
+              Inadimplência
+            </Seg>
+            <Seg on={heatMetric === "vac"} dot="var(--acr-amber)" onClick={() => setHeatMetric("vac")}>
+              Vacância
+            </Seg>
+          </div>
+          <div className="inline-flex rounded-xl border border-acr-line bg-white p-0.5">
+            <Seg on={grupo === "emp"} onClick={() => setGrupo("emp")}>
+              Por empreendimento
+            </Seg>
+            <Seg on={grupo === "apto"} onClick={() => setGrupo("apto")}>
+              Por apartamento
+            </Seg>
+          </div>
         </div>
       </div>
 
@@ -65,15 +97,15 @@ export function ViewMapa({
           }
         />
 
-        <div className="overflow-x-auto">
+        <div className="max-h-[68vh] overflow-auto">
           <table className="w-full border-separate border-spacing-1">
             <thead>
               <tr>
-                <th className="sticky left-0 z-10 w-[180px] bg-white p-1 text-left text-[11px] font-semibold text-acr-muted">
-                  Empreendimento
+                <th className="sticky left-0 top-0 z-20 w-[200px] bg-white p-1 text-left text-[11px] font-semibold text-acr-muted">
+                  {colLabel}
                 </th>
                 {meses.map((m) => (
-                  <th key={m.value} className="p-1 text-center text-[11px] font-semibold text-acr-muted">
+                  <th key={m.value} className="sticky top-0 z-10 bg-white p-1 text-center text-[11px] font-semibold text-acr-muted">
                     {m.label}
                   </th>
                 ))}
@@ -82,7 +114,7 @@ export function ViewMapa({
             <tbody>
               {rows.map((r) => (
                 <tr key={r.empreendimento}>
-                  <td className="sticky left-0 z-10 whitespace-nowrap bg-white pr-2 text-left text-[12.5px] font-medium text-acr-ink">
+                  <td className="sticky left-0 z-10 max-w-[200px] truncate whitespace-nowrap bg-white pr-2 text-left text-[12.5px] font-medium text-acr-ink">
                     {r.empreendimento}
                     <small className="block text-[10.5px] font-normal text-acr-muted">
                       {r.media !== null ? `média ${fmt1(r.media)}%` : "—"}
@@ -95,17 +127,19 @@ export function ViewMapa({
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={meses.length + 1} className="py-2 text-left text-[12.5px] text-acr-muted">
-                    Sem dados para esta métrica ainda.
+                  <td colSpan={meses.length + 1} className="py-6 text-left text-[12.5px] text-acr-muted">
+                    {porApto
+                      ? "Sem linhas por apartamento para esta métrica/filtro ainda."
+                      : "Sem dados para esta métrica ainda."}
                   </td>
                 </tr>
               )}
               <tr>
                 <td className="sticky left-0 z-10 border-t-2 border-acr-line bg-white pt-2 text-left text-[12.5px] font-semibold text-acr-ink">
-                  Carteira (média)
+                  {porApto ? "Média dos apartamentos" : "Carteira (média)"}
                 </td>
                 {media.map((v, j) => (
-                  <HeatCell key={j} value={v} max={max} bold title={`Carteira · ${meses[j]?.label}`} className="border-t-2 border-acr-line" />
+                  <HeatCell key={j} value={v} max={max} bold title={`Média · ${meses[j]?.label}`} className="border-t-2 border-acr-line" />
                 ))}
               </tr>
             </tbody>
@@ -113,9 +147,11 @@ export function ViewMapa({
         </div>
 
         <CardNote icon={<Info size={15} className="shrink-0 text-acr-green" />}>
-          Verde = saudável · vermelho = atenção. A linha inferior consolida a carteira em cada mês e segue a mesma escala
-          de cores.{" "}
-          {heatMetric === "vac" ? "Vacância usa o estado atual do cadastro (sem histórico mensal ainda)." : ""}
+          Verde = saudável · vermelho = atenção, com a mesma escala (0% a {max}%+) em qualquer filtro. A linha inferior
+          consolida a média e segue a mesma escala de cores.
+          {!porApto && heatMetric === "vac"
+            ? " Vacância por empreendimento usa o estado atual do cadastro."
+            : ""}
         </CardNote>
       </Card>
     </>
@@ -150,14 +186,14 @@ function HeatCell({
   )
 }
 
-function HeatBtn({
+function Seg({
   on,
   dot,
   onClick,
   children,
 }: {
   on: boolean
-  dot: string
+  dot?: string
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -170,7 +206,7 @@ function HeatBtn({
         on ? "bg-acr-green text-white" : "text-acr-muted hover:text-acr-ink",
       )}
     >
-      <span className="size-2 rounded-[3px]" style={{ background: on ? "#fff" : dot }} />
+      {dot && <span className="size-2 rounded-[3px]" style={{ background: on ? "#fff" : dot }} />}
       {children}
     </button>
   )

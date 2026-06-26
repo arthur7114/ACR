@@ -13,9 +13,14 @@ import type {
 
 export interface IndicadoresQuery {
   competencia?: string | null
+  empresaId?: string | null
   empreendimentoId?: string | null
   imovel?: string | null
 }
+
+// Tetos fixos da escala do mapa de calor: a mesma % pinta sempre a mesma cor.
+const INAD_ESCALA_MAX = 15
+const VAC_ESCALA_MAX = 22
 
 const num = (value: unknown): number => {
   const n = typeof value === "string" ? Number(value) : (value as number)
@@ -66,39 +71,63 @@ interface RegraRow {
 export async function getIndicadores(query: IndicadoresQuery = {}): Promise<IndicadoresData> {
   const supabase = createSupabaseAdmin()
 
-  const [{ data: fechRaw, error: fechErr }, { data: imovRaw, error: imovErr }, { data: regrasRaw }] =
-    await Promise.all([
-      supabase
-        .from("fechamentos")
-        .select(
-          `id, competencia, total_receitas, total_despesas, total_comissoes, total_repassar,
-           empreendimento_id, empreendimentos ( nome ), analise_completa`,
-        )
-        .eq("arquivado", false)
-        .order("competencia", { ascending: true }),
-      supabase
-        .from("imoveis")
-        .select(
-          `id, unidade, inquilino_nome, status, valor_aluguel_esperado, empreendimento_id, empreendimentos ( nome )`,
-        )
-        .eq("ativo", true),
-      supabase
-        .from("regras_comerciais")
-        .select("empreendimento_id, taxa_administracao_percent, taxa_intermediacao_percent")
-        .eq("ativo", true),
-    ])
+  const [
+    { data: fechRaw, error: fechErr },
+    { data: imovRaw, error: imovErr },
+    { data: regrasRaw },
+    { data: contasRaw },
+  ] = await Promise.all([
+    supabase
+      .from("fechamentos")
+      .select(
+        `id, competencia, total_receitas, total_despesas, total_comissoes, total_repassar,
+           empreendimento_id, empreendimentos ( nome, egestor_conta_id ), analise_completa`,
+      )
+      .eq("arquivado", false)
+      .order("competencia", { ascending: true }),
+    supabase
+      .from("imoveis")
+      .select(
+        `id, unidade, inquilino_nome, status, valor_aluguel_esperado,
+           empreendimento_id, empreendimentos ( nome, egestor_conta_id )`,
+      )
+      .eq("ativo", true),
+    supabase
+      .from("regras_comerciais")
+      .select("empreendimento_id, taxa_administracao_percent, taxa_intermediacao_percent")
+      .eq("ativo", true),
+    supabase.from("egestor_contas").select("id, nome, tag_padrao"),
+  ])
 
   if (fechErr) throw fechErr
   if (imovErr) throw imovErr
 
+  // "Empresa" = etiqueta da conta eGestor do empreendimento (ex.: ACR Global, MMC).
+  // Fallback "ACR" quando o empreendimento não tem conta vinculada.
+  const contaTag = new Map<string, string>()
+  const contaNome = new Map<string, string>()
+  for (const c of (contasRaw ?? []) as Array<{ id: string; nome: string | null; tag_padrao: string | null }>) {
+    contaTag.set(c.id, (c.tag_padrao || "ACR").trim())
+    if (c.tag_padrao) contaNome.set(c.tag_padrao.trim(), c.nome || c.tag_padrao.trim())
+  }
+  const relContaId = (rel: unknown): string | null => {
+    const obj = Array.isArray(rel) ? rel[0] : rel
+    return (obj as { egestor_conta_id?: string | null } | undefined)?.egestor_conta_id ?? null
+  }
+  const empresaTag = (rel: unknown): string => {
+    const contaId = relContaId(rel)
+    return (contaId && contaTag.get(contaId)) || "ACR"
+  }
+
+  const empresaFiltro = query.empresaId || null
   const empFiltro = query.empreendimentoId || null
   const imovelFiltro = query.imovel || null
 
   const fechamentos = ((fechRaw ?? []) as FechamentoRow[]).filter(
-    (f) => !empFiltro || f.empreendimento_id === empFiltro,
+    (f) => (!empresaFiltro || empresaTag(f.empreendimentos) === empresaFiltro) && (!empFiltro || f.empreendimento_id === empFiltro),
   )
   const imoveis = ((imovRaw ?? []) as ImovelRow[]).filter(
-    (i) => !empFiltro || i.empreendimento_id === empFiltro,
+    (i) => (!empresaFiltro || empresaTag(i.empreendimentos) === empresaFiltro) && (!empFiltro || i.empreendimento_id === empFiltro),
   )
   const regras = (regrasRaw ?? []) as RegraRow[]
 
@@ -127,6 +156,16 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
   const empreendimentosOpts = Array.from(empreendimentosMap.entries())
     .map(([id, label]) => ({ id, label: label || "Empreendimento" }))
     .sort((a, b) => a.label.localeCompare(b.label))
+
+  // Empresas para o filtro = etiquetas das contas eGestor (ex.: ACR, MMC).
+  // "ACR" sempre existe (fallback de empreendimentos sem conta vinculada).
+  const tagsUniverso = new Set<string>(["ACR"])
+  for (const c of (contasRaw ?? []) as Array<{ tag_padrao: string | null }>) {
+    if (c.tag_padrao) tagsUniverso.add(c.tag_padrao.trim())
+  }
+  const empresasOpts = Array.from(tagsUniverso)
+    .sort((a, b) => a.localeCompare(b))
+    .map((tag) => ({ id: tag, label: tag === "ACR" ? "ACR (Global)" : contaNome.get(tag) ?? tag }))
 
   const imoveisOpts = imoveis
     .map((i) => ({ id: i.unidade, label: `${i.unidade}${i.inquilino_nome ? ` · ${i.inquilino_nome}` : ""}` }))
@@ -266,20 +305,52 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
   }
   const ranking = Array.from(rankingMap.values()).sort((a, b) => b.pct - a.pct)
 
-  // --- Heatmap (inadimplência % real por empreendimento × competência) ---
+  // --- Heatmap (inadimplência % e vacância %, por empreendimento e por apartamento) ---
   const heatMeses = competenciasSet.slice(-12)
   const heatMesesLabels = heatMeses.map((value) => ({ value, label: formatCompetenciaShort(value) }))
-  // chave emp -> competencia -> { inad, receita }
+
+  // Por empreendimento: emp -> competencia -> { inad, receita }
   const heatAgg = new Map<string, Map<string, { inad: number; receita: number }>>()
+  // Por apartamento: "emp||apto" -> competencia -> { inad, receita, vago }
+  const aptoAgg = new Map<string, Map<string, { inad: number; receita: number; vago: boolean }>>()
+  const aptoLabel = new Map<string, string>()
+
   for (const f of fechamentos) {
     const empNome = relNome(f.empreendimentos) || "Empreendimento"
+    const prest = f.analise_completa?.prestacao
+
     if (!heatAgg.has(empNome)) heatAgg.set(empNome, new Map())
     const byMes = heatAgg.get(empNome)!
     const cell = byMes.get(f.competencia) ?? { inad: 0, receita: 0 }
     cell.receita += num(f.total_receitas)
-    for (const inad of f.analise_completa?.prestacao?.inadimplencias_acumuladas ?? []) cell.inad += num(inad.valor)
+    for (const inad of prest?.inadimplencias_acumuladas ?? []) cell.inad += num(inad.valor)
     byMes.set(f.competencia, cell)
+
+    if (!prest) continue
+    const touchApto = (apto: string, label: string) => {
+      const key = `${empNome}||${apto}`
+      if (!aptoAgg.has(key)) aptoAgg.set(key, new Map())
+      if (!aptoLabel.has(key) || label) aptoLabel.set(key, label || aptoLabel.get(key) || apto)
+      const m = aptoAgg.get(key)!
+      const c = m.get(f.competencia) ?? { inad: 0, receita: 0, vago: false }
+      m.set(f.competencia, c)
+      return c
+    }
+    for (const row of prest.receitas_por_imovel ?? []) {
+      const apto = (row.apto ?? "").trim()
+      if (!apto || (imovelFiltro && apto !== imovelFiltro)) continue
+      const c = touchApto(apto, `${apto}${row.inquilino ? ` · ${row.inquilino}` : ""}`)
+      c.receita += num(row.total)
+      if (num(row.total) <= 0 && num(row.aluguel) <= 0) c.vago = true
+    }
+    for (const inad of prest.inadimplencias_acumuladas ?? []) {
+      const apto = (inad.apto ?? "").trim()
+      if (!apto || (imovelFiltro && apto !== imovelFiltro)) continue
+      const c = touchApto(apto, `${apto}${inad.inquilino ? ` · ${inad.inquilino}` : ""}`)
+      c.inad += num(inad.valor)
+    }
   }
+
   const empNomesHeat = Array.from(heatAgg.keys()).sort((a, b) => a.localeCompare(b))
   const inadRows: HeatRow[] = empNomesHeat.map((emp) => {
     const byMes = heatAgg.get(emp)!
@@ -291,7 +362,7 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
     return { empreendimento: emp, valores, media: avg(valores) }
   })
 
-  // Vacância: apenas o estado atual (sem histórico no cadastro) -> só a coluna do mês de referência
+  // Vacância por empreendimento: estado atual do cadastro -> só a coluna do mês de referência
   const vacPorEmp = new Map<string, { vagos: number; base: number }>()
   for (const i of imoveis) {
     const empNome = relNome(i.empreendimentos) || "Empreendimento"
@@ -310,16 +381,38 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
     return { empreendimento: emp, valores, media: avg(valores) }
   })
 
-  const colAvg = (rows: HeatRow[], j: number): number | null =>
-    avg(rows.map((r) => r.valores[j]))
+  // Por apartamento
+  const aptoKeys = Array.from(aptoAgg.keys()).sort((a, b) =>
+    (aptoLabel.get(a) ?? a).localeCompare(aptoLabel.get(b) ?? b),
+  )
+  const inadAptoRows: HeatRow[] = aptoKeys.map((key) => {
+    const m = aptoAgg.get(key)!
+    const valores = heatMeses.map((mes) => {
+      const c = m.get(mes)
+      if (!c) return null
+      if (c.receita > 0) return (c.inad / c.receita) * 100
+      return c.inad > 0 ? 100 : null
+    })
+    return { empreendimento: aptoLabel.get(key) ?? key, valores, media: avg(valores) }
+  })
+  const vacAptoRows: HeatRow[] = aptoKeys.map((key) => {
+    const m = aptoAgg.get(key)!
+    const valores = heatMeses.map((mes) => {
+      const c = m.get(mes)
+      if (!c) return null
+      return c.vago ? 100 : 0
+    })
+    return { empreendimento: aptoLabel.get(key) ?? key, valores, media: avg(valores) }
+  })
+
+  const colAvg = (rows: HeatRow[], j: number): number | null => avg(rows.map((r) => r.valores[j]))
   const inadMediaCarteira = heatMeses.map((_, j) => colAvg(inadRows, j))
   const vacMediaCarteira = heatMeses.map((_, j) => colAvg(vacRows, j))
-  const flatMax = (rows: HeatRow[]) => {
-    const vals = rows.flatMap((r) => r.valores).filter((x): x is number => x !== null)
-    return vals.length ? Math.max(...vals) : 0
-  }
-  const inadMax = Math.max(15, Math.ceil(flatMax(inadRows)))
-  const vacMax = Math.max(22, Math.ceil(flatMax(vacRows)))
+  const inadAptoMediaCarteira = heatMeses.map((_, j) => colAvg(inadAptoRows, j))
+  const vacAptoMediaCarteira = heatMeses.map((_, j) => colAvg(vacAptoRows, j))
+  // Escala com teto fixo: a mesma % pinta sempre a mesma cor.
+  const inadMax = INAD_ESCALA_MAX
+  const vacMax = VAC_ESCALA_MAX
 
   // --- Registro de pagamentos por apto/inquilino (todas as competências) ---
   const registro: RegistroPagamento[] = []
@@ -357,9 +450,10 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
     competencia: competencia ?? "",
     competenciaLabel: competencia ? formatCompetenciaLong(competencia) : "Sem fechamentos",
     competenciasDisponiveis,
+    empresas: empresasOpts,
     empreendimentos: empreendimentosOpts,
     imoveis: imoveisOpts,
-    filtros: { empreendimentoId: empFiltro, imovel: imovelFiltro },
+    filtros: { empresaId: empresaFiltro, empreendimentoId: empFiltro, imovel: imovelFiltro },
     ocupacao: {
       pct: ocupacaoPct,
       ocupados: ocupados + inadimplentes,
@@ -403,10 +497,14 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
       meses: heatMesesLabels,
       inad: inadRows,
       vac: vacRows,
+      inadApto: inadAptoRows,
+      vacApto: vacAptoRows,
       inadMax,
       vacMax,
       inadMediaCarteira,
       vacMediaCarteira,
+      inadAptoMediaCarteira,
+      vacAptoMediaCarteira,
     },
     registro,
     pendencias,

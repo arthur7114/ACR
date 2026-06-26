@@ -53,9 +53,10 @@ export interface IndicadoresData {
   competencia: string
   competenciaLabel: string
   competenciasDisponiveis: { value: string; label: string }[]
+  empresas: IndicadoresFiltroOption[]
   empreendimentos: IndicadoresFiltroOption[]
   imoveis: IndicadoresFiltroOption[]
-  filtros: { empreendimentoId: string | null; imovel: string | null }
+  filtros: { empresaId: string | null; empreendimentoId: string | null; imovel: string | null }
 
   // KPIs principais (ordem: ocupação, receita, despesa, repasse, taxa total)
   ocupacao: {
@@ -105,12 +106,19 @@ export interface IndicadoresData {
 
   heat: {
     meses: { value: string; label: string }[]
+    // Agrupado por empreendimento
     inad: HeatRow[]
     vac: HeatRow[]
+    // Agrupado por apartamento (detalhamento; toggle na view)
+    inadApto: HeatRow[]
+    vacApto: HeatRow[]
+    // Teto fixo da escala (mesma % = mesma cor sempre)
     inadMax: number
     vacMax: number
     inadMediaCarteira: (number | null)[]
     vacMediaCarteira: (number | null)[]
+    inadAptoMediaCarteira: (number | null)[]
+    vacAptoMediaCarteira: (number | null)[]
   }
 
   registro: RegistroPagamento[]

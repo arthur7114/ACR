@@ -29,6 +29,7 @@ export function IndicadoresView() {
   const [heatMetric, setHeatMetric] = useState<HeatMetric>("inad")
 
   const [competencia, setCompetencia] = useState<string | null>(null)
+  const [empresaId, setEmpresaId] = useState<string>("")
   const [empreendimentoId, setEmpreendimentoId] = useState<string>("")
   const [imovel, setImovel] = useState<string>("")
 
@@ -38,6 +39,7 @@ export function IndicadoresView() {
     try {
       const params = new URLSearchParams()
       if (competencia) params.set("competencia", competencia)
+      if (empresaId) params.set("empresa_id", empresaId)
       if (empreendimentoId) params.set("empreendimento_id", empreendimentoId)
       if (imovel) params.set("imovel", imovel)
       const res = await fetch(`/api/indicadores?${params.toString()}`)
@@ -52,7 +54,7 @@ export function IndicadoresView() {
     } finally {
       setLoading(false)
     }
-  }, [competencia, empreendimentoId, imovel])
+  }, [competencia, empresaId, empreendimentoId, imovel])
 
   useEffect(() => {
     void load()
@@ -77,6 +79,14 @@ export function IndicadoresView() {
             {(data?.competenciasDisponiveis ?? []).map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
+              </option>
+            ))}
+          </select>
+          <select className={selectCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+            <option value="">Todas as empresas</option>
+            {(data?.empresas ?? []).map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.label}
               </option>
             ))}
           </select>
