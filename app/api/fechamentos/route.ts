@@ -62,6 +62,11 @@ export async function POST(request: Request) {
         competencia: input.data.competencia,
         observacoes: input.data.observacoes,
         status: "rascunho",
+        // Criar um fechamento para uma combinacao (imobiliaria, empreendimento,
+        // competencia) que ja existe arquivada DEVE desarquiva-la — caso contrario
+        // o "novo" fechamento nasce invisivel na lista inicial (que filtra
+        // arquivado=false). Sem isto, recriar um fechamento arquivado some da tela.
+        arquivado: false,
       },
       { onConflict: "imobiliaria_id,empreendimento_id,competencia" },
     )
