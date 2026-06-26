@@ -217,8 +217,10 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
   const realizado = receita
   const potencialCascata = realizado + vacanciaValor + descontos
   const pctOf = (v: number) => (potencialCascata > 0 ? (v / potencialCascata) * 100 : 0)
+  // Vacância só é "sem dados" quando não há cadastro de imóveis; valor 0 com cadastro
+  // significa carteira sem vagos (zero real), não pendência.
   const ofensores: OfensorReceita[] = [
-    { key: "vacancia", label: "Vacância", valor: vacanciaValor, pct: pctOf(vacanciaValor), pending: vacanciaValor === 0 },
+    { key: "vacancia", label: "Vacância", valor: vacanciaValor, pct: pctOf(vacanciaValor), pending: baseOcupacao === 0 },
     { key: "descontos", label: "Descontos", valor: descontos, pct: pctOf(descontos) },
   ]
   const realizadoPct = potencialCascata > 0 ? (realizado / potencialCascata) * 100 : 0
