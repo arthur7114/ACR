@@ -437,6 +437,21 @@ export function ImoveisView({
                       </tr>
                     </thead>
                     <tbody>
+                      {filteredImoveis.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
+                            {imoveis.length === 0 ? (
+                              <>
+                                Nenhum imóvel cadastrado ainda. Clique em{" "}
+                                <span className="font-semibold text-[#3D4F3F]">&ldquo;Sincronizar dos fechamentos&rdquo;</span>{" "}
+                                para popular a partir das prestações já processadas — ou importe um CSV / cadastre manualmente.
+                              </>
+                            ) : (
+                              "Nenhum imóvel encontrado para os filtros atuais."
+                            )}
+                          </td>
+                        </tr>
+                      )}
                       {filteredImoveis.map((imovel) => (
                         <tr key={imovel.id} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                           <td className="px-4 py-3 font-medium text-[#3D4F3F]">{imovel.codigo_imobiliaria}</td>
@@ -786,7 +801,16 @@ function RegistrySection<T>({ rows, headers, renderRow, form }: { rows: T[]; hea
               ))}
             </tr>
           </thead>
-          <tbody>{rows.map(renderRow)}</tbody>
+          <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={headers.length} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
+                  Nenhum registro cadastrado ainda.
+                </td>
+              </tr>
+            )}
+            {rows.map(renderRow)}
+          </tbody>
         </table>
       </div>
       {form}
