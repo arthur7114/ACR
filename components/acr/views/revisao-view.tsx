@@ -902,7 +902,8 @@ export function RevisaoView({
             <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Admin. {formatPercent(taxaAdministracao)}</span>
             {intermediacaoDocumento && (
               <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">
-                Intermediação {intermediacaoDocumento.percent !== null ? formatPercent(intermediacaoDocumento.percent) : formatBRL(intermediacaoDocumento.valor)}
+                Intermediação {formatBRL(intermediacaoDocumento.valor)}
+                {intermediacaoDocumento.percent !== null ? ` · ${formatPercent(intermediacaoDocumento.percent)}` : ""}
               </span>
             )}
           </div>
