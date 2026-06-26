@@ -203,7 +203,7 @@ export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId:
     .from("egestor_lancamentos")
     .select("*")
     .eq("fechamento_id", fechamentoId)
-    .eq("status", "anexo_pendente")
+    .eq("anexo_status", "pendente")
     .not("egestor_cod_modulo", "is", null)
 
   if (error) throw error
@@ -214,10 +214,10 @@ export async function retryEgestorAnexos(supabase: SupabaseClient, fechamentoId:
     await uploadAnexos(supabase, client, lancamento, Number(lancamento.egestor_cod_modulo))
     const { data: current } = await supabase
       .from("egestor_lancamentos")
-      .select("status")
+      .select("anexo_status")
       .eq("id", lancamento.id)
       .single()
-    if (current?.status === "anexo_pendente") {
+    if (current?.anexo_status === "pendente") {
       await logEnvio(supabase, lancamento, "retry_anexo", "pendente", null, "Anexo ainda pendente.")
     } else {
       await logEnvio(supabase, lancamento, "retry_anexo", "ok", null)
@@ -813,14 +813,16 @@ async function logStatusEvento(
 // O lancamento financeiro ja foi enviado; isto afeta apenas o anexo do documento.
 function friendlyAnexoError(raw: string): string {
   if (/acesso|permiss/i.test(raw)) {
-    return 'eGestor: o usuario do token nao tem permissao de "Disco Virtual" (anexos). Habilite o Disco Virtual para esse usuario no eGestor e clique em "Reenviar anexos". O lancamento ja foi enviado.'
+    return 'Anexo nao enviado: habilite "Disco Virtual" no eGestor e use "Reenviar anexos".'
   }
   return raw
 }
 
+// Falha de anexo NAO e erro do lancamento: o lancamento financeiro ja foi
+// enviado. Mantemos o status "enviado" e registramos apenas o anexo como
+// pendente (anexo_status/anexo_mensagem) — exibido como detalhe discreto.
 async function markAnexoPendente(supabase: SupabaseClient, lancamentoId: string, message: string) {
   await supabase.from("egestor_lancamentos").update({
-    status: "anexo_pendente",
     anexo_status: "pendente",
     anexo_mensagem: message,
   }).eq("id", lancamentoId)

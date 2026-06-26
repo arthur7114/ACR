@@ -613,7 +613,7 @@ export function RevisaoView({
   const canPreviewEgestor = isApproved && !hasBlocking
   const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
   const hasSentEgestor = egestorLancamentos.some((l) => l.egestor_codigo !== null)
-  const hasPendingAnexos = egestorLancamentos.some((l) => l.status === "anexo_pendente")
+  const hasPendingAnexos = egestorLancamentos.some((l) => l.anexo_status === "pendente")
   const repasseConciliacao = getRepasseConciliacao(rechecks, totals)
   const heroTone = getHeroToneClasses(repasseConciliacao.tone)
   const bannerState: "blocked" | "warning" | "ok" = hasBlocking ? "blocked" : validationSummary.warnings > 0 ? "warning" : "ok"
@@ -1656,7 +1656,9 @@ export function RevisaoView({
                           <p className="mt-1 text-[11px] text-[#991B1B]">{lancamento.validacao_mensagem}</p>
                         )
                       )}
-                      {lancamento.anexo_mensagem && <p className="mt-1 text-[11px] text-[#92400E]">{lancamento.anexo_mensagem}</p>}
+                      {lancamento.anexo_status === "pendente" && lancamento.anexo_mensagem && (
+                        <p className="mt-1 text-[11px] text-[#9AA79B]">{lancamento.anexo_mensagem}</p>
+                      )}
                       {lancamento.revalidacao_status && (
                         <p className={`mt-1 text-[11px] ${lancamento.revalidacao_status === "ok" ? "text-[#166534]" : "text-[#991B1B]"}`}>
                           {lancamento.revalidacao_status === "ok" ? "Revalidado" : "Falha na revalidação"}: {lancamento.revalidacao_mensagem ?? lancamento.revalidacao_status}
