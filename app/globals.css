@@ -37,6 +37,31 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* ACR — paleta da plataforma (verde-marca exato; tons aprovados no mock contract) */
+  --acr-green: #2d8c3a;
+  --acr-green-strong: #1a5c24;
+  --acr-green-ink: #1a2b1c;
+  --acr-green-soft: #ddeee1;
+  --acr-green-tint: #eff6f0;
+  --acr-ink: #1a2b1c;
+  --acr-muted: #6b7f6e;
+  --acr-muted-2: #3d4f3f;
+  --acr-line: #eef1ee;
+  --acr-line-2: #e2e8e3;
+  --acr-page: #f8faf8;
+  --acr-amber: #b7791f;
+  --acr-amber-soft: #fbf3e4;
+  --acr-red: #c0432f;
+  --acr-red-soft: #fbedea;
+  --acr-blue: #3a6ea5;
+  /* Mapa de calor — verde -> amarelo -> vermelho (6 faixas) */
+  --acr-heat-0: #eff6f0;
+  --acr-heat-1: #bfe3c6;
+  --acr-heat-2: #7fc98c;
+  --acr-heat-3: #f4d58a;
+  --acr-heat-4: #e8a15a;
+  --acr-heat-5: #c0432f;
 }
 
 .dark {
@@ -113,6 +138,24 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ACR — utilitários Tailwind (bg-acr-green, text-acr-ink, border-acr-line, …) */
+  --color-acr-green: var(--acr-green);
+  --color-acr-green-strong: var(--acr-green-strong);
+  --color-acr-green-ink: var(--acr-green-ink);
+  --color-acr-green-soft: var(--acr-green-soft);
+  --color-acr-green-tint: var(--acr-green-tint);
+  --color-acr-ink: var(--acr-ink);
+  --color-acr-muted: var(--acr-muted);
+  --color-acr-muted-2: var(--acr-muted-2);
+  --color-acr-line: var(--acr-line);
+  --color-acr-line-2: var(--acr-line-2);
+  --color-acr-page: var(--acr-page);
+  --color-acr-amber: var(--acr-amber);
+  --color-acr-amber-soft: var(--acr-amber-soft);
+  --color-acr-red: var(--acr-red);
+  --color-acr-red-soft: var(--acr-red-soft);
+  --color-acr-blue: var(--acr-blue);
 }
 
 @layer base {
@@ -121,5 +164,37 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Faixas do mapa de calor (verde -> amarelo -> vermelho). Lookup por índice em lib/heat.ts. */
+  .acr-heat-q0 {
+    background: var(--acr-heat-0);
+    color: #3d4f3f;
+  }
+  .acr-heat-q1 {
+    background: var(--acr-heat-1);
+    color: #1a2b1c;
+  }
+  .acr-heat-q2 {
+    background: var(--acr-heat-2);
+    color: #143b1a;
+  }
+  .acr-heat-q3 {
+    background: var(--acr-heat-3);
+    color: #5c4410;
+  }
+  .acr-heat-q4 {
+    background: var(--acr-heat-4);
+    color: #fff;
+  }
+  .acr-heat-q5 {
+    background: var(--acr-heat-5);
+    color: #fff;
+  }
+  .acr-heat-empty {
+    background: repeating-linear-gradient(45deg, #fafbfa, #fafbfa 5px, #f1f4f1 5px, #f1f4f1 10px);
+    color: transparent;
   }
 }
