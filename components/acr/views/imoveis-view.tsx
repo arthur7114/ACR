@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, Building2, CheckCircle, Edit3, EyeOff, FileUp, History, Home, Loader2, RotateCcw, Save, Search, Trash2 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus, RegraComercial } from "@/lib/cadastros-types"
@@ -201,6 +201,26 @@ export function ImoveisView({
   const [historicoImovel, setHistoricoImovel] = useState<Imovel | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [autoSyncing, setAutoSyncing] = useState(false)
+  const autoSyncTried = useRef(false)
+
+  // Sincronização automática: na primeira vez que a lista de imóveis estiver
+  // vazia (sem erro/carregamento), popula a partir das prestações processadas.
+  // Guarda contra loop: roda no máximo uma vez por montagem.
+  useEffect(() => {
+    if (loading || error || imoveis.length > 0 || autoSyncTried.current) return
+    autoSyncTried.current = true
+    setAutoSyncing(true)
+    setActionError(null)
+    onSyncImoveis()
+      .then((r) => {
+        if (r.criados > 0 || r.atualizados > 0) {
+          setSyncMsg(`Sincronizado automaticamente: ${r.criados} criados, ${r.atualizados} atualizados (${r.totalUnidades} unidades).`)
+        }
+      })
+      .catch((err) => setActionError(err instanceof Error ? err.message : "Falha na sincronização automática."))
+      .finally(() => setAutoSyncing(false))
+  }, [loading, error, imoveis.length, onSyncImoveis])
 
   async function handleSync() {
     setSyncing(true)
@@ -440,9 +460,14 @@ export function ImoveisView({
                       {filteredImoveis.length === 0 && (
                         <tr>
                           <td colSpan={8} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
-                            {imoveis.length === 0 ? (
+                            {autoSyncing ? (
+                              <span className="inline-flex items-center gap-2">
+                                <Loader2 size={15} className="animate-spin" />
+                                Sincronizando imóveis dos fechamentos…
+                              </span>
+                            ) : imoveis.length === 0 ? (
                               <>
-                                Nenhum imóvel cadastrado ainda. Clique em{" "}
+                                Nenhum imóvel cadastrado ainda. Use{" "}
                                 <span className="font-semibold text-[#3D4F3F]">&ldquo;Sincronizar dos fechamentos&rdquo;</span>{" "}
                                 para popular a partir das prestações já processadas — ou importe um CSV / cadastre manualmente.
                               </>
