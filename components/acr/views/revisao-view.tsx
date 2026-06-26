@@ -768,6 +768,11 @@ export function RevisaoView({
   const inadimplentes = linhasImoveis.filter(isInadimplenteEfetivo).length
   const vagos = linhasImoveis.filter(isVacantRow).length
   const airbnb = linhasImoveis.filter(isAirbnbRow).length
+  // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
+  // Usa as linhas marcadas INTERMEDIACAO; se nao houver linha, cai na contagem de
+  // acordos de intermediacao do mes.
+  const intermediadasRows = linhasImoveis.filter(isIntermediacaoRow).length
+  const intermediadas = intermediadasRows > 0 ? intermediadasRows : intermediacoes.length
 
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
     const textMatch = !filtroTexto || 
@@ -1093,12 +1098,15 @@ export function RevisaoView({
 
           {linhasImoveis.length > 0 && (
             <div className="space-y-3">
-              <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância e aplicativos são contagens separadas." />
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+              <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância, aplicativos e intermediação são contagens separadas." />
+              <div className={`grid grid-cols-2 gap-3 md:grid-cols-6 ${intermediadas > 0 ? "lg:grid-cols-7" : ""}`}>
                 <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
                 <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
                 <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
                 <MetricTile label="Aplicativos" value={`${airbnb}`} subtext="Não contam como vagos" />
+                {intermediadas > 0 && (
+                  <MetricTile label="Intermediação" value={`${intermediadas}`} subtext="Categoria à parte" />
+                )}
                 <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
                 <MetricTile
                   label="Aluguel médio"
