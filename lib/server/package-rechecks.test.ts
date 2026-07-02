@@ -130,7 +130,10 @@ test("gera divergencia real quando soma de comissao completa difere do consolida
 
   const check = result.rechecks.find((item) => item.id === "total_linhas_comissoes")
 
-  assert.equal(check?.status, "failed")
+  // Divergencia entre a soma das linhas e o consolidado da IA e sinal de leitura,
+  // nao erro de repasse: e reportada como alerta (rebaixada de bloqueio), mas com
+  // esperado/encontrado/diferenca preservados. Ver comentario "B3" em buildRechecks.
+  assert.equal(check?.status, "warning")
   assert.equal(check?.expected, 30)
   assert.equal(check?.actual, 50)
   assert.equal(check?.difference, 20)
@@ -356,7 +359,9 @@ test("bloqueia possivel acordo ou rescisao repetido", () => {
     repasse: createRepasse(2700),
     despesas: null,
     reajuste: null,
-    historicalAgreementKeys: ["rescisao|natan|2026-03|750.00"],
+    // Reimportacao real: mesma chave completa (tipo|apto|inquilino|recebimento|
+    // origem|valor) que buildAgreementPaymentKey gera para o item acima.
+    historicalAgreementKeys: ["rescisao|202|natan|2026-03|2026-03|750.00"],
   })
 
   const check = result.rechecks.find((item) => item.id === "duplicate_agreement_payment")
