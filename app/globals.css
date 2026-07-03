@@ -197,4 +197,18 @@
     background: repeating-linear-gradient(45deg, #fafbfa, #fafbfa 5px, #f1f4f1 5px, #f1f4f1 10px);
     color: transparent;
   }
+  /* Card padrao ACR: sombra sutil + borda + radius consistentes (polimento pre-reuniao). */
+  .acr-card {
+    background: white;
+    border: 1px solid var(--acr-line);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 1px 2px rgba(26, 43, 28, 0.04);
+  }
+  .acr-card-hover {
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .acr-card-hover:hover {
+    box-shadow: 0 2px 8px rgba(26, 43, 28, 0.08);
+    border-color: var(--acr-line-2);
+  }
 }
