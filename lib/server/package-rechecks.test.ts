@@ -401,3 +401,32 @@ test("nao bloqueia parcelas do mesmo acordo recebidas em meses diferentes", () =
   assert.equal(check?.status, "passed")
   assert.equal(check?.actual, 0)
 })
+
+test("Pompilio: validatePackage expoe receita bruta e 3 despesas itemizadas", () => {
+  const prestacao = createPrestacao({
+    imobiliaria: "Cesar Rego Imoveis",
+    competencia: "2026-05",
+    receitas_por_imovel: [
+      { apto: "AP0361/1", inquilino: "", aluguel: 8000, desconto: 113.27, aluguel_com_desconto: 7886.73, garagem: null, vagas_garagem: null, agua: null, iptu: null, seguro_incendio: null, total: 8000, comissao: null, repasse: null, vencimento: "05/2026", observacao: "Endereco. REEMBOLSO AO INQUILINO DESC. LOCATARIO 113,27", confianca: 1 },
+      { apto: "AP0362/2", inquilino: "", aluguel: 6015.38, desconto: 0.26, aluguel_com_desconto: 6015.12, garagem: null, vagas_garagem: null, agua: null, iptu: null, seguro_incendio: null, total: 6015.38, comissao: null, repasse: null, vencimento: "05/2026", observacao: "Endereco. DESCONTO FORNECIDO 0,26", confianca: 1 },
+    ],
+    resumo_financeiro: {
+      total_linhas_receitas: 14015.38, total_linhas_comissoes: 594.12, total_linhas_repasse: 13409.90,
+      comissao_administracao: 594.12,
+      outras_comissoes_despesas: [],
+      total_outras_comissoes_despesas: 0,
+      total_comissao_despesas: 605.48,
+      recebidos_em_nome_locador: 14015.38,
+      total_a_repassar: 13409.90,
+      repasse_embutido: true,
+      confianca: 1,
+    },
+  })
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+
+  assert.equal(result.totals.total_receitas, 14128.65)
+  assert.equal(result.totals.total_despesas, 124.63)
+  assert.equal(result.totals.total_a_repassar, 13409.90)
+  const lista = result.prestacao?.resumo_financeiro.outras_comissoes_despesas ?? []
+  assert.equal(lista.length, 3)
+})

@@ -11,6 +11,7 @@ import type {
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
 import type { CommercialRuleForValidation } from "./regras-comerciais"
+import { reconciliarResumoDespesas } from "@/lib/despesas-locador"
 
 const MONEY_TOLERANCE = 0.01
 const REPASSE_ALERT_TOLERANCE = 5
@@ -83,26 +84,34 @@ export function validatePackage(input: PackageValidationInput) {
 }
 
 function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
-  // "Outras despesas" deve refletir apenas despesas reais do locador. Comissoes,
-  // intermediacao, taxas de transferencia (TED/PIX/TX) e descontos de inquilino
-  // NAO sao despesas: comissao tem balde proprio, descontos abatem o aluguel por
-  // linha e taxas bancarias entram no consolidado comissao+despesas. Removemos
-  // esses itens da lista para o numero de "despesas" nao inflar (ponto #1).
-  const outrasDespesasFiltradas = analysis.resumo_financeiro.outras_comissoes_despesas
-    .filter((item) => !isNaoDespesaLocador(item.descricao))
-    .map((item) => ({
-      ...item,
-      // Itens de CREDITO (ex.: "OUTROS CREDITOS") reduzem a despesa; entram com
-      // sinal negativo para que o total de despesas reflita o liquido (debitos
-      // menos creditos), em vez de somar os dois lados que se anulam (ponto #1).
-      valor: isCreditoQueReduzDespesa(item.descricao)
-        ? -Math.abs(roundMoney(item.valor))
-        : roundMoney(item.valor),
-      confianca: clampConfidence(item.confianca),
-    }))
-  const totalOutrasDespesasRecalc = roundMoney(sum(outrasDespesasFiltradas.map((d) => d.valor)))
-
   const competenciaFechamento = normalizeCompetenciaKey(analysis.competencia)
+
+  // Normaliza as linhas ANTES de reconciliar, para a reconstrução ler os valores
+  // finais (IPTU de passagem anulado, inadimplência marcada) de `desconto`/`observacao`.
+  const linhasNormalizadas = analysis.receitas_por_imovel.map((row) => {
+    const base = {
+      ...row,
+      total: roundMoney(row.total),
+      aluguel: nullableMoney(row.aluguel),
+      desconto: nullableMoney(row.desconto),
+      aluguel_com_desconto: nullableMoney(row.aluguel_com_desconto),
+      garagem: nullableMoney(row.garagem),
+      agua: nullableMoney(row.agua),
+      iptu: nullableMoney(row.iptu),
+      seguro_incendio: nullableMoney(row.seguro_incendio),
+      comissao: nullableMoney(row.comissao),
+      repasse: nullableMoney(row.repasse),
+      confianca: clampConfidence(row.confianca),
+    }
+    // #3 IPTU de passagem: crédito e débito de mesmo valor se anulam.
+    const semIptuDePassagem = anularIptuDePassagem(base)
+    // #4 Inadimplência por competência: aluguel de mês anterior => inadimplente no mês.
+    return marcarInadimplenciaPorCompetencia(semIptuDePassagem, competenciaFechamento)
+  })
+
+  // ADR-0001: receita BRUTA + desconto/reembolso/taxas itemizados como despesa do
+  // locador. A regra vive no módulo dedicado; aqui só aplicamos o resultado.
+  const reconciliado = reconciliarResumoDespesas({ ...analysis, receitas_por_imovel: linhasNormalizadas })
 
   return {
     ...analysis,
@@ -113,35 +122,14 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       total_linhas_comissoes: nullableMoney(analysis.resumo_financeiro.total_linhas_comissoes),
       total_linhas_repasse: nullableMoney(analysis.resumo_financeiro.total_linhas_repasse),
       comissao_administracao: nullableMoney(analysis.resumo_financeiro.comissao_administracao),
-      total_outras_comissoes_despesas: totalOutrasDespesasRecalc,
-      total_comissao_despesas: nullableMoney(analysis.resumo_financeiro.total_comissao_despesas),
-      recebidos_em_nome_locador: nullableMoney(analysis.resumo_financeiro.recebidos_em_nome_locador),
+      recebidos_em_nome_locador: reconciliado.recebidosEmNomeLocador,
+      outras_comissoes_despesas: reconciliado.outrasComissoesDespesas,
+      total_outras_comissoes_despesas: reconciliado.totalOutrasComissoesDespesas,
+      total_comissao_despesas: reconciliado.totalComissaoDespesas,
       total_a_repassar: nullableMoney(analysis.resumo_financeiro.total_a_repassar),
       confianca: clampConfidence(analysis.resumo_financeiro.confianca),
-      outras_comissoes_despesas: outrasDespesasFiltradas,
     },
-    receitas_por_imovel: analysis.receitas_por_imovel.map((row) => {
-      const base = {
-        ...row,
-        total: roundMoney(row.total),
-        aluguel: nullableMoney(row.aluguel),
-        desconto: nullableMoney(row.desconto),
-        aluguel_com_desconto: nullableMoney(row.aluguel_com_desconto),
-        garagem: nullableMoney(row.garagem),
-        agua: nullableMoney(row.agua),
-        iptu: nullableMoney(row.iptu),
-        seguro_incendio: nullableMoney(row.seguro_incendio),
-        comissao: nullableMoney(row.comissao),
-        repasse: nullableMoney(row.repasse),
-        confianca: clampConfidence(row.confianca),
-      }
-      // #3 IPTU de passagem: quando o IPTU foi cobrado do inquilino e repassado
-      // (mesmo valor em credito e debito), ele se anula e nao e receita do locador.
-      const semIptuDePassagem = anularIptuDePassagem(base)
-      // #4 Inadimplencia por competencia: pagamento de ALUGUEL referente a um mes
-      // ANTERIOR ao fechamento => a unidade esta inadimplente no mes corrente.
-      return marcarInadimplenciaPorCompetencia(semIptuDePassagem, competenciaFechamento)
-    }),
+    receitas_por_imovel: linhasNormalizadas,
     acordos_rescisoes_recebidos: dropHallucinatedIntermediacoes(
       (analysis.acordos_rescisoes_recebidos ?? []).map((item) => ({
         ...item,
@@ -152,23 +140,6 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       analysis.resumo_financeiro.outras_comissoes_despesas ?? [],
     ),
   }
-}
-
-// #1 Itens que NAO sao "despesa do locador": comissao da administradora,
-// intermediacao, taxas de transferencia bancaria (TED/PIX/TX) e descontos/
-// reembolsos concedidos ao inquilino (estes abatem o aluguel por linha).
-function isNaoDespesaLocador(descricao: string): boolean {
-  const texto = normalizeText(descricao)
-  return /comiss|intermedia|\bted\b|\bpix\b|\btx\b|\bdesconto\b|\bdesc\.|reembolso/.test(texto)
-}
-
-// Itens de credito no bloco RESUMO (ex.: "OUTROS CREDITOS") REDUZEM a despesa
-// liquida — devem entrar com sinal negativo. "Debito" tem prioridade para nao
-// negar uma linha que cite ambos.
-function isCreditoQueReduzDespesa(descricao: string): boolean {
-  const texto = normalizeText(descricao)
-  if (/debito/.test(texto)) return false
-  return /credito|reduz/.test(texto)
 }
 
 // #3 Anula o IPTU "de passagem": IPTU cobrado do inquilino e repassado a
