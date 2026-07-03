@@ -73,6 +73,9 @@ function buildCrumbs(pathname: string, summary: ReturnType<typeof useFechamentoS
   if (pathname.startsWith("/imoveis")) {
     return [{ label: "Imóveis" }]
   }
+  if (pathname.startsWith("/iptu")) {
+    return [{ label: "IPTU" }]
+  }
   if (pathname.startsWith("/indicadores")) {
     return [{ label: "Indicadores" }]
   }
