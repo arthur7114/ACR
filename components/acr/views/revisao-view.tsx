@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import { contarVagasDeTexto } from "@/lib/vagas"
+import { classificarLancamento } from "@/lib/despesas-locador"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { AcordoRescisaoRecebido, PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -739,12 +740,12 @@ export function RevisaoView({
   // A intermediação tem categoria própria (acima das receitas). Quando ela aparece
   // dentro de outras_comissoes_despesas (dado antigo), removemos da lista/contagem
   // de "outras despesas" — o total monetario do documento ja a desconsidera.
-  const outrasDespesasExibicao = outrasComissoesDespesas.filter((d) => !/intermedia/i.test(d.descricao))
+  const outrasDespesasExibicao = outrasComissoesDespesas.filter((d) => classificarLancamento(d.descricao) !== "intermediacao")
   // Intermediação: categoria própria (acordos tipo "intermediacao"). Fallback para
   // dado antigo que ainda trazia intermediação dentro de outras_comissoes_despesas.
   const intermediacaoDocumento = (() => {
     if (intermediacoes.length > 0) return { percent: intermediacaoPercent, valor: intermediacaoValor }
-    const item = outrasComissoesDespesas.find((d) => /intermedia/i.test(d.descricao))
+    const item = outrasComissoesDespesas.find((d) => classificarLancamento(d.descricao) === "intermediacao")
     if (!item) return null
     const matchPercent = (texto: string | null | undefined) => {
       const m = texto?.match(/(\d+(?:[.,]\d+)?)\s*%/)
