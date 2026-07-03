@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { FileText, Building2, BarChart3, Settings } from "lucide-react"
+import { FileText, Building2, BarChart3, Settings, Receipt } from "lucide-react"
 
 type NavItem = {
   href: string
@@ -23,6 +23,12 @@ const mainItems: NavItem[] = [
     label: "Imóveis",
     icon: Building2,
     matches: (pathname) => pathname.startsWith("/imoveis"),
+  },
+  {
+    href: "/iptu",
+    label: "IPTU",
+    icon: Receipt,
+    matches: (pathname) => pathname.startsWith("/iptu"),
   },
   {
     href: "/indicadores",
