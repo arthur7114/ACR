@@ -4,7 +4,7 @@ import { mesclarLogs } from "./logs.ts"
 
 test("mescla correcoes e notificacoes ordenadas por data decrescente", () => {
   const correcoes = [
-    { id: "c1", campo: "valor_repasse", valor_anterior: "100", valor_novo: "120", corrigido_pelo: "ana@acr.com", motivo: "ajuste manual", criado_em: "2026-07-01T10:00:00Z" },
+    { id: "c1", campo_alterado: "valor_repasse", valor_anterior: "100", valor_novo: "120", usuario: "ana@acr.com", justificativa: "ajuste manual", criado_em: "2026-07-01T10:00:00Z" },
   ]
   const notificacoes = [
     { id: "n1", tipo: "analise_concluida", titulo: "Análise concluída", corpo: "Fechamento X processado", criado_em: "2026-07-02T09:00:00Z" },

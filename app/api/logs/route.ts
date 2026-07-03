@@ -9,7 +9,7 @@ export async function GET() {
     await Promise.all([
       supabase
         .from("auditoria_correcoes")
-        .select("id, campo, valor_anterior, valor_novo, corrigido_pelo, motivo, criado_em")
+        .select("id, campo_alterado, valor_anterior, valor_novo, usuario, justificativa, criado_em")
         .order("criado_em", { ascending: false })
         .limit(200),
       supabase
