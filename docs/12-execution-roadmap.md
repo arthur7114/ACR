@@ -88,6 +88,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-02 - Despesa do locador: receita bruta + itemizacao (ADR-0001)
+
+Status: done
+Job: pos-grilling com o cliente sobre o Galpao Pompilio Gomes (Cesar Rego, maio/2026) — "eram pra ser 3 despesas, o reembolso, o desconto e o ted", listadas no resumo, com a conta fechando.
+Outcome entregue: modulo dedicado `lib/despesas-locador.ts` concentrando a regra de "despesa do locador" (antes espalhada entre prompt, regex de `package-rechecks.ts` e agrupamento da view): `classificarLancamento` (comissao/intermediacao/despesa) e `reconciliarResumoDespesas` (reconstroi receita bruta somando de volta os reembolsos por linha, itemiza reembolso/desconto/taxas bancarias como despesas do locador com rotulo por apto, e fecha o consolidado retido para a equacao receita-comissao-despesas=repasse continuar batendo; residuo negativo suprime a lista e reporta pendencia em vez de inventar item). `normalizePrestacao` (`package-rechecks.ts`) passa a chamar o modulo; helpers antigos `isNaoDespesaLocador`/`isCreditoQueReduzDespesa` removidos. `revisao-view.tsx` usa `classificarLancamento` no lugar do regex inline de intermediacao. Escopo global (todas as imobiliarias/layouts), nao so Cesar Rego. Documentado em `CONTEXT.md` (glossario) e `docs/adr/0001-receita-bruta-despesas-locador.md`.
+Validacao: TDD completo (`pnpm dlx tsx --test`) — 6 testes novos em `lib/despesas-locador.test.ts` (classificacao + reconciliacao, incluindo residuo negativo e ausencia de reembolso) e 1 teste novo em `lib/server/package-rechecks.test.ts` com o shape real do Pompilio (receita 14.128,65; despesas 124,63; repasse 13.409,90 inalterado; 3 itens na lista). Suite completa de `lib/server` + `lib/`: 24/24 passam. `pnpm lint` limpo. Verificacao contra a extracao real (IA vision) do PDF do Pompilio e do LOCMAIS, e reprocesso na UI, ficam pendentes de uma `OPENAI_API_KEY` valida (a atual retorna 401) — gate a ser executado pelo usuario.
+Decisoes: Modelo A do grilling (receita bruta 14.128,65, diverge do "Recebidos" impresso no doc de 14.015,38, mas a lista de despesas fica completa); comissao calculada continua sobre a receita liquida (nao muda a base); header mostra so o bruto, sem nota do valor impresso; eGestor herda o bruto automaticamente via `total_receitas` (sem mudanca de codigo no eGestor).
+Arquivos/docs impactados: `lib/despesas-locador.ts`, `lib/despesas-locador.test.ts`, `lib/server/package-rechecks.ts`, `lib/server/package-rechecks.test.ts`, `components/acr/views/revisao-view.tsx`, `CONTEXT.md`, `docs/adr/0001-receita-bruta-despesas-locador.md`, `docs/superpowers/plans/2026-07-02-despesa-locador-receita-bruta.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: renovar `OPENAI_API_KEY`, rodar a extracao real do Pompilio e do LOCMAIS conferindo os numeros do oraculo, depois reprocessar (re-upload) o fechamento do Pompilio maio/2026 na UI (isso desarquiva o fechamento 029d645d, comportamento esperado) e conferir "Recebidos locador" = 14.128,65 com os 3 itens na secao de despesas.
+
 ### 2026-06-24 - Historico por imovel (linha do tempo) + ajustes pos-reuniao
 
 Status: done
