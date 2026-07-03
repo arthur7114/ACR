@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { FileText, Building2, BarChart3, Settings, LogOut } from "lucide-react"
+import { FileText, Building2, BarChart3, History, Settings, LogOut } from "lucide-react"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type NavItem = {
@@ -31,6 +31,12 @@ const mainItems: NavItem[] = [
     label: "Indicadores",
     icon: BarChart3,
     matches: (pathname) => pathname.startsWith("/indicadores"),
+  },
+  {
+    href: "/logs",
+    label: "Logs",
+    icon: History,
+    matches: (pathname) => pathname.startsWith("/logs"),
   },
 ]
 
