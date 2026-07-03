@@ -195,7 +195,7 @@ export function ConfiguracoesView() {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+        <div className="acr-card acr-card-hover p-5">
           <h2 className="text-[16px] font-bold text-[#1A2B1C]">Empreendimentos</h2>
           <p className="mt-1 text-[12px] text-[#6B7F6E]">Conta define para qual eGestor o empreendimento é lançado.</p>
           <div className="mt-4 space-y-3">
@@ -228,12 +228,12 @@ export function ConfiguracoesView() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+        <div className="acr-card acr-card-hover p-5">
           <h2 className="text-[16px] font-bold text-[#1A2B1C]">Imobiliárias</h2>
           <p className="mt-1 text-[12px] text-[#6B7F6E]">Contato eGestor por conta + tag da imobiliária.</p>
           <div className="mt-4 space-y-4">
             {draft.imobiliarias.map((imob) => (
-              <div key={imob.id} className="rounded-lg border border-[#EEF1EE] p-3">
+              <div key={imob.id} className="acr-card p-3">
                 <div className="flex items-center justify-between gap-3">
                   <p className="truncate text-[13px] font-semibold text-[#1A2B1C]">{imob.nome}</p>
                   <div className="w-[180px]">
@@ -374,7 +374,7 @@ function ContaCard({
   const testStatus = meta?.ultimo_teste_status
 
   return (
-    <div className="rounded-xl border border-[#EEF1EE] bg-white p-5">
+    <div className="acr-card acr-card-hover p-5">
       <div className="grid gap-4 md:grid-cols-[200px_minmax(0,1fr)_160px_140px]">
         <Field label="Nome da conta">
           <input value={conta.nome} onChange={(e) => onChange({ nome: e.target.value })} className={inputClass} />
@@ -422,7 +422,7 @@ function ContaCard({
       )}
 
       {conta.id ? (
-        <div className="mt-4 overflow-hidden rounded-lg border border-[#EEF1EE]">
+        <div className="mt-4 acr-card overflow-hidden p-0">
           <table className="w-full text-sm">
             <thead className="bg-[#F8FAF8] text-[11px] uppercase tracking-wide text-[#6B7F6E]">
               <tr>
