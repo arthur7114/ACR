@@ -27,6 +27,10 @@ function arredondar(valor: number): number {
   return Math.round((valor + Number.EPSILON) * 100) / 100
 }
 
+function sum(valores: number[]): number {
+  return valores.reduce((total, valor) => total + valor, 0)
+}
+
 // Item de crédito no resumo (ex.: "OUTROS CREDITOS") REDUZ a despesa líquida —
 // entra com sinal negativo. "Débito" tem prioridade quando a linha cita ambos.
 function ehCreditoQueReduz(descricao: string): boolean {
@@ -51,7 +55,19 @@ export function reconciliarResumoDespesas(prestacao: PrestacaoAnalysis): ResumoD
   const resumo = prestacao.resumo_financeiro
   const recebidosImpresso = resumo.recebidos_em_nome_locador
   const repasse = resumo.total_a_repassar
-  const comissao = resumo.comissao_administracao ?? 0
+  // A comissao_administracao do resumo cobre so as linhas regulares da tabela.
+  // Intermediacao tem balde proprio (ADR-0001) e seu valor bruto costuma vir
+  // somado ao recebido do locador pelo proprio documento, mas a comissao retida
+  // sobre ela fica de fora de comissao_administracao — some aqui pra nao vazar
+  // pra despesa via residuo (confirmado com dado real: LOCMAIS maio/2026).
+  const comissaoIntermediacao = arredondar(
+    sum(
+      (prestacao.acordos_rescisoes_recebidos ?? [])
+        .filter((item) => item.tipo === "intermediacao")
+        .map((item) => item.comissao ?? 0),
+    ),
+  )
+  const comissao = (resumo.comissao_administracao ?? 0) + comissaoIntermediacao
 
   // Despesas que a IA já entregou itemizadas (outros layouts): só as que são
   // "despesa" (exclui comissão/intermediação), com sinal de crédito preservado.
