@@ -36,6 +36,12 @@ export interface ImportarCertidaoResultado {
   anomalias: IptuAnomalia[]
 }
 
+// NOTA: esta funcao nao e transacional entre Storage e banco. Se um insert por
+// apartamento falhar no meio do loop, o PDF ja enviado ao Storage e a linha de
+// iptu_importacoes ja gravada nao sao revertidos (ficam orfaos). Isso e aceito
+// para este registro passivo/auditoria de IPTU: nao ha dado financeiro em risco,
+// pois os valores de despesa efetivos continuam fluindo pelo pipeline separado
+// de reconciliacao em despesas-locador.
 export async function importarCertidaoIptu(input: ImportarCertidaoInput): Promise<ImportarCertidaoResultado> {
   const supabase = createSupabaseAdmin()
 
