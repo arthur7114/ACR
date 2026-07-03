@@ -1,8 +1,10 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { FileText, Building2, BarChart3, Settings } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { FileText, Building2, BarChart3, Settings, LogOut } from "lucide-react"
+import { createSupabaseBrowserClient } from "@/lib/supabase/client"
 
 type NavItem = {
   href: string
@@ -85,14 +87,44 @@ export function Sidebar() {
           <span>Configurações</span>
         </Link>
 
-        <div className="border-t border-white/10 pt-3 px-1 flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-full bg-white/10" />
-          <div className="flex flex-col leading-tight">
-            <span className="text-white text-[13px] font-medium">Usuário</span>
-            <span className="text-white/50 text-[11px]">Sessão local</span>
-          </div>
-        </div>
+        <UserFooter />
       </div>
     </aside>
+  )
+}
+
+function UserFooter() {
+  const router = useRouter()
+  const [email, setEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient()
+    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null))
+  }, [])
+
+  async function handleLogout() {
+    const supabase = createSupabaseBrowserClient()
+    await supabase.auth.signOut()
+    router.replace("/login")
+    router.refresh()
+  }
+
+  return (
+    <div className="border-t border-white/10 pt-3 px-1 flex items-center gap-2.5">
+      <div className="h-9 w-9 rounded-full bg-white/10 flex items-center justify-center text-white text-[12px] font-semibold">
+        {email ? email[0]!.toUpperCase() : "?"}
+      </div>
+      <div className="flex flex-col leading-tight min-w-0 flex-1">
+        <span className="text-white text-[13px] font-medium truncate">{email ?? "Carregando..."}</span>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex items-center gap-1 text-white/50 text-[11px] hover:text-white/80"
+        >
+          <LogOut size={11} />
+          Sair
+        </button>
+      </div>
+    </div>
   )
 }

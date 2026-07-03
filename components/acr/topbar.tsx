@@ -146,8 +146,6 @@ export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps
 
           {showNotifications && <NotificationsPanel onClose={onToggleNotifications} />}
         </div>
-
-        <div className="h-8 w-8 rounded-full bg-[#DDEEE1]" aria-label="Usuário não carregado" />
       </div>
     </header>
   )
