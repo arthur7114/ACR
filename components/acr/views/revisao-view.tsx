@@ -560,7 +560,7 @@ export function RevisaoView({
   const [egestorError, setEgestorError] = useState<string | null>(null)
   const [editandoCampo, setEditandoCampo] = useState<{ campo: "descricao" | "valor" | "tags"; lancamentoId: string } | null>(null)
   const [valorEdicao, setValorEdicao] = useState("")
-  const [salvandoDescricao, setSalvandoDescricao] = useState(false)
+  const [salvandoLancamento, setSalvandoLancamento] = useState(false)
 
   useEffect(() => {
     if (fechamento?.comentario_operador !== undefined && comentario === "") {
@@ -675,7 +675,7 @@ export function RevisaoView({
   }
 
   async function salvarEdicaoLancamento(lancamentoId: string, campo: "descricao" | "valor" | "tags") {
-    setSalvandoDescricao(true)
+    setSalvandoLancamento(true)
     setEgestorError(null)
     const body: Record<string, unknown> =
       campo === "valor"
@@ -689,7 +689,7 @@ export function RevisaoView({
       body: JSON.stringify(body),
     })
     const payload = await response.json()
-    setSalvandoDescricao(false)
+    setSalvandoLancamento(false)
     if (!response.ok || payload.error) {
       setEgestorError(payload.error ?? "Falha ao editar o lancamento.")
       return
@@ -1676,15 +1676,15 @@ export function RevisaoView({
                             <button
                               type="button"
                               onClick={() => salvarEdicaoLancamento(lancamento.id, "descricao")}
-                              disabled={salvandoDescricao || valorEdicao.trim().length === 0}
+                              disabled={salvandoLancamento || valorEdicao.trim().length === 0}
                               className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
                             >
-                              {salvandoDescricao ? "Salvando..." : "Salvar"}
+                              {salvandoLancamento ? "Salvando..." : "Salvar"}
                             </button>
                             <button
                               type="button"
                               onClick={() => setEditandoCampo(null)}
-                              disabled={salvandoDescricao}
+                              disabled={salvandoLancamento}
                               className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]"
                             >
                               Cancelar
@@ -1718,10 +1718,10 @@ export function RevisaoView({
                             className="w-28 rounded-md border border-[#BBD6BE] px-2 py-1 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
                           />
                           <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => salvarEdicaoLancamento(lancamento.id, "valor")} disabled={salvandoDescricao} className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
-                              {salvandoDescricao ? "Salvando..." : "Salvar"}
+                            <button type="button" onClick={() => salvarEdicaoLancamento(lancamento.id, "valor")} disabled={salvandoLancamento} className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                              {salvandoLancamento ? "Salvando..." : "Salvar"}
                             </button>
-                            <button type="button" onClick={() => setEditandoCampo(null)} disabled={salvandoDescricao} className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]">
+                            <button type="button" onClick={() => setEditandoCampo(null)} disabled={salvandoLancamento} className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]">
                               Cancelar
                             </button>
                           </div>
@@ -1756,10 +1756,10 @@ export function RevisaoView({
                             className="w-40 rounded-md border border-[#BBD6BE] px-2 py-1 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
                           />
                           <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => salvarEdicaoLancamento(lancamento.id, "tags")} disabled={salvandoDescricao} className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
-                              {salvandoDescricao ? "Salvando..." : "Salvar"}
+                            <button type="button" onClick={() => salvarEdicaoLancamento(lancamento.id, "tags")} disabled={salvandoLancamento} className="rounded-md bg-[#2D8C3A] px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                              {salvandoLancamento ? "Salvando..." : "Salvar"}
                             </button>
-                            <button type="button" onClick={() => setEditandoCampo(null)} disabled={salvandoDescricao} className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]">
+                            <button type="button" onClick={() => setEditandoCampo(null)} disabled={salvandoLancamento} className="rounded-md px-2 py-1 text-[11px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]">
                               Cancelar
                             </button>
                           </div>
