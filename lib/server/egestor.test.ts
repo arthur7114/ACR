@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import { EgestorClient } from "./egestor-client.ts"
-import { buildEgestorDrafts } from "./egestor.ts"
+import { buildEgestorDrafts, buildLancamentoUpdate } from "./egestor.ts"
 
 function createAnalysis(overrides: Partial<PackageAnalysis> = {}): PackageAnalysis {
   return {
@@ -141,4 +141,33 @@ test("cliente eGestor cria recebimento com payload autenticado", async () => {
   assert.equal(calls[1].url, "https://api.egestor.com.br/api/v1/recebimentos")
   assert.equal(calls[1].init?.method, "POST")
   assert.deepEqual(JSON.parse(String(calls[1].init?.body)), { descricao: "ACR teste", valor: 10 })
+})
+
+test("buildLancamentoUpdate atualiza descricao e sincroniza no payload", () => {
+  const atual = { descricao: "Antiga", valor: 100, tags: ["ACR"], payload: { descricao: "Antiga", valor: 100 } }
+  const result = buildLancamentoUpdate(atual, { descricao: "Nova descricao" })
+  assert.equal(result.descricao, "Nova descricao")
+  assert.equal(result.payload.descricao, "Nova descricao")
+  assert.equal(result.valor, 100)
+})
+
+test("buildLancamentoUpdate atualiza valor e sincroniza no payload", () => {
+  const atual = { descricao: "X", valor: 100, tags: ["ACR"], payload: { valor: 100 } }
+  const result = buildLancamentoUpdate(atual, { valor: 250.5 })
+  assert.equal(result.valor, 250.5)
+  assert.equal(result.payload.valor, 250.5)
+})
+
+test("buildLancamentoUpdate rejeita valor nao positivo", () => {
+  const atual = { descricao: "X", valor: 100, tags: ["ACR"], payload: {} }
+  assert.throws(() => buildLancamentoUpdate(atual, { valor: 0 }), /valor/i)
+  assert.throws(() => buildLancamentoUpdate(atual, { valor: -5 }), /valor/i)
+})
+
+test("buildLancamentoUpdate atualiza etiquetas e rejeita lista vazia", () => {
+  const atual = { descricao: "X", valor: 100, tags: ["ACR"], payload: { tags: ["ACR"] } }
+  const result = buildLancamentoUpdate(atual, { tags: ["ACR", "MARACANAU"] })
+  assert.deepEqual(result.tags, ["ACR", "MARACANAU"])
+  assert.deepEqual(result.payload.tags, ["ACR", "MARACANAU"])
+  assert.throws(() => buildLancamentoUpdate(atual, { tags: [] }), /etiqueta/i)
 })
