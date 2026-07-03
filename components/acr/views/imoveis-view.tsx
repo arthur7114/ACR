@@ -406,7 +406,7 @@ export function ImoveisView({
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-[#EEF1EE] bg-white py-16 text-[#6B7F6E]">
+        <div className="acr-card flex items-center justify-center gap-2 py-16 text-[#6B7F6E]">
           <Loader2 size={18} className="animate-spin" />
           <span className="text-[14px]">Carregando cadastros...</span>
         </div>
@@ -792,7 +792,7 @@ function TwoColumns({ children }: { children: React.ReactNode }) {
 
 function FormPanel({ title, children, saving, onCancel, onSubmit }: { title: string; children: React.ReactNode; saving: boolean; onCancel: () => void; onSubmit: () => void }) {
   return (
-    <div className="rounded-xl border border-[#EEF1EE] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+    <div className="acr-card p-4">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-[16px] font-bold text-[#1A2B1C]">{title}</h2>
         <button onClick={onCancel} className="text-[13px] font-medium text-[#6B7F6E] hover:text-[#3D4F3F]">
