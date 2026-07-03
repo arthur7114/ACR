@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 /** Cartão branco padrão do painel. */
 export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn("rounded-2xl border border-acr-line bg-white p-5", className)}>{children}</div>
+    <div className={cn("acr-card acr-card-hover p-5", className)}>{children}</div>
   )
 }
 

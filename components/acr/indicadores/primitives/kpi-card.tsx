@@ -11,7 +11,7 @@ export function KpiCard({
   sub?: string
 }) {
   return (
-    <div className="flex flex-col rounded-2xl border border-acr-line bg-white p-5">
+    <div className="acr-card acr-card-hover flex flex-col p-5">
       <div className="flex items-center gap-2 text-xs font-medium text-acr-muted">
         <span className="size-2 rounded-[3px]" style={{ background: dot }} />
         {label}
