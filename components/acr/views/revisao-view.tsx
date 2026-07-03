@@ -4,18 +4,22 @@ import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
   AlertTriangle,
+  Building2,
   CheckCircle,
   Download,
+  Droplet,
   FileText,
   History,
   Paperclip,
   ReceiptText,
+  Percent,
   RefreshCw,
   Send,
   ShieldCheck,
   Search,
   MessageSquare,
-  Info
+  Info,
+  Zap,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import { contarVagasDeTexto } from "@/lib/vagas"
@@ -115,6 +119,28 @@ function getOpinionClasses(status: TechnicalOpinion["status"]) {
   if (status === "aprovado_tecnico") return "bg-[#DCFCE7] text-[#166534] border-[#22C55E]"
   if (status === "aprovado_com_ressalvas") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
   return "bg-[#FEE2E2] text-[#991B1B] border-[#DC2626]"
+}
+
+// Rótulo das despesas do locador vem como "Reembolso — <apto>" / "Desconto —
+// <apto>" (reconciliarResumoDespesas) ou texto livre da IA (CAGECE, IPTU, taxas
+// bancárias). Separa apto do título e dá ícone/cor por categoria (ADR-0001).
+function getDespesaCategoria(descricao: string): {
+  Icon: typeof RefreshCw
+  colorClasses: string
+  titulo: string
+  apto: string | null
+} {
+  const reembolso = descricao.match(/^Reembolso\s*—\s*(.+)$/)
+  if (reembolso) return { Icon: RefreshCw, colorClasses: "bg-[#EFF6FF] text-[#1D4ED8]", titulo: "Reembolso", apto: reembolso[1] }
+  const desconto = descricao.match(/^Desconto\s*—\s*(.+)$/)
+  if (desconto) return { Icon: Percent, colorClasses: "bg-[#FFF7ED] text-[#9A5B13]", titulo: "Desconto", apto: desconto[1] }
+  // Utilidades comuns nas despesas extraídas pela IA (fornecedores/tributos):
+  // reconhecimento visual só, não muda a classificação de despesa (ADR-0001).
+  if (/energia|enel|coelce|cemig|cpfl|luz/i.test(descricao)) return { Icon: Zap, colorClasses: "bg-[#FFFBEB] text-[#B45309]", titulo: descricao, apto: null }
+  if (/agua|água|cagece|esgoto|sabesp/i.test(descricao)) return { Icon: Droplet, colorClasses: "bg-[#ECFEFF] text-[#0E7490]", titulo: descricao, apto: null }
+  if (/iptu/i.test(descricao)) return { Icon: Building2, colorClasses: "bg-[#F5F3FF] text-[#6D28D9]", titulo: descricao, apto: null }
+  if (/seguro/i.test(descricao)) return { Icon: ShieldCheck, colorClasses: "bg-[#ECFDF5] text-[#047857]", titulo: descricao, apto: null }
+  return { Icon: ReceiptText, colorClasses: "bg-[#F1F5F4] text-[#3D4F3F]", titulo: descricao, apto: null }
 }
 
 function getCheckClasses(check: PrestacaoRecheck) {
@@ -1899,14 +1925,34 @@ export function RevisaoView({
 
                 {outrasDespesasExibicao.length > 0 && (
                   <div className="mt-5 border-t border-[#EEF1EE] pt-4">
-                    <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">Outras comissões e despesas no resumo</p>
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">Outras comissões e despesas no resumo</p>
+                      <p className="text-[11px] text-[#6B7F6E]">
+                        {outrasDespesasExibicao.length} {outrasDespesasExibicao.length === 1 ? "item" : "itens"}
+                      </p>
+                    </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
-                      {outrasDespesasExibicao.map((item) => (
-                        <div key={`${item.descricao}-${item.valor}`} className="flex justify-between gap-3 rounded-lg border border-[#EEF1EE] px-3 py-2">
-                          <span className="text-[13px] text-[#3D4F3F]">{item.descricao}</span>
-                          <span className="text-[13px] font-bold text-[#1A2B1C] tabular-nums">{formatBRL(item.valor)}</span>
-                        </div>
-                      ))}
+                      {outrasDespesasExibicao.map((item) => {
+                        const { Icon, colorClasses, titulo, apto } = getDespesaCategoria(item.descricao)
+                        return (
+                          <div key={`${item.descricao}-${item.valor}`} className="flex items-center gap-2.5 rounded-lg border border-[#EEF1EE] px-3 py-2.5">
+                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${colorClasses}`}>
+                              <Icon size={14} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] text-[#3D4F3F]">{titulo}</span>
+                              {apto && <span className="block truncate text-[11px] text-[#8A9A8C]">{apto}</span>}
+                            </span>
+                            <span className="shrink-0 text-[13px] font-bold text-[#1A2B1C] tabular-nums">{formatBRL(item.valor)}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between rounded-lg border border-[#EEF1EE] bg-[#F7F9F7] px-3 py-2">
+                      <span className="text-[12px] font-bold uppercase tracking-wide text-[#6B7F6E]">Total das despesas</span>
+                      <span className="text-[14px] font-bold text-[#1A2B1C] tabular-nums">
+                        {formatBRL(outrasDespesasExibicao.reduce((soma, item) => soma + item.valor, 0))}
+                      </span>
                     </div>
                   </div>
                 )}
