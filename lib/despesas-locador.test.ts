@@ -201,4 +201,10 @@ test("LOCMAIS: comissao de intermediacao nao vaza pra despesa do locador", () =>
   assert.ok(!descricoes.some((d) => /intermedia|540/i.test(d)), `item suspeito encontrado: ${JSON.stringify(descricoes)}`)
   assert.equal(r.totalOutrasComissoesDespesas, 1079.9)
   assert.equal(r.pendencia, null)
+  // totalComissaoDespesas alimenta calculateTotals downstream
+  // (total_despesas = total_comissao_despesas - comissao_administracao). Se a
+  // comissao de intermediacao (540) nao for descontada tambem daqui, o total de
+  // despesas exibido na tela volta a incluir a intermediacao, mesmo com a LISTA
+  // ja correta — inconsistencia entre lista e total (bug encontrado ao vivo).
+  assert.equal(r.totalComissaoDespesas, 2074.22)
 })

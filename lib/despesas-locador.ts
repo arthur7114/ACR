@@ -104,6 +104,15 @@ export function reconciliarResumoDespesas(prestacao: PrestacaoAnalysis): ResumoD
   const novoTotalComissaoDespesas =
     receitaBruta !== null && repasse !== null ? arredondar(receitaBruta - repasse) : resumo.total_comissao_despesas
 
+  // O campo exposto representa "comissao administrativa + despesas reais" —
+  // a comissao de intermediacao NUNCA entra aqui (balde proprio). Downstream
+  // (calculateTotals) deriva total_despesas = totalComissaoDespesas −
+  // comissao_administracao(raw); sem descontar a intermediacao aqui, ela
+  // vazaria de volta pro total mesmo com a LISTA ja correta (bug encontrado
+  // ao vivo no LOCMAIS: lista batia, total_despesas nao).
+  const totalComissaoDespesasExposto =
+    novoTotalComissaoDespesas === null ? null : arredondar(novoTotalComissaoDespesas - comissaoIntermediacao)
+
   const itensExplicitos = [...despesasIA, ...reembolsos, ...descontosSimples]
   const somaExplicitos = arredondar(itensExplicitos.reduce((s, d) => s + d.valor, 0))
 
@@ -113,7 +122,7 @@ export function reconciliarResumoDespesas(prestacao: PrestacaoAnalysis): ResumoD
       recebidosEmNomeLocador: receitaBruta ?? recebidosImpresso,
       outrasComissoesDespesas: itensExplicitos,
       totalOutrasComissoesDespesas: somaExplicitos,
-      totalComissaoDespesas: novoTotalComissaoDespesas,
+      totalComissaoDespesas: totalComissaoDespesasExposto,
       pendencia: "Resumo incompleto: recebidos ou total a repassar ausentes.",
     }
   }
@@ -127,7 +136,7 @@ export function reconciliarResumoDespesas(prestacao: PrestacaoAnalysis): ResumoD
       recebidosEmNomeLocador: receitaBruta,
       outrasComissoesDespesas: [],
       totalOutrasComissoesDespesas: 0,
-      totalComissaoDespesas: novoTotalComissaoDespesas,
+      totalComissaoDespesas: totalComissaoDespesasExposto,
       pendencia: `Despesas itemizadas (${somaExplicitos.toFixed(2)}) excedem o retido (${despesasTotaisAlvo.toFixed(2)}).`,
     }
   }
@@ -142,7 +151,7 @@ export function reconciliarResumoDespesas(prestacao: PrestacaoAnalysis): ResumoD
     recebidosEmNomeLocador: receitaBruta,
     outrasComissoesDespesas: lista,
     totalOutrasComissoesDespesas: totalOutras,
-    totalComissaoDespesas: novoTotalComissaoDespesas,
+    totalComissaoDespesas: totalComissaoDespesasExposto,
     pendencia: null,
   }
 }

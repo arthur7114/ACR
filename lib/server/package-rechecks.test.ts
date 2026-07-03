@@ -430,3 +430,54 @@ test("Pompilio: validatePackage expoe receita bruta e 3 despesas itemizadas", ()
   const lista = result.prestacao?.resumo_financeiro.outras_comissoes_despesas ?? []
   assert.equal(lista.length, 3)
 })
+
+test("LOCMAIS: validatePackage nao soma a comissao de intermediacao em total_despesas", () => {
+  const prestacao = createPrestacao({
+    imobiliaria: "LOC MAIS Imoveis",
+    competencia: "2026-05",
+    receitas_por_imovel: [
+      { apto: "SALA 01", inquilino: "", aluguel: 14204.58, desconto: null, aluguel_com_desconto: null, garagem: null, vagas_garagem: null, agua: null, iptu: null, seguro_incendio: null, total: 14204.58, comissao: 994.12, repasse: null, vencimento: "05/2026", observacao: null, confianca: 0.9 },
+    ],
+    acordos_rescisoes_recebidos: [
+      {
+        tipo: "intermediacao",
+        apto: "SALA 05",
+        inquilino: "ISI VIAGENS LTDA",
+        valor: 900,
+        comissao: 540,
+        percentual: null,
+        competencia_original: "04/2026",
+        competencia_recebimento: "05/2026",
+        observacao: "Intermediacao de abril de 2026. Total R$ 938,08; repasse R$ 398,08.",
+        confianca: 0.9,
+      },
+    ],
+    resumo_financeiro: {
+      total_linhas_receitas: 14204.58, total_linhas_comissoes: 994.32, total_linhas_repasse: 13210.26,
+      comissao_administracao: 994.32,
+      outras_comissoes_despesas: [
+        { descricao: "CAGECE", valor: 47.6, confianca: 0.82 },
+        { descricao: "ENEL", valor: 144.29, confianca: 0.82 },
+        { descricao: "ENEL", valor: 307.13, confianca: 0.82 },
+        { descricao: "IPTU 2026 GALPÃO 02 (5/7)", valor: 91.39, confianca: 0.82 },
+        { descricao: "IPTU 2026 SALA 05 (5/5)", valor: 87.98, confianca: 0.82 },
+        { descricao: "IPTU 2026 GALPÃO 05 (5/8)", valor: 87.5, confianca: 0.82 },
+        { descricao: "SEGURO SALA 03", valor: 314.01, confianca: 0.82 },
+      ],
+      total_outras_comissoes_despesas: 1079.9,
+      total_comissao_despesas: 2614.22,
+      recebidos_em_nome_locador: 15142.66,
+      total_a_repassar: 12528.44,
+      confianca: 0.86,
+    },
+  })
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+
+  // total_despesas (calculateTotals) deve bater com a soma da LISTA (1079.90),
+  // nao com o total_comissao_despesas bruto (2614.22 - 994.32 = 1619.90, que
+  // ainda incluiria a comissao de intermediacao).
+  assert.equal(result.totals.total_despesas, 1079.9)
+  const lista = result.prestacao?.resumo_financeiro.outras_comissoes_despesas ?? []
+  assert.equal(lista.length, 7)
+  assert.ok(!lista.some((d) => /intermedia/i.test(d.descricao)))
+})
