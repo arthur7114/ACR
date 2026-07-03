@@ -26,11 +26,19 @@ export async function middleware(request: NextRequest) {
     },
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login")
+
+  let user = null
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
+    user = authUser
+  } catch {
+    // Falha ao contatar o Supabase Auth (ex.: instabilidade de rede):
+    // trata como "sem usuário" para redirecionar ao /login em vez de 500.
+    user = null
+  }
 
   if (!user && !isLoginRoute) {
     const loginUrl = new URL("/login", request.url)
