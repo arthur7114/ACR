@@ -150,7 +150,7 @@ export function ImovelHistoricoDrawer({
             <>
               {/* Situação atual */}
               {resumo?.situacaoAtual && (
-                <div className="mb-4 flex items-center justify-between rounded-xl border border-[#EEF1EE] bg-white p-4">
+                <div className="acr-card mb-4 flex items-center justify-between p-4">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Situação atual</p>
                     <div className="mt-1 flex items-center gap-2">
@@ -183,7 +183,7 @@ export function ImovelHistoricoDrawer({
 
               {/* Inquilinos */}
               {historico && historico.inquilinos.length > 0 && (
-                <div className="mb-4 rounded-xl border border-[#EEF1EE] bg-white p-4">
+                <div className="acr-card mb-4 p-4">
                   <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">
                     <User size={13} /> Inquilinos
                   </p>
@@ -360,7 +360,7 @@ function TipoBadge({ tipo }: { tipo: EventoTipo }) {
 
 function Metric({ label, value, tone = "#1A2B1C" }: { label: string; value: number; tone?: string }) {
   return (
-    <div className="rounded-lg border border-[#EEF1EE] bg-white px-3 py-2 text-center">
+    <div className="acr-card px-3 py-2 text-center">
       <p className="text-[18px] font-bold tabular-nums" style={{ color: tone }}>
         {value}
       </p>
