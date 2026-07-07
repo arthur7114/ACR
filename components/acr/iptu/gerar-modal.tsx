@@ -115,7 +115,7 @@ export function GerarModal({
 
   function validarStep1(): string | null {
     if (!/^\d{4}$/.test(ano)) return "Informe um ano valido."
-    if (imoveisSelecionados.length === 0) return "Selecione ao menos um imovel."
+    if (imoveisSelecionados.length === 0) return "Selecione ao menos um imóvel."
     if (vencimentos.some((v) => !/^\d{4}-\d{2}-\d{2}$/.test(v))) return "Preencha todos os vencimentos."
     return null
   }
@@ -154,8 +154,10 @@ export function GerarModal({
         return
       }
       const pulados =
-        resultado.imoveisPulados.length > 0 ? ` (${resultado.imoveisPulados.length} imovel(is) ja tinham carne e foram ignorados)` : ""
-      onDone(`${resultado.parcelasCriadas} parcela(s) criadas em ${resultado.carnesCriados} carne(s)${pulados}.`)
+        resultado.imoveisPulados.length > 0
+          ? ` (${resultado.imoveisPulados.length} imóvel(is) já tinham carnê e foram ignorados)`
+          : ""
+      onDone(`${resultado.parcelasCriadas} parcela(s) criadas em ${resultado.carnesCriados} carnê(s)${pulados}.`)
     } catch (error) {
       setErro(error instanceof Error ? error.message : "Falha ao gerar parcelas.")
       setSalvando(false)
@@ -165,7 +167,7 @@ export function GerarModal({
   const footer =
     step === 1 ? (
       <div className="flex items-center justify-between">
-        <span className="text-[12px] text-[#6B7F6E]">{imoveisSelecionados.length} imovel(is) selecionado(s)</span>
+        <span className="text-[12px] text-[#6B7F6E]">{imoveisSelecionados.length} imóvel(is) selecionado(s)</span>
         <div className="flex gap-2">
           <SecondaryButton onClick={onClose}>Cancelar</SecondaryButton>
           <PrimaryButton onClick={irParaRevisao}>

@@ -101,6 +101,19 @@ export function IptuView({
     )
   }, [parcelas, busca])
 
+  const temFiltroAtivo =
+    busca.trim().length > 0 ||
+    Boolean(
+      filtros.imobiliariaId ||
+        filtros.empreendimentoId ||
+        filtros.imovelId ||
+        filtros.ano ||
+        filtros.status ||
+        filtros.vencimentoInicio ||
+        filtros.vencimentoFim ||
+        filtros.mesVencimento,
+    )
+
   const selecionaveis = useMemo(() => parcelasVisiveis.filter((p) => p.status !== "pago"), [parcelasVisiveis])
   const selecionadasLista = useMemo(
     () => parcelasVisiveis.filter((p) => selecionadas.has(p.id)),
@@ -163,9 +176,13 @@ export function IptuView({
       {/* Cards de resumo */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <ResumoCard titulo="Em aberto" valor={formatBRL(resumo?.totalAberto ?? 0)} />
-        <ResumoCard titulo="Vencido" valor={formatBRL(resumo?.totalVencido ?? 0)} danger />
-        <ResumoCard titulo="Pago" valor={formatBRL(resumo?.totalPago ?? 0)} positivo />
-        <ResumoCard titulo="Parcelas vencidas" valor={String(resumo?.quantidadeVencidas ?? 0)} danger />
+        <ResumoCard titulo="Vencido" valor={formatBRL(resumo?.totalVencido ?? 0)} danger={(resumo?.totalVencido ?? 0) > 0} />
+        <ResumoCard titulo="Pago" valor={formatBRL(resumo?.totalPago ?? 0)} positivo={(resumo?.totalPago ?? 0) > 0} />
+        <ResumoCard
+          titulo="Parcelas vencidas"
+          valor={String(resumo?.quantidadeVencidas ?? 0)}
+          danger={(resumo?.quantidadeVencidas ?? 0) > 0}
+        />
         <ResumoCard
           titulo="Próximo vencimento"
           valor={formatDateOnly(resumo?.proximoVencimento)}
@@ -285,8 +302,15 @@ export function IptuView({
               {!loading && parcelasVisiveis.length === 0 && (
                 <tr>
                   <td colSpan={13} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
-                    Nenhuma parcela encontrada. Use{" "}
-                    <span className="font-semibold text-[#3D4F3F]">&ldquo;Gerar parcelas&rdquo;</span> para criar carnês.
+                    {temFiltroAtivo ? (
+                      "Nenhuma parcela encontrada para os filtros atuais."
+                    ) : (
+                      <>
+                        Nenhuma parcela cadastrada ainda. Use{" "}
+                        <span className="font-semibold text-[#3D4F3F]">&ldquo;Gerar parcelas&rdquo;</span> para criar
+                        carnês.
+                      </>
+                    )}
                   </td>
                 </tr>
               )}

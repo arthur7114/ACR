@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { X } from "lucide-react"
 import type { IptuStatus } from "@/lib/iptu-types"
 
@@ -62,7 +63,7 @@ export function SelectInput({
 }
 
 const STATUS_STYLE: Record<IptuStatus, { label: string; className: string }> = {
-  aberto: { label: "Aberto", className: "bg-[#EFF7F1] text-[#166534]" },
+  aberto: { label: "Aberto", className: "bg-[#F1F3F1] text-[#4B5563]" },
   vencido: { label: "Vencido", className: "bg-[#FEF2F2] text-[#B91C1C]" },
   pago: { label: "Pago", className: "bg-[#DCFCE7] text-[#166534]" },
 }
@@ -89,6 +90,14 @@ export function Modal({
   footer?: React.ReactNode
   wide?: boolean
 }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
