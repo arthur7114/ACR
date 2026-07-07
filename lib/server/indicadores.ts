@@ -254,7 +254,11 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
   // Potencial reconstruído (sempre reconcilia): recebido + vacância + descontos.
   // A inadimplência aqui é ACUMULADA (insight à parte), não um ofensor do mês.
   const realizado = receita
-  const potencialCascata = realizado + vacanciaValor + descontos
+  // Com fechamentos: potencial reconstruído (recebido + vacância + descontos).
+  // Sem fechamentos: cai para o potencial contratado (soma dos aluguéis esperados
+  // do cadastro), senão o card "Faturamento potencial" mostraria só a vacância.
+  const potencialCascata =
+    fechMes.length > 0 ? realizado + vacanciaValor + descontos : faturamentoPotencial
   const pctOf = (v: number) => (potencialCascata > 0 ? (v / potencialCascata) * 100 : 0)
   // Vacância só é "sem dados" quando não há cadastro de imóveis; valor 0 com cadastro
   // significa carteira sem vagos (zero real), não pendência.
