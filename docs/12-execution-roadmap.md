@@ -100,6 +100,16 @@ Decisoes: status calculado (nunca salvo) a partir de `data_baixa`/`data_vencimen
 Arquivos/docs impactados: `supabase/migrations/202607070001_iptu_contas_pagar.sql`, `lib/iptu-logic.ts`, `lib/iptu-types.ts`, `lib/format.ts`, `lib/server/iptu.ts`, `app/api/iptu/route.ts`, `app/api/iptu/gerar/route.ts`, `app/api/iptu/parcelas/[id]/route.ts`, `app/api/iptu/parcelas/baixa/route.ts`, `app/api/iptu/carnes/[id]/route.ts`, `lib/contexts/iptu-context.tsx`, `app/(app)/iptu/page.tsx`, `components/acr/views/iptu-view.tsx`, `components/acr/iptu/*`, `lib/iptu-logic.test.ts`, `lib/iptu-types.test.ts`, `docs/02-mock-contract.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
 Proxima acao: aplicar a migration e fazer a validacao visual completa no navegador.
 
+### 2026-07-07 - Import do cadastro de imoveis das planilhas CAIXA + indicadores sem fechamento
+
+Status: done
+Job: alimentar os indicadores com o historico das planilhas "CAIXA ADMINISTRACAO LOCACAO" (Grand Castelao I, Grand Messejana I, Grand Messejana II, LOCMAIS).
+Outcome entregue: por decisao do usuario, o banco foi resetado (todos os fechamentos apagados) e o cadastro de `imoveis` dos 4 empreendimentos foi repopulado a partir do ultimo mes (MAR/2026) de cada planilha, preservando os 30 imoveis do GRAND MARACANAU (sem planilha). Parser header-driven (colunas variam por arquivo: LOCMAIS usa IMOVEL/MODALIDADE, GM I sem coluna AGUA); status derivado (DESOCUPADO->vago, INADIMPLENCIA->inadimplente, sem inquilino+aluguel 0->vago, resto->ocupado); `valor_aluguel_esperado` = ultimo aluguel cheio dos ultimos 6 meses (ignora meses proporcionais/rescisao). 83 imoveis inseridos (total 113). Como a tela de Indicadores exigia ao menos um fechamento e caia inteira no estado vazio, o gate foi ajustado para renderizar os KPIs vindos do cadastro (ocupacao, vacancia, faturamento potencial) quando ha imoveis, mesmo sem fechamento; o card "Faturamento potencial" passou a usar o potencial contratado quando nao ha fechamento (senao mostrava so a vacancia); placeholder "Sem fechamentos" no filtro de competencia; key unica no dropdown de imoveis (unidades repetem entre predios).
+Validacao: verificado no navegador via preview — Visao geral mostra ocupacao 93,8% (106/113) e situacao dos imoveis (7 vagos, vacancia R$ 2,8k); aba Receita mostra Faturamento potencial R$ 67,3k com cascata coerente; abas Mapa e Registro renderizam estado vazio sem quebrar; ciclo pelas abas gerou 0 erros de console (dup-key resolvido). `pnpm lint` passou.
+Decisoes: escopo do historico = so cadastro de imoveis (sem importar fechamentos mensais); reset preserva empreendimentos/contas/regras e os imoveis do MARACANAU; import feito por script one-off em scratchpad via PostgREST (nao versionado, depende de arquivos em ~/Downloads).
+Arquivos/docs impactados: `components/acr/views/indicadores-view.tsx`, `lib/server/indicadores.ts`, `docs/12-execution-roadmap.md`; dados: tabelas `fechamentos` (limpa) e `imoveis` (repopulada) no projeto `qeblersdkfzsogqptbdh`.
+Proxima acao: se desejado, importar o historico mensal como fechamentos para acender serie mensal, mapa de calor e registro; e estimar aluguel esperado das 3 unidades zeradas (GM I apto 10, GM II apto 3, LOCMAIS SALA 05) em meses mais antigos.
+
 ### 2026-07-07 - Hotfix erro 500 por chave publica Supabase
 
 Status: done

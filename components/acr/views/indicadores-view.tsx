@@ -76,6 +76,7 @@ export function IndicadoresView() {
         </div>
         <div className="flex flex-wrap gap-2">
           <select className={selectCls} value={competencia ?? ""} onChange={(e) => setCompetencia(e.target.value || null)}>
+            {(data?.competenciasDisponiveis ?? []).length === 0 && <option value="">Sem fechamentos</option>}
             {(data?.competenciasDisponiveis ?? []).map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
@@ -100,8 +101,8 @@ export function IndicadoresView() {
           </select>
           <select className={selectCls} value={imovel} onChange={(e) => setImovel(e.target.value)}>
             <option value="">Todos os imóveis</option>
-            {(data?.imoveis ?? []).map((i) => (
-              <option key={i.id} value={i.id}>
+            {(data?.imoveis ?? []).map((i, idx) => (
+              <option key={`${i.id}-${idx}`} value={i.id}>
                 {i.label}
               </option>
             ))}
@@ -136,14 +137,14 @@ export function IndicadoresView() {
           <AlertTriangle size={18} /> {error}
         </div>
       )}
-      {!loading && !error && data && data.competencia === "" && (
+      {!loading && !error && data && data.competencia === "" && data.ocupacao.total === 0 && (
         <div className="flex items-center gap-2.5 p-6 text-[13.5px] text-acr-muted">
-          <Info size={18} /> Nenhum fechamento processado ainda. Os indicadores aparecem assim que o primeiro fechamento
-          for concluído.
+          <Info size={18} /> Nenhum fechamento processado nem imóvel cadastrado ainda. Os indicadores aparecem assim que
+          o primeiro fechamento for concluído ou o cadastro de imóveis for preenchido.
         </div>
       )}
 
-      {!loading && !error && data && data.competencia !== "" && (
+      {!loading && !error && data && (data.competencia !== "" || data.ocupacao.total > 0) && (
         <>
           {tab === "geral" && <ViewGeral data={data} metric={metric} setMetric={setMetric} />}
           {tab === "receita" && <ViewReceita data={data} metric={metric} setMetric={setMetric} />}
