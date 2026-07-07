@@ -29,6 +29,17 @@
 - CA12.1: resolucao de pendencia salva o valor oficial escolhido pelo operador e nunca chama a API com id de validacao vazio.
 - CA14: fechamento apenas com comprovante de repasse bloqueia aprovacao por prestacao ausente.
 
+## IPTU - Contas a pagar manual
+
+- CA-IPTU01: ao acessar `/iptu`, o usuario ve uma tabela densa de parcelas (nao uma tela centrada em upload); a acao primaria e "Gerar parcelas" e nao ha upload de certidao/PDF na experiencia principal.
+- CA-IPTU02: os filtros (imobiliaria, empreendimento, ano, status, mes de vencimento e busca) funcionam em conjunto e a tabela mostra vencimento, valor previsto, valor pago, data de baixa, responsavel e status.
+- CA-IPTU03: a geracao em lote permite selecionar multiplos imoveis, definir ano, numero de parcelas, vencimentos e valor padrao, exibe uma revisao antes de confirmar (parcelas e total por imovel + total geral) e alerta/impede duplicidade por imovel+ano; a criacao e transacional.
+- CA-IPTU04: a baixa individual e em massa exige `data_baixa`, inicia `valor_pago` com o valor previsto (ajustavel), bloqueia parcelas ja pagas e executa em transacao, retornando resumo (qtd, total previsto, total pago, imoveis).
+- CA-IPTU05: a edicao permite alterar vencimento, valor previsto, observacoes e responsavel; parcelas pagas nao permitem alterar vencimento/valor previsto; o status e recalculado apos a alteracao.
+- CA-IPTU06: o status e calculado (`pago` com `data_baixa`; `vencido` sem baixa e vencimento anterior a hoje; `aberto` sem baixa com vencimento hoje ou futuro), usando a data local e sem persistir status.
+- CA-IPTU07: o ajuste do numero de parcelas do carne cria apenas parcelas adicionais ao aumentar e bloqueia a reducao abaixo de parcelas ja pagas.
+- CA-IPTU08: nenhuma baixa ou alteracao de IPTU gera lancamento no eGestor nem impacta o fechamento financeiro.
+
 ## Etapa 4 - Futuro
 
 - CA15: configuracao eGestor deve permitir token, teste de conexao, conta disponivel padrao, contato/tag por imobiliaria, tag por empreendimento e plano de contas por categoria.

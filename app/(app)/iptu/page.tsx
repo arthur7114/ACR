@@ -7,34 +7,37 @@ import { IptuProvider, useIptu } from "@/lib/contexts/iptu-context"
 function IptuPageContent() {
   const { cadastros } = useCadastros()
   const {
-    carnes,
-    importacoes,
+    parcelas,
+    resumo,
+    pagination,
+    filtros,
     loading,
     error,
-    empreendimentoId,
-    setEmpreendimentoId,
-    importarCertidao,
-    atualizarResponsavel,
-    atualizarNumeroParcelas,
-    ultimoResultadoImportacao,
+    setFiltros,
+    setPage,
+    gerar,
+    editarParcela,
+    baixar,
+    ajustarNumeroParcelas,
   } = useIptu()
 
   return (
     <IptuView
       imobiliarias={cadastros.imobiliarias}
       empreendimentos={cadastros.empreendimentos}
-      carnes={carnes}
-      importacoes={importacoes}
+      imoveis={cadastros.imoveis}
+      parcelas={parcelas}
+      resumo={resumo}
+      pagination={pagination}
+      filtros={filtros}
       loading={loading}
       error={error}
-      empreendimentoId={empreendimentoId}
-      ultimoResultadoImportacao={ultimoResultadoImportacao}
-      onSelectEmpreendimento={setEmpreendimentoId}
-      onImportar={async (input) => {
-        await importarCertidao(input)
-      }}
-      onAtualizarResponsavel={atualizarResponsavel}
-      onAtualizarNumeroParcelas={atualizarNumeroParcelas}
+      onFiltrosChange={setFiltros}
+      onPageChange={setPage}
+      onGerar={gerar}
+      onEditar={editarParcela}
+      onBaixar={baixar}
+      onAjustarParcelas={ajustarNumeroParcelas}
     />
   )
 }

@@ -1,57 +1,47 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
+import type {
+  BaixarIptuParcelasPayload,
+  GerarIptuPayload,
+  IptuFiltros,
+  IptuPaginacao,
+  IptuParcelaListItem,
+  IptuParcelaPatch,
+  IptuResumo,
+} from "@/lib/iptu-types"
 
-export type IptuResponsavel = "inquilino" | "proprietario"
+const PAGE_SIZE = 50
 
-export type IptuParcelaRow = {
-  id: string
-  numero: number
-  pago: boolean
-  responsavel: IptuResponsavel | null
-  status_imovel_no_registro: string | null
-  registrado_em: string | null
+export interface GerarResultado {
+  conflito: boolean
+  conflitos: string[]
+  carnesCriados: number
+  parcelasCriadas: number
+  imoveisPulados: string[]
 }
 
-export type IptuCarneComParcelas = {
-  id: string
-  imovel_id: string
-  unidade: string
-  inquilino_nome: string | null
-  ano_referencia: number
-  numero_parcelas: number
-  parcelas: IptuParcelaRow[]
-}
-
-export type ImportarCertidaoResultado = {
-  importacaoId: string
-  parcelasNovas: number
-  apartamentosNaoVinculados: string[]
-  anomalias: Array<{ unidade: string; tipo: "regressao" | "excede_carne"; detalhe: string }>
-}
-
-export type IptuImportacao = {
-  id: string
-  empreendimento_id: string
-  arquivo_nome: string
-  arquivo_path: string
-  competencia_relatorio: string
-  apartamentos_nao_vinculados: string[]
-  anomalias: Array<{ unidade: string; tipo: "regressao" | "excede_carne"; detalhe: string }>
-  criado_em: string
+export interface BaixaResultado {
+  parcelasBaixadas: number
+  totalPrevisto: number
+  totalPago: number
+  imoveisAfetados: number
 }
 
 interface IptuContextValue {
-  carnes: IptuCarneComParcelas[]
-  importacoes: IptuImportacao[]
+  parcelas: IptuParcelaListItem[]
+  resumo: IptuResumo | null
+  pagination: IptuPaginacao | null
+  filtros: IptuFiltros
   loading: boolean
   error: string | null
-  empreendimentoId: string | null
-  setEmpreendimentoId: (id: string | null) => void
-  importarCertidao: (input: { file: File; imobiliariaId: string; empreendimentoId: string }) => Promise<ImportarCertidaoResultado>
-  atualizarResponsavel: (parcelaId: string, responsavel: IptuResponsavel) => Promise<void>
-  atualizarNumeroParcelas: (carneId: string, numeroParcelas: number) => Promise<void>
-  ultimoResultadoImportacao: ImportarCertidaoResultado | null
+  setFiltros: (filtros: IptuFiltros) => void
+  setPage: (page: number) => void
+  reload: () => Promise<void>
+  gerar: (payload: GerarIptuPayload) => Promise<GerarResultado>
+  editarParcela: (id: string, patch: IptuParcelaPatch) => Promise<void>
+  baixar: (payload: BaixarIptuParcelasPayload) => Promise<BaixaResultado>
+  ajustarNumeroParcelas: (carneId: string, numeroParcelas: number) => Promise<void>
 }
 
 const IptuContext = createContext<IptuContextValue | null>(null)
@@ -65,74 +55,111 @@ async function fetchJson(url: string, init?: RequestInit) {
   return payload
 }
 
+function buildQuery(filtros: IptuFiltros, page: number): string {
+  const params = new URLSearchParams()
+  if (filtros.imobiliariaId) params.set("imobiliariaId", filtros.imobiliariaId)
+  if (filtros.empreendimentoId) params.set("empreendimentoId", filtros.empreendimentoId)
+  if (filtros.imovelId) params.set("imovelId", filtros.imovelId)
+  if (filtros.ano) params.set("ano", String(filtros.ano))
+  if (filtros.status) params.set("status", filtros.status)
+  if (filtros.vencimentoInicio) params.set("vencimentoInicio", filtros.vencimentoInicio)
+  if (filtros.vencimentoFim) params.set("vencimentoFim", filtros.vencimentoFim)
+  if (filtros.mesVencimento) params.set("mesVencimento", filtros.mesVencimento)
+  params.set("page", String(page))
+  params.set("pageSize", String(PAGE_SIZE))
+  return params.toString()
+}
+
 export function IptuProvider({ children }: { children: React.ReactNode }) {
-  const [empreendimentoId, setEmpreendimentoId] = useState<string | null>(null)
-  const [carnes, setCarnes] = useState<IptuCarneComParcelas[]>([])
-  const [importacoes, setImportacoes] = useState<IptuImportacao[]>([])
+  const [filtros, setFiltrosState] = useState<IptuFiltros>({})
+  const [page, setPageState] = useState(1)
+  const [parcelas, setParcelas] = useState<IptuParcelaListItem[]>([])
+  const [resumo, setResumo] = useState<IptuResumo | null>(null)
+  const [pagination, setPagination] = useState<IptuPaginacao | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [ultimoResultadoImportacao, setUltimoResultadoImportacao] = useState<ImportarCertidaoResultado | null>(null)
 
   const reload = useCallback(async () => {
-    if (!empreendimentoId) {
-      setCarnes([])
-      setImportacoes([])
-      return
-    }
     setLoading(true)
     setError(null)
     try {
-      const [carnesPayload, importacoesPayload] = await Promise.all([
-        fetchJson(`/api/iptu?empreendimento_id=${encodeURIComponent(empreendimentoId)}`),
-        fetchJson(`/api/iptu/importacoes?empreendimento_id=${encodeURIComponent(empreendimentoId)}`),
-      ])
-      setCarnes(carnesPayload.carnes ?? [])
-      setImportacoes(importacoesPayload.importacoes ?? [])
+      const payload = await fetchJson(`/api/iptu?${buildQuery(filtros, page)}`)
+      setParcelas(payload.parcelas ?? [])
+      setResumo(payload.resumo ?? null)
+      setPagination(payload.pagination ?? null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao carregar controle de IPTU.")
+      setError(err instanceof Error ? err.message : "Falha ao carregar IPTU.")
     } finally {
       setLoading(false)
     }
-  }, [empreendimentoId])
+  }, [filtros, page])
 
   useEffect(() => {
     void reload()
   }, [reload])
 
-  const importarCertidao = useCallback(
-    async (input: { file: File; imobiliariaId: string; empreendimentoId: string }) => {
-      setError(null)
-      const formData = new FormData()
-      formData.append("file", input.file)
-      formData.append("imobiliaria_id", input.imobiliariaId)
-      formData.append("empreendimento_id", input.empreendimentoId)
-      const resultado = (await fetchJson("/api/iptu/importar", {
+  const setFiltros = useCallback((next: IptuFiltros) => {
+    setFiltrosState(next)
+    setPageState(1)
+  }, [])
+
+  const setPage = useCallback((next: number) => {
+    setPageState(Math.max(1, next))
+  }, [])
+
+  const gerar = useCallback(
+    async (payload: GerarIptuPayload): Promise<GerarResultado> => {
+      const response = await fetch("/api/iptu/gerar", {
         method: "POST",
-        body: formData,
-      })) as ImportarCertidaoResultado
-      setUltimoResultadoImportacao(resultado)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json()
+      if (response.status === 409) {
+        return {
+          conflito: true,
+          conflitos: data.conflitos ?? [],
+          carnesCriados: 0,
+          parcelasCriadas: 0,
+          imoveisPulados: [],
+        }
+      }
+      if (!response.ok || data.error) {
+        throw new Error(data.error ?? "Falha ao gerar parcelas.")
+      }
       await reload()
-      return resultado
+      return data.resultado as GerarResultado
     },
     [reload],
   )
 
-  const atualizarResponsavel = useCallback(
-    async (parcelaId: string, responsavel: IptuResponsavel) => {
-      setError(null)
-      await fetchJson(`/api/iptu/parcelas/${parcelaId}`, {
+  const editarParcela = useCallback(
+    async (id: string, patch: IptuParcelaPatch) => {
+      await fetchJson(`/api/iptu/parcelas/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ responsavel }),
+        body: JSON.stringify(patch),
       })
       await reload()
     },
     [reload],
   )
 
-  const atualizarNumeroParcelas = useCallback(
+  const baixar = useCallback(
+    async (payload: BaixarIptuParcelasPayload): Promise<BaixaResultado> => {
+      const data = await fetchJson("/api/iptu/parcelas/baixa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      await reload()
+      return data.resultado as BaixaResultado
+    },
+    [reload],
+  )
+
+  const ajustarNumeroParcelas = useCallback(
     async (carneId: string, numeroParcelas: number) => {
-      setError(null)
       await fetchJson(`/api/iptu/carnes/${carneId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -145,27 +172,34 @@ export function IptuProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({
-      carnes,
-      importacoes,
+      parcelas,
+      resumo,
+      pagination,
+      filtros,
       loading,
       error,
-      empreendimentoId,
-      setEmpreendimentoId,
-      importarCertidao,
-      atualizarResponsavel,
-      atualizarNumeroParcelas,
-      ultimoResultadoImportacao,
+      setFiltros,
+      setPage,
+      reload,
+      gerar,
+      editarParcela,
+      baixar,
+      ajustarNumeroParcelas,
     }),
     [
-      carnes,
-      importacoes,
+      parcelas,
+      resumo,
+      pagination,
+      filtros,
       loading,
       error,
-      empreendimentoId,
-      importarCertidao,
-      atualizarResponsavel,
-      atualizarNumeroParcelas,
-      ultimoResultadoImportacao,
+      setFiltros,
+      setPage,
+      reload,
+      gerar,
+      editarParcela,
+      baixar,
+      ajustarNumeroParcelas,
     ],
   )
 

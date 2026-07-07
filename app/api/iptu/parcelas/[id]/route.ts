@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { iptuParcelaPatchSchema } from "@/lib/iptu-types"
 import { parseJson } from "@/lib/server/cadastros"
-import { atualizarResponsavelParcela } from "@/lib/server/persist-iptu"
+import { editarParcela } from "@/lib/server/iptu"
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
@@ -10,7 +10,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
 
   try {
-    const parcela = await atualizarResponsavelParcela(id, input.data.responsavel)
+    const parcela = await editarParcela(id, input.data)
     return NextResponse.json({ parcela })
   } catch (error) {
     return NextResponse.json(

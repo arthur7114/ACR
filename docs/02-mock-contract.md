@@ -32,6 +32,14 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 - `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
 - `indicadores`: painel de KPIs da carteira, com sub-abas Visao geral, Receita & repasse, Mapa de calor e Registro de pagamentos. Filtros por competencia, empreendimento e imovel; alternancia valor x percentual. Todos os numeros derivam de dados ja existentes (fechamentos processados, `analise_completa`/PackageTotals e cadastro de imoveis).
+- `iptu`: tela operacional de contas a pagar de IPTU por imovel. Cards de resumo (aberto, vencido, pago, parcelas vencidas, proximo vencimento), barra de filtros (imobiliaria, empreendimento, ano, status calculado, mes de vencimento, busca), tabela densa de parcelas com selecao, e acoes de geracao de carnes em lote (com revisao), edicao de parcela, ajuste do numero de parcelas do carne, baixa individual e baixa em massa. Somente operacional: nao gera lancamento no eGestor nem altera fechamento financeiro.
+
+### Adicao registrada — tela `iptu` (2026-07-07)
+
+- Ponto alterado: o modulo `/iptu` era um fluxo passivo de importacao de certidao/PDF (extracao por IA da contagem de parcelas pagas por unidade). Passou a ser um controle operacional manual de contas a pagar de IPTU por imovel.
+- Por que: o operador precisa gerar carnes anuais, controlar vencimentos e valores, e dar baixa (individual e em massa) — nao apenas registrar passivamente o que a certidao informa.
+- Decisoes de produto: status calculado (`aberto`/`vencido`/`pago`) a partir de `data_baixa`/`data_vencimento` (timezone-safe, sem status salvo); geracao em lote transacional com revisao previa e alerta de conflito por imovel+ano; `responsavel` (inquilino/proprietario) mantido como coluna extra editavel; importacao por PDF/certidao fica fora do MVP (backend legado mantido, sem acesso na UI); sem integracao com eGestor ou fechamento.
+- Docs atualizados: este contrato, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
 ### Adicao registrada — tela `indicadores` (2026-06-19)
 

@@ -1,5 +1,7 @@
 # Controle de Pagamento de IPTU Implementation Plan
 
+> **⚠️ LEGADO / FORA DO MVP (desde 2026-07-07):** este plano descreve o fluxo de importacao de certidao/PDF por IA, que deixou de ser a experiencia principal de `/iptu`. O modulo passou a ser um controle operacional manual de contas a pagar (ver `docs/02-mock-contract.md` → "tela `iptu`" e o ciclo de 2026-07-07 em `docs/12-execution-roadmap.md`). O backend de importacao permanece apenas por compatibilidade, sem acesso na UI. Possivel evolucao futura, nao prioridade.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Registrar, por apartamento, quantas parcelas do carnê anual de IPTU já foram pagas (via importação mensal de uma certidão em PDF enviada pela imobiliária), e classificar cada parcela paga como responsabilidade do inquilino ou do proprietário com base no status do imóvel no momento do registro — como controle histórico/auditoria, sem gerar lançamento automático no eGestor.

@@ -1,7 +1,9 @@
 # Controle de Pagamento de IPTU — Design
 
 **Data:** 2026-07-03
-**Status:** Aprovado para planejamento
+**Status:** LEGADO / fora do MVP (desde 2026-07-07)
+
+> **⚠️ LEGADO:** o fluxo de importacao de certidao/PDF por IA descrito aqui deixou de ser a experiencia principal de `/iptu`, que passou a ser um controle operacional manual de contas a pagar (ver `docs/02-mock-contract.md` e o ciclo de 2026-07-07 em `docs/12-execution-roadmap.md`). Backend de importacao mantido por compatibilidade, sem acesso na UI.
 
 ## Contexto
 
