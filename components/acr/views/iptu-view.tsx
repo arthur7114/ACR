@@ -34,6 +34,21 @@ import { IptuStatusBadge, SelectInput, inputClass } from "@/components/acr/iptu/
 const ANO_ATUAL = new Date().getFullYear()
 const ANOS = Array.from({ length: 6 }, (_, i) => ANO_ATUAL + 1 - i)
 
+const MESES = [
+  { value: "01", label: "Janeiro" },
+  { value: "02", label: "Fevereiro" },
+  { value: "03", label: "Março" },
+  { value: "04", label: "Abril" },
+  { value: "05", label: "Maio" },
+  { value: "06", label: "Junho" },
+  { value: "07", label: "Julho" },
+  { value: "08", label: "Agosto" },
+  { value: "09", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+]
+
 const RESPONSAVEL_LABEL: Record<string, string> = {
   inquilino: "Inquilino",
   proprietario: "Proprietário",
@@ -89,6 +104,20 @@ export function IptuView({
   function atualizarFiltro(patch: Partial<IptuFiltros>) {
     onFiltrosChange({ ...filtros, ...patch })
     setSelecionadas(new Set())
+  }
+
+  const mesSelecionado = filtros.mesVencimento?.slice(5, 7) ?? ""
+
+  // O mes de vencimento e ancorado ao ano do filtro (ou ao ano atual).
+  function alterarAno(value: string) {
+    const ano = value ? Number(value) : undefined
+    const patch: Partial<IptuFiltros> = { ano }
+    if (mesSelecionado) patch.mesVencimento = `${ano ?? ANO_ATUAL}-${mesSelecionado}`
+    atualizarFiltro(patch)
+  }
+
+  function alterarMes(mes: string) {
+    atualizarFiltro({ mesVencimento: mes ? `${filtros.ano ?? ANO_ATUAL}-${mes}` : undefined })
   }
 
   const parcelasVisiveis = useMemo(() => {
@@ -224,10 +253,7 @@ export function IptuView({
               </option>
             ))}
           </SelectInput>
-          <SelectInput
-            value={filtros.ano ? String(filtros.ano) : ""}
-            onChange={(v) => atualizarFiltro({ ano: v ? Number(v) : undefined })}
-          >
+          <SelectInput value={filtros.ano ? String(filtros.ano) : ""} onChange={alterarAno}>
             <option value="">Ano</option>
             {ANOS.map((a) => (
               <option key={a} value={a}>
@@ -244,12 +270,14 @@ export function IptuView({
             <option value="vencido">Vencido</option>
             <option value="pago">Pago</option>
           </SelectInput>
-          <input
-            type="month"
-            className={inputClass}
-            value={filtros.mesVencimento ?? ""}
-            onChange={(e) => atualizarFiltro({ mesVencimento: e.target.value || undefined })}
-          />
+          <SelectInput value={mesSelecionado} onChange={alterarMes}>
+            <option value="">Mês venc.</option>
+            {MESES.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </SelectInput>
         </div>
 
         <div className="max-h-[60vh] overflow-auto">
