@@ -11,3 +11,12 @@ export function requireEnv(name: string) {
 export function getOptionalEnv(name: string, fallback: string) {
   return process.env[name] || fallback
 }
+
+export function requireSupabasePublicKey() {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+  )
+}

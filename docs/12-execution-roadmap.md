@@ -88,6 +88,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-07 - Hotfix erro 500 por chave publica Supabase
+
+Status: done
+Job: diagnosticar o `500 Internal Server Error` na abertura do app com a configuracao Supabase atual.
+Outcome entregue: reproduzido localmente que o middleware quebrava antes do login por ausencia de `NEXT_PUBLIC_SUPABASE_ANON_KEY`, enquanto o ambiente tinha apenas `SUPABASE_PUBLISHABLE_KEY`. Adicionado helper `requireSupabasePublicKey()` para aceitar `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` ou o fallback server-side `SUPABASE_PUBLISHABLE_KEY`; clientes Supabase de browser/server e middleware passam a usar o helper. `next.config.mjs` mapeia a publishable key antiga para a variavel publica usada no bundle, e `.env.example` documenta a nova opcao. O escopo de validacao foi ajustado para ignorar artefatos `.claude`/`.next` em lint/API validator.
+Validacao: `GET /login` deixou de retornar 500 e respondeu 200; `/` redirecionou para `/login` com 307. `pnpm exec tsc --noEmit`, `pnpm lint`, `python3 .agent/skills/api-patterns/scripts/api_validator.py .` e `pnpm build` passaram. `.agent/scripts/checklist.py .` passou em Security, Lint, Schema e Tests; permaneceu falhando em UX/SEO por pendencias preexistentes fora deste hotfix (`#7C3AED` em telas de revisao/historico, labels em indicadores e metadados SEO em `iptu-view.tsx`).
+Decisoes: manter compatibilidade com a nomenclatura antiga `NEXT_PUBLIC_SUPABASE_ANON_KEY` e aceitar a nova publishable key do Supabase sem expor `SUPABASE_SERVICE_ROLE_KEY` no cliente.
+Arquivos/docs impactados: `lib/server/env.ts`, `lib/supabase/client.ts`, `lib/supabase/server.ts`, `middleware.ts`, `next.config.mjs`, `.env.example`, `eslint.config.mjs`, `.agent/skills/api-patterns/scripts/api_validator.py`, `docs/12-execution-roadmap.md`.
+Proxima acao: rotacionar as chaves coladas em conversa e revisar as pendencias UX/SEO do checklist em um ciclo separado.
+
 ### 2026-07-03 - Polimento pre-reuniao: login real, Usuarios, previa eGestor editavel, Logs e cards padronizados
 
 Status: done
