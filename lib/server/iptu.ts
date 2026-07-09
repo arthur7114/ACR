@@ -18,6 +18,8 @@ import type {
   IptuResumo,
 } from "@/lib/iptu-types"
 
+type Supabase = ReturnType<typeof createSupabaseAdmin>
+
 const PARCELA_SELECT = `
   id,
   carne_id,
@@ -300,9 +302,11 @@ export async function gerarParcelasLote(payload: GerarIptuPayload): Promise<Gera
   }
 }
 
-export async function editarParcela(id: string, patch: IptuParcelaPatch): Promise<IptuParcelaListItem> {
-  const supabase = createSupabaseAdmin()
-
+export async function editarParcela(
+  id: string,
+  patch: IptuParcelaPatch,
+  supabase: Supabase = createSupabaseAdmin(),
+): Promise<IptuParcelaListItem> {
   const { data: atual, error: buscaError } = await supabase
     .from("iptu_parcelas")
     .select("id, data_baixa")
@@ -326,7 +330,11 @@ export async function editarParcela(id: string, patch: IptuParcelaPatch): Promis
   const { error: updateError } = await supabase.from("iptu_parcelas").update(changes).eq("id", id)
   if (updateError) throw updateError
 
-  const { data, error } = await supabase.from("iptu_parcelas").select(PARCELA_SELECT).eq("id", id).single()
+  const { data, error } = await supabase
+    .from("iptu_parcelas_detalhe")
+    .select(PARCELA_SELECT)
+    .eq("id", id)
+    .single()
   if (error) throw error
   return mapParcela(data as unknown as ParcelaRawRow, hojeLocalISO())
 }

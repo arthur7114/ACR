@@ -90,6 +90,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-09 - IPTU: correcao ao editar parcela
+
+Status: done
+Job: corrigir o erro exibido ao salvar uma edicao de parcela em `/iptu`.
+Outcome entregue: depois de atualizar a tabela base `iptu_parcelas`, `editarParcela` passa a reler a linha pela view `iptu_parcelas_detalhe`, que contem os campos relacionais usados pela resposta. Antes, o `UPDATE` podia persistir mas a releitura falhava por consultar colunas da view na tabela base, e a UI exibia erro generico. Foi adicionado teste de regressao com cliente Supabase injetado, cobrindo a sequencia tabela base -> tabela base -> view detalhada.
+Validacao: `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build` e os 44 testes puros de IPTU passaram. O checklist passou em seguranca, lint, schema, testes e SEO; a auditoria UX continua apontando problemas pre-existentes e fora deste fluxo em `imovel-historico-drawer.tsx`, `revisao-view.tsx` e `indicadores-view.tsx`. O teste `lib/server/iptu.test.ts` foi verificado pelos tipos; sua execucao requer o runner `tsx`, que nao e uma dependencia instalada neste checkout.
+Decisoes: nenhuma migration ou alteracao do contrato de IPTU foi necessaria; a view ja esta disponivel no Supabase configurado.
+Arquivos/docs impactados: `lib/server/iptu.ts`, `lib/server/iptu.test.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: validar no navegador uma edicao de parcela paga (responsavel/observacoes) e uma parcela aberta (vencimento/valor), confirmando o retorno sem alerta de erro.
+
 ### 2026-07-07 - IPTU: modulo de contas a pagar manual por imovel
 
 Status: done
