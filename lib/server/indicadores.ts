@@ -385,10 +385,15 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
     return { empreendimento: emp, valores, media: avg(valores) }
   })
 
-  // Por apartamento
-  const aptoKeys = Array.from(aptoAgg.keys()).sort((a, b) =>
-    (aptoLabel.get(a) ?? a).localeCompare(aptoLabel.get(b) ?? b),
-  )
+  // Por apartamento: agrupa por empreendimento e ordena pelo NÚMERO do apartamento
+  // (natural/numérico — "2" antes de "10" antes de "101"; a chave é `${empNome}||${apto}`).
+  const aptoKeys = Array.from(aptoAgg.keys()).sort((a, b) => {
+    const [empA, aptoA = ""] = a.split("||")
+    const [empB, aptoB = ""] = b.split("||")
+    const byEmp = empA.localeCompare(empB, "pt-BR")
+    if (byEmp !== 0) return byEmp
+    return aptoA.localeCompare(aptoB, "pt-BR", { numeric: true, sensitivity: "base" })
+  })
   const inadAptoRows: HeatRow[] = aptoKeys.map((key) => {
     const m = aptoAgg.get(key)!
     const valores = heatMeses.map((mes) => {
