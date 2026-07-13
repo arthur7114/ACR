@@ -46,7 +46,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ fechamentos: data ?? [] })
+  const rows = data ?? []
+  const ids = rows.map((row) => String(row.id))
+  const analyzedIds = new Set<string>()
+
+  if (ids.length > 0) {
+    const analyzed = await supabase
+      .from("fechamentos")
+      .select("id")
+      .in("id", ids)
+      .not("analise_completa", "is", null)
+
+    if (analyzed.error) {
+      return NextResponse.json({ error: analyzed.error.message }, { status: 500 })
+    }
+
+    analyzed.data?.forEach((row) => analyzedIds.add(row.id))
+  }
+
+  return NextResponse.json({
+    fechamentos: rows.map((row) => ({
+      ...row,
+      has_analysis: analyzedIds.has(String(row.id)),
+    })),
+  })
 }
 
 export async function POST(request: Request) {

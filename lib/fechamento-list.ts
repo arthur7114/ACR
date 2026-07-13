@@ -17,6 +17,7 @@ export interface FechamentoListPresentation {
 export interface FechamentoListInput {
   id: string
   dbStatus: string
+  hasAnalysis: boolean
   processamentoStatus: string | null
   processamentoAtualizadoEm: string | null
   agora?: string
@@ -27,7 +28,7 @@ const STUCK_AFTER_MS = 15 * 60 * 1000
 export function resolveFechamentoListPresentation(
   input: FechamentoListInput,
 ): FechamentoListPresentation {
-  const { id, dbStatus, processamentoStatus } = input
+  const { id, dbStatus, hasAnalysis, processamentoStatus } = input
 
   if (processamentoStatus === "processando" && isProcessingFresh(input)) {
     return {
@@ -37,7 +38,7 @@ export function resolveFechamentoListPresentation(
     }
   }
 
-  if (processamentoStatus === "erro" || processamentoStatus === "processando") {
+  if (!hasAnalysis && (processamentoStatus === "erro" || processamentoStatus === "processando")) {
     return {
       status: "erro_processamento",
       href: `/fechamentos/${id}/upload`,
@@ -45,7 +46,7 @@ export function resolveFechamentoListPresentation(
     }
   }
 
-  if (dbStatus === "rascunho") {
+  if (!hasAnalysis) {
     return {
       status: "rascunho",
       href: `/fechamentos/${id}/upload`,

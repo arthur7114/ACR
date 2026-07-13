@@ -97,6 +97,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-13 - Guarda de rota contra revisão sem análise
+
+Status: done.
+Job: concluir a correção do falso acesso à Revisão reportado em Alive Imóveis / Grand Messejana I / Mai-2026, que estava em `rascunho`, sem job e sem `analise_completa`.
+Outcome entregue: a decisão de destino agora considera job ativo e existência real da análise; job ativo abre Processando, ausência de análise abre Upload e análise válida abre Revisão. A lista consulta apenas os IDs que possuem `analise_completa`, a API de detalhe expõe o snapshot de processamento e a própria rota `/revisao` aplica a guarda, cobrindo URL direta e outros pontos de entrada. O cache global sem vínculo ao ID deixou de alimentar a Revisão, evitando mostrar dados de outro fechamento durante a navegação. Notificações de falha passam a abrir o Upload; notificações concluídas continuam abrindo a Revisão. Falha de reprocessamento preserva a última análise válida.
+Validacao: teste de regressão reproduziu o bug antes da correção e passou depois (7/7); suíte completa 162/162, `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `git diff --check` e checklist mestre 6/6 passaram. QA autenticada com o fechamento real `5c01572e` confirmou a linha "Aguardando documentos" apontando para `/upload` e o redirecionamento automático de uma URL direta `/revisao` para `/upload`, sem o card "Nenhuma análise carregada".
+Decisoes: status persistido isolado não autoriza a Revisão; `analise_completa` é a evidência necessária. Um job ativo tem precedência temporária, e uma análise válida anterior continua acessível quando um reprocessamento falha.
+Arquivos/docs impactados: `lib/fechamento-list.ts`, `lib/fechamento-list.test.ts`, `app/api/fechamentos/route.ts`, `app/api/fechamentos/[id]/route.ts`, `app/(app)/fechamentos/[id]/revisao/page.tsx`, `components/acr/views/fechamentos-view.tsx`, `components/acr/notifications-panel.tsx`, `corrigir-intermediacao-processamento-indicadores.md` e docs 02/06/12.
+Proxima acao: publicar a correção e repetir a URL reportada no ambiente implantado; o fechamento Grand Messejana I continua aguardando o envio dos documentos.
+
 ### 2026-07-13 - Gate final e hardening dos indicadores (Slice 8)
 
 Status: done no codigo; QA autenticada e rollout pendentes.

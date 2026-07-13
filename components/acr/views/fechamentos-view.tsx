@@ -112,6 +112,7 @@ export function FechamentosView() {
         id: string
         competencia: string
         status: string
+        has_analysis: boolean
         processamento_status: string | null
         processamento_atualizado_em: string | null
         arquivado?: boolean
@@ -124,6 +125,7 @@ export function FechamentosView() {
         const presentation = resolveFechamentoListPresentation({
           id: f.id,
           dbStatus: f.status,
+          hasAnalysis: f.has_analysis,
           processamentoStatus: f.processamento_status,
           processamentoAtualizadoEm: f.processamento_atualizado_em,
         })

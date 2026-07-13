@@ -38,10 +38,12 @@ export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
     return () => document.removeEventListener("keydown", closeOnEscape)
   }, [onClose])
 
-  const abrir = (fechamentoId: string | null, id: string) => {
+  const abrir = (fechamentoId: string | null, id: string, tipo: string) => {
     void marcarLidas([id])
     onClose()
-    if (fechamentoId) router.push(`/fechamentos/${fechamentoId}/revisao`)
+    if (!fechamentoId) return
+    const step = tipo === "analise_concluida" ? "revisao" : "upload"
+    router.push(`/fechamentos/${fechamentoId}/${step}`)
   }
 
   return (
@@ -83,7 +85,7 @@ export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
               <li key={n.id}>
                 <button
                   type="button"
-                  onClick={() => abrir(n.fechamento_id, n.id)}
+                  onClick={() => abrir(n.fechamento_id, n.id, n.tipo)}
                   className={`flex min-h-11 w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-acr-green-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-acr-green ${
                     n.lida ? "" : "bg-acr-green-tint"
                   }`}

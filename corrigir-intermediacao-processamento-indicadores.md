@@ -6,6 +6,9 @@ Corrigir o falso estado de processamento, exibir o IPTU da intermediação sem a
 ## Tarefas
 - [x] Criar testes para o estado de fechamento e para a composição financeira da intermediação.
 - [x] Diferenciar rascunho, processamento ativo e erro na lista; direcionar rascunhos ao upload.
+- [x] Proteger a própria rota de Revisão contra fechamento sem `analise_completa`.
+- [x] Remover análise em cache sem vínculo ao ID do fechamento na entrada da Revisão.
+- [x] Direcionar notificações de falha ao upload e preservar Revisão para análises concluídas.
 - [x] Separar aluguel/base, IPTU, total recebido, comissão e repasse na Intermediação.
 - [x] Orientar a extração a preservar o valor exato do IPTU e o total da intermediação.
 - [x] Restaurar a paleta verde → amarelo → laranja → vermelho do mapa de calor.
@@ -14,5 +17,6 @@ Corrigir o falso estado de processamento, exibir o IPTU da intermediação sem a
 
 ## Concluído quando
 - [x] Grand Castelão em rascunho não aparece mais como “Processando” nem abre revisão vazia.
+- [x] Grand Messejana I em rascunho abre o upload mesmo quando a URL de Revisão é acessada diretamente.
 - [x] O caso LOCMAIS Mai/2026 resulta em base R$ 900, IPTU R$ 38,08, total R$ 938,08, comissão R$ 540 e repasse R$ 398,08.
 - [x] A legenda e as células usam seis faixas progressivas de verde a vermelho.

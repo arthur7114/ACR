@@ -6,6 +6,7 @@ test("rascunho sem job aguarda documentos e abre o upload", () => {
   const result = resolveFechamentoListPresentation({
     id: "fechamento-1",
     dbStatus: "rascunho",
+    hasAnalysis: false,
     processamentoStatus: null,
     processamentoAtualizadoEm: null,
     agora: "2026-07-13T17:00:00Z",
@@ -22,6 +23,7 @@ test("rascunho com job ativo acompanha o processamento", () => {
   const result = resolveFechamentoListPresentation({
     id: "fechamento-1",
     dbStatus: "rascunho",
+    hasAnalysis: false,
     processamentoStatus: "processando",
     processamentoAtualizadoEm: "2026-07-13T16:55:00Z",
     agora: "2026-07-13T17:00:00Z",
@@ -38,6 +40,7 @@ test("falha de processamento permite reenviar os documentos", () => {
   const result = resolveFechamentoListPresentation({
     id: "fechamento-1",
     dbStatus: "rascunho",
+    hasAnalysis: false,
     processamentoStatus: "erro",
     processamentoAtualizadoEm: "2026-07-13T16:55:00Z",
     agora: "2026-07-13T17:00:00Z",
@@ -54,6 +57,7 @@ test("fechamento processado abre a revisão", () => {
   const result = resolveFechamentoListPresentation({
     id: "fechamento-1",
     dbStatus: "processado_com_sucesso",
+    hasAnalysis: true,
     processamentoStatus: "concluido",
     processamentoAtualizadoEm: "2026-07-13T16:55:00Z",
     agora: "2026-07-13T17:00:00Z",
@@ -70,6 +74,7 @@ test("job sem atualização há mais de 15 minutos permite nova tentativa", () =
   const result = resolveFechamentoListPresentation({
     id: "fechamento-1",
     dbStatus: "rascunho",
+    hasAnalysis: false,
     processamentoStatus: "processando",
     processamentoAtualizadoEm: "2026-07-13T16:44:59Z",
     agora: "2026-07-13T17:00:00Z",
@@ -79,5 +84,39 @@ test("job sem atualização há mais de 15 minutos permite nova tentativa", () =
     status: "erro_processamento",
     href: "/fechamentos/fechamento-1/upload",
     actionLabel: "Tentar novamente",
+  })
+})
+
+test("estado inconsistente sem analise nunca abre uma revisao vazia", () => {
+  const result = resolveFechamentoListPresentation({
+    id: "fechamento-1",
+    dbStatus: "pendente_revisao",
+    hasAnalysis: false,
+    processamentoStatus: null,
+    processamentoAtualizadoEm: null,
+    agora: "2026-07-13T17:00:00Z",
+  })
+
+  assert.deepEqual(result, {
+    status: "rascunho",
+    href: "/fechamentos/fechamento-1/upload",
+    actionLabel: "Enviar documentos",
+  })
+})
+
+test("falha de reprocessamento preserva a ultima analise valida", () => {
+  const result = resolveFechamentoListPresentation({
+    id: "fechamento-1",
+    dbStatus: "pendente_revisao",
+    hasAnalysis: true,
+    processamentoStatus: "erro",
+    processamentoAtualizadoEm: "2026-07-13T16:55:00Z",
+    agora: "2026-07-13T17:00:00Z",
+  })
+
+  assert.deepEqual(result, {
+    status: "pendente",
+    href: "/fechamentos/fechamento-1/revisao",
+    actionLabel: "Revisar",
   })
 })

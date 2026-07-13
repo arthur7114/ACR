@@ -2,9 +2,10 @@
 
 import { use, useEffect, useState, useCallback } from "react"
 import { AlertTriangle, Loader2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { CorrectionModal } from "@/components/acr/correction-modal"
 import { RevisaoView } from "@/components/acr/views/revisao-view"
-import { useProcessing } from "@/lib/contexts/processing-context"
+import { resolveFechamentoListPresentation } from "@/lib/fechamento-list"
 import { formatBRL } from "@/lib/format"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
@@ -18,6 +19,8 @@ type FechamentoResumo = {
   empreendimentos?: { nome: string } | null
   competencia: string
   status?: string
+  processamento_status?: string | null
+  processamento_atualizado_em?: string | null
   comentario_operador?: string | null
   regra_comercial?: {
     taxa_administracao_percent: number
@@ -36,46 +39,63 @@ type StatusEvento = {
 
 export default function RevisaoPage({ params }: PageProps) {
   const { id } = use(params)
-  const { analysisResult: cachedAnalysis } = useProcessing()
-  const [analysis, setAnalysis] = useState<PackageAnalysis | null>(cachedAnalysis)
+  const router = useRouter()
+  const [analysis, setAnalysis] = useState<PackageAnalysis | null>(null)
   const [fechamento, setFechamento] = useState<FechamentoResumo | null>(null)
   const [egestorLancamentos, setEgestorLancamentos] = useState<EgestorLancamento[]>([])
   const [egestorEnvios, setEgestorEnvios] = useState<EgestorEnvio[]>([])
   const [statusEventos, setStatusEventos] = useState<StatusEvento[]>([])
-  const [loading, setLoading] = useState(!cachedAnalysis)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
 
   const loadFromApi = useCallback(() => {
     setError(null)
     return fetch(`/api/fechamentos/${id}`)
-      .then((response) => response.json())
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error ?? "Falha ao carregar revisao.")
+        return payload
+      })
       .then((payload) => {
         if (payload.error) {
           setError(payload.error)
-          return
+          return false
         }
-        setAnalysis(payload.analise_completa ?? null)
-        setFechamento(payload.fechamento ?? null)
+        const nextAnalysis = payload.analise_completa ?? null
+        const nextFechamento = payload.fechamento ?? null
+        const destination = resolveFechamentoListPresentation({
+          id,
+          dbStatus: nextFechamento?.status ?? "rascunho",
+          hasAnalysis: Boolean(nextAnalysis),
+          processamentoStatus: nextFechamento?.processamento_status ?? null,
+          processamentoAtualizadoEm: nextFechamento?.processamento_atualizado_em ?? null,
+        }).href
+
+        if (destination !== `/fechamentos/${id}/revisao`) {
+          router.replace(destination)
+          return true
+        }
+
+        setAnalysis(nextAnalysis)
+        setFechamento(nextFechamento)
         setEgestorLancamentos(payload.egestor_lancamentos ?? [])
         setEgestorEnvios(payload.egestor_envios ?? [])
         setStatusEventos(payload.status_eventos ?? [])
+        return false
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "Falha ao carregar revisao.")
+        return false
       })
-  }, [id])
+  }, [id, router])
 
   useEffect(() => {
-    if (cachedAnalysis) {
-      setAnalysis(cachedAnalysis)
-      setLoading(false)
-      loadFromApi()
-      return
-    }
     setLoading(true)
-    loadFromApi().finally(() => setLoading(false))
-  }, [id, cachedAnalysis, loadFromApi])
+    loadFromApi().then((redirecting) => {
+      if (!redirecting) setLoading(false)
+    })
+  }, [id, loadFromApi])
 
   if (loading) {
     return (
