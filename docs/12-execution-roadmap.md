@@ -2,13 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu a implementacao dos Slices 0 a 8: contrato, schema protegido por RLS, materializacao idempotente, backfill/verificacao, API agregada, shell responsivo, quatro abas operacionais e tooling reproduzivel. Suite completa 160/160, typecheck, lint, build e checklist 6/6 estao verdes; o gate autenticado final e o canario/backfill com escrita aguardam staging.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0 a 8 e o rollout: schema protegido por RLS, materializacao idempotente, backfill/verificacao, API agregada, shell responsivo e quatro abas operacionais. A migration foi aplicada apos canario descartavel; 465 snapshots de 41 fechamentos foram recompostos e verificados sem duplicidade, divergencia financeira ou alteracao das fontes. Suite completa 162/162, typecheck, lint, build, checklist 6/6 e QA autenticada nos seis breakpoints estao verdes.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
 
-Validar no navegador os Slices 6 e 7 em 360, 390, 768, 1024, 1280 e 1440px, incluindo filtros/URL, troca rapida, tabs, heatmap, tabela/CSV, estados preliminar/recomposto/erro e console. Antes de qualquer escrita historica, aplicar a migration em banco descartavel/staging, auditar grants/RLS, executar dry-run e canario do Slice 3 e repetir o canario para confirmar checksum/fingerprints.
+Confirmar no EasyPanel que `main` e a branch monitorada e que o commit mais recente foi implantado; fazer smoke no dominio publicado e monitorar erros, latencia, cobertura e divergencias durante a janela operacional. Como melhoria de dados, revisar as 28 linhas historicas nao vinculadas e os pares sem imoveis ativos; o dashboard ja mantem essas competencias como preliminares e nao inventa vinculos.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | slices 0-8 concluidos no codigo | Backend, shell, quatro abas e gates locais verdes; QA autenticada e rollout em staging pendentes. |
+| Indicadores operacionais | concluida e validada | Migration e backfill aplicados apos canario descartavel; 465 snapshots verificados, QA autenticada responsiva e gates finais verdes. |
 
 ## Decisoes registradas
 
@@ -96,6 +96,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Rollout e QA autenticada dos indicadores (Slice 8)
+
+Status: done.
+Job: concluir migration, canario, backfill, verificacao e percurso autenticado responsivo de `/indicadores` sem usar producao como primeiro ambiente.
+Outcome entregue: as 21 migrations foram aplicadas em Supabase descartavel completo; o dry-run sintetico nao escreveu, o canario inseriu 3 snapshots e a repeticao produziu 3 skips. O verificador descartavel passou com cobertura integral, checksums validos, reconciliacao financeira e fontes intactas. No remoto, o historico foi auditado e um dry-run isolado confirmou que somente `202607130001_indicadores_snapshots.sql` seria aplicada; a migration IPTU pendente permaneceu intocada. O canario real de Grand Messejana II / marco de 2026 inseriu 27 snapshots com 100% de cobertura e repetiu com 27 skips. O backfill global materializou 465 snapshots de 41 fechamentos. A exportacao CSV foi tornada um link de download explicito, com nome e conteudo acessiveis pelo navegador.
+Validacao: verificador remoto `ok=true`, 465/465 snapshots disponiveis, zero duplicidade, 465 checksums validos, 41/41 pontes reconciliadas e fingerprints de `fechamentos`/`imoveis` inalterados. O dry-run global identificou 375 de 465 imoveis com linha vinculada (80,65%) e 28 linhas nao vinculadas, preservadas como lacunas preliminares. QA autenticada percorreu as quatro abas, metricas, filtros combinados, troca rapida, reload/URL, busca, ordenacao, paginacao, CSV, teclado, foco, notificacoes e console. Em 360, 390, 768, 1024, 1280 e 1440px nao houve overflow da pagina; sidebar/menu mediram 0/0/72/72/220/220px e heatmap/tabela mantiveram scroll interno. A API respondeu 400 para competencia invalida. Suite 162/162, `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `git diff --check` e checklist mestre 6/6 passaram.
+Decisoes: o projeto remoto configurado foi tratado como producao e so recebeu escrita depois dos testes descartaveis; a migration de Indicadores foi aplicada isoladamente para nao arrastar `202607070001_iptu_contas_pagar.sql`, que continua pendente. Lacunas historicas permanecem visiveis e preliminares; nao foi criado vinculo automatico sem cadastro.
+Arquivos/docs impactados: `components/acr/indicadores/tabs/view-registro.tsx`, `docs/12-execution-roadmap.md`; banco remoto: `public.imovel_competencias` e historico `202607130001`.
+Proxima acao: confirmar o deployment do EasyPanel a partir de `main`, executar smoke no dominio publicado e acompanhar a janela operacional; depois corrigir os cadastros que explicam as linhas historicas nao vinculadas.
 
 ### 2026-07-13 - Guarda de rota contra revisão sem análise
 

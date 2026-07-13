@@ -19,6 +19,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
 
   const filtered = useMemo(() => filterRows(data.receitasPorImovel, query), [data.receitasPorImovel, query])
   const sorted = useMemo(() => sortRows(filtered, sort), [filtered, sort])
+  const csvHref = useMemo(() => buildCsvHref(sorted), [sorted])
   const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
   const visible = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
@@ -43,14 +44,15 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
         description="Uma linha por imóvel e competência, conforme a prestação. Esta fonte não é um livro bancário."
         source="Prestação da competência + snapshots"
         action={
-          <button
-            type="button"
-            onClick={() => downloadCsv(sorted, data.meta.competencia)}
-            disabled={sorted.length === 0}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-acr-green px-3.5 text-sm font-semibold text-acr-green-strong transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green disabled:cursor-not-allowed disabled:opacity-50"
+          <a
+            href={sorted.length > 0 ? csvHref : undefined}
+            download={`receitas-por-imovel-${data.meta.competencia}.csv`}
+            aria-disabled={sorted.length === 0}
+            tabIndex={sorted.length === 0 ? -1 : undefined}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-acr-green px-3.5 text-sm font-semibold text-acr-green-strong transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
           >
             <Download aria-hidden="true" className="size-4" /> Exportar CSV
-          </button>
+          </a>
         }
       />
 
@@ -254,14 +256,9 @@ function PageButton({ label, disabled, onClick, children }: { label: string; dis
   )
 }
 
-function downloadCsv(rows: IndicadoresPropertyRevenue[], competence: string) {
+function buildCsvHref(rows: IndicadoresPropertyRevenue[]) {
   const header = ["competencia", "unidade", "inquilino", "empreendimento", "status", "aluguel_esperado", "aluguel_recebido", "receita_total", "desconto", "comissao_administracao", "repasse_apurado", "referencia_financeira", "origem", "qualidade"]
   const lines = rows.map((row) => [row.competencia, row.unidade, row.inquilinoNome, row.empreendimentoNome, occupancyLabel(row.statusOcupacao), row.aluguelEsperado, row.aluguelRecebido, row.receitaTotal, row.desconto, row.comissaoAdministracao, row.repasseApurado, row.vencimentoReferencia, row.origem, row.qualidade].map(escapeCsv).join(";"))
-  const blob = new Blob(["\uFEFF", [header.join(";"), ...lines].join("\n")], { type: "text/csv;charset=utf-8" })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement("a")
-  anchor.href = url
-  anchor.download = `receitas-por-imovel-${competence}.csv`
-  anchor.click()
-  URL.revokeObjectURL(url)
+  const content = `\uFEFF${[header.join(";"), ...lines].join("\n")}`
+  return `data:text/csv;charset=utf-8,${encodeURIComponent(content)}`
 }
