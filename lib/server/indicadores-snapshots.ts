@@ -258,7 +258,7 @@ function buildSnapshotRow(input: {
 
   return {
     ...withoutChecksum,
-    checksum: createChecksum(withoutChecksum),
+    checksum: createIndicadoresSnapshotChecksum(withoutChecksum),
   } satisfies IndicadoresSnapshotRow
 }
 
@@ -440,6 +440,8 @@ function joinKnownText(values: Array<string | null | undefined>) {
   return known.length === 0 ? null : known.sort().join(" | ")
 }
 
-function createChecksum(value: Omit<IndicadoresSnapshotRow, "checksum">) {
+export function createIndicadoresSnapshotChecksum(
+  value: Omit<IndicadoresSnapshotRow, "checksum">,
+) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex")
 }

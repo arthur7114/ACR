@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
+import { roundMoney } from "../lib/indicadores-domain"
 import type { PackageAnalysis } from "../lib/prestacao-types"
 import {
   buildBackfillPlan,
@@ -151,10 +152,6 @@ function compareSourceFingerprints(fingerprints: SourceFingerprints | undefined)
   return { unchanged: differences.length === 0, differences }
 }
 
-function roundMoney(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
-
 function roundPercentage(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
@@ -209,7 +206,10 @@ async function main() {
     .map((snapshot) => ({
       id: toKey(snapshot),
       ...snapshot,
-      expectedChecksum: expectedByKey.get(toKey(snapshot)) ?? null,
+      expectedChecksum:
+        snapshot.origin === "processamento"
+          ? (snapshot.contentChecksum ?? null)
+          : (expectedByKey.get(toKey(snapshot)) ?? null),
     }))
     .filter((snapshot) => expectedByKey.has(toKey(snapshot)))
   const sourceAfter = await readSourceFingerprints(supabase)

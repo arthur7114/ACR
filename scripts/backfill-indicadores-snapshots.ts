@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url"
 import type { PackageAnalysis } from "../lib/prestacao-types"
 import {
   buildIndicadoresSnapshotRows,
+  createIndicadoresSnapshotChecksum,
   type IndicadoresSnapshotProperty,
   type IndicadoresSnapshotRow,
 } from "../lib/server/indicadores-snapshots"
@@ -60,6 +61,7 @@ export interface ExistingSnapshot {
   competence: string
   checksum: string
   origin?: "processamento" | "backfill"
+  contentChecksum?: string
 }
 
 export interface BackfillOperation {
@@ -252,9 +254,24 @@ interface DatabasePropertyRow {
 
 interface DatabaseSnapshotRow {
   imovel_id: string
+  fechamento_id: string
   competencia: string
-  checksum: string
+  status_ocupacao: IndicadoresSnapshotRow["status_ocupacao"]
+  status_origem: string
+  inquilino_nome: string | null
+  aluguel_esperado: number | string | null
+  aluguel_esperado_origem: "cadastro" | null
+  aluguel_recebido: number | string | null
+  receita_total: number | string | null
+  desconto: number | string | null
+  comissao_administracao: number | string | null
+  repasse_apurado: number | string | null
+  vencimento_referencia: string | null
+  quantidade_linhas: number
   origem: "processamento" | "backfill"
+  qualidade: IndicadoresSnapshotRow["qualidade"]
+  calculo_versao: string
+  checksum: string
 }
 
 type SupabaseAdmin = ReturnType<typeof import("../lib/server/supabase")["createSupabaseAdmin"]>
@@ -280,6 +297,7 @@ export async function loadBackfillDataset(
       competence: snapshot.competencia,
       checksum: snapshot.checksum,
       origin: snapshot.origem,
+      contentChecksum: calculatePersistedSnapshotChecksum(snapshot),
     })),
   }
 }
@@ -319,7 +337,12 @@ async function loadProperties(supabase: SupabaseAdmin, options: BackfillOptions)
 async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillOptions) {
   let query = supabase
     .from(SNAPSHOT_TABLE)
-    .select("imovel_id,competencia,checksum,origem")
+    .select(
+      `imovel_id,fechamento_id,competencia,status_ocupacao,status_origem,inquilino_nome,
+       aluguel_esperado,aluguel_esperado_origem,aluguel_recebido,receita_total,desconto,
+       comissao_administracao,repasse_apurado,vencimento_referencia,quantidade_linhas,
+       origem,qualidade,calculo_versao,checksum`,
+    )
     .order("competencia")
     .order("imovel_id")
   if (options.competence) query = query.eq("competencia", options.competence)
@@ -394,6 +417,29 @@ function nullableNumber(value: number | string | null) {
   const parsed = typeof value === "number" ? value : Number(value)
   if (!Number.isFinite(parsed)) throw new Error(`Valor monetario invalido: ${value}.`)
   return parsed
+}
+
+function calculatePersistedSnapshotChecksum(snapshot: DatabaseSnapshotRow) {
+  return createIndicadoresSnapshotChecksum({
+    imovel_id: snapshot.imovel_id,
+    fechamento_id: snapshot.fechamento_id,
+    competencia: normalizeCompetence(snapshot.competencia),
+    status_ocupacao: snapshot.status_ocupacao,
+    status_origem: snapshot.status_origem,
+    inquilino_nome: snapshot.inquilino_nome,
+    aluguel_esperado: nullableNumber(snapshot.aluguel_esperado),
+    aluguel_esperado_origem: snapshot.aluguel_esperado_origem,
+    aluguel_recebido: nullableNumber(snapshot.aluguel_recebido),
+    receita_total: nullableNumber(snapshot.receita_total),
+    desconto: nullableNumber(snapshot.desconto),
+    comissao_administracao: nullableNumber(snapshot.comissao_administracao),
+    repasse_apurado: nullableNumber(snapshot.repasse_apurado),
+    vencimento_referencia: snapshot.vencimento_referencia,
+    quantidade_linhas: snapshot.quantidade_linhas,
+    origem: snapshot.origem,
+    qualidade: snapshot.qualidade,
+    calculo_versao: snapshot.calculo_versao,
+  })
 }
 
 async function executePlan(supabase: SupabaseAdmin, plan: ReturnType<typeof buildBackfillPlan>) {
