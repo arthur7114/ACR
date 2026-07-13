@@ -2,13 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1, 2 e 5: contrato/baseline, schema aditivo, materializacao idempotente de snapshots e shell responsivo. Backfill, API agregada e conteudo das quatro abas ainda nao foram concluidos.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1, 2, 3 e 5: contrato/baseline, schema aditivo, materializacao idempotente, ferramentas seguras de backfill/verificacao e shell responsivo. API agregada e conteudo das quatro abas ainda nao foram concluidos; canario e backfill com escrita aguardam staging.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
 
-Executar o Slice 3 de `docs/PLAN-indicadores-operacionais.md`: criar backfill seguro, dry-run por padrao, verificacao de cobertura/checksum e canario sem alterar tabelas-fonte. Em paralelo, concluir e validar o shell responsivo e preparar os testes RED da agregacao da API.
+Executar o Slice 4 de `docs/PLAN-indicadores-operacionais.md`: publicar o DTO agregado com cobertura, ponte financeira, realizacao, series, heatmap e filtro UUID de imovel. Em paralelo, implementar as quatro abas contra esse contrato. Antes de qualquer escrita historica, executar o dry-run e o canario do Slice 3 em banco descartavel/staging com a migration aplicada.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | slices 0-2 e 5 concluidos | Contrato, schema, materializacao e shell responsivo prontos; proximo gate e o backfill seguro, seguido da API e das quatro abas. |
+| Indicadores operacionais | slices 0-3 e 5 concluidos | Contrato, schema, materializacao, backfill/verificador e shell prontos; API e quatro abas em andamento; canario aguarda staging. |
 
 ## Decisoes registradas
 
@@ -96,6 +96,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Backfill e verificacao de snapshots (Slice 3)
+
+Status: done no codigo; rollout pendente em staging.
+Job: permitir recompor o historico mensal com seguranca, dry-run por padrao e prova de que nenhuma tabela-fonte foi alterada.
+Outcome entregue: `backfill-indicadores-snapshots.ts` seleciona apenas fechamentos elegiveis com analise, aceita filtros de competencia e empreendimento, usa o builder congelado e produz plano deterministico de insert/update/skip por imovel + competencia + checksum. Escrita exige `--commit` e e limitada a `imovel_competencias`; snapshots nativos de `processamento` sempre prevalecem sobre recompostos. `verify-indicadores-snapshots.ts` audita cobertura, duplicidade, checksum esperado, reconciliacao financeira e fingerprints paginados de `fechamentos`/`imoveis`.
+Validacao: 14/14 testes focados passaram e ESLint focado passou. Os cenarios cobrem argumentos, dry-run sem escrita, whitelist, filtros, retomada, segunda execucao idempotente, preservacao de snapshot nativo, chave duplicada, cobertura, checksum, tolerancia de R$ 0,01 e mutacao de fonte. Nenhuma conexao remota ou escrita foi executada. O typecheck geral estava temporariamente bloqueado apenas pelos testes RED paralelos da API, cujos modulos ainda estavam em construcao.
+Decisoes: import dos scripts nao executa CLI; producao nao sera o primeiro ambiente; snapshot de processamento nao pode ser rebaixado para backfill; canario e repeticao real permanecem gates obrigatorios antes do backfill completo.
+Arquivos/docs impactados: `scripts/backfill-indicadores-snapshots.ts`, `scripts/backfill-indicadores-snapshots.test.ts`, `scripts/verify-indicadores-snapshots.ts`, `scripts/verify-indicadores-snapshots.test.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: aplicar a migration em banco descartavel/staging, rodar dry-run, canario filtrado e repeticao; em paralelo concluir a API da Slice 4.
 
 ### 2026-07-13 - Shell responsivo (Slice 5)
 
