@@ -1,521 +1,468 @@
+import { z } from "zod"
+import {
+  aggregateIndicadores,
+  type IndicadoresAnalysisInput,
+  type IndicadoresClosingInput,
+  type IndicadoresPairInput,
+  type IndicadoresPropertyInput,
+  type IndicadoresRuleInput,
+  type IndicadoresSnapshotInput,
+} from "@/lib/indicadores-aggregation"
+import {
+  normalizePropertyKeyPart,
+  roundMoney,
+  type OccupancyStatus,
+} from "@/lib/indicadores-domain"
+import {
+  IndicadoresQueryValidationError,
+  type IndicadoresQuery,
+} from "@/lib/indicadores-query"
+import type { IndicadoresData } from "@/lib/indicadores-types"
+import { INDICADORES_SNAPSHOT_CALCULATION_VERSION } from "./indicadores-snapshots"
 import { createSupabaseAdmin } from "./supabase"
-import { formatCompetenciaLong } from "@/lib/fechamento-context"
-import { formatCompetenciaShort } from "@/lib/format"
-import type { PackageAnalysis } from "@/lib/prestacao-types"
-import type {
-  HeatRow,
-  IndicadoresData,
-  OfensorReceita,
-  RealizacaoImovel,
-  RegistroPagamento,
-  SerieMensalPonto,
-} from "@/lib/indicadores-types"
 
-export interface IndicadoresQuery {
-  competencia?: string | null
-  empresaId?: string | null
-  empreendimentoId?: string | null
-  imovel?: string | null
-}
+const relationSchema = z
+  .union([
+    z.object({ nome: z.string(), egestor_conta_id: z.string().nullable().optional() }),
+    z.array(z.object({ nome: z.string(), egestor_conta_id: z.string().nullable().optional() })),
+    z.null(),
+  ])
+  .optional()
+const databaseMoneySchema = z.union([z.number(), z.string(), z.null()])
+const accountRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    nome: z.string(),
+    tag_padrao: z.string().nullable(),
+  }),
+)
+const ruleRowsSchema = z.array(
+  z.object({
+    imobiliaria_id: z.string(),
+    empreendimento_id: z.string(),
+    ativo: z.boolean(),
+    imobiliarias: relationSchema,
+    empreendimentos: relationSchema,
+  }),
+)
+const propertyRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    imobiliaria_id: z.string(),
+    empreendimento_id: z.string(),
+    unidade: z.string(),
+    inquilino_nome: z.string().nullable(),
+    status: z.string(),
+    valor_aluguel_esperado: databaseMoneySchema,
+    ativo: z.boolean(),
+    atualizado_em: z.string(),
+    imobiliarias: relationSchema,
+    empreendimentos: relationSchema,
+  }),
+)
+const closingRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    imobiliaria_id: z.string(),
+    empreendimento_id: z.string(),
+    competencia: z.string(),
+    status: z.string(),
+    arquivado: z.boolean(),
+    processamento_status: z.string().nullable(),
+    analise_completa: z.unknown().nullable(),
+    atualizado_em: z.string(),
+    imobiliarias: relationSchema,
+    empreendimentos: relationSchema,
+  }),
+)
+const snapshotRowsSchema = z.array(
+  z.object({
+    imovel_id: z.string(),
+    fechamento_id: z.string(),
+    competencia: z.string(),
+    status_ocupacao: z.enum([
+      "ocupado",
+      "inadimplente",
+      "vago",
+      "em_rescisao",
+      "desconhecido",
+    ]),
+    status_origem: z.string(),
+    inquilino_nome: z.string().nullable(),
+    aluguel_esperado: databaseMoneySchema,
+    aluguel_recebido: databaseMoneySchema,
+    receita_total: databaseMoneySchema,
+    desconto: databaseMoneySchema,
+    comissao_administracao: databaseMoneySchema,
+    repasse_apurado: databaseMoneySchema,
+    vencimento_referencia: z.string().nullable(),
+    origem: z.enum(["processamento", "backfill"]),
+    qualidade: z.enum(["completo", "parcial", "sem_linha"]),
+    atualizado_em: z.string(),
+  }),
+)
+const calculationAnalysisSchema = z
+  .object({
+    totals: z
+      .object({
+        total_receitas: z.number(),
+        total_comissoes: z.number(),
+        total_despesas: z.number(),
+        total_a_repassar: z.number(),
+        valor_comprovado: z.number().nullable().optional(),
+        total_agua: z.number().nullable().optional(),
+        total_iptu: z.number().nullable().optional(),
+        total_seguro_incendio: z.number().nullable().optional(),
+        repasse_embutido: z.boolean().optional(),
+      })
+      .passthrough(),
+    prestacao: z
+      .object({
+        receitas_por_imovel: z.array(z.object({ apto: z.string() }).passthrough()).default([]),
+        acordos_rescisoes_recebidos: z
+          .array(
+            z
+              .object({
+                tipo: z.enum(["intermediacao", "acordo", "rescisao", "atraso", "outro"]),
+                comissao: z.number().nullable().optional(),
+              })
+              .passthrough(),
+          )
+          .optional(),
+        inadimplencias_acumuladas: z
+          .array(z.object({ valor: z.number() }).passthrough())
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough()
 
-// Tetos fixos da escala do mapa de calor: a mesma % pinta sempre a mesma cor.
-const INAD_ESCALA_MAX = 15
-const VAC_ESCALA_MAX = 22
+type AccountRow = z.infer<typeof accountRowsSchema>[number]
+type RuleRow = z.infer<typeof ruleRowsSchema>[number]
+type PropertyRow = z.infer<typeof propertyRowsSchema>[number]
+type ClosingRow = z.infer<typeof closingRowsSchema>[number]
 
-const num = (value: unknown): number => {
-  const n = typeof value === "string" ? Number(value) : (value as number)
-  return Number.isFinite(n) ? n : 0
-}
-
-const numOrNull = (value: unknown): number | null => {
-  if (value === null || value === undefined) return null
-  const n = typeof value === "string" ? Number(value) : (value as number)
-  return Number.isFinite(n) ? n : null
-}
-
-/** Joins do Supabase podem vir como objeto ou array; normaliza para o nome. */
-const relNome = (rel: unknown): string => {
-  if (!rel) return ""
-  const obj = Array.isArray(rel) ? rel[0] : rel
-  return (obj as { nome?: string } | undefined)?.nome ?? ""
-}
-
-interface FechamentoRow {
+interface CompanyDefinition {
   id: string
-  competencia: string
-  total_receitas: number | string | null
-  total_despesas: number | string | null
-  total_comissoes: number | string | null
-  total_repassar: number | string | null
-  empreendimento_id: string
-  empreendimentos: unknown
-  analise_completa: PackageAnalysis | null
+  label: string
 }
 
-interface ImovelRow {
-  id: string
-  unidade: string
-  inquilino_nome: string | null
-  status: string
-  valor_aluguel_esperado: number | string | null
-  empreendimento_id: string
-  empreendimentos: unknown
-}
-
-interface RegraRow {
-  empreendimento_id: string
-  taxa_administracao_percent: number | string | null
-  taxa_intermediacao_percent: number | string | null
+interface LoadedIndicadoresRows {
+  accounts: AccountRow[]
+  rules: RuleRow[]
+  properties: PropertyRow[]
+  closings: ClosingRow[]
 }
 
 export async function getIndicadores(query: IndicadoresQuery = {}): Promise<IndicadoresData> {
   const supabase = createSupabaseAdmin()
+  const loaded = await loadBaseRows(supabase)
+  const competencia = query.competencia ?? latestCompetence(loaded.closings)
+  const snapshotStart = offsetCompetence(competencia, -11)
+  const { data: snapshotData, error: snapshotError } = await supabase
+    .from("imovel_competencias")
+    .select(
+      `imovel_id, fechamento_id, competencia, status_ocupacao, status_origem,
+       inquilino_nome, aluguel_esperado, aluguel_recebido, receita_total, desconto,
+       comissao_administracao, repasse_apurado, vencimento_referencia, origem,
+       qualidade, atualizado_em`,
+    )
+    .gte("competencia", snapshotStart)
+    .lte("competencia", competencia)
+    .order("competencia", { ascending: true })
 
-  const [
-    { data: fechRaw, error: fechErr },
-    { data: imovRaw, error: imovErr },
-    { data: regrasRaw },
-    { data: contasRaw },
-  ] = await Promise.all([
+  if (snapshotError) throw snapshotError
+
+  const accountById = new Map(loaded.accounts.map((account) => [account.id, account]))
+  const rules = loaded.rules.map((row) => mapRule(row, accountById))
+  const properties = loaded.properties.map((row) => mapProperty(row, accountById))
+  const closings = loaded.closings.map((row) => mapClosing(row, accountById))
+  const snapshots = snapshotRowsSchema.parse(snapshotData ?? []).map(mapSnapshot)
+
+  validateFilterCoherence(query, rules, properties)
+
+  return aggregateIndicadores({
+    calculoVersao: INDICADORES_SNAPSHOT_CALCULATION_VERSION,
+    competencia,
+    atualizadoEm: latestUpdate(loaded.properties, loaded.closings, snapshotData ?? []),
+    filtros: {
+      empresaId: query.empresaId ?? null,
+      empreendimentoId: query.empreendimentoId ?? null,
+      imovelId: query.imovelId ?? null,
+    },
+    regrasAtivas: rules,
+    imoveisAtivos: properties,
+    fechamentos: closings,
+    snapshots,
+    linhasNaoVinculadas: findUnlinkedLines(closings, properties),
+  })
+}
+
+async function loadBaseRows(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+): Promise<LoadedIndicadoresRows> {
+  const [accountsResult, rulesResult, propertiesResult, closingsResult] = await Promise.all([
+    supabase.from("egestor_contas").select("id, nome, tag_padrao").eq("ativo", true),
     supabase
-      .from("fechamentos")
+      .from("regras_comerciais")
       .select(
-        `id, competencia, total_receitas, total_despesas, total_comissoes, total_repassar,
-           empreendimento_id, empreendimentos ( nome, egestor_conta_id ), analise_completa`,
+        `imobiliaria_id, empreendimento_id, ativo,
+         imobiliarias ( nome ), empreendimentos ( nome, egestor_conta_id )`,
       )
-      .eq("arquivado", false)
-      .order("competencia", { ascending: true }),
+      .eq("ativo", true),
     supabase
       .from("imoveis")
       .select(
-        `id, unidade, inquilino_nome, status, valor_aluguel_esperado,
-           empreendimento_id, empreendimentos ( nome, egestor_conta_id )`,
+        `id, imobiliaria_id, empreendimento_id, unidade, inquilino_nome, status,
+         valor_aluguel_esperado, ativo, atualizado_em,
+         imobiliarias ( nome ), empreendimentos ( nome, egestor_conta_id )`,
       )
       .eq("ativo", true),
     supabase
-      .from("regras_comerciais")
-      .select("empreendimento_id, taxa_administracao_percent, taxa_intermediacao_percent")
-      .eq("ativo", true),
-    supabase.from("egestor_contas").select("id, nome, tag_padrao"),
+      .from("fechamentos")
+      .select(
+        `id, imobiliaria_id, empreendimento_id, competencia, status, arquivado,
+         processamento_status, analise_completa, atualizado_em,
+         imobiliarias ( nome ), empreendimentos ( nome, egestor_conta_id )`,
+      )
+      .eq("arquivado", false)
+      .order("competencia", { ascending: true }),
   ])
 
-  if (fechErr) throw fechErr
-  if (imovErr) throw imovErr
-
-  // "Empresa" = etiqueta da conta eGestor do empreendimento (ex.: ACR Global, MMC).
-  // Fallback "ACR" quando o empreendimento não tem conta vinculada.
-  const contaTag = new Map<string, string>()
-  const contaNome = new Map<string, string>()
-  for (const c of (contasRaw ?? []) as Array<{ id: string; nome: string | null; tag_padrao: string | null }>) {
-    contaTag.set(c.id, (c.tag_padrao || "ACR").trim())
-    if (c.tag_padrao) contaNome.set(c.tag_padrao.trim(), c.nome || c.tag_padrao.trim())
+  for (const result of [accountsResult, rulesResult, propertiesResult, closingsResult]) {
+    if (result.error) throw result.error
   }
-  const relContaId = (rel: unknown): string | null => {
-    const obj = Array.isArray(rel) ? rel[0] : rel
-    return (obj as { egestor_conta_id?: string | null } | undefined)?.egestor_conta_id ?? null
-  }
-  const empresaTag = (rel: unknown): string => {
-    const contaId = relContaId(rel)
-    return (contaId && contaTag.get(contaId)) || "ACR"
-  }
-
-  const empresaFiltro = query.empresaId || null
-  const empFiltro = query.empreendimentoId || null
-  const imovelFiltro = query.imovel || null
-
-  const fechamentos = ((fechRaw ?? []) as FechamentoRow[]).filter(
-    (f) => (!empresaFiltro || empresaTag(f.empreendimentos) === empresaFiltro) && (!empFiltro || f.empreendimento_id === empFiltro),
-  )
-  const imoveis = ((imovRaw ?? []) as ImovelRow[]).filter(
-    (i) => (!empresaFiltro || empresaTag(i.empreendimentos) === empresaFiltro) && (!empFiltro || i.empreendimento_id === empFiltro),
-  )
-  const regras = (regrasRaw ?? []) as RegraRow[]
-
-  // --- Competências disponíveis e referência ---
-  const competenciasSet = Array.from(new Set(fechamentos.map((f) => f.competencia))).sort()
-  const competencia =
-    (query.competencia && competenciasSet.includes(query.competencia) ? query.competencia : null) ??
-    competenciasSet[competenciasSet.length - 1] ??
-    null
-
-  const competenciasDisponiveis = competenciasSet
-    .slice()
-    .reverse()
-    .map((value) => ({ value, label: formatCompetenciaLong(value) }))
-
-  // --- Opções de filtro ---
-  const empreendimentosMap = new Map<string, string>()
-  for (const f of (fechRaw ?? []) as FechamentoRow[]) {
-    if (f.empreendimento_id) empreendimentosMap.set(f.empreendimento_id, relNome(f.empreendimentos))
-  }
-  for (const i of (imovRaw ?? []) as ImovelRow[]) {
-    if (i.empreendimento_id && !empreendimentosMap.has(i.empreendimento_id)) {
-      empreendimentosMap.set(i.empreendimento_id, relNome(i.empreendimentos))
-    }
-  }
-  const empreendimentosOpts = Array.from(empreendimentosMap.entries())
-    .map(([id, label]) => ({ id, label: label || "Empreendimento" }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-
-  // Empresas para o filtro = etiquetas das contas eGestor (ex.: ACR, MMC).
-  // "ACR" sempre existe (fallback de empreendimentos sem conta vinculada).
-  const tagsUniverso = new Set<string>(["ACR"])
-  for (const c of (contasRaw ?? []) as Array<{ tag_padrao: string | null }>) {
-    if (c.tag_padrao) tagsUniverso.add(c.tag_padrao.trim())
-  }
-  const empresasOpts = Array.from(tagsUniverso)
-    .sort((a, b) => a.localeCompare(b))
-    .map((tag) => ({ id: tag, label: tag === "ACR" ? "ACR (Global)" : contaNome.get(tag) ?? tag }))
-
-  const imoveisOpts = imoveis
-    .map((i) => ({ id: i.unidade, label: `${i.unidade}${i.inquilino_nome ? ` · ${i.inquilino_nome}` : ""}` }))
-    .sort((a, b) => a.label.localeCompare(b.label))
-
-  // --- Fechamentos da competência de referência ---
-  const fechMes = competencia ? fechamentos.filter((f) => f.competencia === competencia) : []
-
-  // KPIs financeiros (colunas planas + PackageTotals do analise_completa)
-  let receita = 0
-  let despesaTotalColuna = 0
-  let totalRepassar = 0
-  let taxaTotal = 0
-  let totalAgua = 0
-  let totalIptu = 0
-  let totalSeguro = 0
-  let inadimplenciaValor = 0
-  let descontos = 0
-  let acordosCount = 0
-  let acordosValor = 0
-  let rescisoesCount = 0
-  let rescisoesValor = 0
-  let reajustesCount = 0
-  let temReajusteData = false
-
-  for (const f of fechMes) {
-    receita += num(f.total_receitas)
-    despesaTotalColuna += num(f.total_despesas)
-    totalRepassar += num(f.total_repassar)
-    taxaTotal += num(f.total_comissoes)
-
-    const a = f.analise_completa
-    if (a?.totals) {
-      totalAgua += num(a.totals.total_agua)
-      totalIptu += num(a.totals.total_iptu)
-      totalSeguro += num(a.totals.total_seguro_incendio)
-    }
-    const prestacao = a?.prestacao
-    if (prestacao) {
-      for (const inad of prestacao.inadimplencias_acumuladas ?? []) inadimplenciaValor += num(inad.valor)
-      for (const row of prestacao.receitas_por_imovel ?? []) descontos += num(row.desconto)
-      for (const mov of prestacao.acordos_rescisoes_recebidos ?? []) {
-        if (mov.tipo === "acordo") {
-          acordosCount += 1
-          acordosValor += num(mov.valor)
-        } else if (mov.tipo === "rescisao") {
-          rescisoesCount += 1
-          rescisoesValor += num(mov.valor)
-        }
-      }
-    }
-    if (a?.reajuste) {
-      temReajusteData = true
-      reajustesCount += (a.reajuste.itens ?? []).length
-    }
-  }
-
-  // Despesa operacional = água + IPTU + seguro (decisão de produto).
-  // Fallback para a coluna total_despesas se o analise_completa não trouxe a quebra.
-  const despesaOperacional = totalAgua + totalIptu + totalSeguro || despesaTotalColuna
-
-  // --- Ocupação / vacância (estado atual do cadastro) ---
-  const ocupados = imoveis.filter((i) => i.status === "ocupado").length
-  const inadimplentes = imoveis.filter((i) => i.status === "inadimplente").length
-  const vagos = imoveis.filter((i) => i.status === "vago").length
-  const baseOcupacao = ocupados + inadimplentes + vagos
-  const ocupacaoPct = baseOcupacao > 0 ? ((ocupados + inadimplentes) / baseOcupacao) * 100 : 0
-  const vacanciaValor = imoveis
-    .filter((i) => i.status === "vago")
-    .reduce((acc, i) => acc + num(i.valor_aluguel_esperado), 0)
-  const faturamentoPotencial = imoveis.reduce((acc, i) => acc + num(i.valor_aluguel_esperado), 0)
-
-  // --- Taxas (regras comerciais; média ponderada simples dos empreendimentos do mês) ---
-  const empMes = new Set(fechMes.map((f) => f.empreendimento_id))
-  const regrasMes = regras.filter((r) => empMes.size === 0 || empMes.has(r.empreendimento_id))
-  const avg = (arr: (number | null)[]) => {
-    const v = arr.filter((x): x is number => x !== null)
-    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
-  }
-  const administracaoPct = avg(regrasMes.map((r) => numOrNull(r.taxa_administracao_percent)))
-  const intermediacaoPct = avg(regrasMes.map((r) => numOrNull(r.taxa_intermediacao_percent)))
-
-  const despesaOperacionalPct = receita > 0 ? (despesaOperacional / receita) * 100 : 0
-
-  // --- Cascata: potencial -> ofensores -> realizado ---
-  // Potencial reconstruído (sempre reconcilia): recebido + vacância + descontos.
-  // A inadimplência aqui é ACUMULADA (insight à parte), não um ofensor do mês.
-  const realizado = receita
-  // Com fechamentos: potencial reconstruído (recebido + vacância + descontos).
-  // Sem fechamentos: cai para o potencial contratado (soma dos aluguéis esperados
-  // do cadastro), senão o card "Faturamento potencial" mostraria só a vacância.
-  const potencialCascata =
-    fechMes.length > 0 ? realizado + vacanciaValor + descontos : faturamentoPotencial
-  const pctOf = (v: number) => (potencialCascata > 0 ? (v / potencialCascata) * 100 : 0)
-  // Vacância só é "sem dados" quando não há cadastro de imóveis; valor 0 com cadastro
-  // significa carteira sem vagos (zero real), não pendência.
-  const ofensores: OfensorReceita[] = [
-    { key: "vacancia", label: "Vacância", valor: vacanciaValor, pct: pctOf(vacanciaValor), pending: baseOcupacao === 0 },
-    { key: "descontos", label: "Descontos", valor: descontos, pct: pctOf(descontos) },
-  ]
-  const realizadoPct = potencialCascata > 0 ? (realizado / potencialCascata) * 100 : 0
-
-  // --- Série mensal (faturamento realizado por competência) ---
-  const serieMap = new Map<string, number>()
-  for (const f of fechamentos) {
-    serieMap.set(f.competencia, (serieMap.get(f.competencia) ?? 0) + num(f.total_receitas))
-  }
-  const serieMensal: SerieMensalPonto[] = Array.from(serieMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-6)
-    .map(([comp, rec]) => ({
-      competencia: comp,
-      label: formatCompetenciaShort(comp),
-      receita: rec,
-      ocupacaoPct: comp === competencia ? ocupacaoPct : null,
-    }))
-
-  // --- Ranking de realização por imóvel (competência de referência) ---
-  const esperadoPorUnidade = new Map<string, number>()
-  for (const i of imoveis) esperadoPorUnidade.set(i.unidade, num(i.valor_aluguel_esperado))
-  const rankingMap = new Map<string, RealizacaoImovel>()
-  for (const f of fechMes) {
-    const empNome = relNome(f.empreendimentos)
-    for (const row of f.analise_completa?.prestacao?.receitas_por_imovel ?? []) {
-      if (imovelFiltro && row.apto !== imovelFiltro) continue
-      // Ignora linhas vazias (sem apto e sem valor) que aparecem em alguns layouts.
-      if (!row.apto?.trim() && num(row.total) === 0) continue
-      const esperadoCadastro = esperadoPorUnidade.get(row.apto)
-      const esperado = esperadoCadastro || num(row.aluguel) || num(row.total)
-      const realizadoRow = num(row.aluguel_com_desconto) || num(row.total)
-      const key = `${empNome}|${row.apto}`
-      rankingMap.set(key, {
-        apto: row.apto,
-        inquilino: row.inquilino,
-        empreendimento: empNome,
-        esperado,
-        realizado: realizadoRow,
-        pct: esperado > 0 ? (realizadoRow / esperado) * 100 : 0,
-      })
-    }
-  }
-  const ranking = Array.from(rankingMap.values()).sort((a, b) => b.pct - a.pct)
-
-  // --- Heatmap (inadimplência % e vacância %, por empreendimento e por apartamento) ---
-  const heatMeses = competenciasSet.slice(-12)
-  const heatMesesLabels = heatMeses.map((value) => ({ value, label: formatCompetenciaShort(value) }))
-
-  // Por empreendimento: emp -> competencia -> { inad, receita }
-  const heatAgg = new Map<string, Map<string, { inad: number; receita: number }>>()
-  // Por apartamento: "emp||apto" -> competencia -> { inad, receita, vago }
-  const aptoAgg = new Map<string, Map<string, { inad: number; receita: number; vago: boolean }>>()
-  const aptoLabel = new Map<string, string>()
-
-  for (const f of fechamentos) {
-    const empNome = relNome(f.empreendimentos) || "Empreendimento"
-    const prest = f.analise_completa?.prestacao
-
-    if (!heatAgg.has(empNome)) heatAgg.set(empNome, new Map())
-    const byMes = heatAgg.get(empNome)!
-    const cell = byMes.get(f.competencia) ?? { inad: 0, receita: 0 }
-    cell.receita += num(f.total_receitas)
-    for (const inad of prest?.inadimplencias_acumuladas ?? []) cell.inad += num(inad.valor)
-    byMes.set(f.competencia, cell)
-
-    if (!prest) continue
-    const touchApto = (apto: string, label: string) => {
-      const key = `${empNome}||${apto}`
-      if (!aptoAgg.has(key)) aptoAgg.set(key, new Map())
-      if (!aptoLabel.has(key) || label) aptoLabel.set(key, label || aptoLabel.get(key) || apto)
-      const m = aptoAgg.get(key)!
-      const c = m.get(f.competencia) ?? { inad: 0, receita: 0, vago: false }
-      m.set(f.competencia, c)
-      return c
-    }
-    for (const row of prest.receitas_por_imovel ?? []) {
-      const apto = (row.apto ?? "").trim()
-      if (!apto || (imovelFiltro && apto !== imovelFiltro)) continue
-      const c = touchApto(apto, `${apto}${row.inquilino ? ` · ${row.inquilino}` : ""}`)
-      c.receita += num(row.total)
-      if (num(row.total) <= 0 && num(row.aluguel) <= 0) c.vago = true
-    }
-    for (const inad of prest.inadimplencias_acumuladas ?? []) {
-      const apto = (inad.apto ?? "").trim()
-      if (!apto || (imovelFiltro && apto !== imovelFiltro)) continue
-      const c = touchApto(apto, `${apto}${inad.inquilino ? ` · ${inad.inquilino}` : ""}`)
-      c.inad += num(inad.valor)
-    }
-  }
-
-  const empNomesHeat = Array.from(heatAgg.keys()).sort((a, b) => a.localeCompare(b))
-  const inadRows: HeatRow[] = empNomesHeat.map((emp) => {
-    const byMes = heatAgg.get(emp)!
-    const valores = heatMeses.map((m) => {
-      const cell = byMes.get(m)
-      if (!cell || cell.receita <= 0) return null
-      return (cell.inad / cell.receita) * 100
-    })
-    return { empreendimento: emp, valores, media: avg(valores) }
-  })
-
-  // Vacância por empreendimento: estado atual do cadastro -> só a coluna do mês de referência
-  const vacPorEmp = new Map<string, { vagos: number; base: number }>()
-  for (const i of imoveis) {
-    const empNome = relNome(i.empreendimentos) || "Empreendimento"
-    const agg = vacPorEmp.get(empNome) ?? { vagos: 0, base: 0 }
-    if (["ocupado", "inadimplente", "vago"].includes(i.status)) agg.base += 1
-    if (i.status === "vago") agg.vagos += 1
-    vacPorEmp.set(empNome, agg)
-  }
-  const vacRows: HeatRow[] = empNomesHeat.map((emp) => {
-    const valores = heatMeses.map((m) => {
-      if (m !== competencia) return null
-      const agg = vacPorEmp.get(emp)
-      if (!agg || agg.base <= 0) return null
-      return (agg.vagos / agg.base) * 100
-    })
-    return { empreendimento: emp, valores, media: avg(valores) }
-  })
-
-  // Por apartamento: agrupa por empreendimento e ordena pelo NÚMERO do apartamento
-  // (natural/numérico — "2" antes de "10" antes de "101"; a chave é `${empNome}||${apto}`).
-  const aptoKeys = Array.from(aptoAgg.keys()).sort((a, b) => {
-    const [empA, aptoA = ""] = a.split("||")
-    const [empB, aptoB = ""] = b.split("||")
-    const byEmp = empA.localeCompare(empB, "pt-BR")
-    if (byEmp !== 0) return byEmp
-    return aptoA.localeCompare(aptoB, "pt-BR", { numeric: true, sensitivity: "base" })
-  })
-  const inadAptoRows: HeatRow[] = aptoKeys.map((key) => {
-    const m = aptoAgg.get(key)!
-    const valores = heatMeses.map((mes) => {
-      const c = m.get(mes)
-      if (!c) return null
-      if (c.receita > 0) return (c.inad / c.receita) * 100
-      return c.inad > 0 ? 100 : null
-    })
-    return { empreendimento: aptoLabel.get(key) ?? key, valores, media: avg(valores) }
-  })
-  const vacAptoRows: HeatRow[] = aptoKeys.map((key) => {
-    const m = aptoAgg.get(key)!
-    const valores = heatMeses.map((mes) => {
-      const c = m.get(mes)
-      if (!c) return null
-      return c.vago ? 100 : 0
-    })
-    return { empreendimento: aptoLabel.get(key) ?? key, valores, media: avg(valores) }
-  })
-
-  const colAvg = (rows: HeatRow[], j: number): number | null => avg(rows.map((r) => r.valores[j]))
-  const inadMediaCarteira = heatMeses.map((_, j) => colAvg(inadRows, j))
-  const vacMediaCarteira = heatMeses.map((_, j) => colAvg(vacRows, j))
-  const inadAptoMediaCarteira = heatMeses.map((_, j) => colAvg(inadAptoRows, j))
-  const vacAptoMediaCarteira = heatMeses.map((_, j) => colAvg(vacAptoRows, j))
-  // Escala com teto fixo: a mesma % pinta sempre a mesma cor.
-  const inadMax = INAD_ESCALA_MAX
-  const vacMax = VAC_ESCALA_MAX
-
-  // --- Registro de pagamentos por apto/inquilino (todas as competências) ---
-  const registro: RegistroPagamento[] = []
-  for (const f of fechamentos) {
-    const empNome = relNome(f.empreendimentos)
-    for (const row of f.analise_completa?.prestacao?.receitas_por_imovel ?? []) {
-      if (imovelFiltro && row.apto !== imovelFiltro) continue
-      if (!row.apto?.trim() && num(row.total) === 0) continue
-      registro.push({
-        competencia: f.competencia,
-        competenciaLabel: formatCompetenciaShort(f.competencia),
-        empreendimento: empNome,
-        apto: row.apto,
-        inquilino: row.inquilino,
-        aluguel: numOrNull(row.aluguel),
-        desconto: numOrNull(row.desconto),
-        total: num(row.total),
-        repasse: numOrNull(row.repasse),
-        vencimento: row.vencimento,
-      })
-    }
-  }
-  registro.sort(
-    (a, b) => b.competencia.localeCompare(a.competencia) || a.apto.localeCompare(b.apto),
-  )
-
-  // --- Pendências (dados que ainda não temos para alguns widgets) ---
-  const pendencias: string[] = []
-  if (baseOcupacao === 0)
-    pendencias.push("Nenhum imóvel cadastrado — ocupação, vacância e faturamento potencial ficam zerados até o cadastro.")
-  if (!temReajusteData) pendencias.push("Relatório de reajustes não processado nesta competência.")
-  if (competenciasSet.length < 2) pendencias.push("Histórico mensal incompleto — preenche conforme novos fechamentos.")
 
   return {
-    competencia: competencia ?? "",
-    competenciaLabel: competencia ? formatCompetenciaLong(competencia) : "Sem fechamentos",
-    competenciasDisponiveis,
-    empresas: empresasOpts,
-    empreendimentos: empreendimentosOpts,
-    imoveis: imoveisOpts,
-    filtros: { empresaId: empresaFiltro, empreendimentoId: empFiltro, imovel: imovelFiltro },
-    ocupacao: {
-      pct: ocupacaoPct,
-      ocupados: ocupados + inadimplentes,
-      vagos,
-      total: baseOcupacao,
-      vacanciaValor,
-    },
-    receita,
-    despesaOperacional,
-    totalRepassar,
-    taxaTotal,
-    movimentacoes: {
-      acordos: { count: acordosCount, valor: acordosValor },
-      rescisoes: { count: rescisoesCount, valor: rescisoesValor },
-      reajustes: { count: reajustesCount, pending: !temReajusteData },
-      descontos,
-      despesaPorCategoria: { agua: totalAgua, iptu: totalIptu, seguro: totalSeguro },
-    },
-    percentuais: {
-      administracaoPct,
-      intermediacaoPct,
-      ocupacaoPct,
-      despesaOperacionalPct,
-    },
-    despesas: {
-      operacional: despesaOperacional,
-      venda: null,
-      vendaPct: intermediacaoPct,
-    },
-    cascata: {
-      potencial: potencialCascata,
-      potencialContratado: faturamentoPotencial,
-      inadimplenciaAcumulada: inadimplenciaValor,
-      realizado,
-      realizadoPct,
-      ofensores,
-    },
-    serieMensal,
-    ranking,
-    heat: {
-      meses: heatMesesLabels,
-      inad: inadRows,
-      vac: vacRows,
-      inadApto: inadAptoRows,
-      vacApto: vacAptoRows,
-      inadMax,
-      vacMax,
-      inadMediaCarteira,
-      vacMediaCarteira,
-      inadAptoMediaCarteira,
-      vacAptoMediaCarteira,
-    },
-    registro,
-    pendencias,
+    accounts: accountRowsSchema.parse(accountsResult.data ?? []),
+    rules: ruleRowsSchema.parse(rulesResult.data ?? []),
+    properties: propertyRowsSchema.parse(propertiesResult.data ?? []),
+    closings: closingRowsSchema.parse(closingsResult.data ?? []),
   }
+}
+
+function mapRule(row: RuleRow, accountById: Map<string, AccountRow>): IndicadoresRuleInput {
+  return {
+    ...mapPair(row, accountById),
+    ativo: row.ativo,
+  }
+}
+
+function mapProperty(
+  row: PropertyRow,
+  accountById: Map<string, AccountRow>,
+): IndicadoresPropertyInput {
+  return {
+    ...mapPair(row, accountById),
+    id: row.id,
+    unidade: row.unidade,
+    inquilinoNome: row.inquilino_nome,
+    statusAtual: mapCurrentStatus(row.status),
+    aluguelEsperadoAtual: nullableMoney(row.valor_aluguel_esperado),
+    ativo: row.ativo,
+  }
+}
+
+function mapClosing(
+  row: ClosingRow,
+  accountById: Map<string, AccountRow>,
+): IndicadoresClosingInput {
+  return {
+    ...mapPair(row, accountById),
+    id: row.id,
+    competencia: normalizeCompetence(row.competencia),
+    status: row.status,
+    arquivado: row.arquivado,
+    processamentoStatus: row.processamento_status,
+    analiseCompleta: parseCalculationAnalysis(row.analise_completa),
+  }
+}
+
+function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): IndicadoresSnapshotInput {
+  return {
+    imovelId: row.imovel_id,
+    fechamentoId: row.fechamento_id,
+    competencia: normalizeCompetence(row.competencia),
+    statusOcupacao: row.status_ocupacao,
+    statusOrigem: row.status_origem,
+    inquilinoNome: row.inquilino_nome,
+    aluguelEsperado: nullableMoney(row.aluguel_esperado),
+    aluguelRecebido: nullableMoney(row.aluguel_recebido),
+    receitaTotal: nullableMoney(row.receita_total),
+    desconto: nullableMoney(row.desconto),
+    comissaoAdministracao: nullableMoney(row.comissao_administracao),
+    repasseApurado: nullableMoney(row.repasse_apurado),
+    vencimentoReferencia: row.vencimento_referencia,
+    origem: row.origem,
+    qualidade: row.qualidade,
+  }
+}
+
+function mapPair(
+  row: Pick<RuleRow, "imobiliaria_id" | "empreendimento_id" | "imobiliarias" | "empreendimentos">,
+  accountById: Map<string, AccountRow>,
+): IndicadoresPairInput {
+  const agency = relation(row.imobiliarias)
+  const development = relation(row.empreendimentos)
+  const company = resolveCompany(development?.egestor_conta_id ?? null, accountById)
+
+  return {
+    empresaId: company.id,
+    empresaNome: company.label,
+    imobiliariaId: row.imobiliaria_id,
+    imobiliariaNome: agency?.nome ?? row.imobiliaria_id,
+    empreendimentoId: row.empreendimento_id,
+    empreendimentoNome: development?.nome ?? row.empreendimento_id,
+  }
+}
+
+function resolveCompany(
+  accountId: string | null,
+  accountById: Map<string, AccountRow>,
+): CompanyDefinition {
+  const account = accountId ? accountById.get(accountId) : undefined
+  const tag = account?.tag_padrao?.trim() || "ACR"
+  return { id: tag, label: account?.nome ? `${tag} · ${account.nome}` : tag }
+}
+
+function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | null {
+  const parsed = calculationAnalysisSchema.safeParse(value)
+  if (!parsed.success) return null
+  const { totals, prestacao } = parsed.data
+
+  return {
+    totals: {
+      total_receitas: totals.total_receitas,
+      total_comissoes: totals.total_comissoes,
+      total_despesas: totals.total_despesas,
+      total_a_repassar: totals.total_a_repassar,
+      valor_comprovado: totals.valor_comprovado ?? null,
+      total_agua: totals.total_agua ?? null,
+      total_iptu: totals.total_iptu ?? null,
+      total_seguro_incendio: totals.total_seguro_incendio ?? null,
+      repasse_embutido: totals.repasse_embutido,
+    },
+    prestacao: prestacao
+      ? {
+          receitas_por_imovel: prestacao.receitas_por_imovel.map((line) => ({ apto: line.apto })),
+          acordos_rescisoes_recebidos:
+            prestacao.acordos_rescisoes_recebidos?.map((item) => ({
+              tipo: item.tipo,
+              comissao: item.comissao ?? null,
+            })) ?? null,
+          inadimplencias_acumuladas:
+            prestacao.inadimplencias_acumuladas?.map((item) => ({ valor: item.valor })) ?? null,
+        }
+      : null,
+  }
+}
+
+function findUnlinkedLines(
+  closings: IndicadoresClosingInput[],
+  properties: IndicadoresPropertyInput[],
+) {
+  const unitsByPair = new Map<string, Set<string>>()
+  for (const property of properties) {
+    const key = pairKey(property)
+    const units = unitsByPair.get(key) ?? new Set<string>()
+    units.add(normalizePropertyKeyPart(property.unidade))
+    unitsByPair.set(key, units)
+  }
+
+  return closings.map((closing) => {
+    const units = unitsByPair.get(pairKey(closing)) ?? new Set<string>()
+    const lines = closing.analiseCompleta?.prestacao?.receitas_por_imovel ?? []
+    return {
+      fechamentoId: closing.id,
+      quantidade: lines.filter((line) => !units.has(normalizePropertyKeyPart(line.apto))).length,
+    }
+  })
+}
+
+function validateFilterCoherence(
+  query: IndicadoresQuery,
+  rules: IndicadoresRuleInput[],
+  properties: IndicadoresPropertyInput[],
+) {
+  const pairs = [...rules, ...properties]
+  if (query.empresaId && !pairs.some((item) => item.empresaId === query.empresaId)) {
+    throw new IndicadoresQueryValidationError("Empresa nao encontrada nos indicadores.")
+  }
+  if (
+    query.empreendimentoId &&
+    !pairs.some(
+      (item) =>
+        item.empreendimentoId === query.empreendimentoId &&
+        (!query.empresaId || item.empresaId === query.empresaId),
+    )
+  ) {
+    throw new IndicadoresQueryValidationError("Empreendimento incompatível com os filtros.")
+  }
+  if (query.imovelId) {
+    const property = properties.find((item) => item.id === query.imovelId)
+    const isCoherent =
+      property &&
+      (!query.empresaId || property.empresaId === query.empresaId) &&
+      (!query.empreendimentoId || property.empreendimentoId === query.empreendimentoId)
+    if (!isCoherent) throw new IndicadoresQueryValidationError("Imovel incompatível com os filtros.")
+  }
+}
+
+function latestCompetence(closings: ClosingRow[]) {
+  const latest = closings
+    .filter((closing) => !closing.arquivado)
+    .map((closing) => normalizeCompetence(closing.competencia))
+    .sort()
+    .at(-1)
+  if (latest) return latest
+  const now = new Date()
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
+function latestUpdate(
+  properties: Array<{ atualizado_em: string }>,
+  closings: Array<{ atualizado_em: string }>,
+  snapshots: unknown[],
+) {
+  const snapshotUpdates = snapshotRowsSchema.parse(snapshots).map((row) => row.atualizado_em)
+  return [...properties, ...closings]
+    .map((row) => row.atualizado_em)
+    .concat(snapshotUpdates)
+    .sort()
+    .at(-1) ?? new Date().toISOString()
+}
+
+function relation(value: z.infer<typeof relationSchema>) {
+  if (!value) return null
+  return Array.isArray(value) ? (value[0] ?? null) : value
+}
+
+function nullableMoney(value: z.infer<typeof databaseMoneySchema>) {
+  if (value === null) return null
+  const parsed = typeof value === "number" ? value : Number(value)
+  if (!Number.isFinite(parsed)) throw new Error("Valor monetario invalido na base de indicadores.")
+  return roundMoney(parsed)
+}
+
+function mapCurrentStatus(value: string): OccupancyStatus {
+  if (value === "ocupado" || value === "inadimplente" || value === "vago" || value === "em_rescisao") {
+    return value
+  }
+  return "desconhecido"
+}
+
+function normalizeCompetence(value: string) {
+  return `${value.slice(0, 7)}-01`
+}
+
+function offsetCompetence(value: string, offset: number) {
+  const [year, month] = value.split("-").map(Number)
+  const date = new Date(Date.UTC(year, month - 1 + offset, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
+function pairKey(pair: Pick<IndicadoresPairInput, "imobiliariaId" | "empreendimentoId">) {
+  return `${pair.imobiliariaId}::${pair.empreendimentoId}`
 }

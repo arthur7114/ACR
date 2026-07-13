@@ -1,127 +1,200 @@
-// Tipos compartilhados (cliente + servidor) da tela de Indicadores.
-// A agregação vive em lib/server/indicadores.ts e é exposta por /api/indicadores.
+import type { OccupancyStatus } from "./indicadores-domain"
+
+export type IndicadoresQuality = "completa" | "preliminar"
+export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
+export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
 
 export interface IndicadoresFiltroOption {
-  id: string
+  value: string
   label: string
 }
 
-export interface OfensorReceita {
-  key: "vacancia" | "inadimplencia" | "descontos"
-  label: string
-  valor: number
-  pct: number
-  pending?: boolean
+export interface IndicadoresCoverageGap {
+  codigo:
+    | "par_ausente"
+    | "snapshot_ausente"
+    | "snapshot_desconhecido"
+    | "aluguel_esperado_ausente"
+    | "linha_nao_vinculada"
+    | "nao_atribuivel_ao_imovel"
+  quantidade: number
+  mensagem: string
 }
 
-export interface RegistroPagamento {
+export interface IndicadoresOccupancy {
+  ocupados: number
+  inadimplentes: number
+  emRescisao: number
+  vagos: number
+  desconhecidos: number
+  numerador: number
+  denominador: number
+  percentual: number | null
+  coberturaPercentual: number | null
+}
+
+export interface IndicadoresMeta {
+  calculoVersao: string
   competencia: string
   competenciaLabel: string
-  empreendimento: string
-  apto: string
-  inquilino: string
-  aluguel: number | null
+  atualizadoEm: string
+  qualidade: IndicadoresQuality
+  naturezaBase: "fechamentos_e_snapshots"
+  historicoRecomposto: boolean
+}
+
+export interface IndicadoresCoverage {
+  pares: {
+    esperados: number
+    processados: number
+    aprovados: number
+    pendentes: number
+    rascunhos: number
+    emAtualizacao: number
+    ausentes: number
+    percentual: number | null
+  }
+  imoveis: {
+    esperados: number
+    snapshotsDisponiveis: number
+    snapshotsDesconhecidos: number
+    semAluguelEsperado: number
+    percentual: number | null
+  }
+  linhasNaoVinculadas: number
+  lacunas: IndicadoresCoverageGap[]
+}
+
+export interface IndicadoresSummary {
+  receitaTotal: number | null
+  aluguelContratado: number | null
+  aluguelRecebido: number | null
+  comissaoAdministracao: number | null
+  comissaoIntermediacao: number | null
+  despesasRetidas: number | null
+  despesaOperacionalDetalhada: {
+    agua: number | null
+    iptu: number | null
+    seguro: number | null
+    total: number | null
+  }
+  repasseApurado: number | null
+  repasseComprovado: number | null
+  repasseInformadoExtrato: number | null
+  diferencaRepasse: number | null
+  ocupacaoCompetencia: IndicadoresOccupancy
+  ocupacaoHoje: IndicadoresOccupancy
+  inadimplenciaAcumulada: number | null
+}
+
+export interface IndicadoresFinancialBridge {
+  receitaTotal: number | null
+  comissaoAdministracao: number | null
+  despesasRetidas: number | null
+  comissaoIntermediacao: number | null
+  repasseApurado: number | null
+  residuo: number | null
+  tolerancia: number
+  reconciliada: boolean | null
+  alerta: boolean
+}
+
+export interface IndicadoresRentRealization {
+  contratado: number | null
+  vacancia: number | null
+  inadimplenciaMes: number | null
+  descontos: number | null
+  outrosAjustes: number | null
+  recebido: number | null
+}
+
+export interface IndicadoresMonthlyPoint {
+  competencia: string
+  label: string
+  receitaTotal: number | null
+  aluguelContratado: number | null
+  aluguelRecebido: number | null
+  repasseApurado: number | null
+  ocupacaoPercentual: number | null
+  coberturaPercentual: number | null
+  qualidade: IndicadoresQuality
+}
+
+export interface IndicadoresAttentionItem {
+  imovelId: string
+  unidade: string
+  inquilinoNome: string | null
+  empreendimentoId: string
+  empreendimentoNome: string
+  esperado: number | null
+  recebido: number | null
+  gapValor: number | null
+  statusOcupacao: OccupancyStatus
+}
+
+export interface IndicadoresHeatCell {
+  competencia: string
+  statusOcupacao: OccupancyStatus | null
+  valor: number | null
+  inadimplenciaPercentual: number | null
+  vacanciaPercentual: number | null
+  origem: IndicadoresSnapshotOrigin | null
+  qualidade: IndicadoresSnapshotQuality | null
+}
+
+export interface IndicadoresHeatRow {
+  imovelId: string
+  unidade: string
+  inquilinoNome: string | null
+  empreendimentoId: string
+  empreendimentoNome: string
+  hoje: OccupancyStatus
+  celulas: IndicadoresHeatCell[]
+}
+
+export interface IndicadoresPropertyRevenue {
+  imovelId: string
+  competencia: string
+  unidade: string
+  inquilinoNome: string | null
+  empreendimentoId: string
+  empreendimentoNome: string
+  statusOcupacao: OccupancyStatus
+  aluguelEsperado: number | null
+  aluguelRecebido: number | null
+  receitaTotal: number | null
   desconto: number | null
-  total: number
-  repasse: number | null
-  vencimento: string | null
+  comissaoAdministracao: number | null
+  repasseApurado: number | null
+  vencimentoReferencia: string | null
+  origem: IndicadoresSnapshotOrigin
+  qualidade: IndicadoresSnapshotQuality
 }
 
-export interface RealizacaoImovel {
-  apto: string
-  inquilino: string
-  empreendimento: string
-  esperado: number
-  realizado: number
-  pct: number
-}
-
-export interface HeatRow {
-  empreendimento: string
-  valores: (number | null)[]
-  media: number | null
-}
-
-export interface SerieMensalPonto {
-  competencia: string
-  label: string
-  receita: number
-  ocupacaoPct: number | null
-}
-
-export interface IndicadoresData {
-  competencia: string
-  competenciaLabel: string
-  competenciasDisponiveis: { value: string; label: string }[]
+export interface IndicadoresFilters {
+  selecionados: {
+    empresaId: string | null
+    empreendimentoId: string | null
+    imovelId: string | null
+  }
+  competencias: IndicadoresFiltroOption[]
   empresas: IndicadoresFiltroOption[]
   empreendimentos: IndicadoresFiltroOption[]
   imoveis: IndicadoresFiltroOption[]
-  filtros: { empresaId: string | null; empreendimentoId: string | null; imovel: string | null }
+}
 
-  // KPIs principais (ordem: ocupação, receita, despesa, repasse, taxa total)
-  ocupacao: {
-    pct: number
-    ocupados: number
-    vagos: number
-    total: number
-    vacanciaValor: number
-  }
-  receita: number
-  despesaOperacional: number
-  totalRepassar: number
-  taxaTotal: number
-
-  movimentacoes: {
-    acordos: { count: number; valor: number }
-    rescisoes: { count: number; valor: number }
-    reajustes: { count: number; pending: boolean }
-    descontos: number
-    despesaPorCategoria: { agua: number; iptu: number; seguro: number }
-  }
-
-  percentuais: {
-    administracaoPct: number | null
-    intermediacaoPct: number | null
-    ocupacaoPct: number
-    despesaOperacionalPct: number
-  }
-
-  despesas: {
-    operacional: number
-    venda: number | null
-    vendaPct: number | null
-  }
-
-  cascata: {
-    potencial: number
-    potencialContratado: number
-    inadimplenciaAcumulada: number
-    realizado: number
-    realizadoPct: number
-    ofensores: OfensorReceita[]
-  }
-
-  serieMensal: SerieMensalPonto[]
-  ranking: RealizacaoImovel[]
-
+export interface IndicadoresData {
+  meta: IndicadoresMeta
+  cobertura: IndicadoresCoverage
+  resumo: IndicadoresSummary
+  ponteFinanceira: IndicadoresFinancialBridge
+  realizacaoAluguel: IndicadoresRentRealization
+  serieMensal: IndicadoresMonthlyPoint[]
+  rankingAtencao: IndicadoresAttentionItem[]
   heat: {
-    meses: { value: string; label: string }[]
-    // Agrupado por empreendimento
-    inad: HeatRow[]
-    vac: HeatRow[]
-    // Agrupado por apartamento (detalhamento; toggle na view)
-    inadApto: HeatRow[]
-    vacApto: HeatRow[]
-    // Teto fixo da escala (mesma % = mesma cor sempre)
-    inadMax: number
-    vacMax: number
-    inadMediaCarteira: (number | null)[]
-    vacMediaCarteira: (number | null)[]
-    inadAptoMediaCarteira: (number | null)[]
-    vacAptoMediaCarteira: (number | null)[]
+    meses: Array<{ competencia: string; label: string }>
+    linhas: IndicadoresHeatRow[]
   }
-
-  registro: RegistroPagamento[]
-
-  pendencias: string[]
+  receitasPorImovel: IndicadoresPropertyRevenue[]
+  filtros: IndicadoresFilters
 }

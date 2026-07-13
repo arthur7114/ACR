@@ -240,7 +240,7 @@ test("reconcileFinancialBridge aceita residuo de ate R$ 0,01", () => {
   })
 
   assert.equal(result.calculatedTransfer, 825)
-  assert.equal(result.residual, 0.01)
+  assert.equal(result.residual, -0.01)
   assert.equal(result.isReconciled, true)
   assert.equal(result.hasAlert, false)
 })
@@ -255,7 +255,7 @@ test("reconcileFinancialBridge alerta residuo acima de R$ 0,01", () => {
   })
 
   assert.equal(result.calculatedTransfer, 825)
-  assert.equal(result.residual, -0.02)
+  assert.equal(result.residual, 0.02)
   assert.equal(result.isReconciled, false)
   assert.equal(result.hasAlert, true)
 })

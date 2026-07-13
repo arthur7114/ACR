@@ -106,7 +106,7 @@ export function reconcileFinancialBridge(input: {
       input.retainedExpenses -
       input.brokerageCommission,
   )
-  const residual = roundMoney(input.assessedTransfer - calculatedTransfer)
+  const residual = roundMoney(calculatedTransfer - input.assessedTransfer)
   const isReconciled = Math.abs(residual) <= 0.01
 
   return {
