@@ -2,13 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1, 2, 3 e 5: contrato/baseline, schema aditivo, materializacao idempotente, ferramentas seguras de backfill/verificacao e shell responsivo. API agregada e conteudo das quatro abas ainda nao foram concluidos; canario e backfill com escrita aguardam staging.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu a implementacao dos Slices 0 a 8: contrato, schema protegido por RLS, materializacao idempotente, backfill/verificacao, API agregada, shell responsivo, quatro abas operacionais e tooling reproduzivel. Suite completa 160/160, typecheck, lint, build e checklist 6/6 estao verdes; o gate autenticado final e o canario/backfill com escrita aguardam staging.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
 
-Executar o Slice 4 de `docs/PLAN-indicadores-operacionais.md`: publicar o DTO agregado com cobertura, ponte financeira, realizacao, series, heatmap e filtro UUID de imovel. Em paralelo, implementar as quatro abas contra esse contrato. Antes de qualquer escrita historica, executar o dry-run e o canario do Slice 3 em banco descartavel/staging com a migration aplicada.
+Validar no navegador os Slices 6 e 7 em 360, 390, 768, 1024, 1280 e 1440px, incluindo filtros/URL, troca rapida, tabs, heatmap, tabela/CSV, estados preliminar/recomposto/erro e console. Antes de qualquer escrita historica, aplicar a migration em banco descartavel/staging, auditar grants/RLS, executar dry-run e canario do Slice 3 e repetir o canario para confirmar checksum/fingerprints.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | slices 0-3 e 5 concluidos | Contrato, schema, materializacao, backfill/verificador e shell prontos; API e quatro abas em andamento; canario aguarda staging. |
+| Indicadores operacionais | slices 0-8 concluidos no codigo | Backend, shell, quatro abas e gates locais verdes; QA autenticada e rollout em staging pendentes. |
 
 ## Decisoes registradas
 
@@ -97,11 +97,41 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-13 - Gate final e hardening dos indicadores (Slice 8)
+
+Status: done no codigo; QA autenticada e rollout pendentes.
+Job: tornar testes reproduziveis, revisar a entrega contra Standards e Spec e fechar lacunas de confiabilidade antes do rollout.
+Outcome entregue: `tsx` foi fixado como devDependency, com scripts `test` e `test:indicadores`; a API ganhou validacao defensiva do envelope no cliente para payload antigo/incompativel virar estado de erro recuperavel. Tres revisores independentes auditaram Standards, Spec e banco. Os findings foram corrigidos: historico nao herda inquilino atual, ausencia legada permanece `null`, ranking mostra apenas gap/risco acionavel, pendentes e reprocessamentos ficam preliminares, serie considera linhas sem vinculo, checksum nativo e recalculado do conteudo persistido, RLS bloqueia acesso direto e trigger atomico impede backfill de substituir snapshot nativo.
+Validacao: apos os patches finais, a suite completa passou 160/160; `pnpm exec tsc --noEmit`, `pnpm lint`, `git diff --check` e `pnpm build` passaram. O checklist mestre passou 6/6 em Security, Lint, Schema, Tests, UX e SEO, e a segunda rodada dos revisores nao encontrou P0-P2. A tentativa de recriar PostgreSQL descartavel foi bloqueada por shared memory do sandbox; a aplicacao final da migration continua no canario de staging. Nenhuma escrita em banco remoto foi executada.
+Decisoes: tests/build/checklist locais encerram o gate de codigo; navegador e PostgreSQL devem ser repetidos em ambiente integrado; nenhuma escrita historica ocorre antes de canario reconciliado.
+Arquivos/docs impactados: `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, agregador/testes, repositorio, scripts de backfill/verificacao, migration, view raiz e `docs/12-execution-roadmap.md`.
+Proxima acao: QA autenticada e validacao da migration; depois executar dry-run, canario e repeticao em staging.
+
+### 2026-07-13 - Dashboard operacional e receitas por imovel (Slices 6 e 7)
+
+Status: implementado; QA autenticada final pendente.
+Job: substituir o painel permissivo por quatro abas operacionais confiaveis, responsivas e explicitas sobre fonte, cobertura e qualidade.
+Outcome entregue: `/indicadores` agora usa o titulo "Operacao financeira da carteira", faixa persistente de cobertura, filtros/tabs/metricas preservados na URL, cancelamento de requests antigos, skeleton/retry e dados anteriores durante refetch. Visao geral separa competencia de Hoje e exibe KPIs com fonte; Receita & repasse traz ponte, realizacao contratada, evidencias e ranking; Mapa de calor usa apenas snapshots, valores alem de cor, ausencia `—`, origem recomposta e coluna Hoje; Receitas por imovel oferece busca, ordenacao, paginacao, CSV seguro contra formula injection e linhas expansivas no mobile. A antiga aba "Registro de pagamentos" e os componentes da cascata reconstruida foram removidos.
+Validacao: ESLint focado, typecheck global, auditoria estatica de UX/acessibilidade e revisao independente passaram. Shell autenticado ja havia sido conferido em 390, 768, 1024 e 1440px sem overflow/console error; a navegacao automatizada das quatro abas nas seis larguras foi bloqueada pela politica do navegador desta sessao e permanece gate explicito.
+Decisoes: frontend somente apresenta o DTO e nao recalcula regra financeira; `null` aparece como `—`; tabelas/heatmap rolam internamente; estados historicos nunca recebem fallback do cadastro atual.
+Arquivos/docs impactados: `components/acr/views/indicadores-view.tsx`, `components/acr/indicadores/tabs/*`, `components/acr/indicadores/charts/monthly-series.tsx`, `components/acr/indicadores/lib/presentation.ts`, `components/acr/indicadores/primitives/dashboard-ui.tsx` e remocoes dos componentes obsoletos.
+Proxima acao: QA autenticada das quatro abas em 360, 390, 768, 1024, 1280 e 1440px, incluindo troca rapida, URL compartilhavel, CSV e console.
+
+### 2026-07-13 - API agregada operacional (Slice 4)
+
+Status: done.
+Job: substituir a agregacao permissiva anterior por um contrato confiavel, filtravel e auditavel, sem consultas N+1 ou fallbacks financeiros inventados.
+Outcome entregue: `IndicadoresData` foi reorganizado em meta, cobertura, resumo, ponte financeira, realizacao do aluguel, serie mensal, ranking de atencao, heat, receitas por imovel e filtros. O agregador puro aplica whitelist de status, uniao dos pares esperados, `null` distinto de zero, ocupacao ponderada, filtro UUID de imovel sem rateio de valores do fechamento, repasse embutido separado de comprovante, diferenca comprovado menos apurado e saldo da ponte com tolerancia de R$ 0,01. A camada Supabase usa cinco consultas em lote, nao seleciona token e limita snapshots a 12 competencias ate o mes escolhido. A rota valida somente os quatro parametros permitidos e responde 400/500 sem segredo. `audit-indicadores.ts` foi alinhado ao DTO V2.
+Validacao: 62/62 testes focados passaram durante a integracao; no gate final, a suite completa passou 160/160, incluindo o bloqueio de snapshots de fechamento inelegivel no heatmap e as regressoes finais de qualidade. API validator passou 4 checks sem criticos; `pnpm exec tsc --noEmit` e `pnpm lint` globais passaram apos a integracao.
+Decisoes: `empresaId` continua sendo a tag segura da conta eGestor; `empreendimentoId` e `imovelId` sao UUIDs; o saldo da ponte e receita menos comissoes, despesas, intermediação e repasse, enquanto `diferencaRepasse` preserva comprovado menos apurado; heatmap historico aceita apenas snapshot ligado a fechamento elegivel.
+Arquivos/docs impactados: `lib/indicadores-types.ts`, `lib/indicadores-query.ts`, `lib/indicadores-query.test.ts`, `lib/indicadores-aggregation.ts`, `lib/indicadores-aggregation.test.ts`, `lib/indicadores-domain.ts`, `lib/indicadores-domain.test.ts`, `lib/server/indicadores.ts`, `app/api/indicadores/route.ts`, `scripts/audit-indicadores.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: QA autenticada das quatro abas e gate final; smoke real da API apenas depois da migration em banco descartavel/staging.
+
 ### 2026-07-13 - Backfill e verificacao de snapshots (Slice 3)
 
 Status: done no codigo; rollout pendente em staging.
 Job: permitir recompor o historico mensal com seguranca, dry-run por padrao e prova de que nenhuma tabela-fonte foi alterada.
-Outcome entregue: `backfill-indicadores-snapshots.ts` seleciona apenas fechamentos elegiveis com analise, aceita filtros de competencia e empreendimento, usa o builder congelado e produz plano deterministico de insert/update/skip por imovel + competencia + checksum. Escrita exige `--commit` e e limitada a `imovel_competencias`; snapshots nativos de `processamento` sempre prevalecem sobre recompostos. `verify-indicadores-snapshots.ts` audita cobertura, duplicidade, checksum esperado, reconciliacao financeira e fingerprints paginados de `fechamentos`/`imoveis`.
+Outcome entregue: `backfill-indicadores-snapshots.ts` seleciona apenas fechamentos elegiveis com analise, aceita filtros de competencia e empreendimento, usa o builder congelado e produz plano deterministico de insert/update/skip por imovel + competencia + checksum. Escrita exige `--commit` e e limitada a `imovel_competencias`; snapshots nativos de `processamento` sempre prevalecem sobre recompostos, inclusive sob concorrencia por guarda atomica no banco. `verify-indicadores-snapshots.ts` audita cobertura, duplicidade, checksum esperado, checksum nativo recomposto do conteudo persistido, reconciliacao financeira e fingerprints paginados de `fechamentos`/`imoveis`.
 Validacao: 14/14 testes focados passaram e ESLint focado passou. Os cenarios cobrem argumentos, dry-run sem escrita, whitelist, filtros, retomada, segunda execucao idempotente, preservacao de snapshot nativo, chave duplicada, cobertura, checksum, tolerancia de R$ 0,01 e mutacao de fonte. Nenhuma conexao remota ou escrita foi executada. O typecheck geral estava temporariamente bloqueado apenas pelos testes RED paralelos da API, cujos modulos ainda estavam em construcao.
 Decisoes: import dos scripts nao executa CLI; producao nao sera o primeiro ambiente; snapshot de processamento nao pode ser rebaixado para backfill; canario e repeticao real permanecem gates obrigatorios antes do backfill completo.
 Arquivos/docs impactados: `scripts/backfill-indicadores-snapshots.ts`, `scripts/backfill-indicadores-snapshots.test.ts`, `scripts/verify-indicadores-snapshots.ts`, `scripts/verify-indicadores-snapshots.test.ts`, `docs/12-execution-roadmap.md`.
@@ -131,8 +161,8 @@ Proxima acao: Slice 3, scripts de backfill/verificacao com dry-run padrao, filtr
 
 Status: done.
 Job: criar a base mensal de ocupacao e realizacao por imovel sem alterar ou preencher as tabelas-fonte.
-Outcome entregue: migration `202607130001_indicadores_snapshots.sql` cria `imovel_competencias` com FKs em cascata, valores `numeric(14,2)`, status/origem/qualidade, versao e checksum, `UNIQUE (imovel_id, competencia)`, indices de leitura e trigger de `atualizado_em`. A migration e somente aditiva e nao contem backfill ou DML.
-Validacao: migrations base e a nova migration aplicadas em PostgreSQL descartavel local; catalogo confirmou 22 colunas, precisao monetaria, cinco indices e trigger; primeira linha sintetica foi aceita e a duplicata do mesmo imovel/competencia foi rejeitada pela constraint esperada. Nenhum banco remoto foi acessado.
+Outcome entregue: migration `202607130001_indicadores_snapshots.sql` cria `imovel_competencias` com FKs em cascata, valores `numeric(14,2)`, status/origem/qualidade, versao e checksum, `UNIQUE (imovel_id, competencia)`, indices de leitura e trigger de `atualizado_em`. RLS sem policies bloqueia acesso direto de clientes, grants ficam explicitos para `service_role` e uma trigger atomica impede que backfill substitua snapshot nativo. A migration e somente aditiva e nao contem backfill ou DML de dados.
+Validacao: o nucleo da migration foi aplicado em PostgreSQL descartavel local; catalogo confirmou 22 colunas, precisao monetaria, cinco indices e trigger de atualizacao; primeira linha sintetica foi aceita e a duplicata do mesmo imovel/competencia foi rejeitada pela constraint esperada. O hardening posterior de RLS e protecao concorrente passou por duas revisoes estaticas sem P0-P2, mas sua repeticao dinamica ficou pendente porque o sandbox bloqueou shared memory do PostgreSQL. Nenhum banco remoto foi acessado.
 Decisoes: manter uma linha por imovel/competencia; origem distingue processamento de backfill; rollback operacional reverte o codigo e preserva a tabela para diagnostico, sem down destrutivo em producao.
 Arquivos/docs impactados: `supabase/migrations/202607130001_indicadores_snapshots.sql`, `docs/12-execution-roadmap.md`.
 Proxima acao: Slice 2, dominio puro e upsert idempotente integrado a processamento/reprocessamento/correcao.
