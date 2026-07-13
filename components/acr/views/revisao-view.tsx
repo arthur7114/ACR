@@ -22,6 +22,7 @@ import {
   Zap,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
+import { calcularIntermediacao } from "@/lib/intermediacao"
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
@@ -494,16 +495,6 @@ function formatPercent(value: number | null | undefined) {
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
 }
 
-// Percentual de intermediação: usa o impresso no documento; quando ausente,
-// calcula a taxa retida sobre a base (comissão ÷ valor).
-function intermediacaoPercentDe(item: AcordoRescisaoRecebido) {
-  if (typeof item.percentual === "number") return item.percentual
-  if (typeof item.comissao === "number" && item.valor > 0) {
-    return Math.round((item.comissao / item.valor) * 10000) / 100
-  }
-  return null
-}
-
 // Rotulo do tipo de recebimento do mes. "atraso" = aluguel de mes anterior
 // quitado agora (inadimplencia paga); distinto de acordo/rescisao negociados.
 function labelTipoAcordo(tipo: AcordoRescisaoRecebido["tipo"]) {
@@ -749,7 +740,7 @@ export function RevisaoView({
   const intermediacaoValor = intermediacoes.reduce((sum, item) => sum + (item.comissao ?? item.valor ?? 0), 0)
   const intermediacaoPercent = (() => {
     for (const item of intermediacoes) {
-      const p = intermediacaoPercentDe(item)
+      const p = calcularIntermediacao(item).percentual
       if (p !== null) return p
     }
     return null
@@ -1256,10 +1247,10 @@ export function RevisaoView({
             <span className="text-[13px] font-semibold text-[#7C3AED] tabular-nums">{formatBRL(intermediacaoValor)}</span>
           </div>
           <div className="max-h-[320px] overflow-auto">
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[1180px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
-                  {["Apto", "Inquilino", "Valor recebido", "Comissão interm.", "%", "Competência", "Obs"].map((header) => (
+                  {["Apto", "Inquilino", "Aluguel/base", "IPTU", "Total recebido", "Comissão interm.", "%", "Repasse", "Competência", "Obs"].map((header) => (
                     <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
                       {header}
                     </th>
@@ -1267,17 +1258,23 @@ export function RevisaoView({
                 </tr>
               </thead>
               <tbody>
-                {intermediacoes.map((item, index) => (
-                  <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#FAF5FF]">
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                    <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(item.valor)}</td>
-                    <td className="px-4 py-3 tabular-nums font-semibold text-[#7C3AED]">{typeof item.comissao === "number" ? formatBRL(item.comissao) : "-"}</td>
-                    <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(intermediacaoPercentDe(item))}</td>
-                    <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
-                    <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
-                  </tr>
-                ))}
+                {intermediacoes.map((item, index) => {
+                  const financeiro = calcularIntermediacao(item)
+                  return (
+                    <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#FAF5FF]">
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.baseAluguel)}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.iptu)}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.totalRecebido)}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-[#7C3AED]">{formatBRL(financeiro.comissao)}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(financeiro.percentual)}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.repasse)}</td>
+                      <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
+                      <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

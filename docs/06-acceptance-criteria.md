@@ -28,6 +28,12 @@
 - CA12 completo: toda correcao manual registra usuario, campo, valores, data/hora e justificativa.
 - CA12.1: resolucao de pendencia salva o valor oficial escolhido pelo operador e nunca chama a API com id de validacao vazio.
 - CA14: fechamento apenas com comprovante de repasse bloqueia aprovacao por prestacao ausente.
+- CA14.1: fechamento `rascunho` sem job ativo aparece como "Aguardando documentos" e direciona ao upload; apenas job ativo aparece como "Processando", e falha registrada oferece nova tentativa.
+- CA14.2: intermediação com IPTU preserva aluguel como base percentual, exibe o IPTU separadamente e calcula `total recebido = aluguel + IPTU` e `repasse = total recebido - comissão`, respeitando valores explícitos do documento.
+
+## Indicadores
+
+- CA-IND01: o mapa de calor usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja, tanto nas células quanto na legenda.
 
 ## IPTU - Contas a pagar manual
 

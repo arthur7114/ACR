@@ -63,7 +63,8 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Resolução de conflitos financeiros via modal no frontend, registrando o histórico na tabela `auditoria_correcoes` e atualizando o status do fechamento para `processado_com_sucesso` quando não houverem bloqueios pendentes.
 - Regras comerciais passam a ser cadastradas por par imobiliaria + empreendimento, com taxa de administracao e taxa de intermediacao.
 - Comissao administrativa e validada pela taxa do par sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
-- Taxa de intermediacao fica cadastrada e visivel na revisao, mas nao entra no total a repassar ate existir documento/campo operacional especifico.
+- Taxa de intermediacao cadastrada permanece como regra comercial; o lançamento documentado é a fonte operacional da comissão efetivamente retida.
+- Intermediacao documentada preserva o aluguel como base percentual; IPTU entra no total recebido e no repasse da linha, com base, IPTU, total, comissao, percentual e repasse exibidos separadamente.
 - Tela de revisao deve priorizar o contexto do fechamento salvo no banco para imobiliaria, empreendimento e competencia; dados extraidos do documento nao podem sobrescrever o contexto operacional.
 - Dashboard da revisao deve agrupar indicadores por decisao financeira, evitando cards soltos para totais relacionados, separando receitas, comissao administrativa, despesas e outras comissoes/despesas.
 - Situacao das unidades na revisao deve separar explicitamente apartamentos alugados, inadimplentes e aptos vagos; inadimplencia nao deve ser misturada com vacancia.
@@ -89,6 +90,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Notificacoes in-app vivem na tabela `notificacoes` e aparecem no sino do topo (badge de nao-lidas) com toast (sonner) e notificacao do SO (Notifications API, permissao pedida no clique do sino); um poller global de 12s detecta conclusao/falha de analise mesmo fora da tela de processamento. A conclusao/falha do workflow cria a notificacao no servidor.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Intermediação com IPTU, estado real do processamento e paleta dos indicadores
+
+Status: em validacao
+Job: corrigir a ausência do IPTU na Intermediação, impedir que rascunhos sem documentos apareçam como processamento ativo e restaurar as cores solicitadas no mapa de calor.
+Outcome entregue: a lista consulta `processamento_status`/`processamento_atualizado_em` e diferencia "Aguardando documentos", "Processando" e "Erro na análise", levando rascunhos/erros/jobs travados ao upload e somente jobs ativos ao acompanhamento. A Intermediação separa aluguel/base, IPTU, total recebido, comissão, percentual e repasse; o caso LOCMAIS Mai/2026 fecha em R$ 900,00 + R$ 38,08 = R$ 938,08, comissão R$ 540,00 (60%) e repasse R$ 398,08. Novas análises preservam IPTU/total/repasse em campos numéricos estruturados, com fallback textual apenas para dados antigos. O mapa voltou às seis faixas verde -> amarelo -> laranja -> vermelho.
+Validacao: testes focados passaram (10/10), suíte completa passou (92/92), `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build` passaram. O checklist passou em Segurança, Lint, Schema, Testes e SEO (5/6), mas permanece bloqueado pelo UX Audit em problemas preexistentes de roxo no drawer/revisão e inputs sem label em Indicadores. A QA visual autenticada não foi concluída porque o login informado foi rejeitado pelo aplicativo.
+Decisoes: IPTU compõe o total recebido e o repasse da intermediação, mas não a base da comissão; `rascunho` nunca significa processamento ativo sem `processamento_status=processando`.
+Arquivos/docs impactados: `app/api/fechamentos/route.ts`, `components/acr/views/fechamentos-view.tsx`, `components/acr/views/revisao-view.tsx`, `app/globals.css`, `lib/fechamento-list.ts`, `lib/intermediacao.ts`, `lib/prestacao-types.ts`, `lib/server/analyze-prestacao.ts`, testes focados, prompt Alive e docs 02/03/06/12.
+Proxima acao: decidir se os achados preexistentes do UX Audit entram neste ciclo e fornecer um login funcional (ou autorizar reset) para validar visualmente lista, revisão LOCMAIS Mai/2026 e mapa de calor.
 
 ### 2026-07-09 - IPTU: correcao ao editar parcela
 

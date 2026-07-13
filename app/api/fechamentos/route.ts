@@ -6,6 +6,8 @@ const FECHAMENTO_BASE_SELECT = `
   id,
   competencia,
   status,
+  processamento_status,
+  processamento_atualizado_em,
   total_repassar,
   valor_repassado_comprovante,
   diferenca_total,

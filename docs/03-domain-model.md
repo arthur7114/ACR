@@ -51,7 +51,8 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Reprocessamento parcial deve preservar correcoes manuais.
 - IA deve retornar JSON validavel e nunca aprovar ou calcular resultado final sem validacao deterministica.
 - Comissao administrativa deve ser validada, quando houver regra comercial ativa, pela taxa do par imobiliaria + empreendimento aplicada sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
-- Taxa de intermediacao e cadastrada e exibida como regra comercial, mas nao altera o total a repassar ate haver documento/campo operacional especifico para esse lancamento.
+- Na intermediação documentada, `valor` representa o aluguel/base da comissão. IPTU não entra na base percentual, mas compõe o total recebido e o repasse da linha; a revisão deve exibir base, IPTU, total, comissão, percentual e repasse sem conflar esses conceitos.
+- Taxa de intermediacao cadastrada permanece apenas como regra comercial; o lançamento documentado é a fonte operacional da comissão efetivamente retida.
 - Comissao realizada em percentual e calculada como comissao administrativa documentada dividida pela base de comissao administrativa.
 - Acordo/rescisao com mesma combinacao normalizada de tipo, inquilino, competencia original e valor ja vista no pacote ou no historico do mesmo par imobiliaria + empreendimento gera alerta bloqueante por possivel pagamento repetido.
 - Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.

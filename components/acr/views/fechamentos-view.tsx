@@ -4,15 +4,19 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle, Archive, ArchiveRestore, CheckCircle, Loader2, Plus, Send, Trash2 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-
-type Status = "pendente" | "aprovado" | "processando" | "preparado_egestor" | "lancado_egestor" | "erro_egestor"
+import {
+  resolveFechamentoListPresentation,
+  type FechamentoListStatus,
+} from "@/lib/fechamento-list"
 
 interface Row {
   id: string
   competencia: string
   imobiliaria: string
   empreendimento: string
-  status: Status
+  status: FechamentoListStatus
+  href: string
+  actionLabel: string
   arquivado: boolean
   aRepassar: number | null
   transferido: number | null
@@ -27,16 +31,22 @@ function formatCompetencia(date: string) {
   return `${months[parseInt(month) - 1]}/${year}`
 }
 
-function mapStatus(dbStatus: string): Status {
-  if (dbStatus === "lancado_egestor") return "lancado_egestor"
-  if (dbStatus === "preparado_egestor") return "preparado_egestor"
-  if (dbStatus === "erro_egestor") return "erro_egestor"
-  if (dbStatus === "aprovado") return "aprovado"
-  if (dbStatus === "rascunho") return "processando"
-  return "pendente"
-}
-
-function StatusBadge({ status }: { status: Status }) {
+function StatusBadge({ status }: { status: FechamentoListStatus }) {
+  if (status === "rascunho") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#F3F4F6] px-3 py-1 text-xs font-medium text-[#4B5563]">
+        Aguardando documentos
+      </span>
+    )
+  }
+  if (status === "erro_processamento") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#FEE2E2] px-3 py-1 text-xs font-medium text-[#991B1B]">
+        <AlertTriangle size={12} />
+        Erro na análise
+      </span>
+    )
+  }
   if (status === "pendente") {
     return (
       <span className="inline-flex items-center gap-1 bg-[#FEF3C7] text-[#92400E] rounded-full px-3 py-1 text-xs font-medium">
@@ -102,23 +112,33 @@ export function FechamentosView() {
         id: string
         competencia: string
         status: string
+        processamento_status: string | null
+        processamento_atualizado_em: string | null
         arquivado?: boolean
         total_repassar: number | null
         valor_repassado_comprovante: number | null
         diferenca_total: number | null
         imobiliarias: { nome: string }
         empreendimentos: { nome: string }
-      }) => ({
-        id: f.id,
-        competencia: formatCompetencia(f.competencia),
-        imobiliaria: f.imobiliarias?.nome ?? "-",
-        empreendimento: f.empreendimentos?.nome ?? "-",
-        status: mapStatus(f.status),
-        arquivado: Boolean(f.arquivado),
-        aRepassar: f.total_repassar,
-        transferido: f.valor_repassado_comprovante,
-        diferenca: f.diferenca_total,
-      }))
+      }) => {
+        const presentation = resolveFechamentoListPresentation({
+          id: f.id,
+          dbStatus: f.status,
+          processamentoStatus: f.processamento_status,
+          processamentoAtualizadoEm: f.processamento_atualizado_em,
+        })
+        return {
+          id: f.id,
+          competencia: formatCompetencia(f.competencia),
+          imobiliaria: f.imobiliarias?.nome ?? "-",
+          empreendimento: f.empreendimentos?.nome ?? "-",
+          ...presentation,
+          arquivado: Boolean(f.arquivado),
+          aRepassar: f.total_repassar,
+          transferido: f.valor_repassado_comprovante,
+          diferenca: f.diferenca_total,
+        }
+      })
       setRows(mapped)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar fechamentos.")
@@ -235,14 +255,14 @@ export function FechamentosView() {
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/fechamentos/${row.id}/revisao`}
+                          href={row.href}
                           className={`h-8 inline-flex items-center px-3 rounded-lg text-[13px] font-medium transition-colors ${
-                            row.status === "pendente"
+                            row.status === "pendente" || row.status === "rascunho"
                               ? "bg-[#2D8C3A] text-white hover:bg-[#1A5C24]"
                               : "bg-white border border-[#D5DDD6] text-[#3D4F3F] hover:bg-[#EEF1EE]"
                           }`}
                         >
-                          {row.status === "pendente" ? "Revisar" : "Ver detalhes"}
+                          {row.actionLabel}
                         </Link>
                         <button
                           onClick={() =>

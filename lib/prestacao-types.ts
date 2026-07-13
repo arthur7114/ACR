@@ -71,6 +71,11 @@ export const acordoRescisaoRecebidoSchema = z
     apto: z.string().nullable(),
     inquilino: z.string().nullable(),
     valor: z.number(),
+    // Encargos e totais estruturados da intermediação. Opcionais para manter
+    // compatibilidade com análises persistidas antes destes campos.
+    iptu: z.number().nullable().optional(),
+    total_recebido: z.number().nullable().optional(),
+    repasse: z.number().nullable().optional(),
     // Comissao retida sobre este recebimento (ex.: comissao do acordo, taxa de
     // intermediacao). Soma-se a comissao de administracao das linhas regulares.
     comissao: z.number().nullable().optional(),

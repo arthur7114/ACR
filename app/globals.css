@@ -55,14 +55,13 @@
   --acr-red: #c0432f;
   --acr-red-soft: #fbedea;
   --acr-blue: #3a6ea5;
-  /* Mapa de calor — divergente verde -> neutro -> vermelho (6 faixas, sem amarelo).
-     Baixo/bom = verde calmo; alto/atenção = vermelho. Número legível (>=4.5:1) em toda célula. */
-  --acr-heat-0: #e8f4ec;
-  --acr-heat-1: #b4dcc0;
-  --acr-heat-2: #dbe2dc;
-  --acr-heat-3: #f3d2c9;
-  --acr-heat-4: #c74a34;
-  --acr-heat-5: #a83020;
+  /* Mapa de calor — verde -> amarelo -> laranja -> vermelho (6 faixas). */
+  --acr-heat-0: #eff6f0;
+  --acr-heat-1: #bfe3c6;
+  --acr-heat-2: #7fc98c;
+  --acr-heat-3: #f4d58a;
+  --acr-heat-4: #e8a15a;
+  --acr-heat-5: #c0432f;
 }
 
 .dark {
@@ -169,26 +168,26 @@
 }
 
 @layer components {
-  /* Faixas do mapa de calor (verde -> amarelo -> vermelho). Lookup por índice em lib/heat.ts. */
+  /* Faixas do mapa de calor (verde -> amarelo -> laranja -> vermelho). */
   .acr-heat-q0 {
     background: var(--acr-heat-0);
-    color: #1f3a28;
+    color: #3d4f3f;
   }
   .acr-heat-q1 {
     background: var(--acr-heat-1);
-    color: #163a22;
+    color: #1a2b1c;
   }
   .acr-heat-q2 {
     background: var(--acr-heat-2);
-    color: #37483b;
+    color: #143b1a;
   }
   .acr-heat-q3 {
     background: var(--acr-heat-3);
-    color: #7c2f21;
+    color: #5c4410;
   }
   .acr-heat-q4 {
     background: var(--acr-heat-4);
-    color: #fff;
+    color: #5c2f10;
   }
   .acr-heat-q5 {
     background: var(--acr-heat-5);
