@@ -1,213 +1,157 @@
 "use client"
 
-import { useState } from "react"
-import { Info } from "lucide-react"
+import type { IndicadoresData, IndicadoresHeatCell } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
-import type { HeatRow, IndicadoresData } from "@/lib/indicadores-types"
-import { Card, CardNote, ChartCardHeader } from "../primitives/chart-card"
-import { fmt1, heatClass, HEAT_SCALE_TOKENS } from "../lib/heat"
+import { formatCompactCurrency, formatPercent, occupancyLabel, type HeatMetric } from "../lib/presentation"
+import { EmptyState, Panel, PanelHeader, StatusChip, ToggleButton } from "../primitives/dashboard-ui"
 
-export type HeatMetric = "inad" | "vac"
-type Grupo = "emp" | "apto"
+export type { HeatMetric }
 
 export function ViewMapa({
   data,
   heatMetric,
-  setHeatMetric,
+  onHeatMetricChange,
 }: {
   data: IndicadoresData
   heatMetric: HeatMetric
-  setHeatMetric: (m: HeatMetric) => void
+  onHeatMetricChange: (metric: HeatMetric) => void
 }) {
-  const [grupo, setGrupo] = useState<Grupo>("emp")
-  const meses = data.heat.meses
-  const porApto = grupo === "apto"
-
-  const rows: HeatRow[] =
-    heatMetric === "inad"
-      ? porApto
-        ? data.heat.inadApto
-        : data.heat.inad
-      : porApto
-        ? data.heat.vacApto
-        : data.heat.vac
-  const max = heatMetric === "inad" ? data.heat.inadMax : data.heat.vacMax
-  const media =
-    heatMetric === "inad"
-      ? porApto
-        ? data.heat.inadAptoMediaCarteira
-        : data.heat.inadMediaCarteira
-      : porApto
-        ? data.heat.vacAptoMediaCarteira
-        : data.heat.vacMediaCarteira
-
-  const escopo = porApto ? "apartamento" : "empreendimento"
-  const titulo =
-    heatMetric === "inad"
-      ? `Inadimplência acumulada (% da receita do mês) por ${escopo}`
-      : `Vacância (%) por ${escopo}`
-  const colLabel = porApto ? "Apartamento" : "Empreendimento"
-
   return (
-    <>
-      <div className="mb-4 mt-1 flex flex-wrap items-end justify-between gap-3.5">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-acr-ink">
-            {heatMetric === "inad" ? "Mapa de inadimplência" : "Mapa de vacância"}
-          </h2>
-          <p className="mt-1 text-[13.5px] text-acr-muted">
-            Por {escopo}, mês a mês — preenche conforme os fechamentos mensais são processados.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-xl border border-acr-line bg-white p-0.5">
-            <Seg on={heatMetric === "inad"} dot="var(--acr-red)" onClick={() => setHeatMetric("inad")}>
-              Inadimplência
-            </Seg>
-            <Seg on={heatMetric === "vac"} dot="var(--acr-amber)" onClick={() => setHeatMetric("vac")}>
-              Vacância
-            </Seg>
+    <Panel className="min-w-0 overflow-hidden">
+      <PanelHeader
+        title={heatMetric === "inad" ? "Mapa de inadimplência" : "Mapa de vacância"}
+        description="Histórico mensal derivado apenas dos snapshots. A coluna Hoje usa o cadastro atual."
+        source="Snapshots mensais + cadastro atual"
+        action={
+          <div className="inline-flex min-h-11 shrink-0 rounded-lg border border-acr-line-2 bg-white p-1" role="group" aria-label="Métrica do mapa de calor">
+            <ToggleButton selected={heatMetric === "inad"} onClick={() => onHeatMetricChange("inad")}>Inadimplência</ToggleButton>
+            <ToggleButton selected={heatMetric === "vac"} onClick={() => onHeatMetricChange("vac")}>Vacância</ToggleButton>
           </div>
-          <div className="inline-flex rounded-xl border border-acr-line bg-white p-0.5">
-            <Seg on={grupo === "emp"} onClick={() => setGrupo("emp")}>
-              Por empreendimento
-            </Seg>
-            <Seg on={grupo === "apto"} onClick={() => setGrupo("apto")}>
-              Por apartamento
-            </Seg>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
-      <Card>
-        <ChartCardHeader
-          title={titulo}
-          desc="Passe o mouse nas células para o valor exato"
-          source="fechamentos mensais"
-          right={
-            <div className="flex items-center gap-2 text-[11.5px] text-acr-muted">
-              <span>0%</span>
-              <div className="flex h-3 w-[150px] overflow-hidden rounded-[5px]">
-                {HEAT_SCALE_TOKENS.map((c) => (
-                  <i key={c} className="flex-1" style={{ background: c }} />
-                ))}
-              </div>
-              <span className="tabular-nums">{max}%+</span>
-            </div>
-          }
-        />
-
-        <div className="max-h-[68vh] overflow-auto">
-          <table className="w-full border-separate border-spacing-1">
-            <thead>
-              <tr>
-                <th className="sticky left-0 top-0 z-20 w-[200px] bg-white p-1 text-left text-[11px] font-semibold text-acr-muted">
-                  {colLabel}
-                </th>
-                {meses.map((m) => (
-                  <th key={m.value} className="sticky top-0 z-10 bg-white p-1 text-center text-[11px] font-semibold text-acr-muted">
-                    {m.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.empreendimento}>
-                  <td className="sticky left-0 z-10 max-w-[200px] truncate whitespace-nowrap bg-white pr-2 text-left text-[12.5px] font-medium text-acr-ink">
-                    {r.empreendimento}
-                    <small className="block text-[10.5px] font-normal text-acr-muted">
-                      {r.media !== null ? `média ${fmt1(r.media)}%` : "—"}
-                    </small>
-                  </td>
-                  {r.valores.map((v, j) => (
-                    <HeatCell key={j} value={v} max={max} title={`${r.empreendimento} · ${meses[j]?.label}`} />
-                  ))}
-                </tr>
-              ))}
-              {rows.length === 0 && (
+      {data.heat.linhas.length > 0 ? (
+        <>
+          <div className="max-h-[68vh] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green" tabIndex={0} aria-label="Mapa de calor com rolagem interna">
+            <table className="min-w-max border-separate border-spacing-0 text-xs">
+              <caption className="sr-only">
+                {heatMetric === "inad" ? "Inadimplência" : "Vacância"} por imóvel e competência, com posição atual em coluna separada.
+              </caption>
+              <thead>
                 <tr>
-                  <td colSpan={meses.length + 1} className="py-6 text-left text-[12.5px] text-acr-muted">
-                    {porApto
-                      ? "Sem linhas por apartamento para esta métrica/filtro ainda."
-                      : "Sem dados para esta métrica ainda."}
-                  </td>
+                  <th scope="col" className="sticky left-0 top-0 z-30 min-w-56 border-b border-r border-acr-line-2 bg-white px-4 py-3 text-left font-semibold text-acr-muted-2">
+                    Imóvel
+                  </th>
+                  {data.heat.meses.map((month) => (
+                    <th key={month.competencia} scope="col" className="sticky top-0 z-20 min-w-28 border-b border-acr-line-2 bg-white px-2 py-3 text-center font-semibold text-acr-muted-2">
+                      {month.label}
+                    </th>
+                  ))}
+                  <th scope="col" className="sticky right-0 top-0 z-30 min-w-32 border-b border-l-2 border-acr-green/25 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-green-strong">
+                    Hoje
+                  </th>
                 </tr>
-              )}
-              <tr>
-                <td className="sticky left-0 z-10 border-t-2 border-acr-line bg-white pt-2 text-left text-[12.5px] font-semibold text-acr-ink">
-                  {porApto ? "Média dos apartamentos" : "Carteira (média)"}
-                </td>
-                {media.map((v, j) => (
-                  <HeatCell key={j} value={v} max={max} bold title={`Média · ${meses[j]?.label}`} className="border-t-2 border-acr-line" />
+              </thead>
+              <tbody>
+                {data.heat.linhas.map((row) => (
+                  <tr key={row.imovelId}>
+                    <th scope="row" className="sticky left-0 z-10 max-w-56 border-b border-r border-acr-line bg-white px-4 py-3 text-left">
+                      <span className="block truncate font-bold text-acr-ink">{row.unidade}</span>
+                      <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.empreendimentoNome}</span>
+                    </th>
+                    {data.heat.meses.map((month) => {
+                      const cell = row.celulas.find((candidate) => candidate.competencia === month.competencia) ?? null
+                      return <HeatCell key={month.competencia} cell={cell} metric={heatMetric} month={month.label} unit={row.unidade} />
+                    })}
+                    <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center">
+                      <StatusChip status={row.hoje} />
+                    </td>
+                  </tr>
                 ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <CardNote icon={<Info size={15} className="shrink-0 text-acr-green" />}>
-          Verde = saudável · vermelho = atenção, com a mesma escala (0% a {max}%+) em qualquer filtro. A linha inferior
-          consolida a média e segue a mesma escala de cores.
-          {!porApto && heatMetric === "vac"
-            ? " Vacância por empreendimento usa o estado atual do cadastro."
-            : ""}
-        </CardNote>
-      </Card>
-    </>
+              </tbody>
+            </table>
+          </div>
+          <HeatLegend metric={heatMetric} />
+        </>
+      ) : (
+        <EmptyState
+          title="Sem histórico para o mapa"
+          description="Nenhum snapshot foi encontrado para os filtros e a competência selecionados. A posição atual não é usada para inventar meses anteriores."
+        />
+      )}
+    </Panel>
   )
 }
 
 function HeatCell({
-  value,
-  max,
-  title,
-  bold,
-  className,
+  cell,
+  metric,
+  month,
+  unit,
 }: {
-  value: number | null
-  max: number
-  title: string
-  bold?: boolean
-  className?: string
+  cell: IndicadoresHeatCell | null
+  metric: HeatMetric
+  month: string
+  unit: string
 }) {
+  const percentage = cell ? (metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual) : null
+  const status = cell?.statusOcupacao ?? null
+  const isBackfill = cell?.origem === "backfill"
+  const qualityDescription = cell?.qualidade === "parcial" ? ", qualidade parcial" : cell?.qualidade === "sem_linha" ? ", sem linha vinculada" : ""
+  const accessible = cell === null || status === null || percentage === null
+    ? `${unit}, ${month}: sem dado`
+    : `${unit}, ${month}: ${occupancyLabel(status)}, ${formatPercent(percentage)}, gap ${formatCompactCurrency(cell.valor)}${isBackfill ? ", histórico recomposto" : ""}${qualityDescription}`
+
   return (
     <td
+      aria-label={accessible}
       className={cn(
-        "h-9 min-w-[42px] rounded-lg text-center text-[11.5px] font-semibold tabular-nums transition-transform hover:scale-[1.08]",
-        heatClass(value, max),
-        bold && "font-bold",
-        className,
+        "min-w-28 border-b border-white/70 px-2 py-2 text-center align-middle tabular-nums",
+        heatTone(percentage),
       )}
-      title={`${title}: ${value === null ? "sem dados" : fmt1(value) + "%"}`}
     >
-      {value === null ? "" : fmt1(value)}
+      {percentage === null || status === null ? (
+        <span className="text-sm font-bold text-acr-muted-2">—</span>
+      ) : (
+        <div className="flex min-h-14 flex-col items-center justify-center">
+          <span className="text-sm font-bold">{formatPercent(percentage)}</span>
+          <span className="mt-0.5 text-[10px] font-medium">{occupancyLabel(status)}</span>
+          <span className="mt-0.5 text-[10px]">{formatCompactCurrency(cell?.valor ?? null)}</span>
+          {isBackfill && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Recomp.</span>}
+          {cell?.qualidade === "parcial" && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Parcial</span>}
+          {cell?.qualidade === "sem_linha" && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Sem linha</span>}
+        </div>
+      )}
     </td>
   )
 }
 
-function Seg({
-  on,
-  dot,
-  onClick,
-  children,
-}: {
-  on: boolean
-  dot?: string
-  onClick: () => void
-  children: React.ReactNode
-}) {
+function heatTone(value: number | null): string {
+  if (value === null) return "bg-[#f4f6f4] text-acr-muted-2"
+  if (value <= 1) return "acr-heat-q0"
+  if (value <= 10) return "acr-heat-q1"
+  if (value <= 25) return "acr-heat-q2"
+  if (value <= 50) return "acr-heat-q3"
+  if (value <= 75) return "acr-heat-q4"
+  return "acr-heat-q5"
+}
+
+function HeatLegend({ metric }: { metric: HeatMetric }) {
+  const ranges = ["0–1%", "1–10%", "10–25%", "25–50%", "50–75%", "75%+"]
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors",
-        on ? "bg-acr-green text-white" : "text-acr-muted hover:text-acr-ink",
-      )}
-    >
-      {dot && <span className="size-2 rounded-[3px]" style={{ background: on ? "#fff" : dot }} />}
-      {children}
-    </button>
+    <div className="border-t border-acr-line px-4 py-4 sm:px-5">
+      <p className="text-xs font-semibold text-acr-ink">Escala de {metric === "inad" ? "inadimplência" : "vacância"}</p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-acr-muted-2">
+        {ranges.map((range, index) => (
+          <span key={range} className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
+          </span>
+        ))}
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> — sem dado
+        </span>
+        <span className="font-semibold">“Recomp.” = histórico recomposto por backfill.</span>
+      </div>
+    </div>
   )
 }

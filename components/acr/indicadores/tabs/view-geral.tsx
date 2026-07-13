@@ -1,156 +1,143 @@
 "use client"
 
-import { Info } from "lucide-react"
-import { formatBRL, formatBRLk, formatPercent } from "@/lib/format"
-import type { IndicadoresData } from "@/lib/indicadores-types"
-import { Card, CardNote, ChartCardHeader } from "../primitives/chart-card"
-import { KpiCard } from "../primitives/kpi-card"
-import { MetricRow } from "../primitives/metric-row"
-import { MetricTile } from "../primitives/metric-tile"
-import { MetricToggle, type Metric } from "../primitives/metric-toggle"
-import { ProgressBar } from "../primitives/progress-bar"
-import { SectionHeader } from "../primitives/section-header"
-import { Pendencias } from "../primitives/pendencias"
-import { FaturamentoBarChart } from "../charts/faturamento-bar-chart"
-import { OcupacaoDonut } from "../charts/ocupacao-donut"
+import type { IndicadoresData, IndicadoresOccupancy } from "@/lib/indicadores-types"
+import { MonthlySeries } from "../charts/monthly-series"
+import { formatCompactCurrency, formatCount, formatPercent, type DashboardMetric } from "../lib/presentation"
+import { EmptyState, Kpi, MetricToggle, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 export function ViewGeral({
   data,
   metric,
-  setMetric,
+  onMetricChange,
 }: {
   data: IndicadoresData
-  metric: Metric
-  setMetric: (m: Metric) => void
+  metric: DashboardMetric
+  onMetricChange: (metric: DashboardMetric) => void
 }) {
-  const receita = data.receita
-  const pctOfReceita = (v: number) => (receita > 0 ? (v / receita) * 100 : 0)
-  const showFin = (v: number) => (metric === "pct" ? formatPercent(pctOfReceita(v)) : formatBRLk(v))
-  const p = data.percentuais
-  const mov = data.movimentacoes
+  const { resumo } = data
+  const quality = data.meta.qualidade
 
   return (
-    <>
-      <div className="mb-3.5 flex justify-end">
-        <MetricToggle metric={metric} setMetric={setMetric} />
-      </div>
+    <div className="space-y-4">
+      <section aria-label="Resumo financeiro" className="grid overflow-hidden rounded-xl border border-acr-line bg-acr-line sm:grid-cols-2 xl:grid-cols-5">
+        <Kpi
+          label="Receita total"
+          value={formatCompactCurrency(resumo.receitaTotal)}
+          detail="Receitas declaradas nos fechamentos elegíveis."
+          source="PackageTotals · total_receitas"
+          quality={quality}
+        />
+        <Kpi
+          label="Aluguel contratado"
+          value={formatCompactCurrency(resumo.aluguelContratado)}
+          detail="Aluguéis esperados conhecidos na competência."
+          source="Snapshots · aluguel esperado"
+          quality={quality}
+        />
+        <Kpi
+          label="Aluguel recebido"
+          value={formatCompactCurrency(resumo.aluguelRecebido)}
+          detail="Aluguel com desconto; sem usar o total da linha."
+          source="Prestação · receitas por imóvel"
+          quality={quality}
+        />
+        <Kpi
+          label="Ocupação da competência"
+          value={formatPercent(resumo.ocupacaoCompetencia.percentual)}
+          detail={`${formatCount(resumo.ocupacaoCompetencia.numerador)} de ${formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis classificados.`}
+          source="Snapshots mensais"
+          quality={quality}
+          tone={resumo.ocupacaoCompetencia.desconhecidos > 0 ? "warning" : "default"}
+        />
+        <Kpi
+          label="Repasse apurado"
+          value={formatCompactCurrency(resumo.repasseApurado)}
+          detail="Valor líquido calculado nos fechamentos."
+          source="PackageTotals · total_a_repassar"
+          quality={quality}
+        />
+      </section>
 
-      {/* KPIs principais: ocupação, receita, despesa, repasse, taxa total (sem inadimplência) */}
-      <div className="grid grid-cols-2 gap-4 min-[1100px]:grid-cols-5">
-        <KpiCard
-          label="Taxa de ocupação"
-          dot="var(--acr-green)"
-          value={formatPercent(data.ocupacao.pct)}
-          sub={`${data.ocupacao.ocupados} de ${data.ocupacao.total} imóveis ocupados`}
-        />
-        <KpiCard
-          label="Receita do mês"
-          dot="var(--acr-amber)"
-          value={metric === "pct" ? "100%" : formatBRLk(receita)}
-          sub="recebido em nome do locador"
-        />
-        <KpiCard
-          label="Despesa total"
-          dot="var(--acr-red)"
-          value={showFin(data.despesaOperacional)}
-          sub="água + IPTU + seguro (operacional)"
-        />
-        <KpiCard
-          label="Total repassado"
-          dot="var(--acr-muted-2)"
-          value={showFin(data.totalRepassar)}
-          sub="após comissões e despesas"
-        />
-        <KpiCard
-          label="Taxa total"
-          dot="var(--acr-blue)"
-          value={showFin(data.taxaTotal)}
-          sub="comissão de administração"
-        />
-      </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.75fr)]">
+        <Panel className="min-w-0 overflow-hidden">
+          <PanelHeader
+            title="Evolução até a competência selecionada"
+            description={metric === "valor" ? "Receita, aluguel recebido e repasse apurado por mês." : "Ocupação e cobertura histórica dos snapshots."}
+            source="Fechamentos elegíveis e snapshots mensais"
+            action={<MetricToggle value={metric} onChange={onMetricChange} />}
+          />
+          {data.serieMensal.length > 0 ? (
+            <div className="overflow-x-auto overscroll-x-contain">
+              <MonthlySeries series={data.serieMensal} metric={metric} />
+            </div>
+          ) : (
+            <EmptyState title="Sem série histórica" description="A série aparecerá quando existirem competências elegíveis até o mês selecionado." />
+          )}
+        </Panel>
 
-      <SectionHeader>Ocupação &amp; vacância</SectionHeader>
-      <div className="grid grid-cols-1 gap-4 min-[1100px]:grid-cols-[1.5fr_1fr]">
-        <Card>
-          <ChartCardHeader
-            title="Evolução do faturamento"
-            desc={`Receita realizada — últimos ${data.serieMensal.length} fechamentos`}
-            source="fechamentos processados"
+        <Panel>
+          <PanelHeader
+            title="Competência versus Hoje"
+            description="O histórico usa snapshots; Hoje usa o cadastro atual."
+            source="Snapshots + cadastro de imóveis"
           />
-          <FaturamentoBarChart serie={data.serieMensal} />
-        </Card>
-        <Card>
-          <ChartCardHeader title="Situação dos imóveis" desc={data.competenciaLabel} source="cadastro de imóveis (status)" />
-          <OcupacaoDonut ocupacao={data.ocupacao} />
-        </Card>
-      </div>
-
-      <SectionHeader>Movimentações do mês</SectionHeader>
-      <Card className="p-0">
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-acr-line min-[1100px]:grid-cols-4">
-          <MetricTile label="Acordos recebidos" value={String(mov.acordos.count)} sub={formatBRLk(mov.acordos.valor)} />
-          <MetricTile label="Rescisões" value={String(mov.rescisoes.count)} sub={formatBRLk(mov.rescisoes.valor)} />
-          <MetricTile
-            label="Reajustes (unidades)"
-            value={mov.reajustes.pending ? "—" : String(mov.reajustes.count)}
-            sub={mov.reajustes.pending ? "aguardando dados" : "unidades reajustadas"}
-            pending={mov.reajustes.pending}
-          />
-          <MetricTile label="Desconto aplicado" value={formatBRLk(mov.descontos)} sub="no mês" amber />
-          <MetricTile label="IPTU" value={formatBRLk(mov.despesaPorCategoria.iptu)} sub="despesa do mês" />
-          <MetricTile label="Água" value={formatBRLk(mov.despesaPorCategoria.agua)} sub="despesa do mês" />
-          <MetricTile label="Seguro incêndio" value={formatBRLk(mov.despesaPorCategoria.seguro)} sub="despesa do mês" />
-          <MetricTile
-            label="Despesa operacional"
-            value={formatBRLk(data.despesaOperacional)}
-            sub={`${formatPercent(p.despesaOperacionalPct)} da receita`}
-          />
-        </div>
-        <div className="px-5 pb-4">
-          <CardNote icon={<Info size={15} className="shrink-0 text-acr-green" />}>
-            Acordos, rescisões, descontos e despesas vêm direto da extração da prestação de contas.
-          </CardNote>
-        </div>
-      </Card>
-
-      <SectionHeader>Financeiro — taxas &amp; despesas</SectionHeader>
-      <div className="grid grid-cols-1 gap-4 min-[1100px]:grid-cols-[1.5fr_1fr]">
-        <Card>
-          <ChartCardHeader
-            title="Despesa operacional &amp; de venda"
-            desc="Operacional (repasses) e de venda (intermediação)"
-            source="prestação + regras comerciais"
-          />
-          <div className="flex flex-col">
-            <MetricRow
-              label="Taxa de administração"
-              value={formatBRL(data.taxaTotal)}
-              sub={p.administracaoPct !== null ? formatPercent(p.administracaoPct) : undefined}
-            />
-            <MetricRow
-              label="Despesa operacional"
-              value={formatBRL(data.despesaOperacional)}
-              sub={`${formatPercent(p.despesaOperacionalPct)} da receita`}
-              danger
-            />
-            <MetricRow
-              label="Despesa de venda (intermediação)"
-              value={data.despesas.vendaPct !== null ? formatPercent(data.despesas.vendaPct) : "aguardando dados"}
-              sub={data.despesas.venda === null ? "valor por contrato não extraído" : undefined}
-              pending={data.despesas.venda === null}
-            />
+          <div className="divide-y divide-acr-line px-4 sm:px-5">
+            <OccupancyBlock label={data.meta.competenciaLabel} occupancy={resumo.ocupacaoCompetencia} />
+            <OccupancyBlock label="Hoje" occupancy={resumo.ocupacaoHoje} />
           </div>
-        </Card>
-        <Card>
-          <ChartCardHeader title="Percentuais aplicados" desc="Parâmetros do fechamento" source="regras comerciais" />
-          <ProgressBar label="% Administração" value={p.administracaoPct} width={p.administracaoPct ?? 0} />
-          <ProgressBar label="% Intermediação" value={p.intermediacaoPct} width={p.intermediacaoPct ?? 0} />
-          <ProgressBar label="% Ocupação" value={p.ocupacaoPct} width={p.ocupacaoPct} />
-          <ProgressBar label="% Despesa operacional" value={p.despesaOperacionalPct} width={p.despesaOperacionalPct} amber />
-        </Card>
+        </Panel>
       </div>
 
-      <Pendencias data={data} />
-    </>
+      <Panel>
+        <PanelHeader
+          title="Retenções e inadimplência"
+          description="Valores preservam a diferença entre zero confirmado e dado ausente."
+          source="Fechamentos elegíveis da competência"
+        />
+        <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryValue label="Comissão administrativa" value={formatCompactCurrency(resumo.comissaoAdministracao)} />
+          <SummaryValue label="Comissão de intermediação" value={formatCompactCurrency(resumo.comissaoIntermediacao)} />
+          <SummaryValue label="Despesas retidas" value={formatCompactCurrency(resumo.despesasRetidas)} />
+          <SummaryValue label="Inadimplência acumulada" value={formatCompactCurrency(resumo.inadimplenciaAcumulada)} warning />
+        </dl>
+      </Panel>
+    </div>
+  )
+}
+
+function OccupancyBlock({ label, occupancy }: { label: string; occupancy: IndicadoresOccupancy }) {
+  return (
+    <div className="py-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-bold text-acr-ink">{label}</h3>
+        <span className="text-lg font-bold text-acr-ink tabular-nums">{formatPercent(occupancy.percentual)}</span>
+      </div>
+      <p className="mt-1 text-xs text-acr-muted-2">Cobertura classificada: {formatPercent(occupancy.coberturaPercentual)}</p>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {occupancy.ocupados > 0 && <CountChip status="ocupado" count={occupancy.ocupados} />}
+        {occupancy.inadimplentes > 0 && <CountChip status="inadimplente" count={occupancy.inadimplentes} />}
+        {occupancy.emRescisao > 0 && <CountChip status="em_rescisao" count={occupancy.emRescisao} />}
+        {occupancy.vagos > 0 && <CountChip status="vago" count={occupancy.vagos} />}
+        {occupancy.desconhecidos > 0 && <CountChip status="desconhecido" count={occupancy.desconhecidos} />}
+      </div>
+    </div>
+  )
+}
+
+function CountChip({ status, count }: { status: Parameters<typeof StatusChip>[0]["status"]; count: number }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <StatusChip status={status} />
+      <span className="text-xs font-bold text-acr-ink tabular-nums">{formatCount(count)}</span>
+    </span>
+  )
+}
+
+function SummaryValue({ label, value, warning = false }: { label: string; value: string; warning?: boolean }) {
+  return (
+    <div className="bg-white px-4 py-4 sm:px-5">
+      <dt className="text-xs font-medium text-acr-muted-2">{label}</dt>
+      <dd className={`mt-2 text-xl font-bold tabular-nums ${warning ? "text-acr-red" : "text-acr-ink"}`}>{value}</dd>
+    </div>
   )
 }
