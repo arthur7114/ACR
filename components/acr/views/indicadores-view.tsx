@@ -75,7 +75,7 @@ export function IndicadoresView() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <select className={selectCls} value={competencia ?? ""} onChange={(e) => setCompetencia(e.target.value || null)}>
+          <select aria-label="Competência" className={selectCls} value={competencia ?? ""} onChange={(e) => setCompetencia(e.target.value || null)}>
             {(data?.competenciasDisponiveis ?? []).length === 0 && <option value="">Sem fechamentos</option>}
             {(data?.competenciasDisponiveis ?? []).map((c) => (
               <option key={c.value} value={c.value}>
@@ -83,7 +83,7 @@ export function IndicadoresView() {
               </option>
             ))}
           </select>
-          <select className={selectCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+          <select aria-label="Empresa" className={selectCls} value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
             <option value="">Todas as empresas</option>
             {(data?.empresas ?? []).map((e) => (
               <option key={e.id} value={e.id}>
@@ -91,7 +91,7 @@ export function IndicadoresView() {
               </option>
             ))}
           </select>
-          <select className={selectCls} value={empreendimentoId} onChange={(e) => setEmpreendimentoId(e.target.value)}>
+          <select aria-label="Empreendimento" className={selectCls} value={empreendimentoId} onChange={(e) => setEmpreendimentoId(e.target.value)}>
             <option value="">Todos os empreendimentos</option>
             {(data?.empreendimentos ?? []).map((e) => (
               <option key={e.id} value={e.id}>
@@ -99,7 +99,7 @@ export function IndicadoresView() {
               </option>
             ))}
           </select>
-          <select className={selectCls} value={imovel} onChange={(e) => setImovel(e.target.value)}>
+          <select aria-label="Imóvel" className={selectCls} value={imovel} onChange={(e) => setImovel(e.target.value)}>
             <option value="">Todos os imóveis</option>
             {(data?.imoveis ?? []).map((i, idx) => (
               <option key={`${i.id}-${idx}`} value={i.id}>

@@ -33,7 +33,7 @@ const tipoMeta: Record<EventoTipo, { label: string; color: string; bg: string; i
   acordo: { label: "Acordo", color: "#9A3412", bg: "#FFF7ED", icon: Handshake },
   rescisao: { label: "Rescisão", color: "#9F1239", bg: "#FFF1F2", icon: ArrowLeftRight },
   atraso: { label: "Inadimplência paga", color: "#1D4ED8", bg: "#EFF6FF", icon: CalendarClock },
-  intermediacao: { label: "Intermediação", color: "#7C3AED", bg: "#FAF5FF", icon: Receipt },
+  intermediacao: { label: "Intermediação", color: "#0F766E", bg: "#F0FDFA", icon: Receipt },
 }
 
 export function ImovelHistoricoDrawer({
@@ -177,7 +177,7 @@ export function ImovelHistoricoDrawer({
                   <Metric label="Acordos" value={resumo.acordos} tone="#9A3412" />
                   <Metric label="Rescisões" value={resumo.rescisoes} tone="#9F1239" />
                   <Metric label="Inad. pagas" value={resumo.atrasosQuitados} tone="#1D4ED8" />
-                  <Metric label="Intermed." value={resumo.intermediacoes} tone="#7C3AED" />
+                  <Metric label="Intermed." value={resumo.intermediacoes} tone="#0F766E" />
                 </div>
               )}
 

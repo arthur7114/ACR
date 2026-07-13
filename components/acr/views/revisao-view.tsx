@@ -139,7 +139,7 @@ function getDespesaCategoria(descricao: string): {
   // reconhecimento visual só, não muda a classificação de despesa (ADR-0001).
   if (/energia|enel|coelce|cemig|cpfl|luz/i.test(descricao)) return { Icon: Zap, colorClasses: "bg-[#FFFBEB] text-[#B45309]", titulo: descricao, apto: null }
   if (/agua|água|cagece|esgoto|sabesp/i.test(descricao)) return { Icon: Droplet, colorClasses: "bg-[#ECFEFF] text-[#0E7490]", titulo: descricao, apto: null }
-  if (/iptu/i.test(descricao)) return { Icon: Building2, colorClasses: "bg-[#F5F3FF] text-[#6D28D9]", titulo: descricao, apto: null }
+  if (/iptu/i.test(descricao)) return { Icon: Building2, colorClasses: "bg-[#FFF7ED] text-[#C2410C]", titulo: descricao, apto: null }
   if (/seguro/i.test(descricao)) return { Icon: ShieldCheck, colorClasses: "bg-[#ECFDF5] text-[#047857]", titulo: descricao, apto: null }
   return { Icon: ReceiptText, colorClasses: "bg-[#F1F5F4] text-[#3D4F3F]", titulo: descricao, apto: null }
 }
@@ -335,7 +335,7 @@ function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()
   if (isIntermediacaoRow(row)) {
     return {
       label: "Intermediação",
-      classes: "border-[#E9D5FF] bg-[#F3E8FF] text-[#7C3AED]",
+      classes: "border-[#99F6E4] bg-[#CCFBF1] text-[#0F766E]",
     }
   }
 
@@ -958,8 +958,8 @@ export function RevisaoView({
                 <>
                   <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[#7C3AED]">Intermediação</p>
-                    <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#7C3AED]">{formatBRL(intermediacaoDocumento.valor)}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0F766E]">Intermediação</p>
+                    <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#0F766E]">{formatBRL(intermediacaoDocumento.valor)}</p>
                     <p className="text-[11px] text-[#6B7F6E]">{intermediacaoDocumento.percent !== null ? `${formatPercent(intermediacaoDocumento.percent)} retida` : "taxa retida"}</p>
                   </div>
                 </>
@@ -1238,13 +1238,13 @@ export function RevisaoView({
       </section>
 
       {intermediacoes.length > 0 && (
-        <section className="bg-white rounded-xl border border-[#E9D5FF] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
-          <div className="flex items-center justify-between border-b border-[#EEF1EE] bg-[#FAF5FF] p-4">
+        <section className="bg-white rounded-xl border border-[#99F6E4] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#EEF1EE] bg-[#F0FDFA] p-4">
             <div>
               <h3 className="text-[16px] font-bold text-[#1A2B1C]">Intermediação</h3>
               <p className="text-[12px] text-[#6B7F6E]">Comissão de intermediação recebida no mês — categoria separada das receitas e da inadimplência</p>
             </div>
-            <span className="text-[13px] font-semibold text-[#7C3AED] tabular-nums">{formatBRL(intermediacaoValor)}</span>
+            <span className="text-[13px] font-semibold text-[#0F766E] tabular-nums">{formatBRL(intermediacaoValor)}</span>
           </div>
           <div className="max-h-[320px] overflow-auto">
             <table className="w-full min-w-[1180px] text-sm">
@@ -1261,13 +1261,13 @@ export function RevisaoView({
                 {intermediacoes.map((item, index) => {
                   const financeiro = calcularIntermediacao(item)
                   return (
-                    <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#FAF5FF]">
+                    <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#F0FDFA]">
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                       <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.baseAluguel)}</td>
                       <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.iptu)}</td>
                       <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.totalRecebido)}</td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-[#7C3AED]">{formatBRL(financeiro.comissao)}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-[#0F766E]">{formatBRL(financeiro.comissao)}</td>
                       <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(financeiro.percentual)}</td>
                       <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.repasse)}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>

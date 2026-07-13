@@ -480,4 +480,8 @@ test("LOCMAIS: validatePackage nao soma a comissao de intermediacao em total_des
   const lista = result.prestacao?.resumo_financeiro.outras_comissoes_despesas ?? []
   assert.equal(lista.length, 7)
   assert.ok(!lista.some((d) => /intermedia/i.test(d.descricao)))
+  const resumoCheck = result.rechecks.find((item) => item.id === "resumo_financeiro")
+  assert.equal(resumoCheck?.status, "passed")
+  assert.equal(resumoCheck?.expected, 12528.44)
+  assert.equal(resumoCheck?.actual, 12528.44)
 })

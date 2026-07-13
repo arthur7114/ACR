@@ -30,6 +30,7 @@
 - CA14: fechamento apenas com comprovante de repasse bloqueia aprovacao por prestacao ausente.
 - CA14.1: fechamento `rascunho` sem job ativo aparece como "Aguardando documentos" e direciona ao upload; apenas job ativo aparece como "Processando", e falha registrada oferece nova tentativa.
 - CA14.2: intermediação com IPTU preserva aluguel como base percentual, exibe o IPTU separadamente e calcula `total recebido = aluguel + IPTU` e `repasse = total recebido - comissão`, respeitando valores explícitos do documento.
+- CA14.3: a validação do resumo final subtrai a comissão de intermediação separadamente da comissão administrativa e das despesas, sem gerar divergência falsa nem duplicar a retenção.
 
 ## Indicadores
 

@@ -10,7 +10,7 @@ Corrigir o falso estado de processamento, exibir o IPTU da intermediação sem a
 - [x] Orientar a extração a preservar o valor exato do IPTU e o total da intermediação.
 - [x] Restaurar a paleta verde → amarelo → laranja → vermelho do mapa de calor.
 - [x] Atualizar contratos e roadmap.
-- [ ] Validar testes focados, tipos, lint, build e checklist do projeto.
+- [x] Validar testes focados, tipos, lint, build e checklist do projeto.
 
 ## Concluído quando
 - [x] Grand Castelão em rascunho não aparece mais como “Processando” nem abre revisão vazia.

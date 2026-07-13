@@ -240,6 +240,16 @@ function normalizeDespesas(analysis: DespesasAnalysis): DespesasAnalysis {
   }
 }
 
+function totalComissaoIntermediacao(prestacao: PrestacaoAnalysis | null): number {
+  return roundMoney(
+    sum(
+      (prestacao?.acordos_rescisoes_recebidos ?? [])
+        .filter((item) => item.tipo === "intermediacao")
+        .map((item) => item.comissao ?? 0),
+    ),
+  )
+}
+
 function normalizeReajuste(analysis: ReajusteAnalysis): ReajusteAnalysis {
   return {
     ...analysis,
@@ -292,11 +302,12 @@ function calculateTotals(
         : resumoOutrasDespesas,
   )
   const totalComissaoDespesas = roundMoney(consolidadoRetido ?? totalComissoes + totalDespesas)
+  const comissaoIntermediacao = totalComissaoIntermediacao(prestacao)
   // Comissao realizada = comissao das linhas / total das linhas da tabela (mensal regular),
   // sem misturar comissao de acordos nem o recebido bruto com acordos.
   const realizedCommissionPercent = lineTotalReceitas > 0 ? roundPercent((lineTotalComissoes / lineTotalReceitas) * 100) : null
   const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
-  const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas)
+  const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas - comissaoIntermediacao)
   // Sem comprovante separado, mas com repasse embutido no extrato: o proprio
   // total a repassar do documento e a referencia conciliada.
   const valorComprovado = repasse?.valor ?? (repasseEmbutido ? totalARepassar : null)
@@ -712,7 +723,11 @@ function compareResumoFormula(prestacao: PrestacaoAnalysis | null, totals: Packa
     }
   }
 
-  const expected = roundMoney(prestacao.resumo_financeiro.recebidos_em_nome_locador - prestacao.resumo_financeiro.total_comissao_despesas)
+  const expected = roundMoney(
+    prestacao.resumo_financeiro.recebidos_em_nome_locador -
+      prestacao.resumo_financeiro.total_comissao_despesas -
+      totalComissaoIntermediacao(prestacao),
+  )
   const actual = prestacao.resumo_financeiro.total_a_repassar
 
   if (actual === null) {

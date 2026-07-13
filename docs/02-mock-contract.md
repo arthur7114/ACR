@@ -52,6 +52,8 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 
 - Ponto alterado: a Intermediação tinha uma única coluna "Valor recebido"; agora separa aluguel/base, IPTU, total recebido, comissão, percentual e repasse. A comissão permanece calculada somente sobre o aluguel/base.
 - Por que: o IPTU recebido junto da intermediação compõe o total e o repasse, mas não pode distorcer o percentual da comissão.
+- Regra de conciliação: a fórmula final subtrai comissão administrativa, despesas e comissão de intermediação em baldes separados; a intermediação não pode reaparecer como despesa nem ser omitida do repasse.
+- Refinamento visual autorizado: Intermediação usa acento teal no lugar do roxo e os filtros de Indicadores recebem nomes acessíveis; a escala de inadimplência permanece verde → amarelo → laranja → vermelho.
 - Estado corrigido: `rascunho` sem processamento deixa de aparecer como "Processando" e volta ao upload, evitando abrir uma revisão sem análise.
 - Paleta confirmada: o mapa de calor volta a usar seis faixas de verde a vermelho, passando por amarelo e laranja.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
