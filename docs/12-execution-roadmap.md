@@ -2,11 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` iniciou e concluiu o Slice 0 (contrato e baseline); schema, snapshots, API e interface ainda nao foram implementados.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
+
+Executar o Slice 1 de `docs/PLAN-indicadores-operacionais.md`: criar e validar a migration aditiva `202607130001_indicadores_snapshots.sql`, sem backfill e sem alterar tabelas-fonte. Em paralelo, preparar as funcoes puras de dominio e o shell responsivo dentro das allowlists congeladas.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
 
@@ -31,6 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
+| Indicadores operacionais | slice 0 concluido | Contrato, formulas, cobertura, baseline e divergencia da quarta aba documentados; proximo gate e a migration aditiva de snapshots. |
 
 ## Decisoes registradas
 
@@ -88,8 +91,21 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O processamento de pacote roda DESTACADO do request (fire-and-forget no servidor Node/EasyPanel, sem `await` antes de responder 202), com snapshot de progresso em `fechamentos.processamento_*` e acompanhamento por polling no endpoint leve `GET /api/fechamentos/[id]/processamento`. O GET principal do fechamento nao depende dessas colunas (busca resiliente), para nao quebrar a revisao se a migration ainda nao foi aplicada. Job sem atualizacao por 15 min e considerado travado. Fechar a aba nao mata o job; a tela reconecta no reload.
 
 - Notificacoes in-app vivem na tabela `notificacoes` e aparecem no sino do topo (badge de nao-lidas) com toast (sonner) e notificacao do SO (Notifications API, permissao pedida no clique do sino); um poller global de 12s detecta conclusao/falha de analise mesmo fora da tela de processamento. A conclusao/falha do workflow cria a notificacao no servidor.
+- Indicadores sao operacionais-financeiros, nao de investimento. A quarta aba e "Receitas por imovel" porque a fonte e a prestacao da competencia, nao um ledger bancario.
+- Competencias parciais permanecem visiveis, mas exibem cobertura e qualidade. Ocupacao historica vem de `imovel_competencias`; cadastro atual aparece apenas como "Hoje".
+- O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Indicadores operacionais: contrato e baseline (Slice 0)
+
+Status: done.
+Job: congelar o contrato operacional-financeiro de `/indicadores` antes de alterar schema ou interface, registrar a divergencia da quarta aba e medir o baseline real.
+Outcome entregue: branch `codex/indicadores-operacional-financeiro`; plano executavel em `docs/PLAN-indicadores-operacionais.md`; mock, dominio e CA-IND02 a CA-IND12 atualizados. "Registro de pagamentos" foi substituido contratualmente por "Receitas por imovel"; foram definidos cobertura sem limiar arbitrario, fontes monetarias, ponte financeira, realizacao do aluguel, status mensal e separacao entre competencia e Hoje.
+Validacao: `pnpm lint`, `pnpm exec tsc --noEmit` e `pnpm build` passaram; suite completa passou 92/92; `scripts/audit-indicadores.ts` passou contra a base configurada. Oraculos sanitizados: 05/2026 receita R$ 41.244,29 versus aluguel cadastrado R$ 67.339,69; 03/2026 receita R$ 92.658,06; ambos exibiam a mesma ocupacao atual de 93,8% (106/113), confirmando a necessidade dos snapshots e da cobertura explicita.
+Decisoes: dados processados e pendentes entram como preliminares; rascunhos e arquivados nao entram; snapshots recompostos sao best-effort identificados; `null` nao vira zero; indicadores de investimento ficam fora.
+Arquivos/docs impactados: `docs/PLAN-indicadores-operacionais.md`, `docs/02-mock-contract.md`, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: Slice 1, migration aditiva de `imovel_competencias`, validada em banco descartavel antes de qualquer backfill.
 
 ### 2026-07-13 - Intermediação com IPTU, estado real do processamento e paleta dos indicadores
 

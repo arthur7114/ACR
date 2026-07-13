@@ -35,6 +35,17 @@
 ## Indicadores
 
 - CA-IND01: o mapa de calor usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja, tanto nas células quanto na legenda.
+- CA-IND02: a API inclui apenas fechamentos elegiveis, exclui rascunhos/arquivados/analises ausentes e mantem a ultima analise valida com estado "Em atualizacao" durante reprocessamento.
+- CA-IND03: toda competencia informa pares esperados, processados, aprovados, pendentes, rascunhos, em atualizacao e ausentes, alem de cobertura de imoveis, snapshots e lacunas; so aparece como completa sem par ou lacuna pendente.
+- CA-IND04: receita total, aluguel contratado, aluguel recebido, comissoes, despesas retidas, despesa operacional detalhada, repasse apurado e repasse comprovado seguem as fontes definidas em `docs/PLAN-indicadores-operacionais.md`; ausencia permanece `null` e zero confirmado permanece `0`.
+- CA-IND05: a ponte financeira separa comissao administrativa, despesas do locador e intermediação, preserva o sinal da diferenca `comprovado - apurado` e alerta residuo acima de R$ 0,01.
+- CA-IND06: realizacao do aluguel reconcilia contratado, vacancia, inadimplencia do mes, descontos, outros ajustes e recebido; nao usa receita total como aluguel nem reconstroi potencial de forma circular.
+- CA-IND07: ocupacao da competencia usa snapshots mensais com status ocupado, inadimplente, vago, em rescisao ou desconhecido; linha zerada ambigua nunca vira vago. O cadastro atual aparece separadamente como "Hoje".
+- CA-IND08: filtros de competencia, empresa, empreendimento e imovel por UUID recalculam todos os indicadores; aba e modos `metric`/`heatMetric` persistem na URL; requests obsoletos nao sobrescrevem o estado mais novo.
+- CA-IND09: serie, ranking, mapa e tabela respeitam a competencia selecionada e nao exibem meses futuros; medias e taxas da carteira sao ponderadas.
+- CA-IND10: a quarta aba se chama "Receitas por imovel" e deixa claro que a origem e a prestacao da competencia; oferece uma linha por imovel/competencia, busca, ordenacao, paginacao e CSV.
+- CA-IND11: o heatmap historico deriva apenas dos snapshots, identifica historico recomposto, exibe `—` para ausente, mostra valor/estado alem da cor e separa a coluna "Hoje".
+- CA-IND12: `/indicadores` e o shell funcionam sem overflow da pagina em 360, 390, 768, 1024, 1280 e 1440 px; tabs, toggles, tabelas e menu sao operaveis por teclado, com foco visivel, contraste AA e reduced motion.
 
 ## IPTU - Contas a pagar manual
 

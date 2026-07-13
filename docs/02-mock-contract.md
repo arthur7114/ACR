@@ -31,7 +31,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis e botao "Sincronizar dos fechamentos" (popula/atualiza o cadastro de imoveis a partir das prestacoes ja processadas). Cada imovel e clicavel e abre um drawer de Historico do imovel (linha do tempo derivada das prestacoes: aluguel pago/inadimplente/vago, acordos, rescisoes, inadimplencia paga e intermediacao), com resumo e periodos por inquilino. O drawer tambem traz a secao "Acordos parcelados" (Nivel 2): acordos/rescisoes parcelados detectados nas prestacoes, com barra de progresso (parcelas pagas/total), valor pago/total e baixa por parcela (automatica pela prestacao ou manual, clicando na parcela). Botao "Sincronizar dos fechamentos" tambem popula os acordos parcelados.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 - `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
-- `indicadores`: painel de KPIs da carteira, com sub-abas Visao geral, Receita & repasse, Mapa de calor e Registro de pagamentos. Filtros por competencia, empreendimento e imovel; alternancia valor x percentual. Todos os numeros derivam de dados ja existentes (fechamentos processados, `analise_completa`/PackageTotals e cadastro de imoveis).
+- `indicadores`: painel operacional-financeiro da carteira, com sub-abas Visao geral, Receita & repasse, Mapa de calor e Receitas por imovel. Filtros por competencia, empresa, empreendimento e imovel por UUID; alternancia valor x percentual. Todos os numeros derivam de fechamentos elegiveis, `analise_completa`/PackageTotals, snapshots mensais e cadastro de imoveis, com cobertura e qualidade explicitas.
 - `iptu`: tela operacional de contas a pagar de IPTU por imovel. Cards de resumo (aberto, vencido, pago, parcelas vencidas, proximo vencimento), barra de filtros (imobiliaria, empreendimento, ano, status calculado, mes de vencimento, busca), tabela densa de parcelas com selecao, e acoes de geracao de carnes em lote (com revisao), edicao de parcela, ajuste do numero de parcelas do carne, baixa individual e baixa em massa. Somente operacional: nao gera lancamento no eGestor nem altera fechamento financeiro.
 
 ### Adicao registrada — tela `iptu` (2026-07-07)
@@ -56,6 +56,15 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Refinamento visual autorizado: Intermediação usa acento teal no lugar do roxo e os filtros de Indicadores recebem nomes acessíveis; a escala de inadimplência permanece verde → amarelo → laranja → vermelho.
 - Estado corrigido: `rascunho` sem processamento deixa de aparecer como "Processando" e volta ao upload, evitando abrir uma revisão sem análise.
 - Paleta confirmada: o mapa de calor volta a usar seis faixas de verde a vermelho, passando por amarelo e laranja.
+- Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
+
+### Substituicao registrada — indicadores operacionais confiaveis (2026-07-13)
+
+- Ponto alterado: a quarta aba deixa de se chamar "Registro de pagamentos" e passa a ser "Receitas por imovel"; a cascata de potencial reconstruido e substituida pela realizacao do aluguel contratado; ocupacao historica deixa de reutilizar o cadastro atual.
+- Por que: a fonte atual registra receitas declaradas na prestacao por competencia, nao liquidacoes de um livro bancario. O nome antigo, a cascata circular e a ocupacao atual aplicada a meses anteriores davam uma certeza que a base nao sustentava.
+- Melhoria substituta: cobertura persistente e competencia preliminar/completa; KPIs com fonte e qualidade; ponte financeira; aluguel contratado versus recebido; snapshots mensais para ocupacao/vacancia/inadimplencia; coluna separada "Hoje"; tabela por imovel com busca, ordenacao, paginacao e CSV.
+- Responsividade: sidebar fixa em desktop, rail em tablet e menu Sheet no mobile, preservando a densidade operacional sem overflow da pagina.
+- Fonte da decisao e formulas: `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
 ## Fluxo contratado

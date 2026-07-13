@@ -18,6 +18,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Empreendimento: agrupador de imoveis.
 - Regra comercial: taxa de administracao e taxa de intermediacao por imobiliaria + empreendimento, com uma regra ativa por par.
 - Imovel: unidade, inquilino, status, aluguel esperado e taxa de administracao.
+- Imovel por competencia: snapshot mensal imutavel na leitura, ligado ao imovel e ao fechamento que o materializou, com status de ocupacao, aluguel esperado/recebido, receita, desconto, comissao, repasse, origem, qualidade, versao de calculo e checksum. O cadastro do imovel continua sendo a fonte separada da posicao atual ("Hoje").
 - Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca e correcao manual.
 - Acordo/rescisao recebido: item extraido da prestacao quando houver pagamento, acordo, rescisao, parcela ou decisao recebida no mes, com tipo, inquilino, unidade, valor, competencia original, competencia de recebimento, observacao e confianca.
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
@@ -27,6 +28,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Envio eGestor: `egestor_envios` registra acao, payload, resposta, status e erro de envio, retry de anexo e revalidacao.
 - Auditoria de status: `fechamento_status_eventos` registra status anterior, status novo, usuario, motivo e data/hora para aprovacao e transicoes eGestor.
 - Revalidacao eGestor: lancamento enviado pode gravar `revalidado_em`, `revalidacao_status` e `revalidacao_mensagem`; revalidacao nao cria novo lancamento financeiro.
+- Cobertura de indicadores: uniao dos pares ativos imobiliaria + empreendimento presentes em regras comerciais ou imoveis ativos, comparada aos fechamentos elegiveis e snapshots da competencia.
 
 ## RBAC
 
@@ -58,3 +60,11 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.
 - Lancamento eGestor com `egestor_codigo` salvo e imutavel para reenvio V1; operador pode apenas revalidar status ou reenviar anexos pendentes.
 - Falha de anexo eGestor nao desfaz recebimento/pagamento criado; o lancamento fica `anexo_pendente` ate retry bem-sucedido.
+- Indicadores incluem apenas fechamentos nao arquivados, com `analise_completa`, nos status `pendente_revisao`, `processado_com_sucesso`, `processado_com_alertas`, `aprovado`, `preparado_egestor`, `lancado_egestor` e `erro_egestor`. Reprocessamento ativo preserva a ultima analise valida e sinaliza "Em atualizacao".
+- A competencia dos indicadores e `completa` somente quando todos os pares esperados foram processados e nao ha lacuna estrutural; caso contrario e `preliminar`.
+- Receita total, aluguel contratado e aluguel recebido sao conceitos diferentes: receita total vem de `PackageTotals.total_receitas`; contratado vem do aluguel esperado dos snapshots; recebido usa `aluguel_com_desconto`, com fallback apenas para `aluguel`.
+- Ponte financeira: `receita bruta - comissao administrativa - despesas do locador - comissao de intermediacao = repasse apurado`, tolerancia de R$ 0,01. Comprovado ausente permanece `null`; repasse embutido e rotulado como informado no extrato.
+- Realizacao do aluguel: `contratado - vacancia - inadimplencia do mes - descontos +/- outros ajustes = recebido`. Inadimplencia acumulada permanece separada.
+- Status mensal do imovel e um de `ocupado`, `inadimplente`, `vago`, `em_rescisao` ou `desconhecido`. Zero sem evidencia suficiente e `desconhecido`, nunca vacancia.
+- Taxa de ocupacao mensal usa ocupado + inadimplente + em rescisao no numerador e adiciona vago no denominador; desconhecidos ficam fora do denominador e reduzem a cobertura.
+- `null` significa dado ausente; `0` significa zero confirmado. Series terminam na competencia selecionada e taxas agregadas sao ponderadas pelos seus denominadores.
