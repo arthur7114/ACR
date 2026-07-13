@@ -2,13 +2,13 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0 e 1: contrato/baseline e schema aditivo de snapshots. Persistencia, backfill, API e interface ainda nao foram concluidos.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1 e 2: contrato/baseline, schema aditivo e materializacao idempotente de snapshots no processamento e na correcao. Backfill, API agregada e interface ainda nao foram concluidos.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
 
-Executar o Slice 2 de `docs/PLAN-indicadores-operacionais.md`: implementar as funcoes puras e a persistencia idempotente de snapshots no processamento, reprocessamento e correcao, mantendo zero diferente de `null` e as regras de classificacao congeladas. Em paralelo, concluir e validar o shell responsivo.
+Executar o Slice 3 de `docs/PLAN-indicadores-operacionais.md`: criar backfill seguro, dry-run por padrao, verificacao de cobertura/checksum e canario sem alterar tabelas-fonte. Em paralelo, concluir e validar o shell responsivo e preparar os testes RED da agregacao da API.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | slice 1 concluido | Contrato e baseline congelados; migration aditiva de `imovel_competencias` validada em PostgreSQL descartavel; proximo gate e materializar snapshots no fluxo. |
+| Indicadores operacionais | slice 2 concluido | Contrato e schema congelados; snapshots deterministicos sao materializados por competencia no processamento/reprocessamento e na correcao; proximo gate e o backfill seguro. |
 
 ## Decisoes registradas
 
@@ -96,6 +96,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Indicadores: materializacao por competencia (Slice 2)
+
+Status: done.
+Job: transformar a prestacao processada em uma linha mensal deterministica por imovel, sem confundir ausencia com zero e sem inferir vacancia a partir de linha zerada.
+Outcome entregue: `lib/indicadores-domain.ts` concentra normalizacao, chave composta, classificacao de ocupacao, agregacao monetaria, taxa de ocupacao e reconciliacoes puras. `lib/server/indicadores-snapshots.ts` vincula linhas por imobiliaria + empreendimento + unidade normalizada, agrupa aluguel e encargos sem substituir aluguel por total, cria snapshot `desconhecido`/`sem_linha` para imovel esperado sem correspondencia, calcula checksum estavel e faz upsert por `imovel_id,competencia`. O fluxo de processamento/reprocessamento e a correcao manual atualizam o snapshot automaticamente.
+Validacao: 25/25 testes focados de dominio e builder passaram; suite completa passou 117/117; `pnpm exec tsc --noEmit` e `pnpm lint` passaram. Os testes cobrem unidades homonimas em empreendimentos distintos, aluguel + multa, zero versus `null`, vacancia apenas explicita, linha sem vinculo, snapshot sem linha, origem de backfill, ordem/checksum deterministas e tolerancia financeira de R$ 0,01. O upsert foi validado por contrato e pela constraint criada no Slice 1; a escrita real fica para o canario do Slice 3 em banco descartavel/staging.
+Decisoes: aluguel recebido usa `aluguel_com_desconto ?? aluguel`, nunca `total`; texto de inquilino e observacao compoe a evidencia explicita; snapshot sem aluguel esperado e parcial; ausencia de linha preserva valores monetarios como `null`; reprocessamento substitui a mesma chave mensal por upsert idempotente.
+Arquivos/docs impactados: `lib/indicadores-domain.ts`, `lib/indicadores-domain.test.ts`, `lib/server/indicadores-snapshots.ts`, `lib/server/indicadores-snapshots.test.ts`, `lib/server/persist-package.ts`, `app/api/fechamentos/[id]/corrigir/route.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: Slice 3, scripts de backfill/verificacao com dry-run padrao, filtros, canario e repeticao sem mudanca de checksum.
 
 ### 2026-07-13 - Indicadores: schema mensal de snapshots (Slice 1)
 

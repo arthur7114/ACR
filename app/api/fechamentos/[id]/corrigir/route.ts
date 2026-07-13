@@ -3,16 +3,14 @@ import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { validatePackage } from "@/lib/server/package-rechecks"
 import { getCommercialRuleForValidation } from "@/lib/server/regras-comerciais"
 import { persistValidacoes } from "@/lib/server/persist-package"
+import { materializeIndicadoresSnapshots } from "@/lib/server/indicadores-snapshots"
+import { roundMoney } from "@/lib/indicadores-domain"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const camposPermitidos = new Set(["aluguel"])
 // Correcao so e permitida enquanto o fechamento ainda esta em revisao.
 const statusEditavel = new Set(["pendente_revisao", "processado_com_sucesso"])
-
-function roundMoney(value: number) {
-  return Math.round((value + Number.EPSILON) * 100) / 100
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -39,7 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const supabase = createSupabaseAdmin()
     const { data: fechamento, error: fetchError } = await supabase
       .from("fechamentos")
-      .select("id, imobiliaria_id, empreendimento_id, status, analise_completa")
+      .select("id, imobiliaria_id, empreendimento_id, competencia, status, analise_completa")
       .eq("id", id)
       .maybeSingle()
 
@@ -144,6 +142,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       .eq("id", id)
 
     if (updateError) throw updateError
+
+    await materializeIndicadoresSnapshots({
+      supabase,
+      fechamentoId: id,
+      imobiliariaId: fechamento.imobiliaria_id,
+      empreendimentoId: fechamento.empreendimento_id,
+      competencia: fechamento.competencia,
+      analysis: novaAnalise,
+    })
 
     // Ressincroniza validacoes (recheck/guardrail/parecer) preservando as resolvidas.
     const { error: deleteError } = await supabase.from("validacoes").delete().eq("fechamento_id", id)

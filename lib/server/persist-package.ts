@@ -11,6 +11,7 @@ import type {
 } from "@/lib/prestacao-types"
 import type { FechamentoContext } from "@/lib/fechamento-context"
 import { normalizeCadastroKey } from "./cadastros"
+import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
@@ -156,6 +157,15 @@ export async function persistPackage(input: PersistPackageInput) {
     rechecks: analysis.rechecks,
     guardrails: analysis.guardrails,
     resolvedValidations,
+  })
+
+  await materializeIndicadoresSnapshots({
+    supabase,
+    fechamentoId: fechamento.id as string,
+    imobiliariaId: imobiliaria.id as string,
+    empreendimentoId: empreendimento.id as string,
+    competencia,
+    analysis,
   })
 
   return {
