@@ -14,13 +14,25 @@ export default function AppShellLayout({ children }: { children: React.ReactNode
     <CadastrosProvider>
       <ProcessingProvider>
         <NotificationsProvider>
-          <div className="min-h-screen bg-[#F8FAF8]">
+          <div className="min-h-dvh overflow-x-clip bg-acr-page pt-14">
+            <a
+              href="#main-content"
+              className="sr-only fixed left-4 top-3 z-50 rounded-lg bg-acr-ink px-4 py-3 text-sm font-semibold text-white focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-acr-green focus:ring-offset-2"
+            >
+              Pular para o conteúdo
+            </a>
             <Sidebar />
             <Topbar
               showNotifications={showNotifications}
               onToggleNotifications={() => setShowNotifications((value) => !value)}
             />
-            <main className="ml-[220px] mt-14 p-6">{children}</main>
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="min-w-0 p-4 focus:outline-none md:ml-[72px] md:p-6 min-[1200px]:!ml-[220px]"
+            >
+              {children}
+            </main>
           </div>
         </NotificationsProvider>
       </ProcessingProvider>

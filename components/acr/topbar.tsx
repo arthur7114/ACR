@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Bell } from "lucide-react"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { NotificationsPanel } from "./notifications-panel"
+import { MobileNavigationSheet } from "./sidebar"
 import { useNotifications } from "@/lib/contexts/notifications-context"
 
 type Crumb = {
@@ -103,9 +104,22 @@ export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps
   const fechamentoId = extractFechamentoId(pathname)
   const summary = useFechamentoSummary(fechamentoId)
   const crumbs = buildCrumbs(pathname, summary)
+  const currentCrumb = crumbs[crumbs.length - 1]?.label ?? "Fechamentos"
   const { naoLidas, marcarLidas, pedirPermissaoNavegador } = useNotifications()
+  const notificationsTriggerRef = useRef<HTMLButtonElement>(null)
+
+  const closeNotifications = useCallback(() => {
+    if (!showNotifications) return
+    onToggleNotifications()
+    requestAnimationFrame(() => notificationsTriggerRef.current?.focus())
+  }, [onToggleNotifications, showNotifications])
 
   const handleToggleNotifications = () => {
+    if (showNotifications) {
+      closeNotifications()
+      return
+    }
+
     if (!showNotifications) {
       // Gesto do usuario: bom momento para pedir permissao de notificacao do SO.
       pedirPermissaoNavegador()
@@ -115,42 +129,62 @@ export function Topbar({ showNotifications, onToggleNotifications }: TopbarProps
   }
 
   return (
-    <header className="fixed top-0 left-[220px] right-0 h-14 bg-white border-b border-[#EEF1EE] pl-6 pr-6 flex items-center justify-between z-30">
-      <nav className="flex items-center gap-2 text-[13px]">
-        {crumbs.map((crumb, i) => (
-          <span key={`${crumb.label}-${i}`} className="flex items-center gap-2">
-            {i > 0 && <span className="text-[#D5DDD6]">/</span>}
-            {crumb.href && i < crumbs.length - 1 ? (
-              <Link href={crumb.href} className="text-[#6B7F6E] hover:text-[#1A2B1C]">
-                {crumb.label}
-              </Link>
-            ) : (
-              <span
-                className={i === crumbs.length - 1 ? "text-[#1A2B1C] font-medium" : "text-[#6B7F6E]"}
-              >
-                {crumb.label}
-              </span>
-            )}
-          </span>
-        ))}
-      </nav>
+    <header className="fixed left-0 right-0 top-0 z-30 flex h-14 items-center justify-between border-b border-acr-line bg-white pl-2 pr-4 md:left-[72px] md:px-6 min-[1200px]:!left-[220px]">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
+        <MobileNavigationSheet />
 
-      <div className="flex items-center gap-4">
+        <nav aria-label="Caminho da página" className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-acr-ink md:hidden" title={currentCrumb}>
+            {currentCrumb}
+          </span>
+
+          <div className="hidden min-w-0 items-center gap-2 overflow-hidden text-[13px] md:flex">
+            {crumbs.map((crumb, i) => (
+              <span key={`${crumb.label}-${i}`} className="flex min-w-0 items-center gap-2">
+                {i > 0 && <span className="shrink-0 text-[#D5DDD6]">/</span>}
+                {crumb.href && i < crumbs.length - 1 ? (
+                  <Link
+                    href={crumb.href}
+                    className="truncate text-acr-muted-2 transition-colors hover:text-acr-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acr-green"
+                  >
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span
+                    className={`truncate ${
+                      i === crumbs.length - 1 ? "font-medium text-acr-ink" : "text-acr-muted"
+                    }`}
+                  >
+                    {crumb.label}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        </nav>
+      </div>
+
+      <div className="flex shrink-0 items-center">
         <div className="relative">
           <button
+            ref={notificationsTriggerRef}
+            type="button"
             onClick={handleToggleNotifications}
-            className="relative p-2 rounded-lg hover:bg-[#EEF1EE] transition-colors"
+            className="relative flex size-11 items-center justify-center rounded-lg transition-colors hover:bg-acr-line focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acr-green focus-visible:ring-offset-2"
             aria-label="Notificações"
+            aria-expanded={showNotifications}
+            aria-controls="notifications-panel"
+            aria-haspopup="dialog"
           >
-            <Bell size={18} className="text-[#3D4F3F]" />
+            <Bell size={18} aria-hidden="true" className="text-acr-muted-2" />
             {naoLidas > 0 && (
-              <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#DC2626] text-white text-[10px] font-bold flex items-center justify-center">
+              <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#DC2626] px-1 text-[10px] font-bold text-white">
                 {naoLidas > 9 ? "9+" : naoLidas}
               </span>
             )}
           </button>
 
-          {showNotifications && <NotificationsPanel onClose={onToggleNotifications} />}
+          {showNotifications && <NotificationsPanel onClose={closeNotifications} />}
         </div>
       </div>
     </header>

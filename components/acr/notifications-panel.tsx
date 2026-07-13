@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { Bell, CheckCircle2, AlertTriangle } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useNotifications } from "@/lib/contexts/notifications-context"
@@ -22,6 +23,20 @@ interface NotificationsPanelProps {
 export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
   const router = useRouter()
   const { notificacoes, marcarLidas } = useNotifications()
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    closeButtonRef.current?.focus()
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      onClose()
+    }
+
+    document.addEventListener("keydown", closeOnEscape)
+    return () => document.removeEventListener("keydown", closeOnEscape)
+  }, [onClose])
 
   const abrir = (fechamentoId: string | null, id: string) => {
     void marcarLidas([id])
@@ -30,49 +45,64 @@ export function NotificationsPanel({ onClose }: NotificationsPanelProps) {
   }
 
   return (
-    <div className="absolute top-12 right-0 w-96 bg-white rounded-xl shadow-xl border border-[#D5DDD6] z-50 overflow-hidden">
-      <div className="flex justify-between items-center p-4 border-b border-[#EEF1EE]">
-        <h3 className="text-[16px] font-bold text-[#1A2B1C]">Notificações</h3>
-        <button onClick={onClose} className="text-sm text-[#2D8C3A] hover:underline">
+    <div
+      id="notifications-panel"
+      role="dialog"
+      aria-labelledby="notifications-title"
+      className="fixed inset-x-4 top-16 z-50 flex max-h-[calc(100dvh-5rem)] w-auto flex-col overflow-hidden rounded-xl border border-[#D5DDD6] bg-white shadow-md md:absolute md:inset-x-auto md:right-0 md:top-12 md:w-96 md:max-w-[calc(100vw-7rem)]"
+    >
+      <div className="flex min-h-14 items-center justify-between border-b border-acr-line py-1 pl-4 pr-2">
+        <h3 id="notifications-title" className="text-[16px] font-bold text-acr-ink">
+          Notificações
+        </h3>
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onClose}
+          className="flex h-11 min-w-11 items-center justify-center rounded-lg px-2 text-sm font-medium text-acr-green-strong transition-colors hover:bg-acr-green-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acr-green focus-visible:ring-offset-2"
+        >
           Fechar
         </button>
       </div>
 
       {notificacoes.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EFF7F1]">
-            <Bell size={18} className="text-[#2D8C3A]" />
+          <div className="flex size-10 items-center justify-center rounded-full bg-acr-green-tint">
+            <Bell size={18} aria-hidden="true" className="text-acr-green" />
           </div>
           <div>
-            <p className="text-[14px] font-bold text-[#1A2B1C]">Tudo em dia</p>
-            <p className="mt-1 text-[13px] text-[#6B7F6E]">Avisamos aqui quando uma análise terminar.</p>
+            <p className="text-[14px] font-bold text-acr-ink">Tudo em dia</p>
+            <p className="mt-1 text-[13px] text-acr-muted-2">Avisamos aqui quando uma análise terminar.</p>
           </div>
         </div>
       ) : (
-        <ul className="max-h-96 overflow-y-auto divide-y divide-[#EEF1EE]">
+        <ul className="min-h-0 flex-1 divide-y divide-acr-line overflow-y-auto">
           {notificacoes.map((n) => {
             const ok = n.tipo === "analise_concluida"
             return (
               <li key={n.id}>
                 <button
+                  type="button"
                   onClick={() => abrir(n.fechamento_id, n.id)}
-                  className={`w-full text-left px-4 py-3 flex gap-3 hover:bg-[#F4F9F5] transition-colors ${
-                    n.lida ? "" : "bg-[#F4F9F5]"
+                  className={`flex min-h-11 w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-acr-green-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-acr-green ${
+                    n.lida ? "" : "bg-acr-green-tint"
                   }`}
                 >
                   {ok ? (
-                    <CheckCircle2 size={18} className="text-[#22C55E] shrink-0 mt-0.5" />
+                    <CheckCircle2 size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-[#16803A]" />
                   ) : (
-                    <AlertTriangle size={18} className="text-[#DC2626] shrink-0 mt-0.5" />
+                    <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-[#DC2626]" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
-                      <span className="text-[13px] font-bold text-[#1A2B1C]">{n.titulo}</span>
-                      <span className="text-[11px] text-[#9CA89E] shrink-0">{tempoRelativo(n.criado_em)}</span>
+                      <span className="break-words text-[13px] font-bold text-acr-ink">{n.titulo}</span>
+                      <span className="shrink-0 text-[11px] text-acr-muted-2">{tempoRelativo(n.criado_em)}</span>
                     </span>
-                    {n.corpo && <span className="mt-0.5 block text-[12px] text-[#6B7F6E]">{n.corpo}</span>}
+                    {n.corpo && <span className="mt-0.5 block break-words text-[12px] text-acr-muted-2">{n.corpo}</span>}
                   </span>
-                  {!n.lida && <span className="mt-1 h-2 w-2 rounded-full bg-[#2D8C3A] shrink-0" />}
+                  {!n.lida && (
+                    <span className="mt-1 size-2 shrink-0 rounded-full bg-acr-green" aria-label="Não lida" />
+                  )}
                 </button>
               </li>
             )

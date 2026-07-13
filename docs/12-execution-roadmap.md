@@ -2,7 +2,7 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1 e 2: contrato/baseline, schema aditivo e materializacao idempotente de snapshots no processamento e na correcao. Backfill, API agregada e interface ainda nao foram concluidos.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0, 1, 2 e 5: contrato/baseline, schema aditivo, materializacao idempotente de snapshots e shell responsivo. Backfill, API agregada e conteudo das quatro abas ainda nao foram concluidos.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | slice 2 concluido | Contrato e schema congelados; snapshots deterministicos sao materializados por competencia no processamento/reprocessamento e na correcao; proximo gate e o backfill seguro. |
+| Indicadores operacionais | slices 0-2 e 5 concluidos | Contrato, schema, materializacao e shell responsivo prontos; proximo gate e o backfill seguro, seguido da API e das quatro abas. |
 
 ## Decisoes registradas
 
@@ -96,6 +96,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Shell responsivo (Slice 5)
+
+Status: done.
+Job: tornar a navegacao autenticada utilizavel em desktop, tablet e mobile sem alterar o primitivo compartilhado de sidebar.
+Outcome entregue: sidebar fixa de 220px a partir de 1200px, rail de 72px entre 768 e 1199px e menu em `Sheet` abaixo de 768px; topbar e conteudo acompanham os mesmos offsets. O shell ganhou skip link, alvo de conteudo focavel, breadcrumbs compactos no mobile, alvos de toque de 44px e painel de notificacoes contido na viewport. O `Sheet` devolve o foco ao botao de abertura ao fechar.
+Validacao: ESLint focado passou; o typecheck completo estava verde antes da abertura dos testes RED paralelos de backfill/API. QA autenticada no navegador confirmou em 390, 768, 1024 e 1440px: nenhum overflow horizontal da pagina, sidebar 0/72/72/220px, offsets de header e main 0/72/72/220px, menu mobile apenas abaixo de 768px e zero erro de console. Em 390px, o painel de notificacoes ficou entre 16px e 374px e o foco retornou ao gatilho apos a animacao de fechamento. A QA detectou e corrigiu o conflito de precedencia do offset em 1440px antes do commit.
+Decisoes: breakpoint largo permanece em 1200px conforme contrato; `components/ui/sidebar.tsx` nao foi editado; tabelas e heatmap poderao ter scroll interno, mas o shell evita overflow da pagina.
+Arquivos/docs impactados: `app/(app)/layout.tsx`, `components/acr/sidebar.tsx`, `components/acr/topbar.tsx`, `components/acr/notifications-panel.tsx`, `docs/12-execution-roadmap.md`.
+Proxima acao: manter o shell congelado e implementar o conteudo responsivo das abas nos Slices 6 e 7.
 
 ### 2026-07-13 - Indicadores: materializacao por competencia (Slice 2)
 
