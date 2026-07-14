@@ -16,6 +16,7 @@ export function ViewGeral({
 }) {
   const { resumo } = data
   const quality = data.meta.qualidade
+  const byProperty = data.filtros.selecionados.imovelId !== null
 
   return (
     <div className="space-y-4">
@@ -23,8 +24,8 @@ export function ViewGeral({
         <Kpi
           label="Receita total"
           value={formatCompactCurrency(resumo.receitaTotal)}
-          detail="Receitas declaradas nos fechamentos elegíveis."
-          source="PackageTotals · total_receitas"
+          detail={byProperty ? "Receita atribuída ao imóvel no snapshot da competência." : "Receitas declaradas nos fechamentos elegíveis."}
+          source={byProperty ? "Snapshot do imóvel · receita total" : "PackageTotals · total_receitas"}
           quality={quality}
         />
         <Kpi
@@ -52,8 +53,8 @@ export function ViewGeral({
         <Kpi
           label="Repasse apurado"
           value={formatCompactCurrency(resumo.repasseApurado)}
-          detail="Valor líquido calculado nos fechamentos."
-          source="PackageTotals · total_a_repassar"
+          detail={byProperty ? "Valor líquido atribuído ao imóvel no snapshot da competência." : "Valor líquido calculado nos fechamentos."}
+          source={byProperty ? "Snapshot do imóvel · repasse apurado" : "PackageTotals · total_a_repassar"}
           quality={quality}
         />
       </section>
@@ -63,7 +64,7 @@ export function ViewGeral({
           <PanelHeader
             title="Evolução até a competência selecionada"
             description={metric === "valor" ? "Receita, aluguel recebido e repasse apurado por mês." : "Ocupação e cobertura histórica dos snapshots."}
-            source="Fechamentos elegíveis e snapshots mensais"
+            source={byProperty ? "Snapshots mensais do imóvel" : "Fechamentos elegíveis e snapshots mensais"}
             action={<MetricToggle value={metric} onChange={onMetricChange} />}
           />
           {data.serieMensal.length > 0 ? (
@@ -92,7 +93,7 @@ export function ViewGeral({
         <PanelHeader
           title="Retenções e inadimplência"
           description="Valores preservam a diferença entre zero confirmado e dado ausente."
-          source="Fechamentos elegíveis da competência"
+          source={byProperty ? "Snapshot do imóvel; campos não atribuíveis aparecem como —" : "Fechamentos elegíveis da competência"}
         />
         <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-4">
           <SummaryValue label="Comissão administrativa" value={formatCompactCurrency(resumo.comissaoAdministracao)} />

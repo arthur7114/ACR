@@ -11,8 +11,8 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-3000}",
     "lint": "eslint .",
-    "test": "tsx --test lib/*.test.ts lib/server/*.test.ts scripts/*.test.ts",
-    "test:indicadores": "tsx --test lib/indicadores-domain.test.ts lib/server/indicadores-snapshots.test.ts lib/indicadores-aggregation.test.ts lib/indicadores-query.test.ts scripts/backfill-indicadores-snapshots.test.ts scripts/verify-indicadores-snapshots.test.ts"
+    "test": "tsx --test lib/*.test.ts lib/server/*.test.ts scripts/*.test.ts components/acr/indicadores/lib/*.test.ts",
+    "test:indicadores": "tsx --test lib/indicadores-domain.test.ts lib/server/indicadores-snapshots.test.ts lib/indicadores-aggregation.test.ts lib/indicadores-query.test.ts scripts/backfill-indicadores-snapshots.test.ts scripts/verify-indicadores-snapshots.test.ts components/acr/indicadores/lib/presentation.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

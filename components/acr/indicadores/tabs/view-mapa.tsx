@@ -107,7 +107,7 @@ function HeatCell({
       aria-label={accessible}
       className={cn(
         "min-w-28 border-b border-white/70 px-2 py-2 text-center align-middle tabular-nums",
-        heatTone(percentage),
+        heatTone(percentage, metric),
       )}
     >
       {percentage === null || status === null ? (
@@ -126,8 +126,9 @@ function HeatCell({
   )
 }
 
-function heatTone(value: number | null): string {
+function heatTone(value: number | null, metric: HeatMetric): string {
   if (value === null) return "bg-[#f4f6f4] text-acr-muted-2"
+  if (metric === "vac") return value >= 100 ? "acr-heat-q5" : "acr-heat-q0"
   if (value <= 1) return "acr-heat-q0"
   if (value <= 10) return "acr-heat-q1"
   if (value <= 25) return "acr-heat-q2"
@@ -142,15 +143,25 @@ function HeatLegend({ metric }: { metric: HeatMetric }) {
     <div className="border-t border-acr-line px-4 py-4 sm:px-5">
       <p className="text-xs font-semibold text-acr-ink">Escala de {metric === "inad" ? "inadimplência" : "vacância"}</p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-acr-muted-2">
-        {ranges.map((range, index) => (
+        {metric === "inad" ? ranges.map((range, index) => (
           <span key={range} className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
           </span>
-        ))}
+        )) : (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="size-3 rounded-sm acr-heat-q0" /> 0% · não vago
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="size-3 rounded-sm acr-heat-q5" /> 100% · vago
+            </span>
+          </>
+        )}
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> — sem dado
         </span>
         <span className="font-semibold">“Recomp.” = histórico recomposto por backfill.</span>
+        {metric === "vac" && <span className="font-semibold">Vacância é um estado mensal por imóvel, não uma escala contínua.</span>}
       </div>
     </div>
   )

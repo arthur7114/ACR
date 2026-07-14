@@ -374,9 +374,15 @@ function findUnlinkedLines(
   return closings.map((closing) => {
     const units = unitsByPair.get(pairKey(closing)) ?? new Set<string>()
     const lines = closing.analiseCompleta?.prestacao?.receitas_por_imovel ?? []
+    const unlinkedLines = lines.filter(
+      (line) => !units.has(normalizePropertyKeyPart(line.apto)),
+    )
     return {
       fechamentoId: closing.id,
-      quantidade: lines.filter((line) => !units.has(normalizePropertyKeyPart(line.apto))).length,
+      quantidade: unlinkedLines.length,
+      detalhes: [...new Set(unlinkedLines.map((line) =>
+        `${closing.imobiliariaNome ?? closing.imobiliariaId} · ${closing.empreendimentoNome ?? closing.empreendimentoId} · Unidade ${line.apto}`,
+      ))],
     }
   })
 }

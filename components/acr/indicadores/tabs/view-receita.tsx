@@ -2,13 +2,16 @@
 
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react"
 import type { IndicadoresData } from "@/lib/indicadores-types"
-import { formatCurrency } from "../lib/presentation"
+import { formatCurrency, formatPercent } from "../lib/presentation"
 import { DataNote, EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 export function ViewReceita({ data }: { data: IndicadoresData }) {
   const bridge = data.ponteFinanceira
   const realization = data.realizacaoAluguel
   const summary = data.resumo
+  const byProperty = data.filtros.selecionados.imovelId !== null
+  const hasUnclassifiedAdjustments =
+    realization.outrosAjustes !== null && realization.outrosAjustes !== 0
 
   return (
     <div className="space-y-4">
@@ -17,7 +20,7 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
           <PanelHeader
             title="Ponte financeira"
             description="Da receita declarada ao repasse apurado, sem misturar intermediação com outras despesas."
-            source="PackageTotals e itens de intermediação"
+            source={byProperty ? "Snapshot do imóvel; retenções não atribuíveis ficam ausentes" : "PackageTotals e itens de intermediação"}
           />
           <div className="px-4 py-2 sm:px-5">
             <FinancialRow label="Receita total" value={bridge.receitaTotal} operation="=" strong />
@@ -61,6 +64,13 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             <FinancialRow label="Aluguel recebido" value={realization.recebido} operation="=" strong result />
           </div>
           <div className="border-t border-acr-line px-4 py-4 sm:px-5">
+            {hasUnclassifiedAdjustments && (
+              <div className="mb-3">
+                <DataNote warning>
+                  Há {formatCurrency(realization.outrosAjustes)} em ajustes ainda não classificados ({formatPercent(realization.outrosAjustesPercentualContratado)} do aluguel contratado). Revise os imóveis e a prestação antes de consolidar a competência.
+                </DataNote>
+              </div>
+            )}
             <DataNote>Outros ajustes preservam excedentes, proporcionalidade e valores ainda não classificados; não são uma reconstrução circular de potencial.</DataNote>
           </div>
         </Panel>
@@ -70,16 +80,16 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
         <PanelHeader
           title="Repasse apurado e evidências"
           description="Comprovante bancário e valor informado no extrato são fontes diferentes."
-          source="Fechamento, comprovante e prestação"
+          source={byProperty ? "Snapshot do imóvel; evidências de repasse não são atribuídas por imóvel" : "Fechamento, comprovante e prestação"}
         />
         <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-4">
-          <EvidenceValue label="Repasse apurado" value={summary.repasseApurado} detail="Calculado no fechamento" />
+          <EvidenceValue label="Repasse apurado" value={summary.repasseApurado} detail={byProperty ? "Atribuído no snapshot do imóvel" : "Calculado no fechamento"} />
           <EvidenceValue label="Repasse comprovado" value={summary.repasseComprovado} detail="Somente comprovante externo conhecido" />
           <EvidenceValue label="Informado no extrato" value={summary.repasseInformadoExtrato} detail="Declaração embutida na prestação" />
           <EvidenceValue
             label="Diferença comprovado − apurado"
             value={summary.diferencaRepasse}
-            detail="Sinal preservado"
+            detail="Comprovante externo − apurado; o extrato permanece separado"
             warning={summary.diferencaRepasse !== null && summary.diferencaRepasse !== 0}
           />
         </dl>

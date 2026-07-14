@@ -7,8 +7,11 @@ const ATUALIZADO_EM = "2026-07-13T12:00:00.000Z"
 
 interface PairFixture {
   empresaId: string
+  empresaNome?: string
   imobiliariaId: string
+  imobiliariaNome?: string
   empreendimentoId: string
+  empreendimentoNome?: string
 }
 
 interface RuleFixture extends PairFixture {
@@ -95,7 +98,11 @@ interface AggregationFixture {
   imoveisAtivos: PropertyFixture[]
   fechamentos: ClosingFixture[]
   snapshots: SnapshotFixture[]
-  linhasNaoVinculadas: Array<{ fechamentoId: string; quantidade: number }>
+  linhasNaoVinculadas: Array<{
+    fechamentoId: string
+    quantidade: number
+    detalhes?: string[]
+  }>
 }
 
 const PAIR_A: PairFixture = {
@@ -296,6 +303,85 @@ test("forma o universo esperado pela união deduplicada de regras e imóveis ati
   assert.equal(result.cobertura.pares.ausentes, 3)
 })
 
+test("identifica nominalmente pares, imóveis e linhas das lacunas de cobertura", () => {
+  const pairB = {
+    ...makePair("b"),
+    imobiliariaNome: "Imobiliária Norte",
+    empreendimentoNome: "Residencial Sol",
+  }
+  const propertyA = makeProperty({
+    imobiliariaNome: "Imobiliária Sul",
+    empreendimentoNome: "Residencial Mar",
+  })
+  const propertyB = makeProperty({
+    ...pairB,
+    id: "imovel-b",
+    unidade: "202",
+  })
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [makeRule(PAIR_A), makeRule(pairB)],
+    imoveisAtivos: [propertyA, propertyB],
+    fechamentos: [makeClosing({ ...PAIR_A })],
+    snapshots: [makeSnapshot({ statusOcupacao: "desconhecido", aluguelEsperado: null })],
+    linhasNaoVinculadas: [{
+      fechamentoId: "fechamento-a",
+      quantidade: 1,
+      detalhes: ["Imobiliária Sul · Residencial Mar · Unidade 999"],
+    }],
+  }))
+
+  const gaps = new Map(result.cobertura.lacunas.map((gap) => [gap.codigo, gap]))
+  assert.deepEqual(gaps.get("par_ausente")?.detalhes, ["Imobiliária Norte · Residencial Sol"])
+  assert.deepEqual(gaps.get("snapshot_ausente")?.detalhes, [
+    "Imobiliária Norte · Residencial Sol · Unidade 202",
+  ])
+  assert.deepEqual(gaps.get("snapshot_desconhecido")?.detalhes, [
+    "Imobiliária Sul · Residencial Mar · Unidade 101",
+  ])
+  assert.deepEqual(gaps.get("aluguel_esperado_ausente")?.detalhes, [
+    "Imobiliária Sul · Residencial Mar · Unidade 101",
+  ])
+  assert.deepEqual(gaps.get("linha_nao_vinculada")?.detalhes, [
+    "Imobiliária Sul · Residencial Mar · Unidade 999",
+  ])
+})
+
+test("não colapsa imóveis homônimos de imobiliárias diferentes nas lacunas", () => {
+  const commonDevelopment = {
+    empreendimentoId: "empreendimento-compartilhado",
+    empreendimentoNome: "Residencial Compartilhado",
+  }
+  const propertyNorth = makeProperty({
+    ...commonDevelopment,
+    id: "imovel-norte",
+    unidade: "101",
+    imobiliariaId: "imobiliaria-norte",
+    imobiliariaNome: "Imobiliária Norte",
+  })
+  const propertySouth = makeProperty({
+    ...commonDevelopment,
+    id: "imovel-sul",
+    unidade: "101",
+    imobiliariaId: "imobiliaria-sul",
+    imobiliariaNome: "Imobiliária Sul",
+  })
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [],
+    imoveisAtivos: [propertyNorth, propertySouth],
+    fechamentos: [],
+    snapshots: [],
+  }))
+
+  const missingSnapshots = result.cobertura.lacunas.find(
+    (gap) => gap.codigo === "snapshot_ausente",
+  )
+  assert.equal(missingSnapshots?.quantidade, 2)
+  assert.deepEqual(missingSnapshots?.detalhes, [
+    "Imobiliária Norte · Residencial Compartilhado · Unidade 101",
+    "Imobiliária Sul · Residencial Compartilhado · Unidade 101",
+  ])
+})
+
 test("classifica como completa somente quando todos os pares estão processados e sem lacuna", () => {
   const complete = aggregateIndicadores(makeInput())
   const withStructuralGap = aggregateIndicadores(makeInput({
@@ -421,6 +507,7 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     inadimplenciaMes: 500,
     descontos: 50,
     outrosAjustes: -50,
+    outrosAjustesPercentualContratado: -50 / 2_100 * 100,
     recebido: 1_000,
   })
 })
@@ -467,6 +554,78 @@ test("separa repasse informado no extrato de comprovante bancário", () => {
   assert.equal(result.resumo.repasseComprovado, null)
   assert.equal(result.resumo.repasseInformadoExtrato, 1_650)
   assert.equal(result.resumo.diferencaRepasse, null)
+})
+
+test("mantém a diferença do comprovante externo quando também há repasse informado no extrato", () => {
+  const externalPair = {
+    ...makePair("externo"),
+    imobiliariaNome: "Imobiliária Externa",
+    empreendimentoNome: "Residencial Externo",
+  }
+  const statementPair = {
+    ...makePair("extrato"),
+    imobiliariaNome: "Imobiliária Extrato",
+    empreendimentoNome: "Residencial Extrato",
+  }
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [makeRule(externalPair), makeRule(statementPair)],
+    imoveisAtivos: [],
+    snapshots: [],
+    fechamentos: [
+      makeClosing({
+        ...externalPair,
+        id: "fechamento-externo",
+        analiseCompleta: makeAnalysis({
+          totals: { total_a_repassar: 1_000, valor_comprovado: 700 },
+        }),
+      }),
+      makeClosing({
+        ...statementPair,
+        id: "fechamento-extrato",
+        analiseCompleta: makeAnalysis({
+          totals: {
+            total_a_repassar: 300,
+            valor_comprovado: 300,
+            repasse_embutido: true,
+          },
+        }),
+      }),
+    ],
+  }))
+
+  assert.equal(result.resumo.repasseApurado, 1_300)
+  assert.equal(result.resumo.repasseComprovado, 700)
+  assert.equal(result.resumo.repasseInformadoExtrato, 300)
+  assert.equal(result.resumo.diferencaRepasse, -600)
+})
+
+test("calcula diferença com a soma dos comprovantes externos conhecidos", () => {
+  const knownPair = makePair("comprovado")
+  const unknownPair = makePair("sem-comprovante")
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [makeRule(knownPair), makeRule(unknownPair)],
+    imoveisAtivos: [],
+    snapshots: [],
+    fechamentos: [
+      makeClosing({
+        ...knownPair,
+        id: "fechamento-comprovado",
+        analiseCompleta: makeAnalysis({
+          totals: { total_a_repassar: 1_000, valor_comprovado: 700 },
+        }),
+      }),
+      makeClosing({
+        ...unknownPair,
+        id: "fechamento-sem-comprovante",
+        analiseCompleta: makeAnalysis({
+          totals: { total_a_repassar: 300, valor_comprovado: null },
+        }),
+      }),
+    ],
+  }))
+
+  assert.equal(result.resumo.repasseComprovado, 700)
+  assert.equal(result.resumo.diferencaRepasse, -600)
 })
 
 test("não usa receita total como fallback de aluguel recebido", () => {

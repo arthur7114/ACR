@@ -19,6 +19,7 @@ export interface IndicadoresCoverageGap {
     | "nao_atribuivel_ao_imovel"
   quantidade: number
   mensagem: string
+  detalhes: string[]
 }
 
 export interface IndicadoresOccupancy {
@@ -105,6 +106,7 @@ export interface IndicadoresRentRealization {
   inadimplenciaMes: number | null
   descontos: number | null
   outrosAjustes: number | null
+  outrosAjustesPercentualContratado: number | null
   recebido: number | null
 }
 

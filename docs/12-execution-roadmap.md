@@ -2,7 +2,7 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0 a 8 e o rollout: schema protegido por RLS, materializacao idempotente, backfill/verificacao, API agregada, shell responsivo e quatro abas operacionais. A migration foi aplicada apos canario descartavel; 465 snapshots de 41 fechamentos foram recompostos e verificados sem duplicidade, divergencia financeira ou alteracao das fontes. Suite completa 162/162, typecheck, lint, build, checklist 6/6 e QA autenticada nos seis breakpoints estao verdes.
+Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0 a 8 e o rollout: schema protegido por RLS, materializacao idempotente, backfill/verificacao, API agregada, shell responsivo e quatro abas operacionais. A migration foi aplicada apos canario descartavel; a verificacao atual cobre 565 snapshots de 45 fechamentos sem duplicidade, checksum invalido, divergencia financeira ou alteracao das fontes. Suite completa 172/172, typecheck, lint, build, checklist 6/6 e QA autenticada estao verdes.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
@@ -33,7 +33,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | concluida e validada | Migration e backfill aplicados apos canario descartavel; 465 snapshots verificados, QA autenticada responsiva e gates finais verdes. |
+| Indicadores operacionais | concluida e validada | Migration e backfill aplicados apos canario descartavel; 565 snapshots de 45 fechamentos verificados, QA autenticada responsiva e gates finais verdes. |
 
 ## Decisoes registradas
 
@@ -97,6 +97,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-14 - Refinamento dos dados principais dos indicadores
+
+Status: done
+Job: corrigir os principais pontos de confiança identificados na auditoria individual dos indicadores.
+Outcome entregue: diferenca de repasse preserva `comprovado externo - apurado` com extrato separado; filtro por imovel identifica a origem snapshot; lacunas listam pares, imoveis e unidades afetados; outros ajustes mostram valor, percentual e acao; referencia numerica vira `Dia N` na tela/CSV; vacancia usa escala binaria 0/100.
+Validacao: 73/73 testes focados e 172/172 na suite completa; typecheck, lint, build e checklist 6/6; verificador confirmou 565/565 snapshots, zero duplicidade, checksums validos, 45/45 reconciliacoes e fontes intactas; navegador autenticado confirmou dados reais, filtro isolado, CSV, escala de vacancia, 390 px sem overflow e console limpo.
+Decisoes: valores informados no extrato nao apagam a comparacao do comprovante externo; escala continua de seis faixas fica exclusiva da inadimplencia.
+Arquivos/docs impactados: agregacao e tipos de indicadores, servidor, quatro abas, testes de apresentacao, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md` e `docs/PLAN-indicadores-operacionais.md`.
+Proxima acao: corrigir na origem os seis pares ausentes, os 19 snapshots desconhecidos e as seis linhas sem vinculo exibidas em 05/2026.
 
 ### 2026-07-13 - Consulta operacional da lista de fechamentos
 

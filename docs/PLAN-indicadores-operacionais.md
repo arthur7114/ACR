@@ -436,3 +436,27 @@ atual como ocupação histórica.
 - aging por dias fica fora deste ciclo;
 - o mock permanece contrato visual salvo as divergências documentadas;
 - produção nunca é o primeiro ambiente da migration ou do backfill.
+
+## 10. Refinamentos de dados após auditoria em navegador — 2026-07-14
+
+Os seguintes comportamentos passam a integrar o contrato operacional:
+
+- a diferença de repasse permanece `comprovado externo − apurado` mesmo quando
+  a competência também contém repasse informado no extrato; o valor do extrato
+  continua separado e não substitui comprovante;
+- filtros por imóvel identificam KPIs atribuíveis como originados do snapshot e
+  mantêm como ausentes os baldes do fechamento sem atribuição segura;
+- cada lacuna de cobertura inclui os pares, imóveis ou unidades afetados, além
+  da contagem agregada;
+- qualquer valor não zero em `outrosAjustes` é destacado com seu percentual do
+  aluguel contratado e uma ação explícita de revisão;
+- referências financeiras contendo apenas um número de 1 a 31 são apresentadas
+  como `Dia N`, inclusive no CSV; competências ISO permanecem `MM/AAAA`;
+- vacância por imóvel/competência usa escala binária (`0% não vago` e `100%
+  vago`); a escala contínua de seis faixas permanece exclusiva da
+  inadimplência.
+
+Validação executada com a competência 05/2026 e filtro isolado em 03/2026:
+73 testes focados, typecheck e lint verdes; navegador autenticado confirmou
+valores, fontes, lacunas nominais, CSV, ausência de overflow em 390 px e console
+sem erros.

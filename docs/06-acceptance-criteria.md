@@ -41,12 +41,12 @@
 
 ## Indicadores
 
-- CA-IND01: o mapa de calor usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja, tanto nas células quanto na legenda.
+- CA-IND01: o mapa de inadimplência usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja; vacância por imóvel/competência usa estado binário de 0% (não vago) ou 100% (vago), com legenda própria.
 - CA-IND02: a API inclui apenas fechamentos elegiveis, exclui rascunhos/arquivados/analises ausentes e mantem a ultima analise valida com estado "Em atualizacao" durante reprocessamento.
-- CA-IND03: toda competencia informa pares esperados, processados, aprovados, pendentes, rascunhos, em atualizacao e ausentes, alem de cobertura de imoveis, snapshots e lacunas; so aparece como completa sem par ou lacuna pendente.
+- CA-IND03: toda competencia informa pares esperados, processados, aprovados, pendentes, rascunhos, em atualizacao e ausentes, alem de cobertura de imoveis, snapshots e lacunas; cada lacuna identifica os pares, imoveis ou unidades afetados e a competencia so aparece como completa sem par ou lacuna pendente.
 - CA-IND04: receita total, aluguel contratado, aluguel recebido, comissoes, despesas retidas, despesa operacional detalhada, repasse apurado e repasse comprovado seguem as fontes definidas em `docs/PLAN-indicadores-operacionais.md`; ausencia permanece `null` e zero confirmado permanece `0`.
 - CA-IND05: a ponte financeira separa comissao administrativa, despesas do locador e intermediação, preserva o sinal da diferenca `comprovado - apurado` e alerta residuo acima de R$ 0,01.
-- CA-IND06: realizacao do aluguel reconcilia contratado, vacancia, inadimplencia do mes, descontos, outros ajustes e recebido; nao usa receita total como aluguel nem reconstroi potencial de forma circular.
+- CA-IND06: realizacao do aluguel reconcilia contratado, vacancia, inadimplencia do mes, descontos, outros ajustes e recebido; nao usa receita total como aluguel nem reconstroi potencial de forma circular. Outros ajustes nao zero exibem valor, percentual do contratado e acao de revisao.
 - CA-IND07: ocupacao da competencia usa snapshots mensais com status ocupado, inadimplente, vago, em rescisao ou desconhecido; linha zerada ambigua nunca vira vago. O cadastro atual aparece separadamente como "Hoje".
 - CA-IND08: filtros de competencia, empresa, empreendimento e imovel por UUID recalculam todos os indicadores; aba e modos `metric`/`heatMetric` persistem na URL; requests obsoletos nao sobrescrevem o estado mais novo.
 - CA-IND09: serie, ranking, mapa e tabela respeitam a competencia selecionada e nao exibem meses futuros; medias e taxas da carteira sao ponderadas.

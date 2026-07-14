@@ -119,7 +119,11 @@ export interface IndicadoresAggregationInput {
   imoveisAtivos: IndicadoresPropertyInput[]
   fechamentos: IndicadoresClosingInput[]
   snapshots: IndicadoresSnapshotInput[]
-  linhasNaoVinculadas: Array<{ fechamentoId: string; quantidade: number }>
+  linhasNaoVinculadas: Array<{
+    fechamentoId: string
+    quantidade: number
+    detalhes?: string[]
+  }>
 }
 
 interface AggregationScope {
@@ -229,51 +233,88 @@ function buildCoverage(
     ),
     expectedPairs,
   )
-  const absentPairs = [...expectedPairs].filter(
+  const absentPairKeys = [...expectedPairs].filter(
     (key) => !processedPairs.has(key) && !draftPairs.has(key),
-  ).length
+  )
   const snapshotPropertyIds = new Set(currentSnapshots.map((snapshot) => snapshot.imovelId))
-  const missingSnapshots = scope.properties.filter(
+  const missingSnapshotProperties = scope.properties.filter(
     (property) => !snapshotPropertyIds.has(property.id),
-  ).length
-  const unknownSnapshots = currentSnapshots.filter(
+  )
+  const unknownSnapshotRows = currentSnapshots.filter(
     (snapshot) => snapshot.statusOcupacao === "desconhecido",
-  ).length
-  const missingExpectedRent = currentSnapshots.filter(
+  )
+  const missingExpectedRentRows = currentSnapshots.filter(
     (snapshot) => snapshot.aluguelEsperado === null,
-  ).length
+  )
   const eligibleIds = new Set(eligibleClosings.map((closing) => closing.id))
-  const unlinkedLines = input.linhasNaoVinculadas
-    .filter((item) => eligibleIds.has(item.fechamentoId))
+  const eligibleUnlinkedLines = input.linhasNaoVinculadas.filter((item) =>
+    eligibleIds.has(item.fechamentoId),
+  )
+  const unlinkedLines = eligibleUnlinkedLines
     .reduce((total, item) => total + item.quantidade, 0)
   const gaps: IndicadoresCoverage["lacunas"] = []
+  const pairByKey = new Map(
+    [...scope.rules, ...scope.properties, ...currentClosings].map((item) => [pairKey(item), item]),
+  )
+  const propertyById = new Map(scope.properties.map((property) => [property.id, property]))
+  const absentPairDetails = absentPairKeys
+    .flatMap((key) => {
+      const item = pairByKey.get(key)
+      return item ? [formatPairLabel(item)] : []
+    })
+  const missingSnapshotDetails = missingSnapshotProperties.map(formatPropertyLabel)
+  const unknownSnapshotDetails = unknownSnapshotRows
+    .map((snapshot) => propertyById.get(snapshot.imovelId))
+    .filter((property): property is IndicadoresPropertyInput => property !== undefined)
+    .map(formatPropertyLabel)
+  const missingExpectedRentDetails = missingExpectedRentRows
+    .map((snapshot) => propertyById.get(snapshot.imovelId))
+    .filter((property): property is IndicadoresPropertyInput => property !== undefined)
+    .map(formatPropertyLabel)
+  const unlinkedLineDetails = eligibleUnlinkedLines.flatMap((item) => item.detalhes ?? [])
 
-  addGap(gaps, "par_ausente", absentPairs, "Pares esperados sem fechamento processado.")
-  addGap(gaps, "snapshot_ausente", missingSnapshots, "Imoveis esperados sem snapshot mensal.")
+  addGap(
+    gaps,
+    "par_ausente",
+    absentPairKeys.length,
+    "Pares esperados sem fechamento processado.",
+    absentPairDetails,
+  )
+  addGap(
+    gaps,
+    "snapshot_ausente",
+    missingSnapshotProperties.length,
+    "Imóveis esperados sem snapshot mensal.",
+    missingSnapshotDetails,
+  )
   addGap(
     gaps,
     "snapshot_desconhecido",
-    unknownSnapshots,
-    "Snapshots sem evidencia suficiente de ocupacao.",
+    unknownSnapshotRows.length,
+    "Snapshots sem evidência suficiente de ocupação.",
+    unknownSnapshotDetails,
   )
   addGap(
     gaps,
     "aluguel_esperado_ausente",
-    missingExpectedRent,
+    missingExpectedRentRows.length,
     "Snapshots sem aluguel esperado conhecido.",
+    missingExpectedRentDetails,
   )
   addGap(
     gaps,
     "linha_nao_vinculada",
     unlinkedLines,
-    "Linhas da prestacao sem vinculo com o cadastro.",
+    "Linhas da prestação sem vínculo com o cadastro.",
+    unlinkedLineDetails,
   )
   if (input.filtros.imovelId) {
     addGap(
       gaps,
       "nao_atribuivel_ao_imovel",
       1,
-      "Valores do fechamento sem atribuicao segura ao imovel foram omitidos.",
+      "Valores do fechamento sem atribuição segura ao imóvel foram omitidos.",
+      scope.properties.map(formatPropertyLabel),
     )
   }
 
@@ -288,14 +329,14 @@ function buildCoverage(
       pendentes: Math.max(0, processedPairs.size - approvedPairs.size),
       rascunhos: draftPairs.size,
       emAtualizacao: updatingPairs.size,
-      ausentes: absentPairs,
+      ausentes: absentPairKeys.length,
       percentual: percentage(processedPairs.size, expectedPairCount),
     },
     imoveis: {
       esperados: expectedPropertyCount,
       snapshotsDisponiveis: currentSnapshots.length,
-      snapshotsDesconhecidos: unknownSnapshots,
-      semAluguelEsperado: missingExpectedRent,
+      snapshotsDesconhecidos: unknownSnapshotRows.length,
+      semAluguelEsperado: missingExpectedRentRows.length,
       percentual: percentage(currentSnapshots.length, expectedPropertyCount),
     },
     linhasNaoVinculadas: unlinkedLines,
@@ -324,6 +365,7 @@ function buildSummary(
     : sumKnown(analyses.map((analysis) => analysis.totals.total_a_repassar))
   const operational = byProperty ? null : sumOperationalExpenses(analyses)
   const transferEvidence = byProperty ? null : summarizeTransferEvidence(analyses)
+  const confirmedTransfer = transferEvidence?.confirmed ?? null
 
   return {
     receitaTotal,
@@ -341,11 +383,11 @@ function buildSummary(
       total: operational?.total ?? null,
     },
     repasseApurado: assessedTransfer,
-    repasseComprovado: transferEvidence?.confirmed ?? null,
+    repasseComprovado: confirmedTransfer,
     repasseInformadoExtrato: transferEvidence?.statement ?? null,
     diferencaRepasse:
-      transferEvidence?.canCompare && transferEvidence.confirmed !== null && assessedTransfer !== null
-        ? roundMoney(transferEvidence.confirmed - assessedTransfer)
+      confirmedTransfer !== null && assessedTransfer !== null
+        ? roundMoney(confirmedTransfer - assessedTransfer)
         : null,
     ocupacaoCompetencia: summarizeOccupancy(
       snapshots.map((snapshot) => snapshot.statusOcupacao),
@@ -401,14 +443,20 @@ function buildRentRealization(snapshots: IndicadoresSnapshotInput[]): Indicadore
     (value) => value !== null,
   )
 
+  const otherAdjustments = canReconcile
+    ? roundMoney(received! - (contracted! - vacancy! - delinquency! - discounts!))
+    : null
+
   return {
     contratado: contracted,
     vacancia: vacancy,
     inadimplenciaMes: delinquency,
     descontos: discounts,
-    outrosAjustes: canReconcile
-      ? roundMoney(received! - (contracted! - vacancy! - delinquency! - discounts!))
-      : null,
+    outrosAjustes: otherAdjustments,
+    outrosAjustesPercentualContratado:
+      otherAdjustments !== null && contracted !== null && contracted !== 0
+        ? (otherAdjustments / contracted) * 100
+        : null,
     recebido: received,
   }
 }
@@ -695,10 +743,6 @@ function summarizeTransferEvidence(analyses: IndicadoresAnalysisInput[]) {
   return {
     confirmed,
     statement,
-    canCompare:
-      embedded.length === 0 &&
-      external.length > 0 &&
-      external.every((analysis) => analysis.totals.valor_comprovado !== null),
   }
 }
 
@@ -770,6 +814,14 @@ function pairKey(item: IndicadoresPairInput) {
   return `${item.imobiliariaId}::${item.empreendimentoId}`
 }
 
+function formatPairLabel(item: IndicadoresPairInput) {
+  return `${item.imobiliariaNome ?? item.imobiliariaId} · ${item.empreendimentoNome ?? item.empreendimentoId}`
+}
+
+function formatPropertyLabel(property: IndicadoresPropertyInput) {
+  return `${property.imobiliariaNome ?? property.imobiliariaId} · ${property.empreendimentoNome ?? property.empreendimentoId} · Unidade ${property.unidade}`
+}
+
 function isComplete(coverage: IndicadoresCoverage) {
   return (
     coverage.pares.esperados > 0 &&
@@ -785,8 +837,16 @@ function addGap(
   codigo: IndicadoresCoverage["lacunas"][number]["codigo"],
   quantidade: number,
   mensagem: string,
+  detalhes: string[] = [],
 ) {
-  if (quantidade > 0) gaps.push({ codigo, quantidade, mensagem })
+  if (quantidade > 0) {
+    gaps.push({
+      codigo,
+      quantidade,
+      mensagem,
+      detalhes: uniqueSorted(detalhes),
+    })
+  }
 }
 
 function count(statuses: OccupancyStatus[], status: OccupancyStatus) {

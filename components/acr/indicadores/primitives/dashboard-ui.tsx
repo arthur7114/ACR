@@ -160,6 +160,13 @@ export function CoverageBanner({ data }: { data: IndicadoresData }) {
             {data.cobertura.lacunas.map((gap) => (
               <li key={gap.codigo} className="list-disc">
                 {gap.mensagem} ({gap.quantidade})
+                {gap.detalhes.length > 0 && (
+                  <ul className="mt-1.5 space-y-1 border-l border-current/20 pl-3 text-xs">
+                    {gap.detalhes.map((detail) => (
+                      <li key={detail}>{detail}</li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>

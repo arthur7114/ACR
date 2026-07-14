@@ -56,6 +56,9 @@ export function formatReference(value: string | null): string {
   if (!value) return "—"
   const isoMonth = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(value)
   if (isoMonth) return `${isoMonth[2]}/${isoMonth[1]}`
+  const dayReference = /^(?:dia\s*)?(\d{1,2})$/i.exec(value.trim())
+  const day = dayReference ? Number(dayReference[1]) : null
+  if (day !== null && day >= 1 && day <= 31) return `Dia ${day}`
   return value
 }
 

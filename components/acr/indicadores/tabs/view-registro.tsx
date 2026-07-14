@@ -258,7 +258,7 @@ function PageButton({ label, disabled, onClick, children }: { label: string; dis
 
 function buildCsvHref(rows: IndicadoresPropertyRevenue[]) {
   const header = ["competencia", "unidade", "inquilino", "empreendimento", "status", "aluguel_esperado", "aluguel_recebido", "receita_total", "desconto", "comissao_administracao", "repasse_apurado", "referencia_financeira", "origem", "qualidade"]
-  const lines = rows.map((row) => [row.competencia, row.unidade, row.inquilinoNome, row.empreendimentoNome, occupancyLabel(row.statusOcupacao), row.aluguelEsperado, row.aluguelRecebido, row.receitaTotal, row.desconto, row.comissaoAdministracao, row.repasseApurado, row.vencimentoReferencia, row.origem, row.qualidade].map(escapeCsv).join(";"))
+  const lines = rows.map((row) => [row.competencia, row.unidade, row.inquilinoNome, row.empreendimentoNome, occupancyLabel(row.statusOcupacao), row.aluguelEsperado, row.aluguelRecebido, row.receitaTotal, row.desconto, row.comissaoAdministracao, row.repasseApurado, row.vencimentoReferencia === null ? null : formatReference(row.vencimentoReferencia), row.origem, row.qualidade].map(escapeCsv).join(";"))
   const content = `\uFEFF${[header.join(";"), ...lines].join("\n")}`
   return `data:text/csv;charset=utf-8,${encodeURIComponent(content)}`
 }
