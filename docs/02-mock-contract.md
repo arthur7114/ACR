@@ -27,7 +27,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `novo-fechamento`: formulario com imobiliaria, empreendimento, competencia e observacoes.
 - `upload`: upload multiplo, classificacao automatica/manual e bloqueio quando ha documento sem classificacao.
 - `processando`: etapas visuais do pipeline: salvar arquivos, classificar, extrair, validar, conciliar e finalizar.
-- `revisao`: resumo financeiro agrupado no topo, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, separacao clara entre receitas, comissao administrativa, outras despesas e total comissao + despesas, exibicao da taxa cadastrada, da comissao realizada em % e da data do repasse, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, situacao das unidades separando alugadas, inadimplentes e aptos vagos, pendencias de revisao, receitas por imovel com totalizadores e cabecalho fixo, acordos/rescisoes recebidos no mes, intermediação com aluguel/base, IPTU, total recebido, comissão, percentual e repasse separados, despesas, comprovante de repasse, documentos colapsaveis no fim e acoes.
+- `revisao`: resumo financeiro agrupado no topo, parecer automático com contagem objetiva de bloqueios/alertas/validações ok, separacao clara entre receitas, comissao administrativa, outras despesas e total comissao + despesas, exibicao da taxa cadastrada, da comissao realizada em % e da data do repasse, cards de quebra de receitas por aluguel/garagem/agua/IPTU/seguro incendio, situacao das unidades separando alugadas, inadimplentes e aptos vagos, pendencias de revisao, receitas por imovel com totalizadores, cabecalho fixo e competência original editável, acordos/rescisoes recebidos no mes, intermediação com aluguel/base, IPTU, total recebido, comissão, percentual e repasse separados, despesas desdobradas com detalhe acessível, comprovante de repasse, documentos colapsaveis no fim e acoes. Receitas sem imóvel vinculado são resolvidas em drawer lateral, uma a uma, antes da aprovação.
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis e botao "Sincronizar dos fechamentos" (popula/atualiza o cadastro de imoveis a partir das prestacoes ja processadas). Cada imovel e clicavel e abre um drawer de Historico do imovel (linha do tempo derivada das prestacoes: aluguel pago/inadimplente/vago, acordos, rescisoes, inadimplencia paga e intermediacao), com resumo e periodos por inquilino. O drawer tambem traz a secao "Acordos parcelados" (Nivel 2): acordos/rescisoes parcelados detectados nas prestacoes, com barra de progresso (parcelas pagas/total), valor pago/total e baixa por parcela (automatica pela prestacao ou manual, clicando na parcela). Botao "Sincronizar dos fechamentos" tambem popula os acordos parcelados.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 - `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
@@ -66,6 +66,16 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Responsividade: sidebar fixa em desktop, rail em tablet e menu Sheet no mobile, preservando a densidade operacional sem overflow da pagina.
 - Fonte da decisao e formulas: `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — fechamento operacional e competência da receita (2026-07-14)
+
+- Ponto alterado: a coluna `Ref.` deixa de aceitar dia isolado como mês/ano e passa a editar a competência original da receita; o mês do fechamento continua representando o recebimento.
+- Correção financeira: IPTU de passagem é visível na quebra de “Receitas”, inclusive em análises legadas, sem alterar receita total, despesa ou repasse. Comissão administrativa discrimina linhas regulares e acordos/rescisões sem duplicar o total.
+- Correção operacional: despesas são agrupadas em Energia, Água e esgoto, IPTU, Seguros, Tarifas, Ajustes e Outros, com descrição completa, referência e valor acessíveis por clique, teclado e toque.
+- Novo bloqueio: competência ausente ou inválida e receita sem `imovel_id` persistido impedem aprovação. A resolução de imóvel usa drawer lateral com busca/criação, comparação antes de atualizar cadastro, progresso e nenhuma sobrescrita implícita.
+- Consistência: correção de competência, vínculo, movimentação, validações e auditoria ocorre em uma única transação. A cópia “Documento informou” passa a “Extraído pela IA”.
+- Escopo preservado: nenhuma tela/cálculo de indicadores, integração eGestor ou módulo autônomo de IPTU foi alterado.
+- Docs atualizados: este contrato, `CONTEXT.md`, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
 ## Fluxo contratado
 

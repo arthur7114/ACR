@@ -31,6 +31,14 @@
 - CA14.1: fechamento `rascunho` sem job ativo aparece como "Aguardando documentos" e direciona ao upload; apenas job ativo aparece como "Processando", e falha registrada oferece nova tentativa. Acesso direto à Revisão sem `analise_completa` também redireciona ao upload e nunca exibe uma revisão vazia.
 - CA14.2: intermediação com IPTU preserva aluguel como base percentual, exibe o IPTU separadamente e calcula `total recebido = aluguel + IPTU` e `repasse = total recebido - comissão`, respeitando valores explícitos do documento.
 - CA14.3: a validação do resumo final subtrai a comissão de intermediação separadamente da comissão administrativa e das despesas, sem gerar divergência falsa nem duplicar a retenção.
+- CA14.4: cada receita separa competência original, competência de recebimento e dia de vencimento; `10` isolado é dia, referência de IPTU não vira competência de aluguel e ausência aparece como “Não informada”.
+- CA14.5: aprovação é bloqueada enquanto uma receita de aluguel positiva não possuir competência original válida em mês/ano.
+- CA14.6: fechamento de maio pode conter aluguel de março sem mover o total de caixa de maio; a movimentação da receita usa março em `data_competencia` e isso não cria inadimplência corrente por inferência.
+- CA14.7: a quebra superior de Receitas mostra IPTU de passagem de R$ 193,02 + R$ 149,02 = R$ 342,04 no Pompílio maio, inclusive para observação legada, sem alterar receita total, despesa ou repasse.
+- CA14.8: despesas aparecem em Energia, Água e esgoto, IPTU, Seguros, Tarifas, Ajustes e Outros; cada grupo expõe descrição completa, referência e valor por mouse, teclado e toque.
+- CA14.9: GM II maio exibe taxa cadastrada de 7%, comissão regular de R$ 1.218,45, comissão de acordos/rescisões de R$ 65,52 e total de R$ 1.283,97 sem dupla contagem.
+- CA14.10: receita só deixa a pendência de cadastro com `imovel_id` persistido; o drawer permite buscar/criar, comparar e optar por atualizações sem sobrescrita silenciosa, e aprovação permanece bloqueada enquanto houver pendência.
+- CA14.11: correção de competência ou vínculo grava análise, movimentação, validações, cadastro quando aplicável e auditoria em uma única transação; falha em qualquer etapa reverte tudo.
 
 ## Lista de fechamentos
 

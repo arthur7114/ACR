@@ -12,6 +12,8 @@ import type {
 } from "@/lib/prestacao-types"
 import type { CommercialRuleForValidation } from "./regras-comerciais"
 import { reconciliarResumoDespesas } from "@/lib/despesas-locador"
+import { resolveReceitaCompetencias } from "@/lib/competencia-fechamento"
+import { ensureReceitaLineIds } from "./fechamento-corrections"
 
 const MONEY_TOLERANCE = 0.01
 const REPASSE_ALERT_TOLERANCE = 5
@@ -24,6 +26,7 @@ const OPERATIONAL_RECHECK_IDS = new Set([
   "total_linhas_comissoes",
   "total_linhas_repasse",
   "comissao_administracao_regra",
+  "receitas_competencias",
   "acordos_competencias",
   "duplicate_agreement_payment",
   "resumo_financeiro",
@@ -84,11 +87,9 @@ export function validatePackage(input: PackageValidationInput) {
 }
 
 function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
-  const competenciaFechamento = normalizeCompetenciaKey(analysis.competencia)
-
   // Normaliza as linhas ANTES de reconciliar, para a reconstrução ler os valores
   // finais (IPTU de passagem anulado, inadimplência marcada) de `desconto`/`observacao`.
-  const linhasNormalizadas = analysis.receitas_por_imovel.map((row) => {
+  const linhasNormalizadas = normalizePrestacaoCompetencias(analysis).receitas_por_imovel.map((row) => {
     const base = {
       ...row,
       total: roundMoney(row.total),
@@ -104,9 +105,7 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       confianca: clampConfidence(row.confianca),
     }
     // #3 IPTU de passagem: crédito e débito de mesmo valor se anulam.
-    const semIptuDePassagem = anularIptuDePassagem(base)
-    // #4 Inadimplência por competência: aluguel de mês anterior => inadimplente no mês.
-    return marcarInadimplenciaPorCompetencia(semIptuDePassagem, competenciaFechamento)
+    return anularIptuDePassagem(base)
   })
 
   // ADR-0001: receita BRUTA + desconto/reembolso/taxas itemizados como despesa do
@@ -142,6 +141,16 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
   }
 }
 
+export function normalizePrestacaoCompetencias(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
+  return ensureReceitaLineIds({
+    ...analysis,
+    receitas_por_imovel: analysis.receitas_por_imovel.map((row) => ({
+      ...row,
+      ...resolveReceitaCompetencias(row, analysis.competencia),
+    })),
+  })
+}
+
 // #3 Anula o IPTU "de passagem": IPTU cobrado do inquilino e repassado a
 // prefeitura no mesmo mes (aparece como credito E debito de mesmo valor no
 // razao). Ele nao e receita do locador, entao removemos sua contribuicao do
@@ -162,32 +171,6 @@ function anularIptuDePassagem<T extends { iptu: number | null; total: number; ob
     iptu: 0,
     total: roundMoney(row.total - iptu),
     observacao: appendObservacao(row.observacao, `IPTU de passagem (R$ ${iptu.toFixed(2)}) anulado: cobrado do inquilino e repassado.`),
-  }
-}
-
-// #4 Marca como inadimplente do mes corrente a unidade cujo pagamento de ALUGUEL
-// se refere a uma competencia ANTERIOR a do fechamento (ex.: recebeu em maio o
-// aluguel de marco => abril e maio em aberto). Nao mexe em unidades ja marcadas
-// inadimplencia, Airbnb, vagas ou sem aluguel.
-function marcarInadimplenciaPorCompetencia<T extends { aluguel: number | null; vencimento: string | null; inquilino: string | null; observacao: string | null }>(
-  row: T,
-  competenciaFechamento: string | null,
-): T {
-  if (!competenciaFechamento) return row
-  if (row.aluguel === null || row.aluguel <= 0) return row
-  const textoAtual = normalizeText(`${row.inquilino ?? ""} ${row.observacao ?? ""}`)
-  if (/inadimpl|air ?bnb|intermedia|\bvago\b|vacanci/.test(textoAtual)) return row
-  const competenciaAluguel = normalizeCompetenciaKey(row.vencimento)
-  // Compara apenas quando o vencimento esta no formato de competencia (AAAA-MM).
-  if (!competenciaAluguel || !/^\d{4}-\d{2}$/.test(competenciaAluguel)) return row
-  if (competenciaAluguel >= competenciaFechamento) return row
-  const [ano, mes] = competenciaAluguel.split("-")
-  return {
-    ...row,
-    observacao: appendObservacao(
-      row.observacao,
-      `INADIMPLENCIA: pagamento referente a ${mes}/${ano}; competencia ${competenciaFechamento} em aberto.`,
-    ),
   }
 }
 
@@ -369,6 +352,7 @@ function buildRechecks({
       prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
     ),
     compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
+    checkReceitaCompetencias(prestacao),
     checkAgreementCompetencies(prestacao),
     checkDuplicateAgreementPayments(prestacao, historicalAgreementKeys),
     compareResumoFormula(prestacao, totals),
@@ -393,6 +377,31 @@ function buildRechecks({
   })
 
   return adjusted.filter((check) => check.id !== "skip")
+}
+
+function checkReceitaCompetencias(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
+  const pagasSemCompetencia = (prestacao?.receitas_por_imovel ?? []).filter((row) => {
+    const aluguelRecebido = row.aluguel_com_desconto ?? row.aluguel ?? 0
+    return aluguelRecebido > 0 && !row.competencia_original
+  })
+
+  if (pagasSemCompetencia.length === 0) {
+    return {
+      id: "receitas_competencias",
+      label: "Competências das receitas",
+      status: "passed",
+      message: "Todas as receitas de aluguel recebidas possuem competência original válida.",
+      actual: 0,
+    }
+  }
+
+  return {
+    id: "receitas_competencias",
+    label: "Competências das receitas",
+    status: "failed",
+    message: `${pagasSemCompetencia.length} receita(s) de aluguel estão sem competência original válida. Informe MM/AAAA antes de aprovar.`,
+    actual: pagasSemCompetencia.length,
+  }
 }
 
 function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {

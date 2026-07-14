@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { purgeFechamentos } from "@/lib/server/cadastros-delete"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
+import { loadFechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
@@ -96,6 +97,12 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     }
   }
 
+  const vinculosImoveis = await loadFechamentoVinculosImoveis(supabase, {
+    imobiliaria_id: data.imobiliaria_id,
+    empreendimento_id: data.empreendimento_id,
+    analise_completa: analiseCompleta,
+  })
+
   return NextResponse.json({
     fechamento: {
       id: data.id,
@@ -123,6 +130,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     egestor_lancamentos: await getEgestorLancamentos(supabase, id),
     egestor_envios: await getEgestorEnvios(supabase, id),
     status_eventos: await getStatusEventos(supabase, id),
+    vinculos_imoveis: vinculosImoveis,
   })
 }
 

@@ -9,6 +9,7 @@ import { resolveFechamentoListPresentation } from "@/lib/fechamento-list"
 import { formatBRL } from "@/lib/format"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
+import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -45,6 +46,12 @@ export default function RevisaoPage({ params }: PageProps) {
   const [egestorLancamentos, setEgestorLancamentos] = useState<EgestorLancamento[]>([])
   const [egestorEnvios, setEgestorEnvios] = useState<EgestorEnvio[]>([])
   const [statusEventos, setStatusEventos] = useState<StatusEvento[]>([])
+  const [vinculosImoveis, setVinculosImoveis] = useState<FechamentoVinculosImoveis>({
+    total_receitas: 0,
+    total_vinculadas: 0,
+    pendentes: [],
+    imoveis: [],
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
@@ -82,6 +89,7 @@ export default function RevisaoPage({ params }: PageProps) {
         setEgestorLancamentos(payload.egestor_lancamentos ?? [])
         setEgestorEnvios(payload.egestor_envios ?? [])
         setStatusEventos(payload.status_eventos ?? [])
+        setVinculosImoveis(payload.vinculos_imoveis ?? { total_receitas: 0, total_vinculadas: 0, pendentes: [], imoveis: [] })
         return false
       })
       .catch((err) => {
@@ -124,6 +132,8 @@ export default function RevisaoPage({ params }: PageProps) {
         egestorLancamentos={egestorLancamentos}
         egestorEnvios={egestorEnvios}
         statusEventos={statusEventos}
+        vinculosImoveis={vinculosImoveis}
+        onVinculosChange={setVinculosImoveis}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
         onRefresh={loadFromApi}
       />

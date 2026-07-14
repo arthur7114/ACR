@@ -148,7 +148,7 @@ export function ResolveConflictModal({
               </span>
             </div>
             <div className="rounded-lg border border-[#D5DDD6] bg-white p-4">
-              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Documento informou</span>
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Extraído pela IA</span>
               <span className="mt-1 block text-[22px] font-bold tabular-nums text-[#1A2B1C]">
                 {formatCurrency(validation.valor_encontrado)}
               </span>

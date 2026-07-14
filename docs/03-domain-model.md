@@ -19,7 +19,8 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Regra comercial: taxa de administracao e taxa de intermediacao por imobiliaria + empreendimento, com uma regra ativa por par.
 - Imovel: unidade, inquilino, status, aluguel esperado e taxa de administracao.
 - Imovel por competencia: snapshot mensal imutavel na leitura, ligado ao imovel e ao fechamento que o materializou, com status de ocupacao, aluguel esperado/recebido, receita, desconto, comissao, repasse, origem, qualidade, versao de calculo e checksum. O cadastro do imovel continua sendo a fonte separada da posicao atual ("Hoje").
-- Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca e correcao manual.
+- Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca, imóvel vinculado, competência original e correcao manual.
+- Receita por imóvel: linha da prestação com `competencia_original`, `competencia_recebimento`, `dia_vencimento` e `imovel_id`; os quatro conceitos são independentes e o vínculo só existe quando o ID foi persistido.
 - Acordo/rescisao recebido: item extraido da prestacao quando houver pagamento, acordo, rescisao, parcela ou decisao recebida no mes, com tipo, inquilino, unidade, valor, competencia original, competencia de recebimento, observacao e confianca.
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
 - Validacao: alerta ou divergencia com severidade, status, valores esperados/encontrados e justificativa.
@@ -43,7 +44,13 @@ Aprovacao exige papel `aprovador` ou `admin`.
 
 ## Regras financeiras
 
-- Competencia e o mes/ano de vencimento original, nao necessariamente o mes de pagamento.
+- Competência original é o mês/ano a que cada receita pertence; competência do fechamento/recebimento é o mês em que o dinheiro entrou. Uma não sobrescreve a outra.
+- Dia de vencimento é inteiro de 1 a 31. Um valor isolado como `10` nunca satisfaz a competência original.
+- Referência de IPTU, seguro ou outra despesa não pode ser inferida como competência do aluguel. Competência ausente ou inválida bloqueia aprovação.
+- A movimentação `receita_aluguel` usa a competência original; o fechamento preserva o total do mês de recebimento.
+- IPTU de passagem pode ser exposto na discriminação de receitas, mas se anula financeiramente e não altera receita total, despesa ou repasse.
+- Receita só está vinculada quando a linha e a movimentação apontam para um `imovel_id` ativo do mesmo par imobiliária + empreendimento; código/unidade equivalente serve apenas como sugestão.
+- Correções de competência ou vínculo atualizam fechamento, movimentação, validações, cadastro quando aplicável e auditoria na mesma transação.
 - Divergencia de repasse:
   - ate R$ 0,10: baixa;
   - acima de R$ 0,10 ate R$ 5,00: alta;

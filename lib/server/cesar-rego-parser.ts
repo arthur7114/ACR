@@ -411,6 +411,7 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
       comissao: sumOrNull(comissoes.map((item) => item.debito ?? 0)),
       total: roundMoney(creditos.reduce((total, item) => total + (item.credito ?? 0), 0)),
       repasse: grupo[grupo.length - 1].saldo,
+      competencia_original: vencimento,
       vencimento,
       observacao: detalhes.join("; ") || null,
     })
@@ -430,6 +431,9 @@ function buildReceita(
       | "comissao"
       | "total"
       | "repasse"
+      | "competencia_original"
+      | "competencia_recebimento"
+      | "dia_vencimento"
       | "vencimento"
       | "observacao"
     >
@@ -449,6 +453,9 @@ function buildReceita(
     total: values.total ?? 0,
     comissao: values.comissao ?? null,
     repasse: values.repasse ?? null,
+    competencia_original: values.competencia_original ?? null,
+    competencia_recebimento: values.competencia_recebimento ?? null,
+    dia_vencimento: values.dia_vencimento ?? null,
     vencimento: values.vencimento ?? null,
     observacao: values.observacao ?? null,
     confianca: 1.0,

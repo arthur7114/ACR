@@ -49,6 +49,9 @@ function createPrestacao(overrides: Partial<PrestacaoAnalysis> = {}): PrestacaoA
         total: 1000,
         comissao: 10,
         repasse: 900,
+        competencia_original: "2026-03",
+        competencia_recebimento: "2026-03",
+        dia_vencimento: null,
         vencimento: null,
         observacao: null,
         confianca: 0.95,
@@ -67,6 +70,9 @@ function createPrestacao(overrides: Partial<PrestacaoAnalysis> = {}): PrestacaoA
         total: 2000,
         comissao: 20,
         repasse: 1800,
+        competencia_original: "2026-03",
+        competencia_recebimento: "2026-03",
+        dia_vencimento: null,
         vencimento: null,
         observacao: null,
         confianca: 0.95,
@@ -484,4 +490,71 @@ test("LOCMAIS: validatePackage nao soma a comissao de intermediacao em total_des
   assert.equal(resumoCheck?.status, "passed")
   assert.equal(resumoCheck?.expected, 12528.44)
   assert.equal(resumoCheck?.actual, 12528.44)
+})
+
+test("Terreno Castelao: recupera marco da observacao sem inferir inadimplencia atual", () => {
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      competencia: "2026-05",
+      receitas_por_imovel: [
+        {
+          ...base.receitas_por_imovel[0],
+          vencimento: "10",
+          competencia_original: undefined,
+          competencia_recebimento: undefined,
+          dia_vencimento: undefined,
+          observacao: "VIGÊNCIA MARÇO/2026. IPTU 3/11.",
+        },
+      ],
+      resumo_financeiro: {
+        ...base.resumo_financeiro,
+        total_linhas_receitas: 1000,
+        total_linhas_comissoes: 10,
+        total_linhas_repasse: 900,
+        comissao_administracao: 10,
+        recebidos_em_nome_locador: 1000,
+        total_comissao_despesas: 100,
+        total_a_repassar: 900,
+      },
+    }),
+    repasse: createRepasse(900),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const row = result.prestacao?.receitas_por_imovel[0]
+  assert.equal(row?.competencia_original, "2026-03")
+  assert.equal(row?.competencia_recebimento, "2026-05")
+  assert.equal(row?.dia_vencimento, 10)
+  assert.doesNotMatch(row?.observacao ?? "", /INADIMPLENCIA/)
+  assert.equal(result.rechecks.find((item) => item.id === "receitas_competencias")?.status, "passed")
+})
+
+test("bloqueia aprovacao quando aluguel recebido tem apenas o dia 10 e nenhuma competencia", () => {
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      competencia: "2026-05",
+      receitas_por_imovel: [
+        {
+          ...base.receitas_por_imovel[0],
+          vencimento: "10",
+          competencia_original: undefined,
+          competencia_recebimento: undefined,
+          dia_vencimento: undefined,
+        },
+      ],
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const check = result.rechecks.find((item) => item.id === "receitas_competencias")
+  assert.equal(check?.status, "failed")
+  assert.equal(check?.actual, 1)
+  assert.equal(result.parecer.status, "bloqueado")
 })

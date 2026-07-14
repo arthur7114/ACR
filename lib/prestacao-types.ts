@@ -27,6 +27,7 @@ export type ClassifiedDocument = z.infer<typeof classifiedDocumentSchema>
 
 export const receitaPorImovelSchema = z
   .object({
+    linha_id: z.string().min(1).nullable().optional(),
     apto: z.string(),
     inquilino: z.string(),
     aluguel: z.number().nullable(),
@@ -40,6 +41,12 @@ export const receitaPorImovelSchema = z
     total: z.number(),
     comissao: z.number().nullable(),
     repasse: z.number().nullable(),
+    imovel_id: z.string().uuid().nullable().optional(),
+    // Competencia do aluguel e mes em que o valor entrou no fechamento sao
+    // dimensoes distintas. O vencimento permanece como campo legado de leitura.
+    competencia_original: z.string().nullable().optional(),
+    competencia_recebimento: z.string().nullable().optional(),
+    dia_vencimento: z.number().int().min(1).max(31).nullable().optional(),
     vencimento: z.string().nullable(),
     observacao: z.string().nullable(),
     confianca: z.number().min(0).max(1),
@@ -47,6 +54,7 @@ export const receitaPorImovelSchema = z
   .strict()
 
 export interface ReceitaPorImovel {
+  linha_id?: string | null
   apto: string
   inquilino: string
   aluguel: number | null
@@ -60,6 +68,10 @@ export interface ReceitaPorImovel {
   total: number
   comissao: number | null
   repasse: number | null
+  imovel_id?: string | null
+  competencia_original?: string | null
+  competencia_recebimento?: string | null
+  dia_vencimento?: number | null
   vencimento: string | null
   observacao: string | null
   confianca: number

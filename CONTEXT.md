@@ -45,3 +45,28 @@ da comissão permanece líquida.*
 ### Intermediação
 Taxa sobre novo contrato (ex.: LOCMAIS). Categoria própria; não é despesa do
 locador nem comissão de administração.
+
+### Competência original da receita
+Mês/ano a que o aluguel recebido pertence. Deve ser informado em `MM/AAAA` ou
+`AAAA-MM`; nunca é inferido de uma referência de IPTU ou de um número isolado.
+Um aluguel de março recebido no fechamento de maio permanece receita recebida
+em maio, mas sua movimentação usa março como competência original.
+
+### Competência de recebimento
+Mês do fechamento em que o dinheiro entrou. Não substitui nem reclassifica a
+competência original da receita.
+
+### Dia de vencimento
+Dia do mês, de 1 a 31. Um valor isolado como `10` é dia de vencimento, nunca
+competência. Competência ausente aparece como “Não informada” e bloqueia a
+aprovação até confirmação do operador.
+
+### IPTU de passagem
+IPTU cobrado do inquilino e repassado pelo mesmo valor. Pode aparecer na
+discriminação de “Receitas” para explicar o recebido, mas se anula na conta do
+locador e não altera receita total, despesa ou repasse.
+
+### Imóvel vinculado
+Receita cuja linha e movimentação apontam explicitamente para um cadastro de
+imóvel ativo. Coincidência textual de código ou unidade é apenas sugestão; não
+substitui o vínculo persistido.

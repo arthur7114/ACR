@@ -4,8 +4,10 @@ import type {
   PrestacaoRecheck,
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
+import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import { normalizeCadastroKey } from "./cadastros"
 import { createSupabaseAdmin } from "./supabase"
+import { attachExistingImovelLinks } from "./fechamento-imoveis"
 
 const BUCKET = "fechamento-documentos"
 
@@ -22,7 +24,8 @@ interface PersistPrestacaoInput {
 
 export async function persistPrestacao(input: PersistPrestacaoInput) {
   const supabase = createSupabaseAdmin()
-  const { analysis, parecer, rechecks, guardrails } = input
+  let { analysis } = input
+  const { parecer, rechecks, guardrails } = input
   const storagePath = `alive-gmii/${Date.now()}-${sanitizeFilename(input.fileName)}`
 
   const upload = await supabase.storage.from(BUCKET).upload(storagePath, input.fileBuffer, {
@@ -36,6 +39,11 @@ export async function persistPrestacao(input: PersistPrestacaoInput) {
 
   const imobiliaria = await findOrCreateImobiliaria(supabase, analysis.imobiliaria || "Alive Imoveis")
   const empreendimento = await findOrCreateEmpreendimento(supabase, analysis.empreendimento || "Grand Messejana II")
+  analysis = await attachExistingImovelLinks(
+    supabase,
+    { imobiliariaId: imobiliaria.id as string, empreendimentoId: empreendimento.id as string },
+    { prestacao: analysis },
+  ).then((result) => result.prestacao ?? analysis)
 
   const { data: fechamento, error: fechamentoError } = await supabase
     .from("fechamentos")
@@ -88,10 +96,11 @@ export async function persistPrestacao(input: PersistPrestacaoInput) {
     descricao: `${row.apto} - ${row.inquilino}`,
     valor: row.total,
     sinal: "positivo",
-    data_competencia: normalizeCompetencia(analysis.competencia),
+    data_competencia: competenciaMesToDatabase(row.competencia_original),
     origem_documental: "prestacao_alive_secao_1",
     confianca_extracao: row.confianca,
     status_validacao: "pendente",
+    imovel_id: row.imovel_id ?? null,
     dados_extraidos: row,
   }))
 

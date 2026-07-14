@@ -9,14 +9,16 @@ import type {
   RepasseAnalysis,
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
+import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { FechamentoContext } from "@/lib/fechamento-context"
 import { normalizeCadastroKey } from "./cadastros"
 import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
+import { attachExistingImovelLinks } from "./fechamento-imoveis"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
 
-interface ResolvedValidation {
+export interface ResolvedValidation {
   tipo_validacao: string
   status: string
   justificativa: string | null
@@ -40,7 +42,7 @@ interface PersistPackageInput {
 
 export async function persistPackage(input: PersistPackageInput) {
   const supabase = createSupabaseAdmin()
-  const { analysis } = input
+  let analysis = input.analysis
   const imobiliariaNome = input.fechamentoContext?.imobiliariaNome ?? analysis.prestacao?.imobiliaria ?? "Imobiliaria nao identificada"
   const empreendimentoNome = input.fechamentoContext?.empreendimentoNome ?? analysis.prestacao?.empreendimento ?? "Empreendimento nao identificado"
   const competencia = normalizeCompetencia(input.fechamentoContext?.competencia ?? analysis.prestacao?.competencia ?? "")
@@ -55,6 +57,11 @@ export async function persistPackage(input: PersistPackageInput) {
   const empreendimento = input.fechamentoContext?.empreendimentoId
     ? { id: input.fechamentoContext.empreendimentoId }
     : await findOrCreateEmpreendimento(supabase, empreendimentoNome)
+  analysis = await attachExistingImovelLinks(
+    supabase,
+    { imobiliariaId: imobiliaria.id as string, empreendimentoId: empreendimento.id as string },
+    analysis,
+  )
 
   // Fetch existing resolved validations to decide status and preserve them
   const { data: existingFechamento } = await supabase
@@ -243,20 +250,11 @@ async function persistMovimentacoes({
 }) {
   const supabase = createSupabaseAdmin()
   const rows = [
-    ...(prestacao?.receitas_por_imovel.map((row) => ({
-      fechamento_id: fechamentoId,
-      documento_id: getDocumentoId(documents, "prestacao_contas"),
-      tipo_movimentacao: "receita_aluguel",
-      categoria: "prestacao_contas_secao_1",
-      descricao: `${row.apto} - ${row.inquilino}`,
-      valor: row.total,
-      sinal: "positivo",
-      data_competencia: competencia,
-      origem_documental: "prestacao_alive_secao_1",
-      confianca_extracao: row.confianca,
-      status_validacao: "pendente",
-      dados_extraidos: row,
-    })) ?? []),
+    ...buildPrestacaoMovimentacoes({
+      fechamentoId,
+      documentoId: getDocumentoId(documents, "prestacao_contas"),
+      prestacao,
+    }),
     ...(prestacao?.acordos_rescisoes_recebidos.map((item) => ({
       fechamento_id: fechamentoId,
       documento_id: getDocumentoId(documents, "prestacao_contas"),
@@ -265,7 +263,7 @@ async function persistMovimentacoes({
       descricao: [item.apto, item.inquilino, item.observacao].filter(Boolean).join(" - ") || "Acordo/rescisao recebido",
       valor: item.valor,
       sinal: "positivo",
-      data_competencia: normalizeCompetenciaForDatabase(item.competencia_original) ?? competencia,
+      data_competencia: competenciaMesToDatabase(item.competencia_original) ?? competencia,
       origem_documental: "prestacao_acordos_rescisoes",
       confianca_extracao: item.confianca,
       status_validacao: "pendente",
@@ -325,23 +323,52 @@ async function persistMovimentacoes({
   if (error) throw error
 }
 
-export async function persistValidacoes({
+export function buildPrestacaoMovimentacoes({
   fechamentoId,
-  documents,
-  parecer,
-  rechecks,
-  guardrails,
-  resolvedValidations,
+  documentoId,
+  prestacao,
 }: {
+  fechamentoId: string
+  documentoId: string | null
+  prestacao: PrestacaoAnalysis | null
+}) {
+  return (
+    prestacao?.receitas_por_imovel.map((row) => ({
+      fechamento_id: fechamentoId,
+      documento_id: documentoId,
+      tipo_movimentacao: "receita_aluguel",
+      categoria: "prestacao_contas_secao_1",
+      descricao: `${row.apto} - ${row.inquilino}`,
+      valor: row.total,
+      sinal: "positivo",
+      data_competencia: competenciaMesToDatabase(row.competencia_original),
+      origem_documental: "prestacao_alive_secao_1",
+      confianca_extracao: row.confianca,
+      status_validacao: "pendente",
+      imovel_id: row.imovel_id ?? null,
+      dados_extraidos: row,
+    })) ?? []
+  )
+}
+
+interface BuildValidacoesInput {
   fechamentoId: string
   documents: ClassifiedDocument[]
   parecer: TechnicalOpinion
   rechecks: PrestacaoRecheck[]
   guardrails: PrestacaoGuardrail[]
   resolvedValidations: ResolvedValidation[]
-}) {
-  const supabase = createSupabaseAdmin()
-  const rows = [
+}
+
+export function buildValidacoesRows({
+  fechamentoId,
+  documents,
+  parecer,
+  rechecks,
+  guardrails,
+  resolvedValidations,
+}: BuildValidacoesInput) {
+  return [
     ...rechecks
       .filter((check) => check.status !== "passed")
       .map((check) => {
@@ -398,24 +425,18 @@ export async function persistValidacoes({
       }
     })(),
   ]
+}
 
+export async function persistValidacoes(input: BuildValidacoesInput) {
+  const rows = buildValidacoesRows(input)
   if (rows.length === 0) return
-
+  const supabase = createSupabaseAdmin()
   const { error } = await supabase.from("validacoes").insert(rows)
   if (error) throw error
 }
 
 function getDocumentoId(documents: ClassifiedDocument[], documentType: string) {
   return documents.find((document) => document.documentType === documentType)?.documentoId ?? null
-}
-
-function normalizeCompetenciaForDatabase(value: string | null | undefined) {
-  if (!value) return null
-  const iso = value.match(/(\d{4})-(\d{2})/)
-  if (iso) return `${iso[1]}-${iso[2]}-01`
-  const numeric = value.match(/(\d{1,2})\/(\d{4})/)
-  if (numeric) return `${numeric[2]}-${numeric[1].padStart(2, "0")}-01`
-  return null
 }
 
 function sanitizeFilename(filename: string) {

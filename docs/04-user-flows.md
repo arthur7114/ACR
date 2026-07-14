@@ -49,9 +49,17 @@ Fluxo:
 
 A revisao deve exibir resumo financeiro operacional no topo, receitas por imovel, acordos/rescisoes recebidos no mes, despesas e comprovantes, comprovante de repasse, divergencias, documentos anexados e historico.
 
+Cada receita mostra competência original editável em `MM/AAAA`, mês de recebimento e dia de vencimento separados. Ausência aparece como “Não informada”; referências de IPTU ou dia isolado não preenchem a competência.
+
+Despesas são desdobradas por categoria no topo. O operador abre cada grupo por mouse, teclado ou toque para ver descrição completa, referência e valor.
+
+Quando houver receita sem imóvel vinculado, um banner abre o drawer de resolução. O operador busca um cadastro existente ou cria um novo, compara diferenças e escolhe explicitamente qualquer atualização; o fluxo avança uma receita por vez e mostra progresso.
+
 Leitura tecnica do documento e documentos processados ficam colapsados no fim da revisao.
 
 Correcoes manuais exigem log com usuario, campo, valor anterior, valor novo, data/hora e justificativa.
+
+Correção de competência e vínculo é atômica: análise, movimentação, validações, eventual cadastro e auditoria confirmam juntas ou nenhuma alteração é mantida.
 
 Resolver pendencia exige uma validacao persistida; quando a linha ainda nao existe no banco, a interface deve orientar atualizar/reprocessar em vez de chamar a resolucao com id vazio.
 
@@ -62,6 +70,8 @@ Aprovacao exige:
 - nenhuma divergencia bloqueante aberta;
 - comprovante de repasse conciliado ou justificado;
 - despesas criticas conciliadas ou justificadas.
+- toda receita de aluguel positiva possui competência original válida;
+- toda receita possui `imovel_id` persistido e compatível com o fechamento.
 
 Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. A V1 usa lancamento consolidado por fechamento: repasse mensal como recebimento, comissao/despesas como pagamentos separados. O envio real so ocorre por acao explicita do operador e fica bloqueado quando ha pendencia, configuracao incompleta ou lancamento ja enviado.
 

@@ -25,6 +25,12 @@ import { formatBRL } from "@/lib/format"
 import { calcularIntermediacao } from "@/lib/intermediacao"
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
+import {
+  calcularIptuRecebidoExibicao,
+  calcularResumoComissaoFechamento,
+  desdobrarDespesasFechamento,
+} from "@/lib/fechamento-operacional"
+import { formatCompetenciaMes } from "@/lib/competencia-fechamento"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { AcordoRescisaoRecebido, PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -40,6 +46,9 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
+import { ExpenseBreakdown } from "@/components/acr/expense-breakdown"
+import { FechamentoVinculosDrawer } from "@/components/acr/fechamento-vinculos-drawer"
+import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 
 type StatusEvento = {
@@ -69,6 +78,8 @@ interface RevisaoViewProps {
   egestorLancamentos?: EgestorLancamento[]
   egestorEnvios?: EgestorEnvio[]
   statusEventos?: StatusEvento[]
+  vinculosImoveis?: FechamentoVinculosImoveis
+  onVinculosChange?: (vinculos: FechamentoVinculosImoveis) => void
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
   onRefresh?: () => void
 }
@@ -171,6 +182,7 @@ function isActionableWarning(check: PrestacaoRecheck) {
   if (check.id === "total_linhas_comissoes") return typeof check.difference === "number"
   if (check.id === "total_linhas_repasse") return typeof check.difference === "number"
   if (check.id === "comissao_administracao_regra") return true
+  if (check.id === "receitas_competencias") return true
   if (check.id === "acordos_competencias") return check.status === "warning" || isResolved
   if (check.id === "duplicate_agreement_payment") return true
   return false
@@ -410,7 +422,14 @@ function RecheckRow({
           <CheckValue label="Consolidado" value={check.actual} />
           <CheckValue label="Dif." value={check.difference} />
         </div>
-        {!isResolved &&
+        {!isResolved && check.id === "receitas_competencias" ? (
+          <a
+            href="#receitas-imoveis"
+            className="inline-flex h-8 items-center rounded-md bg-[#2D8C3A]/10 px-3 text-[12px] font-medium text-[#2D8C3A] transition-colors hover:bg-[#2D8C3A] hover:text-white"
+          >
+            Corrigir linhas
+          </a>
+        ) : !isResolved &&
           (check.databaseId ? (
             <button
               onClick={() => onResolve(check)}
@@ -555,6 +574,8 @@ export function RevisaoView({
   egestorLancamentos = [],
   egestorEnvios = [],
   statusEventos = [],
+  vinculosImoveis = { total_receitas: 0, total_vinculadas: 0, pendentes: [], imoveis: [] },
+  onVinculosChange,
 }: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
     id: string
@@ -578,6 +599,10 @@ export function RevisaoView({
   const [editandoCampo, setEditandoCampo] = useState<{ campo: "descricao" | "valor" | "tags"; lancamentoId: string } | null>(null)
   const [valorEdicao, setValorEdicao] = useState("")
   const [salvandoLancamento, setSalvandoLancamento] = useState(false)
+  const [competenciasEdicao, setCompetenciasEdicao] = useState<Record<number, string>>({})
+  const [salvandoCompetencia, setSalvandoCompetencia] = useState<number | null>(null)
+  const [errosCompetencia, setErrosCompetencia] = useState<Record<number, string>>({})
+  const [vinculosOpen, setVinculosOpen] = useState(false)
 
   useEffect(() => {
     if (fechamento?.comentario_operador !== undefined && comentario === "") {
@@ -629,7 +654,8 @@ export function RevisaoView({
   const failedRechecks = actionableRechecks.filter((check) => check.status === "failed" && !isResolvedCheck(check))
   const warningRechecks = actionableRechecks.filter((check) => check.status === "warning" && !isResolvedCheck(check))
   const validationSummary = getValidationSummary(rechecks)
-  const hasBlocking = validationSummary.blocked > 0
+  const blockingCount = validationSummary.blocked + vinculosImoveis.pendentes.length
+  const hasBlocking = blockingCount > 0
   const isApproved = ["aprovado", "preparado_egestor", "lancado_egestor", "erro_egestor"].includes(fechamento?.status ?? "")
   const canPreviewEgestor = isApproved && !hasBlocking
   const canSendEgestor = canPreviewEgestor && egestorLancamentos.length > 0 && egestorLancamentos.every((l) => l.status === "validado")
@@ -715,6 +741,33 @@ export function RevisaoView({
     if (onRefresh) await onRefresh()
   }
 
+  async function salvarCompetenciaReceita(indice: number, competenciaOriginal: string) {
+    setSalvandoCompetencia(indice)
+    setErrosCompetencia((current) => ({ ...current, [indice]: "" }))
+    try {
+      const response = await fetch(`/api/fechamentos/${fechamentoId}/receitas/competencia`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ indice, competencia_original: competenciaOriginal }),
+      })
+      const payload = await response.json()
+      if (!response.ok || payload.error) throw new Error(payload.error ?? "Falha ao salvar competência.")
+      setCompetenciasEdicao((current) => {
+        const next = { ...current }
+        delete next[indice]
+        return next
+      })
+      if (onRefresh) await onRefresh()
+    } catch (error) {
+      setErrosCompetencia((current) => ({
+        ...current,
+        [indice]: error instanceof Error ? error.message : "Falha ao salvar competência.",
+      }))
+    } finally {
+      setSalvandoCompetencia(null)
+    }
+  }
+
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
   const empreendimentoId = fechamento?.empreendimento_id ?? null
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliária não identificada"
@@ -733,6 +786,7 @@ export function RevisaoView({
   const acordoAptos = new Set(acordosRescisoesRecebidos.map((item) => aptoKey(item.apto)).filter(Boolean))
   // #3: comissao retida nos acordos/rescisoes do mes soma-se a comissao de administracao.
   const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
+  const resumoComissao = calcularResumoComissaoFechamento(prestacao)
   // Totais para o rodape da tabela de acordos (espelha o TOTAL impresso no documento).
   const acordosValorTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
   const acordosRepasseTotal = acordosValorTotal - acordosComissao
@@ -764,6 +818,12 @@ export function RevisaoView({
   // dentro de outras_comissoes_despesas (dado antigo), removemos da lista/contagem
   // de "outras despesas" — o total monetario do documento ja a desconsidera.
   const outrasDespesasExibicao = outrasComissoesDespesas.filter((d) => classificarLancamento(d.descricao) !== "intermediacao")
+  const despesasDesdobradas = desdobrarDespesasFechamento({
+    totalDespesas: totals.total_despesas,
+    resumoItens: outrasDespesasExibicao,
+    despesas: despesas?.despesas ?? [],
+  })
+  const iptuRecebidoExibicao = calcularIptuRecebidoExibicao(prestacao, totals.total_iptu ?? rowTotals.iptu)
   // Intermediação: categoria própria (acordos tipo "intermediacao"). Fallback para
   // dado antigo que ainda trazia intermediação dentro de outras_comissoes_despesas.
   const intermediacaoDocumento = (() => {
@@ -779,9 +839,9 @@ export function RevisaoView({
   // #3: comissão de administração exibida = total de comissões do documento (inclui a
   // comissão sobre recebimentos de acordos/atrasos). Fallback: comissão das linhas +
   // comissão dos acordos, quando o documento não trouxer o consolidado.
-  const comissaoAdminExibida = resumo?.comissao_administracao ?? rowTotals.comissao + acordosComissao
+  const comissaoAdminExibida = resumoComissao.total
   // Parte da comissão que vem além das linhas regulares (acordos/atrasos do mês).
-  const comissaoOutras = Math.max(Math.round((comissaoAdminExibida - rowTotals.comissao) * 100) / 100, 0)
+  const comissaoOutras = resumoComissao.acordos
   const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
@@ -829,6 +889,26 @@ export function RevisaoView({
 
   return (
     <div className="space-y-6">
+      {vinculosImoveis.pendentes.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-[#F59E0B] bg-[#FFFBEB] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <Building2 size={18} className="mt-0.5 shrink-0 text-[#B45309]" />
+            <div>
+              <p className="text-[14px] font-semibold text-[#92400E]">
+                {pluralize(vinculosImoveis.pendentes.length, "receita sem imóvel vinculado", "receitas sem imóvel vinculado")}
+              </p>
+              <p className="mt-0.5 text-[12px] text-[#6B7F6E]">A aprovação ficará bloqueada até todos os vínculos serem resolvidos.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVinculosOpen(true)}
+            className="h-9 shrink-0 rounded-lg bg-[#2D8C3A] px-4 text-[12px] font-semibold text-white hover:bg-[#1A5C24]"
+          >
+            Resolver vínculos
+          </button>
+        </div>
+      ) : null}
       <div
         className={`rounded-lg p-3 flex items-center justify-between border ${
           bannerState === "blocked"
@@ -852,7 +932,7 @@ export function RevisaoView({
             }`}
           >
             {bannerState === "blocked"
-              ? `${pluralize(validationSummary.blocked, "pendência bloqueante", "pendências bloqueantes")} a resolver antes de aprovar${
+              ? `${pluralize(blockingCount, "pendência bloqueante", "pendências bloqueantes")} a resolver antes de aprovar${
                   validationSummary.warnings > 0 ? ` · ${pluralize(validationSummary.warnings, "alerta", "alertas")}` : ""
                 }.`
               : bannerState === "warning"
@@ -1005,7 +1085,7 @@ export function RevisaoView({
                     </div>
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[#6B7F6E]">IPTU</span>
-                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_iptu ?? rowTotals.iptu)}</span>
+                      <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(iptuRecebidoExibicao)}</span>
                     </div>
                     <div className="flex justify-between text-[13px]">
                       <span className="text-[#6B7F6E]">Seguro incêndio</span>
@@ -1040,7 +1120,7 @@ export function RevisaoView({
                     </div>
                     {comissaoOutras > 0 && (
                       <div className="flex justify-between text-[13px]">
-                        <span className="text-[#6B7F6E]">Comissão de acordos/atrasos</span>
+                        <span className="text-[#6B7F6E]">Comissão de acordos/rescisões</span>
                         <span className="font-medium tabular-nums text-[#1A2B1C]">+ {formatBRL(comissaoOutras)}</span>
                       </div>
                     )}
@@ -1054,18 +1134,7 @@ export function RevisaoView({
                 {/* Despesas */}
                 <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #D97706" }}>
                   <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#D97706]">Outras despesas</p>
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between text-[13px]">
-                      <span className="text-[#6B7F6E]">Itens no resumo</span>
-                      <span className="font-medium tabular-nums text-[#1A2B1C]">{outrasDespesasExibicao.length}</span>
-                    </div>
-                    <div className="flex justify-between text-[13px]">
-                      <span className="text-[#6B7F6E]">Diferença cálculo x comprovante</span>
-                      <span className={`font-medium tabular-nums ${totals.diferenca_repasse ? "text-[#DC2626]" : "text-[#2D8C3A]"}`}>
-                        {totals.diferenca_repasse === null ? "—" : formatBRL(totals.diferenca_repasse)}
-                      </span>
-                    </div>
-                  </div>
+                  <ExpenseBreakdown groups={despesasDesdobradas} />
                   <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
                     <span className="font-semibold text-[#D97706]">Abatido do repasse</span>
                     <span className="font-bold tabular-nums text-[#D97706]">− {formatBRL(totals.total_despesas)}</span>
@@ -1282,7 +1351,7 @@ export function RevisaoView({
       )}
 
       {prestacao && (
-        <section className="bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
+        <section id="receitas-imoveis" className="scroll-mt-4 bg-white rounded-xl border border-[#EEF1EE] shadow-[0_1px_3px_rgba(0,0,0,0.06)] overflow-hidden">
           <div className="p-4 border-b border-[#EEF1EE] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <div>
               <h3 className="text-[16px] font-bold text-[#1A2B1C]">Receitas por imóvel</h3>
@@ -1331,6 +1400,10 @@ export function RevisaoView({
               {linhasImoveisExibicao.length > 0 ? (
                 linhasImoveisExibicao.map((row) => {
                   const badge = getRowBadge(row, acordoAptos)
+                  const rowIndex = linhasImoveis.indexOf(row)
+                  const competenciaAtual = row.competencia_original ? formatCompetenciaMes(row.competencia_original) : ""
+                  const competenciaDigitada = competenciasEdicao[rowIndex] ?? competenciaAtual
+                  const competenciaAlterada = competenciaDigitada !== competenciaAtual
                   return (
                   <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                     <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">
@@ -1373,8 +1446,46 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
-                    <td className={`px-4 py-3.5 tabular-nums whitespace-nowrap ${row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "font-semibold text-[#B45309]" : "text-[#3D4F3F]"}`} title={row.vencimento && competenciaMesAno && row.vencimento !== competenciaMesAno ? "Aluguel referente a mês anterior" : undefined}>
-                      {row.vencimento ?? "-"}
+                    <td className="min-w-[180px] px-4 py-3.5 align-top">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          value={competenciaDigitada}
+                          onChange={(event) => setCompetenciasEdicao((current) => ({ ...current, [rowIndex]: event.target.value }))}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" && competenciaAlterada) void salvarCompetenciaReceita(rowIndex, competenciaDigitada)
+                            if (event.key === "Escape") {
+                              setCompetenciasEdicao((current) => ({ ...current, [rowIndex]: competenciaAtual }))
+                              setErrosCompetencia((current) => ({ ...current, [rowIndex]: "" }))
+                            }
+                          }}
+                          placeholder="Não informada"
+                          inputMode="numeric"
+                          aria-label={`Competência original de ${row.apto}`}
+                          aria-invalid={Boolean(errosCompetencia[rowIndex])}
+                          disabled={salvandoCompetencia === rowIndex || isApproved}
+                          className={`h-8 w-[112px] rounded-md border bg-white px-2 text-[12px] tabular-nums outline-none focus:ring-2 focus:ring-[#2D8C3A] ${
+                            errosCompetencia[rowIndex]
+                              ? "border-[#DC2626] text-[#991B1B]"
+                              : row.competencia_original && competenciaMesAno && competenciaAtual !== competenciaMesAno
+                                ? "border-[#F59E0B] font-semibold text-[#92400E]"
+                                : "border-[#D5DDD6] text-[#3D4F3F]"
+                          }`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void salvarCompetenciaReceita(rowIndex, competenciaDigitada)}
+                          disabled={!competenciaAlterada || salvandoCompetencia === rowIndex || isApproved}
+                          className="inline-flex size-8 items-center justify-center rounded-md bg-[#2D8C3A] text-white hover:bg-[#1A5C24] disabled:cursor-not-allowed disabled:opacity-35"
+                          aria-label={`Salvar competência de ${row.apto}`}
+                        >
+                          {salvandoCompetencia === rowIndex ? <RefreshCw size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[10px] font-normal text-[#6B7F6E]">
+                        Recebido em {competenciaMesAno ?? "mês não informado"}{row.dia_vencimento ? ` · vence dia ${row.dia_vencimento}` : ""}
+                      </p>
+                      {!row.competencia_original ? <p className="mt-0.5 text-[10px] font-medium text-[#92400E]">Informe no formato MM/AAAA</p> : null}
+                      {errosCompetencia[rowIndex] ? <p className="mt-1 max-w-[180px] text-[10px] leading-snug text-[#991B1B]">{errosCompetencia[rowIndex]}</p> : null}
                     </td>
                     <td className="min-w-[260px] max-w-[420px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{row.observacao?.trim() || "-"}</td>
                   </tr>
@@ -1578,6 +1689,17 @@ export function RevisaoView({
           className="w-full min-h-[80px] p-3 text-[13px] text-[#1A2B1C] bg-[#F8FAF8] border border-[#EEF1EE] rounded-lg focus:border-[#2D8C3A] focus:ring-1 focus:ring-[#2D8C3A] focus:outline-none resize-y"
         />
       </section>
+
+      <FechamentoVinculosDrawer
+        open={vinculosOpen}
+        onOpenChange={setVinculosOpen}
+        fechamentoId={fechamentoId}
+        vinculos={vinculosImoveis}
+        onResolved={async (next) => {
+          onVinculosChange?.(next)
+          if (onRefresh) await onRefresh()
+        }}
+      />
 
       <section className="bg-white border border-[#EEF1EE] rounded-xl p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
