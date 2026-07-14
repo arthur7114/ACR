@@ -4,6 +4,8 @@ import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 const FECHAMENTO_BASE_SELECT = `
   id,
+  imobiliaria_id,
+  empreendimento_id,
   competencia,
   status,
   processamento_status,

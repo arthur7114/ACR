@@ -93,9 +93,20 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Notificacoes in-app vivem na tabela `notificacoes` e aparecem no sino do topo (badge de nao-lidas) com toast (sonner) e notificacao do SO (Notifications API, permissao pedida no clique do sino); um poller global de 12s detecta conclusao/falha de analise mesmo fora da tela de processamento. A conclusao/falha do workflow cria a notificacao no servidor.
 - Indicadores sao operacionais-financeiros, nao de investimento. A quarta aba e "Receitas por imovel" porque a fonte e a prestacao da competencia, nao um ledger bancario.
 - Competencias parciais permanecem visiveis, mas exibem cobertura e qualidade. Ocupacao historica vem de `imovel_competencias`; cadastro atual aparece apenas como "Hoje".
+- A lista de fechamentos usa consulta local imediata sobre a colecao carregada: busca e filtros combinaveis, ordenacao em todas as colunas de dados, 25 itens por pagina e estado completo persistido na URL. A tabela preserva alinhamento financeiro e rolagem interna sem causar overflow da pagina.
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-13 - Consulta operacional da lista de fechamentos
+
+Status: done.
+Job: melhorar a tabela de `/fechamentos` com busca, filtros, ordenacao, paginacao e persistencia da consulta.
+Outcome entregue: a lista ganhou busca sem acento por imobiliaria, empreendimento e status; filtros combinaveis por status, competencia, imobiliaria e empreendimento; ordenacao crescente/decrescente nas sete colunas de dados, com competencia mais recente como padrao e valores ausentes ao final; paginacao em lotes de 25; contagem de intervalo e total; limpeza individual/global dos filtros; estado vazio recuperavel; e persistencia de busca, filtros, ordenacao, pagina e inclusao de arquivados na URL. A API passou a expor os UUIDs dos cadastros relacionados para filtros sem ambiguidade de nomes. Cabecalhos usam `aria-sort`, acoes por icone receberam nomes acessiveis, valores financeiros ficaram alinhados e a regiao da tabela ganhou scroll interno em larguras menores.
+Validacao: testes direcionados 12/12 e suite completa 167/167 passaram; `pnpm lint`, `pnpm exec tsc --noEmit`, `pnpm build`, detector do Impeccable e checklist mestre 6/6 passaram. QA autenticada em dados reais confirmou busca persistente, filtro/estado vazio, ordenacao monetaria ascendente, pagina 2 com 20 de 45 registros e URL restauravel. Em 1024 e 1280 px nao houve overflow da pagina; filtros reorganizaram em uma ou duas linhas e somente a tabela rolou quando necessario.
+Decisoes: filtros, ordenacao e paginacao permanecem client-side porque a colecao atual e pequena e ja e carregada integralmente; filtros de cadastro usam UUID, enquanto busca usa rotulos normalizados. O contrato visual existente foi ampliado sem mudar o fluxo ou as regras financeiras.
+Arquivos/docs impactados: `components/acr/views/fechamentos-view.tsx`, `lib/fechamentos-table.ts`, `lib/fechamentos-table.test.ts`, `app/api/fechamentos/route.ts`, `docs/02-mock-contract.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`, `melhorar-tabela-fechamentos.md`.
+Proxima acao: validar a mesma consulta no deployment do EasyPanel e, se a colecao crescer a ponto de afetar tempo de carregamento, migrar filtros e paginacao para a API preservando os mesmos parametros de URL.
 
 ### 2026-07-13 - Rollout e QA autenticada dos indicadores (Slice 8)
 

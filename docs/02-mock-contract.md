@@ -23,7 +23,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 
 ## Telas contratadas
 
-- `fechamentos`: lista de fechamentos com filtros, status, valores, diferenca e acoes. Rascunho sem job ativo aparece como "Aguardando documentos" e abre o upload; somente `processamento_status=processando` aparece como "Processando".
+- `fechamentos`: lista de fechamentos com busca e filtros combinaveis por status, competencia, imobiliaria e empreendimento; todas as colunas de dados sao ordenaveis, com competencia mais recente como padrao; a lista pagina 25 itens e preserva filtros, ordenacao, pagina e inclusao de arquivados na URL. A tabela mantem os valores financeiros alinhados, resultado/total explicitos, estado vazio recuperavel e rolagem horizontal interna quando necessario. Rascunho sem job ativo aparece como "Aguardando documentos" e abre o upload; somente `processamento_status=processando` aparece como "Processando".
 - `novo-fechamento`: formulario com imobiliaria, empreendimento, competencia e observacoes.
 - `upload`: upload multiplo, classificacao automatica/manual e bloqueio quando ha documento sem classificacao.
 - `processando`: etapas visuais do pipeline: salvar arquivos, classificar, extrair, validar, conciliar e finalizar.

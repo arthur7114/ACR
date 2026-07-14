@@ -32,6 +32,13 @@
 - CA14.2: intermediação com IPTU preserva aluguel como base percentual, exibe o IPTU separadamente e calcula `total recebido = aluguel + IPTU` e `repasse = total recebido - comissão`, respeitando valores explícitos do documento.
 - CA14.3: a validação do resumo final subtrai a comissão de intermediação separadamente da comissão administrativa e das despesas, sem gerar divergência falsa nem duplicar a retenção.
 
+## Lista de fechamentos
+
+- CA-FEC01: busca textual e filtros por status, competencia, imobiliaria e empreendimento funcionam em conjunto; busca ignora acentos e tambem encontra o rotulo de status.
+- CA-FEC02: competencia, imobiliaria, empreendimento, status e valores financeiros permitem ordenacao crescente/decrescente; o padrao e competencia mais recente, valores ausentes permanecem ao final e a lista pagina 25 itens.
+- CA-FEC03: busca, filtros, ordenacao, pagina e inclusao de arquivados persistem na URL; filtros sem correspondencia exibem estado vazio com acao para limpar a consulta.
+- CA-FEC04: a lista nao causa overflow horizontal da pagina; em larguras menores, somente a regiao da tabela rola. Cabecalhos ordenaveis, filtros, paginacao e acoes sao operaveis por teclado, com foco visivel e nomes acessiveis.
+
 ## Indicadores
 
 - CA-IND01: o mapa de calor usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja, tanto nas células quanto na legenda.
