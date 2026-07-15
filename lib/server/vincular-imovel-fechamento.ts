@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import { imovelInputSchema, imovelStatusSchema } from "./cadastros"
-import { applyFechamentoCorrection, resolveReceitaMovement } from "./fechamento-corrections"
+import { applyFechamentoCorrection, FechamentoCorrectionError, resolveReceitaMovement } from "./fechamento-corrections"
 import {
   construirVinculosImoveis,
   type ImovelVinculoCadastro,
 } from "./fechamento-imoveis"
-import { FechamentoCorrectionError } from "./corrigir-competencia-receita"
 import { createSupabaseAdmin } from "./supabase"
 
 const EDITABLE_STATUSES = new Set(["pendente_revisao", "processado_com_sucesso"])

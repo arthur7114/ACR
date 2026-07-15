@@ -26,7 +26,6 @@ const OPERATIONAL_RECHECK_IDS = new Set([
   "total_linhas_comissoes",
   "total_linhas_repasse",
   "comissao_administracao_regra",
-  "receitas_competencias",
   "acordos_competencias",
   "duplicate_agreement_payment",
   "resumo_financeiro",
@@ -352,7 +351,6 @@ function buildRechecks({
       prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
     ),
     compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
-    checkReceitaCompetencias(prestacao),
     checkAgreementCompetencies(prestacao),
     checkDuplicateAgreementPayments(prestacao, historicalAgreementKeys),
     compareResumoFormula(prestacao, totals),
@@ -377,31 +375,6 @@ function buildRechecks({
   })
 
   return adjusted.filter((check) => check.id !== "skip")
-}
-
-function checkReceitaCompetencias(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
-  const pagasSemCompetencia = (prestacao?.receitas_por_imovel ?? []).filter((row) => {
-    const aluguelRecebido = row.aluguel_com_desconto ?? row.aluguel ?? 0
-    return aluguelRecebido > 0 && !row.competencia_original
-  })
-
-  if (pagasSemCompetencia.length === 0) {
-    return {
-      id: "receitas_competencias",
-      label: "Competências das receitas",
-      status: "passed",
-      message: "Todas as receitas de aluguel recebidas possuem competência original válida.",
-      actual: 0,
-    }
-  }
-
-  return {
-    id: "receitas_competencias",
-    label: "Competências das receitas",
-    status: "failed",
-    message: `${pagasSemCompetencia.length} receita(s) de aluguel estão sem competência original válida. Informe MM/AAAA antes de aprovar.`,
-    actual: pagasSemCompetencia.length,
-  }
 }
 
 function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {

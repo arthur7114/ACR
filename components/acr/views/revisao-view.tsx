@@ -182,7 +182,6 @@ function isActionableWarning(check: PrestacaoRecheck) {
   if (check.id === "total_linhas_comissoes") return typeof check.difference === "number"
   if (check.id === "total_linhas_repasse") return typeof check.difference === "number"
   if (check.id === "comissao_administracao_regra") return true
-  if (check.id === "receitas_competencias") return true
   if (check.id === "acordos_competencias") return check.status === "warning" || isResolved
   if (check.id === "duplicate_agreement_payment") return true
   return false
@@ -422,14 +421,7 @@ function RecheckRow({
           <CheckValue label="Consolidado" value={check.actual} />
           <CheckValue label="Dif." value={check.difference} />
         </div>
-        {!isResolved && check.id === "receitas_competencias" ? (
-          <a
-            href="#receitas-imoveis"
-            className="inline-flex h-8 items-center rounded-md bg-[#2D8C3A]/10 px-3 text-[12px] font-medium text-[#2D8C3A] transition-colors hover:bg-[#2D8C3A] hover:text-white"
-          >
-            Corrigir linhas
-          </a>
-        ) : !isResolved &&
+        {!isResolved &&
           (check.databaseId ? (
             <button
               onClick={() => onResolve(check)}
@@ -599,9 +591,6 @@ export function RevisaoView({
   const [editandoCampo, setEditandoCampo] = useState<{ campo: "descricao" | "valor" | "tags"; lancamentoId: string } | null>(null)
   const [valorEdicao, setValorEdicao] = useState("")
   const [salvandoLancamento, setSalvandoLancamento] = useState(false)
-  const [competenciasEdicao, setCompetenciasEdicao] = useState<Record<number, string>>({})
-  const [salvandoCompetencia, setSalvandoCompetencia] = useState<number | null>(null)
-  const [errosCompetencia, setErrosCompetencia] = useState<Record<number, string>>({})
   const [vinculosOpen, setVinculosOpen] = useState(false)
 
   useEffect(() => {
@@ -739,33 +728,6 @@ export function RevisaoView({
     }
     setEditandoCampo(null)
     if (onRefresh) await onRefresh()
-  }
-
-  async function salvarCompetenciaReceita(indice: number, competenciaOriginal: string) {
-    setSalvandoCompetencia(indice)
-    setErrosCompetencia((current) => ({ ...current, [indice]: "" }))
-    try {
-      const response = await fetch(`/api/fechamentos/${fechamentoId}/receitas/competencia`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ indice, competencia_original: competenciaOriginal }),
-      })
-      const payload = await response.json()
-      if (!response.ok || payload.error) throw new Error(payload.error ?? "Falha ao salvar competência.")
-      setCompetenciasEdicao((current) => {
-        const next = { ...current }
-        delete next[indice]
-        return next
-      })
-      if (onRefresh) await onRefresh()
-    } catch (error) {
-      setErrosCompetencia((current) => ({
-        ...current,
-        [indice]: error instanceof Error ? error.message : "Falha ao salvar competência.",
-      }))
-    } finally {
-      setSalvandoCompetencia(null)
-    }
   }
 
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
@@ -1400,10 +1362,8 @@ export function RevisaoView({
               {linhasImoveisExibicao.length > 0 ? (
                 linhasImoveisExibicao.map((row) => {
                   const badge = getRowBadge(row, acordoAptos)
-                  const rowIndex = linhasImoveis.indexOf(row)
                   const competenciaAtual = row.competencia_original ? formatCompetenciaMes(row.competencia_original) : ""
-                  const competenciaDigitada = competenciasEdicao[rowIndex] ?? competenciaAtual
-                  const competenciaAlterada = competenciaDigitada !== competenciaAtual
+                  const competenciaAtrasada = Boolean(row.competencia_original && competenciaMesAno && competenciaAtual !== competenciaMesAno)
                   return (
                   <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                     <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">
@@ -1446,46 +1406,11 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
-                    <td className="min-w-[180px] px-4 py-3.5 align-top">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          value={competenciaDigitada}
-                          onChange={(event) => setCompetenciasEdicao((current) => ({ ...current, [rowIndex]: event.target.value }))}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" && competenciaAlterada) void salvarCompetenciaReceita(rowIndex, competenciaDigitada)
-                            if (event.key === "Escape") {
-                              setCompetenciasEdicao((current) => ({ ...current, [rowIndex]: competenciaAtual }))
-                              setErrosCompetencia((current) => ({ ...current, [rowIndex]: "" }))
-                            }
-                          }}
-                          placeholder="Não informada"
-                          inputMode="numeric"
-                          aria-label={`Competência original de ${row.apto}`}
-                          aria-invalid={Boolean(errosCompetencia[rowIndex])}
-                          disabled={salvandoCompetencia === rowIndex || isApproved}
-                          className={`h-8 w-[112px] rounded-md border bg-white px-2 text-[12px] tabular-nums outline-none focus:ring-2 focus:ring-[#2D8C3A] ${
-                            errosCompetencia[rowIndex]
-                              ? "border-[#DC2626] text-[#991B1B]"
-                              : row.competencia_original && competenciaMesAno && competenciaAtual !== competenciaMesAno
-                                ? "border-[#F59E0B] font-semibold text-[#92400E]"
-                                : "border-[#D5DDD6] text-[#3D4F3F]"
-                          }`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void salvarCompetenciaReceita(rowIndex, competenciaDigitada)}
-                          disabled={!competenciaAlterada || salvandoCompetencia === rowIndex || isApproved}
-                          className="inline-flex size-8 items-center justify-center rounded-md bg-[#2D8C3A] text-white hover:bg-[#1A5C24] disabled:cursor-not-allowed disabled:opacity-35"
-                          aria-label={`Salvar competência de ${row.apto}`}
-                        >
-                          {salvandoCompetencia === rowIndex ? <RefreshCw size={13} className="animate-spin" /> : <CheckCircle size={13} />}
-                        </button>
-                      </div>
-                      <p className="mt-1 text-[10px] font-normal text-[#6B7F6E]">
-                        Recebido em {competenciaMesAno ?? "mês não informado"}{row.dia_vencimento ? ` · vence dia ${row.dia_vencimento}` : ""}
-                      </p>
-                      {!row.competencia_original ? <p className="mt-0.5 text-[10px] font-medium text-[#92400E]">Informe no formato MM/AAAA</p> : null}
-                      {errosCompetencia[rowIndex] ? <p className="mt-1 max-w-[180px] text-[10px] leading-snug text-[#991B1B]">{errosCompetencia[rowIndex]}</p> : null}
+                    <td
+                      className={`px-4 py-3.5 tabular-nums whitespace-nowrap ${competenciaAtrasada ? "font-semibold text-[#B45309]" : "text-[#3D4F3F]"}`}
+                      title={competenciaAtrasada ? `Aluguel referente a mês anterior · recebido em ${competenciaMesAno}` : undefined}
+                    >
+                      {competenciaAtual || "-"}
                     </td>
                     <td className="min-w-[260px] max-w-[420px] px-4 py-3.5 text-[12px] leading-snug text-[#6B7F6E] whitespace-normal break-words">{row.observacao?.trim() || "-"}</td>
                   </tr>

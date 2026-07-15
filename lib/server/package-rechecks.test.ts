@@ -529,10 +529,9 @@ test("Terreno Castelao: recupera marco da observacao sem inferir inadimplencia a
   assert.equal(row?.competencia_recebimento, "2026-05")
   assert.equal(row?.dia_vencimento, 10)
   assert.doesNotMatch(row?.observacao ?? "", /INADIMPLENCIA/)
-  assert.equal(result.rechecks.find((item) => item.id === "receitas_competencias")?.status, "passed")
 })
 
-test("bloqueia aprovacao quando aluguel recebido tem apenas o dia 10 e nenhuma competencia", () => {
+test("nao bloqueia aprovacao quando aluguel recebido esta sem competencia original", () => {
   const base = createPrestacao()
   const result = validatePackage({
     documents: requiredDocuments,
@@ -553,8 +552,8 @@ test("bloqueia aprovacao quando aluguel recebido tem apenas o dia 10 e nenhuma c
     reajuste: null,
   })
 
-  const check = result.rechecks.find((item) => item.id === "receitas_competencias")
-  assert.equal(check?.status, "failed")
-  assert.equal(check?.actual, 1)
-  assert.equal(result.parecer.status, "bloqueado")
+  // A competencia e exibida a partir do documento; a ausencia nao gera recheck
+  // bloqueante nem impede a aprovacao.
+  assert.equal(result.rechecks.some((item) => item.id === "receitas_competencias"), false)
+  assert.notEqual(result.parecer.status, "bloqueado")
 })

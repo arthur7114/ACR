@@ -1,4 +1,4 @@
-import { competenciaMesToDatabase, normalizeCompetenciaMes } from "@/lib/competencia-fechamento"
+import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import { loadFechamentoVinculosImoveis } from "./fechamento-imoveis"
 import { resolveReceitaMovement } from "./fechamento-corrections"
@@ -9,7 +9,6 @@ export async function assertFechamentoOperationalReady(
   fechamentoId: string,
 ) {
   const fechamento = await loadFechamento(supabase, fechamentoId)
-  assertCompetencias(fechamento.analise)
   await assertMovements(supabase, fechamentoId, fechamento.analise)
   const vinculos = await loadFechamentoVinculosImoveis(supabase, {
     imobiliaria_id: fechamento.imobiliariaId,
@@ -73,12 +72,4 @@ async function loadFechamento(supabase: ReturnType<typeof createSupabaseAdmin>, 
     empreendimentoId: data.empreendimento_id,
     analise: data.analise_completa as PackageAnalysis | null,
   }
-}
-
-function assertCompetencias(analysis: PackageAnalysis | null) {
-  const pending = (analysis?.prestacao?.receitas_por_imovel ?? []).filter((row) => {
-    const aluguelRecebido = row.aluguel_com_desconto ?? row.aluguel ?? 0
-    return aluguelRecebido > 0 && !normalizeCompetenciaMes(row.competencia_original)
-  }).length
-  if (pending > 0) throw new Error(`${pending} receita(s) estão sem competência original. Corrija as linhas antes de aprovar.`)
 }

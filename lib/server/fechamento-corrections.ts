@@ -18,6 +18,12 @@ export interface FechamentoAuditInput {
 
 export class FechamentoStaleError extends Error {}
 
+export class FechamentoCorrectionError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message)
+  }
+}
+
 export function ensureReceitaLineIds<T extends { receitas_por_imovel: ReceitaPorImovel[] }>(prestacao: T): T {
   const used = new Set<string>()
   return {

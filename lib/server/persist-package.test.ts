@@ -40,7 +40,7 @@ test("movimentacao de aluguel usa competencia original e preserva o recebimento 
   assert.equal(row.dados_extraidos.dia_vencimento, 10)
 })
 
-test("movimentacao sem competencia fica sem data e depende da validacao bloqueante", () => {
+test("movimentacao sem competencia fica sem data de competencia", () => {
   const prestacao = {
     receitas_por_imovel: [
       {

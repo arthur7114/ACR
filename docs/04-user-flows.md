@@ -49,7 +49,7 @@ Fluxo:
 
 A revisao deve exibir resumo financeiro operacional no topo, receitas por imovel, acordos/rescisoes recebidos no mes, despesas e comprovantes, comprovante de repasse, divergencias, documentos anexados e historico.
 
-Cada receita mostra competência original editável em `MM/AAAA`, mês de recebimento e dia de vencimento separados. Ausência aparece como “Não informada”; referências de IPTU ou dia isolado não preenchem a competência.
+Cada receita exibe a competência original extraída do documento em `MM/AAAA` (somente leitura), com destaque quando é anterior ao mês do recebimento. Ausência aparece como “-”; referências de IPTU ou dia isolado não preenchem a competência e a coluna não é editável na tabela.
 
 Despesas são desdobradas por categoria no topo. O operador abre cada grupo por mouse, teclado ou toque para ver descrição completa, referência e valor.
 

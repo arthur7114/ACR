@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { FechamentoCorrectionError } from "@/lib/server/corrigir-competencia-receita"
-import { FechamentoStaleError } from "@/lib/server/fechamento-corrections"
+import { FechamentoCorrectionError, FechamentoStaleError } from "@/lib/server/fechamento-corrections"
 import { vincularImovelFechamento } from "@/lib/server/vincular-imovel-fechamento"
 
 const inputSchema = z.object({
