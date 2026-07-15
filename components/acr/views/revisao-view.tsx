@@ -970,7 +970,6 @@ export function RevisaoView({
             description="Valores consolidados para decidir aprovação e repasse."
           />
           <div className="flex flex-wrap gap-2 text-[12px] text-[#3D4F3F]">
-            <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">Admin. {formatPercent(taxaAdministracao)}</span>
             {intermediacaoDocumento && (
               <span className="rounded-full border border-[#D5DDD6] bg-white px-3 py-1">
                 Intermediação {formatBRL(intermediacaoDocumento.valor)}
