@@ -118,13 +118,29 @@ const calculationAnalysisSchema = z
       .passthrough(),
     prestacao: z
       .object({
-        receitas_por_imovel: z.array(z.object({ apto: z.string() }).passthrough()).default([]),
+        receitas_por_imovel: z
+          .array(
+            z
+              .object({
+                apto: z.string(),
+                imovel_id: z.string().nullable().optional(),
+                competencia_original: z.string().nullable().optional(),
+                aluguel: z.number().nullable().optional(),
+                aluguel_com_desconto: z.number().nullable().optional(),
+                total: z.number().optional(),
+              })
+              .passthrough(),
+          )
+          .default([]),
         acordos_rescisoes_recebidos: z
           .array(
             z
               .object({
                 tipo: z.enum(["intermediacao", "acordo", "rescisao", "atraso", "outro"]),
                 comissao: z.number().nullable().optional(),
+                apto: z.string().nullable().optional(),
+                valor: z.number().nullable().optional(),
+                competencia_original: z.string().nullable().optional(),
               })
               .passthrough(),
           )
@@ -346,11 +362,21 @@ function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | nu
     },
     prestacao: prestacao
       ? {
-          receitas_por_imovel: prestacao.receitas_por_imovel.map((line) => ({ apto: line.apto })),
+          receitas_por_imovel: prestacao.receitas_por_imovel.map((line) => ({
+            apto: line.apto,
+            imovel_id: line.imovel_id ?? null,
+            competencia_original: line.competencia_original ?? null,
+            aluguel: line.aluguel ?? null,
+            aluguel_com_desconto: line.aluguel_com_desconto ?? null,
+            total: line.total,
+          })),
           acordos_rescisoes_recebidos:
             prestacao.acordos_rescisoes_recebidos?.map((item) => ({
               tipo: item.tipo,
               comissao: item.comissao ?? null,
+              apto: item.apto ?? null,
+              valor: item.valor ?? null,
+              competencia_original: item.competencia_original ?? null,
             })) ?? null,
           inadimplencias_acumuladas:
             prestacao.inadimplencias_acumuladas?.map((item) => ({ valor: item.valor })) ?? null,

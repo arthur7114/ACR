@@ -86,6 +86,16 @@ A ponte financeira reconcilia receita, comissão administrativa, despesas,
 intermediação e repasse com tolerância de R$ 0,01. Resíduo acima da tolerância é
 alerta explícito.
 
+Atribuição por competência original (ajuste de 2026-07-15): na **série
+mensal**, receita total e aluguel recebido pertencem à competência original do
+aluguel — linhas com `competencia_original` anterior ao mês do fechamento e
+acordos `tipo="atraso"` movem seus valores do mês do recebimento para o mês
+original (`competenciaAjusteReceita`/`competenciaAjusteAluguel` expõem o saldo
+movido). A reatribuição só move valores entre meses dentro da mesma métrica:
+acordos de atraso movem somente receita, pois nunca compuseram o aluguel
+recebido. O resumo da competência, a ponte financeira e o repasse permanecem
+por caixa do mês do fechamento e não são ajustados; snapshots não mudam.
+
 ### 2.4 Realização do aluguel
 
 Remover a cascata de potencial reconstruído. A reconciliação passa a ser:

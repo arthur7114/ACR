@@ -34,6 +34,7 @@
 - CA14.4: cada receita separa competência original, competência de recebimento e dia de vencimento; `10` isolado é dia, referência de IPTU não vira competência de aluguel e ausência aparece como “-”.
 - CA14.5 (revisado em 2026-07-15): a coluna `Ref.` exibe a competência original extraída do documento em mês/ano, somente leitura; competência ausente não bloqueia a aprovação nem gera recheck bloqueante.
 - CA14.6: fechamento de maio pode conter aluguel de março sem mover o total de caixa de maio; a movimentação da receita usa março em `data_competencia` e isso não cria inadimplência corrente por inferência.
+- CA14.11: na série mensal dos indicadores, receita e aluguel recebido são atribuídos à competência original (aluguel de março pago em maio conta em março); o resumo da competência, a ponte financeira e o repasse permanecem por caixa do mês do fechamento.
 - CA14.7: a quebra superior de Receitas mostra IPTU de passagem de R$ 193,02 + R$ 149,02 = R$ 342,04 no Pompílio maio, inclusive para observação legada, sem alterar receita total, despesa ou repasse.
 - CA14.8: despesas aparecem em Energia, Água e esgoto, IPTU, Seguros, Tarifas, Ajustes e Outros; cada grupo expõe descrição completa, referência e valor por mouse, teclado e toque.
 - CA14.9: GM II maio exibe taxa cadastrada de 7%, comissão regular de R$ 1.218,45, comissão de acordos/rescisões de R$ 65,52 e total de R$ 1.283,97 sem dupla contagem.

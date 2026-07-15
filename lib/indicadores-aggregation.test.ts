@@ -34,6 +34,8 @@ interface RevenueLineFixture {
   aluguel_com_desconto: number | null
   desconto: number | null
   total: number
+  imovel_id?: string | null
+  competencia_original?: string | null
 }
 
 interface PrestacaoFixture {
@@ -41,6 +43,9 @@ interface PrestacaoFixture {
   acordos_rescisoes_recebidos: Array<{
     tipo: "intermediacao" | "acordo" | "rescisao" | "atraso" | "outro"
     comissao: number | null
+    apto?: string | null
+    valor?: number | null
+    competencia_original?: string | null
   }>
   inadimplencias_acumuladas: Array<{ valor: number }>
 }
@@ -867,4 +872,146 @@ test("filtro por imóvel recalcula dados atribuíveis e anula campos do fechamen
   assert.equal(result.receitasPorImovel.length, 1)
   assert.equal(result.receitasPorImovel[0].imovelId, "imovel-b")
   assert.ok(result.cobertura.lacunas.some((gap) => gap.codigo === "nao_atribuivel_ao_imovel"))
+})
+
+// --- Reatribuicao por competencia original (caso Joao Cordeiro maio/2026) ---
+
+test("serie mensal atribui linha recebida em maio a competencia original de marco", () => {
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 1_000 },
+        receitas: [
+          { apto: "101", inquilino: "Maria", aluguel: 1_000, aluguel_com_desconto: 1_000, desconto: 0, total: 1_000 },
+        ],
+      }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 2_095.91 },
+        receitas: [
+          // Linha do mes corrente: competencia igual nao gera ajuste.
+          { apto: "101", inquilino: "Maria", aluguel: 1_213.27, aluguel_com_desconto: 1_100, desconto: 113.27, total: 1_213.27, competencia_original: "2026-05" },
+          // Aluguel de marco quitado em maio.
+          { apto: "102", inquilino: "Joao", aluguel: 882.64, aluguel_com_desconto: 788.22, desconto: 94.42, total: 882.64, competencia_original: "2026-03" },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "fechamento-marco", competencia: "2026-03-01", aluguelRecebido: 1_000 }),
+    makeSnapshot({ fechamentoId: "fechamento-maio", competencia: "2026-05-01", aluguelRecebido: 1_888.22 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings, snapshots }))
+
+  const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
+  const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
+  assert.equal(marco.receitaTotal, 1_882.64)
+  assert.equal(marco.aluguelRecebido, 1_788.22)
+  assert.equal(marco.competenciaAjusteReceita, 882.64)
+  assert.equal(marco.competenciaAjusteAluguel, 788.22)
+  assert.equal(maio.receitaTotal, 1_213.27)
+  assert.equal(maio.aluguelRecebido, 1_100)
+  assert.equal(maio.competenciaAjusteReceita, -882.64)
+  assert.equal(maio.competenciaAjusteAluguel, -788.22)
+  // O caixa do mes (repasse) e o resumo da competencia corrente nao mudam.
+  assert.equal(maio.repasseApurado, 1_650)
+  assert.equal(result.resumo.receitaTotal, 2_095.91)
+})
+
+test("atraso pago em maio move receita para marco sem inventar aluguel recebido", () => {
+  // Caso Terreno Castelao: aluguel de marco quitado em maio via inadimplencia
+  // paga (acordos tipo atraso); a linha corrente de maio esta zerada.
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 100 },
+        receitas: [
+          { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
+        ],
+      }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 1_824.71 },
+        receitas: [
+          { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
+        ],
+        intermediacoes: [
+          { tipo: "atraso", comissao: 127.73, apto: "101", valor: 1_717.36, competencia_original: "03/2026" },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "fechamento-marco", competencia: "2026-03-01", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelRecebido: 0, receitaTotal: 0 }),
+    makeSnapshot({ fechamentoId: "fechamento-maio", competencia: "2026-05-01", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelRecebido: 0, receitaTotal: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings, snapshots }))
+
+  const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
+  const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
+  assert.equal(marco.receitaTotal, 1_817.36)
+  assert.equal(maio.receitaTotal, 107.35)
+  // Atraso nunca compos o aluguel recebido de nenhum mes: metrica intacta.
+  assert.equal(marco.aluguelRecebido, 0)
+  assert.equal(maio.aluguelRecebido, 0)
+  assert.equal(marco.competenciaAjusteAluguel, 0)
+  assert.equal(marco.competenciaAjusteReceita, 1_717.36)
+  assert.equal(maio.competenciaAjusteReceita, -1_717.36)
+})
+
+test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () => {
+  const propertyA = makeProperty({ id: "imovel-a", unidade: "101" })
+  const propertyB = makeProperty({ id: "imovel-b", unidade: "102" })
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({ totals: { total_receitas: 500 }, receitas: [] }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 2_000 },
+        receitas: [
+          { apto: "101", inquilino: "Maria", aluguel: 900, aluguel_com_desconto: 900, desconto: 0, total: 900, imovel_id: "imovel-a", competencia_original: "2026-03" },
+          { apto: "102", inquilino: "Joao", aluguel: 800, aluguel_com_desconto: 800, desconto: 0, total: 800, imovel_id: "imovel-b", competencia_original: "2026-03" },
+        ],
+        intermediacoes: [
+          { tipo: "atraso", comissao: 10, apto: "103", valor: 300, competencia_original: "2026-03" },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ imovelId: "imovel-a", fechamentoId: "fechamento-marco", competencia: "2026-03-01", aluguelRecebido: 0, receitaTotal: 0 }),
+    makeSnapshot({ imovelId: "imovel-a", fechamentoId: "fechamento-maio", competencia: "2026-05-01", aluguelRecebido: 900, receitaTotal: 900 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [propertyA, propertyB],
+    fechamentos: closings,
+    snapshots,
+    filtros: { empresaId: null, empreendimentoId: null, imovelId: "imovel-a" },
+  }))
+
+  const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
+  const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
+  // So a linha do imovel filtrado se move; a linha do imovel-b e o acordo nao.
+  assert.equal(marco.competenciaAjusteReceita, 900)
+  assert.equal(maio.competenciaAjusteReceita, -900)
+  assert.equal(marco.receitaTotal, 900)
+  assert.equal(maio.receitaTotal, 0)
 })

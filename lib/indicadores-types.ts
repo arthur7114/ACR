@@ -120,6 +120,11 @@ export interface IndicadoresMonthlyPoint {
   ocupacaoPercentual: number | null
   coberturaPercentual: number | null
   qualidade: IndicadoresQuality
+  // Saldo reatribuido por competencia original (positivo = recebeu valores de
+  // outros meses; negativo = cedeu valores recebidos aqui a meses anteriores).
+  // O repasse e a ponte financeira permanecem por caixa e nao sao ajustados.
+  competenciaAjusteReceita: number
+  competenciaAjusteAluguel: number
 }
 
 export interface IndicadoresAttentionItem {

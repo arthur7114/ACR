@@ -1,3 +1,4 @@
+import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import type {
   IndicadoresAttentionItem,
@@ -70,10 +71,18 @@ export interface IndicadoresAnalysisInput {
   prestacao: {
     receitas_por_imovel: Array<{
       apto: string
+      imovel_id?: string | null
+      competencia_original?: string | null
+      aluguel?: number | null
+      aluguel_com_desconto?: number | null
+      total?: number
     }>
     acordos_rescisoes_recebidos: Array<{
       tipo: "intermediacao" | "acordo" | "rescisao" | "atraso" | "outro"
       comissao: number | null
+      apto?: string | null
+      valor?: number | null
+      competencia_original?: string | null
     }> | null
     inadimplencias_acumuladas: Array<{ valor: number }> | null
   } | null
@@ -461,10 +470,76 @@ function buildRentRealization(snapshots: IndicadoresSnapshotInput[]): Indicadore
   }
 }
 
+interface CompetenciaReallocation {
+  receitaIn: number
+  receitaOut: number
+  aluguelIn: number
+  aluguelOut: number
+}
+
+// Receita e aluguel recebido pertencem a competencia ORIGINAL do aluguel; o
+// caixa (repasse e ponte financeira) permanece no mes do fechamento. A
+// reatribuicao apenas move valores entre meses dentro da mesma metrica: linhas
+// de receita movem receita e aluguel; acordos de atraso movem somente receita,
+// pois nunca compuseram o aluguel recebido de nenhum mes.
+function buildCompetenciaReallocations(
+  closings: IndicadoresClosingInput[],
+  imovelId: string | null,
+) {
+  const map = new Map<string, CompetenciaReallocation>()
+  const entry = (month: string) => {
+    let item = map.get(month)
+    if (!item) {
+      item = { receitaIn: 0, receitaOut: 0, aluguelIn: 0, aluguelOut: 0 }
+      map.set(month, item)
+    }
+    return item
+  }
+
+  for (const closing of closings) {
+    if (!isEligibleClosing(closing)) continue
+    const current = closing.competencia
+    for (const line of closing.analiseCompleta?.prestacao?.receitas_por_imovel ?? []) {
+      if (imovelId && line.imovel_id !== imovelId) continue
+      const original = competenciaMesToDatabase(line.competencia_original)
+      if (!original || original === current) continue
+      const aluguel = line.aluguel_com_desconto ?? line.aluguel ?? 0
+      const receita = line.total ?? aluguel
+      const from = entry(current)
+      from.receitaOut = roundMoney(from.receitaOut + receita)
+      from.aluguelOut = roundMoney(from.aluguelOut + aluguel)
+      const to = entry(original)
+      to.receitaIn = roundMoney(to.receitaIn + receita)
+      to.aluguelIn = roundMoney(to.aluguelIn + aluguel)
+    }
+    // Acordos nao carregam imovel_id; no filtro por imovel ficam de fora.
+    if (imovelId) continue
+    for (const item of closing.analiseCompleta?.prestacao?.acordos_rescisoes_recebidos ?? []) {
+      if (item.tipo !== "atraso") continue
+      const original = competenciaMesToDatabase(item.competencia_original)
+      if (!original || original === current) continue
+      const valor = item.valor ?? 0
+      if (valor === 0) continue
+      const from = entry(current)
+      from.receitaOut = roundMoney(from.receitaOut + valor)
+      const to = entry(original)
+      to.receitaIn = roundMoney(to.receitaIn + valor)
+    }
+  }
+  return map
+}
+
+function applyReallocation(base: number | null, incoming = 0, outgoing = 0) {
+  if (incoming === 0 && outgoing === 0) return base
+  return roundMoney((base ?? 0) + incoming - outgoing)
+}
+
 function buildMonthlySeries(input: IndicadoresAggregationInput, scope: AggregationScope) {
+  const reallocations = buildCompetenciaReallocations(scope.closings, input.filtros.imovelId)
   const months = uniqueSorted([
     ...scope.closings.map((closing) => closing.competencia),
     ...scope.snapshots.map((snapshot) => snapshot.competencia),
+    ...reallocations.keys(),
   ]).filter((month) => month <= input.competencia)
   const expectedPairs = new Set([...scope.rules.map(pairKey), ...scope.properties.map(pairKey)])
 
@@ -503,20 +578,26 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
           snapshot.statusOcupacao === "desconhecido" || snapshot.aluguelEsperado === null,
       )
 
+    const reallocation = reallocations.get(competencia)
+    const receitaBase = input.filtros.imovelId
+      ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
+      : sumKnown(analyses.map((analysis) => analysis.totals.total_receitas))
+    const aluguelBase = sumKnown(snapshots.map((snapshot) => snapshot.aluguelRecebido))
+
     return {
       competencia,
       label: formatCompetence(competencia, "short"),
-      receitaTotal: input.filtros.imovelId
-        ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
-        : sumKnown(analyses.map((analysis) => analysis.totals.total_receitas)),
+      receitaTotal: applyReallocation(receitaBase, reallocation?.receitaIn, reallocation?.receitaOut),
       aluguelContratado: sumKnown(snapshots.map((snapshot) => snapshot.aluguelEsperado)),
-      aluguelRecebido: sumKnown(snapshots.map((snapshot) => snapshot.aluguelRecebido)),
+      aluguelRecebido: applyReallocation(aluguelBase, reallocation?.aluguelIn, reallocation?.aluguelOut),
       repasseApurado: input.filtros.imovelId
         ? sumKnown(snapshots.map((snapshot) => snapshot.repasseApurado))
         : sumKnown(analyses.map((analysis) => analysis.totals.total_a_repassar)),
       ocupacaoPercentual: occupancy.percentual,
       coberturaPercentual: occupancy.coberturaPercentual,
       qualidade: hasGap || expectedPairs.size === 0 ? ("preliminar" as const) : ("completa" as const),
+      competenciaAjusteReceita: roundMoney((reallocation?.receitaIn ?? 0) - (reallocation?.receitaOut ?? 0)),
+      competenciaAjusteAluguel: roundMoney((reallocation?.aluguelIn ?? 0) - (reallocation?.aluguelOut ?? 0)),
     }
   })
 }
