@@ -25,3 +25,17 @@ test("bloqueia aprovação quando movimentação está ausente ou divergente", (
   assert.equal(countMovementInconsistencies([row], [{ ...matching, data_competencia: "2026-05-01" }]), 1)
   assert.equal(countMovementInconsistencies([row], [{ ...matching, imovel_id: null }]), 1)
 })
+
+test("permite movimentação legada quando a competência original não foi extraída", () => {
+  const legacyRow = { ...row, competencia_original: null } as ReceitaPorImovel
+  const legacyMovement = {
+    id: "movimento-legado",
+    data_competencia: "2026-05-01",
+    imovel_id: row.imovel_id!,
+    dados_extraidos: { apto: "101", inquilino: "Maria" },
+  }
+
+  assert.equal(countMovementInconsistencies([legacyRow], [legacyMovement]), 0)
+  assert.equal(countMovementInconsistencies([legacyRow], []), 1)
+  assert.equal(countMovementInconsistencies([legacyRow], [{ ...legacyMovement, imovel_id: null }]), 1)
+})

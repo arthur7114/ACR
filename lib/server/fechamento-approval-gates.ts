@@ -44,7 +44,8 @@ export function countMovementInconsistencies(
     const movement = resolveReceitaMovement(movements, rows, index)
     if (!movement || movement.imovel_id !== row.imovel_id) return true
     const aluguel = row.aluguel_com_desconto ?? row.aluguel ?? 0
-    return aluguel > 0 && movement.data_competencia !== competenciaMesToDatabase(row.competencia_original)
+    const competenciaOriginal = competenciaMesToDatabase(row.competencia_original)
+    return aluguel > 0 && competenciaOriginal !== null && movement.data_competencia !== competenciaOriginal
   }).length
 }
 
