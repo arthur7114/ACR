@@ -8,6 +8,8 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
+Publicar a correção do gate de aprovação para receitas legadas sem competência original e repetir o smoke autenticado no fechamento `e6f5cd8a-1081-4294-82ce-205883a2cfe8`. A aprovação deve ficar disponível porque a ausência de competência é aceita pelo contrato vigente; movimentação ausente e vínculo de imóvel divergente continuam bloqueantes.
+
 Aplicar primeiro a migration `202607140001_correcoes_fechamento_atomicas.sql` em staging. Em seguida executar `node --import tsx scripts/repair-fechamentos-operacionais.ts` em dry-run, revisar o relatório dos fechamentos Terreno Castelão, João Cordeiro, Galpão Pompílio Gomes e Grand Messejana II de maio/2026 e somente então repetir com `--commit`. Validar na revisão: março como competência original onde documentado, maio como recebimento, `10` como dia, IPTU do Pompílio em R$ 342,04 apenas na discriminação, comissão GM II 1.218,45 + 65,52 = 1.283,97, despesas detalhadas e bloqueio de aprovação por vínculo de imóvel pendente (competência ausente não bloqueia mais — ajuste de 2026-07-15). Confirmar auditoria antes/depois e nenhuma alteração em indicadores ou eGestor.
 
 Aplicar a migration `202607070001_iptu_contas_pagar.sql` no Supabase (evolui `iptu_carnes`/`iptu_parcelas` para contas a pagar: colunas `origem`/`observacoes` no carne e `data_vencimento`/`valor_previsto`/`valor_pago`/`data_baixa`/`observacoes`/`criado_em`/`atualizado_em` na parcela, com backfill de `origem='importacao'` e `data_baixa=registrado_em` das parcelas legadas pagas, indices, e as funcoes RPC `iptu_gerar_lote`/`iptu_baixar_parcelas`). Depois validar no navegador em `/iptu`: gerar carnes em lote (com revisao e alerta de conflito por imovel+ano), editar parcela, ajustar numero de parcelas do carne, baixa individual e em massa, filtros combinados e cards de resumo. Confirmar que nenhuma acao toca eGestor/fechamento.
@@ -103,6 +105,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-17 - Aprovação de receita legada sem competência original
+
+Status: código concluído; publicação pendente.
+Job: corrigir o fechamento Plural / Galpão José Walter / maio de 2026, que aparecia sem bloqueios na revisão mas não aprovava.
+Outcome entregue: o gate de consistência continua exigindo movimentação e vínculo de imóvel compatíveis, mas deixa de comparar `data_competencia` quando o documento não trouxe `competencia_original`, conforme a decisão vigente de que essa ausência não bloqueia aprovação. Um teste de regressão cobre a combinação legada `competencia_original=null` com movimentação já persistida no mês do fechamento.
+Validação: o teste focado falhou antes da correção e passou depois (2/2); o gate foi executado contra o fechamento real `e6f5cd8a-1081-4294-82ce-205883a2cfe8` e retornou `READY`, sem escrita ou aprovação remota. A suíte completa passou 211/211, assim como `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build`. O checklist mestre passou 5/6; o único gate vermelho foi um débito preexistente e fora do escopo no SEO de `indicadores-view.tsx` (meta description e Open Graph ausentes).
+Decisões: ausência de competência original não invalida uma movimentação já vinculada; movimentação ausente e `imovel_id` divergente permanecem bloqueantes.
+Arquivos/docs impactados: `lib/server/fechamento-approval-gates.ts`, `lib/server/fechamento-approval-gates.test.ts`, `docs/12-execution-roadmap.md`.
+Próxima ação: publicar a branch, repetir o clique autenticado no deployment e confirmar a mudança de status sem erro.
 
 ### 2026-07-14 - Fechamentos operacionais, competências e vínculos
 
