@@ -8,7 +8,9 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Quando LOCMAIS II sair de obras e entrar em operação, processar o primeiro fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o `empreendimento_id` de "LOCMAIS" (`ae2d3019-b916-4511-9294-55eab91ba812`) via o alias já gravado, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de criar um empreendimento novo sem regra. A decisão sobre a TED de R$ 11,10 segue em aberto — nenhum rateio automático.
+Quando LOCMAIS II sair de obras e entrar em operação, processar o primeiro fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o `empreendimento_id` de "LOCMAIS" (`ae2d3019-b916-4511-9294-55eab91ba812`) via o alias já gravado, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de criar um empreendimento novo sem regra.
+
+A TED/tarifa bancária itemizada agora é rateada igualmente entre os imóveis (decisão de 2026-07-24). Fechamentos já fechados só passam a refletir o rateio se reprocessados; validar o comportamento em um fechamento LOCMAIS com TED itemizada (movimentações por imóvel + despesa agregada na prévia eGestor).
 
 Publicar a correção do gate de aprovação para receitas legadas sem competência original e repetir o smoke autenticado no fechamento `e6f5cd8a-1081-4294-82ce-205883a2cfe8`. A aprovação deve ficar disponível porque a ausência de competência é aceita pelo contrato vigente; movimentação ausente e vínculo de imóvel divergente continuam bloqueantes.
 
@@ -107,6 +109,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-24 - Rateio da TED (tarifa bancária) igual por imóvel
+
+Status: código concluído; rollout depende de reprocessar fechamentos com TED itemizada.
+Job: ratear a TED/tarifa bancária itemizada igualmente entre os imóveis da prestação, refletindo nas movimentações por imóvel e como despesa agregada no eGestor (reverte a decisão anterior de "sem rateio").
+Outcome entregue: funções puras em `lib/despesas-locador.ts` (`ehTarifaBancaria`, `valorTedItemizada`, `ratearIgualmente` por maior resto, `ratearTedPorImovel`); `buildPrestacaoMovimentacoes` passa a anexar uma movimentação `despesa/tarifa_bancaria` por imóvel (soma exata da TED, sem alterar totais); `buildEgestorDrafts` inclui uma despesa agregada "Tarifa bancaria (TED)" (categoria `outras_despesas`), fora de contas `somente_recebimento`.
+Validação: `pnpm lint`, `pnpm test` (226/226, +10 novos) e `pnpm build` passaram. Confirmado que indicadores/gates/vínculo filtram por `tipo_movimentacao` específico e usam `analise_completa`, então as novas movimentações de despesa não afetam esses números.
+Decisões: base **igual por imóvel**; escopo **só tarifa bancária**; rateia **só quando a TED vem itemizada** (resíduo "Taxas e outros retidos" não rateia); eGestor permanece agregado (TED como uma despesa). ADR-0001 permanece (TED continua despesa do locador).
+Arquivos/docs impactados: `lib/despesas-locador.ts` (+test), `lib/server/persist-package.ts` (+test), `lib/server/egestor.ts` (+test), `CONTEXT.md`, `docs/12-execution-roadmap.md`.
+Próxima ação: fechamentos já fechados só passam a ratear se reprocessados; novos já saem rateados. Reprocessar histórico é opcional e caso a caso.
 
 ### 2026-07-24 - Rollout em produção do alias LOCMAIS/LOCMAIS II
 

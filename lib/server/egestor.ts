@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-types"
 import { EgestorApiError, EgestorClient } from "./egestor-client"
+import { valorTedItemizada } from "@/lib/despesas-locador"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -382,6 +383,14 @@ export function buildEgestorDrafts(analysis: PackageAnalysis, options: { somente
   }
   for (const [categoria, valor] of despesas) {
     if (valor > 0) drafts.push({ tipo: "pagamento", categoria, descricao: labelCategoria(categoria), valor })
+  }
+
+  // TED/tarifa bancária itemizada na prestação entra como UMA despesa agregada
+  // (o eGestor é agregado; o rateio por imóvel fica nas movimentações). Reusa a
+  // categoria "outras_despesas" para não exigir novo mapeamento de plano de contas.
+  const ted = analysis.prestacao ? valorTedItemizada(analysis.prestacao) : 0
+  if (ted > 0) {
+    drafts.push({ tipo: "pagamento", categoria: "outras_despesas", descricao: "Tarifa bancaria (TED)", valor: ted })
   }
 
   return drafts

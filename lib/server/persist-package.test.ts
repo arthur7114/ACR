@@ -61,3 +61,31 @@ test("movimentacao sem competencia fica sem data de competencia", () => {
 
   assert.equal(row.data_competencia, null)
 })
+
+test("TED itemizada gera uma despesa por imovel, somando a TED e sem alterar receitas", () => {
+  const prestacao = {
+    receitas_por_imovel: [
+      { apto: "101", inquilino: "Ana", total: 1000, imovel_id: "im-1", competencia_original: null, confianca: 1 },
+      { apto: "102", inquilino: "Bia", total: 2000, imovel_id: "im-2", competencia_original: null, confianca: 1 },
+    ],
+    resumo_financeiro: {
+      outras_comissoes_despesas: [{ descricao: "TED", valor: 11.1, confianca: 1 }],
+    },
+  } as unknown as PrestacaoAnalysis
+
+  const rows = buildPrestacaoMovimentacoes({
+    fechamentoId: "fechamento-1",
+    documentoId: "doc-1",
+    prestacao,
+    competencia: "2026-05",
+  })
+
+  const receitas = rows.filter((r) => r.tipo_movimentacao === "receita_aluguel")
+  const ted = rows.filter((r) => r.tipo_movimentacao === "despesa" && r.categoria === "tarifa_bancaria")
+  assert.equal(receitas.length, 2)
+  assert.equal(ted.length, 2)
+  assert.equal(ted.reduce((a, r) => a + r.valor, 0).toFixed(2), "11.10")
+  assert.equal(ted[0].sinal, "negativo")
+  assert.equal(ted[0].imovel_id, "im-1")
+  assert.equal(ted[0].data_competencia, "2026-05-01")
+})

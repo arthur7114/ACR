@@ -12,6 +12,7 @@ import type {
 import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { FechamentoContext } from "@/lib/fechamento-context"
 import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
+import { ratearTedPorImovel } from "@/lib/despesas-locador"
 import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
 import { createSupabaseAdmin } from "./supabase"
@@ -254,6 +255,7 @@ async function persistMovimentacoes({
       fechamentoId,
       documentoId: getDocumentoId(documents, "prestacao_contas"),
       prestacao,
+      competencia,
     }),
     ...(prestacao?.acordos_rescisoes_recebidos.map((item) => ({
       fechamento_id: fechamentoId,
@@ -327,28 +329,51 @@ export function buildPrestacaoMovimentacoes({
   fechamentoId,
   documentoId,
   prestacao,
+  competencia,
 }: {
   fechamentoId: string
   documentoId: string | null
   prestacao: PrestacaoAnalysis | null
+  competencia?: string
 }) {
-  return (
-    prestacao?.receitas_por_imovel.map((row) => ({
-      fechamento_id: fechamentoId,
-      documento_id: documentoId,
-      tipo_movimentacao: "receita_aluguel",
-      categoria: "prestacao_contas_secao_1",
-      descricao: `${row.apto} - ${row.inquilino}`,
-      valor: row.total,
-      sinal: "positivo",
-      data_competencia: competenciaMesToDatabase(row.competencia_original),
-      origem_documental: "prestacao_alive_secao_1",
-      confianca_extracao: row.confianca,
-      status_validacao: "pendente",
-      imovel_id: row.imovel_id ?? null,
-      dados_extraidos: row,
-    })) ?? []
-  )
+  if (!prestacao) return []
+
+  const receitas = prestacao.receitas_por_imovel.map((row) => ({
+    fechamento_id: fechamentoId,
+    documento_id: documentoId,
+    tipo_movimentacao: "receita_aluguel",
+    categoria: "prestacao_contas_secao_1",
+    descricao: `${row.apto} - ${row.inquilino}`,
+    valor: row.total,
+    sinal: "positivo",
+    data_competencia: competenciaMesToDatabase(row.competencia_original),
+    origem_documental: "prestacao_alive_secao_1",
+    confianca_extracao: row.confianca,
+    status_validacao: "pendente",
+    imovel_id: row.imovel_id ?? null,
+    dados_extraidos: row as Record<string, unknown>,
+  }))
+
+  // Rateio da TED itemizada: uma despesa por imóvel, dividida igualmente. A TED
+  // permanece despesa do locador (ADR-0001); isto apenas a redistribui — a soma
+  // das fatias é igual ao valor já retido, então não altera os totais.
+  const ted = ratearTedPorImovel(prestacao).map((fatia) => ({
+    fechamento_id: fechamentoId,
+    documento_id: documentoId,
+    tipo_movimentacao: "despesa",
+    categoria: "tarifa_bancaria",
+    descricao: `TED (rateio) — ${fatia.apto}`,
+    valor: fatia.valor,
+    sinal: "negativo",
+    data_competencia: competencia ? competenciaMesToDatabase(competencia) : null,
+    origem_documental: "rateio_ted",
+    confianca_extracao: 1,
+    status_validacao: "pendente",
+    imovel_id: fatia.imovel_id,
+    dados_extraidos: { descricao: "TED (rateio)", apto: fatia.apto, valor: fatia.valor, origem: "rateio_ted" } as Record<string, unknown>,
+  }))
+
+  return [...receitas, ...ted]
 }
 
 interface BuildValidacoesInput {

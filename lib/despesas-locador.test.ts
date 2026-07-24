@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { classificarLancamento, reconciliarResumoDespesas } from "./despesas-locador.ts"
+import {
+  classificarLancamento,
+  ehTarifaBancaria,
+  ratearIgualmente,
+  ratearTedPorImovel,
+  reconciliarResumoDespesas,
+  valorTedItemizada,
+} from "./despesas-locador.ts"
 import type { PrestacaoAnalysis } from "@/lib/prestacao-types"
 
 test("classifica comissao e intermediacao nos seus proprios baldes", () => {
@@ -207,4 +214,75 @@ test("LOCMAIS: comissao de intermediacao nao vaza pra despesa do locador", () =>
   // despesas exibido na tela volta a incluir a intermediacao, mesmo com a LISTA
   // ja correta — inconsistencia entre lista e total (bug encontrado ao vivo).
   assert.equal(r.totalComissaoDespesas, 2074.22)
+})
+
+test("ehTarifaBancaria distingue tarifa do resto das despesas", () => {
+  assert.equal(ehTarifaBancaria("TED"), true)
+  assert.equal(ehTarifaBancaria("Tarifa bancaria"), true)
+  assert.equal(ehTarifaBancaria("TAXA BANCARIA"), true)
+  assert.equal(ehTarifaBancaria("Transferencia PIX"), true)
+  assert.equal(ehTarifaBancaria("DOC"), true)
+  // Nao casa reembolso/desconto/utilidades nem o residuo nao itemizado.
+  assert.equal(ehTarifaBancaria("Reembolso — AP01"), false)
+  assert.equal(ehTarifaBancaria("Desconto — AP02"), false)
+  assert.equal(ehTarifaBancaria("CAGECE agua"), false)
+  assert.equal(ehTarifaBancaria("Taxas e outros retidos"), false)
+})
+
+test("ratearIgualmente soma exata e distribui a sobra de centavo", () => {
+  const r = ratearIgualmente(11.1, 4)
+  assert.deepEqual(r, [2.78, 2.78, 2.77, 2.77])
+  assert.equal(r.reduce((a, b) => a + b, 0).toFixed(2), "11.10")
+  assert.deepEqual(ratearIgualmente(10, 4), [2.5, 2.5, 2.5, 2.5])
+  assert.deepEqual(ratearIgualmente(0.03, 2), [0.02, 0.01])
+  assert.deepEqual(ratearIgualmente(5.55, 1), [5.55])
+  assert.deepEqual(ratearIgualmente(5, 0), [])
+})
+
+// Fixture: pompilio (2 imoveis, ambos com total > 0) + uma TED itemizada.
+function comTedItemizada(valorTed: number): PrestacaoAnalysis {
+  const base = pompilio()
+  return {
+    ...base,
+    resumo_financeiro: {
+      ...base.resumo_financeiro,
+      outras_comissoes_despesas: [
+        { descricao: "Reembolso — AP0361/1", valor: 113.27, confianca: 1 },
+        { descricao: "TED", valor: valorTed, confianca: 1 },
+        { descricao: "Taxas e outros retidos", valor: 5, confianca: 1 },
+      ],
+    },
+  }
+}
+
+test("valorTedItemizada soma so as tarifas bancarias itemizadas", () => {
+  assert.equal(valorTedItemizada(comTedItemizada(11.1)), 11.1)
+  // Sem TED itemizada => zero (residuo nao conta).
+  assert.equal(valorTedItemizada(pompilio()), 0)
+})
+
+test("ratearTedPorImovel divide igual entre imoveis com receita e soma a TED", () => {
+  const fatias = ratearTedPorImovel(comTedItemizada(11.1))
+  assert.equal(fatias.length, 2) // pompilio tem 2 imoveis com total > 0
+  assert.deepEqual(fatias.map((f) => f.valor), [5.55, 5.55])
+  assert.equal(fatias.reduce((a, f) => a + f.valor, 0).toFixed(2), "11.10")
+  assert.deepEqual(fatias.map((f) => f.apto), ["AP0361/1", "AP0362/2"])
+})
+
+test("ratearTedPorImovel vazio quando nao ha TED itemizada", () => {
+  assert.deepEqual(ratearTedPorImovel(pompilio()), [])
+})
+
+test("ratearTedPorImovel ignora imoveis sem receita (total = 0)", () => {
+  const base = comTedItemizada(10)
+  const comVago: PrestacaoAnalysis = {
+    ...base,
+    receitas_por_imovel: [
+      ...base.receitas_por_imovel,
+      { ...base.receitas_por_imovel[0], apto: "AP0363/3", total: 0 },
+    ],
+  }
+  const fatias = ratearTedPorImovel(comVago)
+  assert.equal(fatias.length, 2) // o vago (total 0) fica de fora
+  assert.equal(fatias.reduce((a, f) => a + f.valor, 0).toFixed(2), "10.00")
 })

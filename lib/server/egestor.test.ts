@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type { PackageAnalysis } from "@/lib/prestacao-types"
+import type { PackageAnalysis, PrestacaoAnalysis } from "@/lib/prestacao-types"
 import { EgestorClient } from "./egestor-client.ts"
 import { buildEgestorDrafts, buildLancamentoUpdate } from "./egestor.ts"
 
@@ -79,6 +79,36 @@ test("usa total recebido bruto mesmo quando nao existe comprovante", () => {
   }))
 
   assert.equal(drafts[0].valor, 1000)
+})
+
+// Prestacao minima: buildEgestorDrafts so le outras_comissoes_despesas da TED.
+function prestacaoComTed(valorTed: number): PrestacaoAnalysis {
+  return {
+    resumo_financeiro: {
+      outras_comissoes_despesas: [
+        { descricao: "Reembolso — AP01", valor: 50, confianca: 1 },
+        { descricao: "TED", valor: valorTed, confianca: 1 },
+        { descricao: "Taxas e outros retidos", valor: 3, confianca: 1 },
+      ],
+    },
+  } as unknown as PrestacaoAnalysis
+}
+
+test("TED itemizada vira uma despesa agregada no eGestor (valor cheio)", () => {
+  const drafts = buildEgestorDrafts(createAnalysis({ prestacao: prestacaoComTed(11.1) }))
+  const ted = drafts.filter((d) => d.descricao === "Tarifa bancaria (TED)")
+  assert.equal(ted.length, 1)
+  assert.deepEqual([ted[0].tipo, ted[0].categoria, ted[0].valor], ["pagamento", "outras_despesas", 11.1])
+})
+
+test("conta somente_recebimento nao lanca a TED", () => {
+  const drafts = buildEgestorDrafts(createAnalysis({ prestacao: prestacaoComTed(11.1) }), { somenteRecebimento: true })
+  assert.ok(!drafts.some((d) => d.descricao === "Tarifa bancaria (TED)"))
+})
+
+test("sem TED itemizada nao gera despesa de tarifa", () => {
+  const drafts = buildEgestorDrafts(createAnalysis({ prestacao: prestacaoComTed(0) }))
+  assert.ok(!drafts.some((d) => d.descricao === "Tarifa bancaria (TED)"))
 })
 
 function jsonResponse(payload: Record<string, unknown>, init?: ResponseInit) {

@@ -22,6 +22,16 @@ intermediação (têm categorias próprias).
 *Nota histórica: até 2026-07-02 o sistema classificava TED/desconto/reembolso
 como "não-despesa"; a decisão do contador inverteu isso.*
 
+### Rateio da TED (tarifa bancária)
+Quando a prestação retém uma **TED/tarifa bancária itemizada** (linha própria no
+resumo, não o resíduo "Taxas e outros retidos"), ela é **rateada igualmente**
+entre os imóveis com receita no mês — uma despesa por imóvel nas movimentações.
+A soma das fatias é igual ao valor retido: é redistribuição, não altera totais
+nem o repasse consolidado. A TED continua sendo despesa do locador (ADR-0001).
+No eGestor entra como **uma despesa agregada** (o eGestor é agregado, sem
+lançamento por imóvel). TED só no resíduo (não itemizada) **não** é rateada.
+*Decidido em 2026-07-24: base igual por imóvel, escopo só tarifa bancária.*
+
 ### Reembolso
 Devolução feita a um inquilino (ex.: reembolso APT A, 113,27 em maio/2026).
 No documento pode aparecer abatido do recebido bruto; no domínio é uma

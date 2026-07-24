@@ -39,6 +39,60 @@ function ehCreditoQueReduz(descricao: string): boolean {
   return /credito|reduz/.test(t)
 }
 
+// Subdetector de tarifa bancária dentro do balde "despesa" (TED/PIX/DOC/tarifa).
+// NÃO casa a linha-resíduo "Taxas e outros retidos" (não itemizada, fora do
+// rateio). A classificação em `classificarLancamento` continua "despesa"
+// (ADR-0001); isto só distingue a tarifa para efeito de rateio/eGestor.
+export function ehTarifaBancaria(descricao: string): boolean {
+  const t = normalizar(descricao)
+  return /\bted\b|\bpix\b|\bdoc\b|tarifa|taxa banc/.test(t)
+}
+
+// Soma das TEDs/tarifas bancárias itemizadas no resumo reconciliado. Exclui o
+// resíduo não itemizado. Zero ⇒ nada a ratear.
+export function valorTedItemizada(prestacao: PrestacaoAnalysis): number {
+  return arredondar(
+    sum(
+      (prestacao.resumo_financeiro?.outras_comissoes_despesas ?? [])
+        .filter((d) => ehTarifaBancaria(d.descricao))
+        .map((d) => d.valor),
+    ),
+  )
+}
+
+// Divide um total (reais) em n partes iguais pelo método do maior resto em
+// centavos: soma exata e sobra de 1 centavo distribuída às primeiras partes
+// (determinístico). Ex.: 11,10 / 4 ⇒ [2,78, 2,78, 2,77, 2,77].
+export function ratearIgualmente(totalReais: number, n: number): number[] {
+  if (n <= 0) return []
+  const totalCentavos = Math.round(totalReais * 100)
+  const base = Math.floor(totalCentavos / n)
+  const resto = totalCentavos - base * n
+  return Array.from({ length: n }, (_, i) => (base + (i < resto ? 1 : 0)) / 100)
+}
+
+export interface FatiaTed {
+  imovel_id: string | null
+  apto: string
+  valor: number
+}
+
+// Rateia a TED itemizada igualmente entre os imóveis com receita (total > 0).
+// Vazio quando não há TED itemizada ou não há imóvel elegível. A soma das fatias
+// é exatamente `valorTedItemizada` — é redistribuição, não altera totais.
+export function ratearTedPorImovel(prestacao: PrestacaoAnalysis): FatiaTed[] {
+  const total = valorTedItemizada(prestacao)
+  if (total <= 0) return []
+  const imoveis = prestacao.receitas_por_imovel.filter((row) => (row.total ?? 0) > 0)
+  if (imoveis.length === 0) return []
+  const fatias = ratearIgualmente(total, imoveis.length)
+  return imoveis.map((row, i) => ({
+    imovel_id: row.imovel_id ?? null,
+    apto: row.apto,
+    valor: fatias[i],
+  }))
+}
+
 export interface ResumoDespesasReconciliado {
   recebidosEmNomeLocador: number | null
   outrasComissoesDespesas: PrestacaoResumoDespesa[]
