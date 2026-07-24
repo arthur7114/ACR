@@ -11,7 +11,7 @@ import type {
 } from "@/lib/prestacao-types"
 import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { FechamentoContext } from "@/lib/fechamento-context"
-import { normalizeCadastroKey } from "./cadastros"
+import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
 import { createSupabaseAdmin } from "./supabase"
@@ -483,14 +483,13 @@ async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabas
 async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
   const { data: rows, error: lookupError } = await supabase
     .from("empreendimentos")
-    .select("id,nome,ativo,criado_em")
+    .select("id,nome,aliases,ativo,criado_em")
     .order("ativo", { ascending: false })
     .order("criado_em", { ascending: true })
 
   if (lookupError) throw lookupError
 
-  const normalized = normalizeCadastroKey(nome)
-  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const existing = (rows ?? []).find((row) => matchesEmpreendimento(row, nome))
   // Em correspondencia, nao sobrescrever `nome` (renomear para o valor de
   // entrada colide com unique(nome) quando ha duplicatas de mesma chave).
   const query = existing

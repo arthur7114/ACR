@@ -5,7 +5,7 @@ import type {
   TechnicalOpinion,
 } from "@/lib/prestacao-types"
 import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
-import { normalizeCadastroKey } from "./cadastros"
+import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { createSupabaseAdmin } from "./supabase"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
 
@@ -207,14 +207,13 @@ async function findOrCreateImobiliaria(supabase: ReturnType<typeof createSupabas
 async function findOrCreateEmpreendimento(supabase: ReturnType<typeof createSupabaseAdmin>, nome: string) {
   const { data: rows, error: lookupError } = await supabase
     .from("empreendimentos")
-    .select("id,nome,ativo,criado_em")
+    .select("id,nome,aliases,ativo,criado_em")
     .order("ativo", { ascending: false })
     .order("criado_em", { ascending: true })
 
   if (lookupError) throw lookupError
 
-  const normalized = normalizeCadastroKey(nome)
-  const existing = (rows ?? []).find((row) => normalizeCadastroKey(row.nome) === normalized)
+  const existing = (rows ?? []).find((row) => matchesEmpreendimento(row, nome))
   const query = existing
     ? supabase.from("empreendimentos").update({ ativo: true }).eq("id", existing.id)
     : supabase.from("empreendimentos").insert({ nome, ativo: true })

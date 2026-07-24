@@ -8,6 +8,8 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
+Aplicar a migration `202607240001_empreendimento_aliases.sql` em produção e gravar via psql `aliases = array['LOCMAIS II']` no empreendimento "Locmais" (fora do Git). Depois processar um fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o mesmo `empreendimento_id` de Locmais, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de pular a conferência. A decisão sobre a TED de R$ 11,10 segue em aberto — nenhum rateio automático.
+
 Publicar a correção do gate de aprovação para receitas legadas sem competência original e repetir o smoke autenticado no fechamento `e6f5cd8a-1081-4294-82ce-205883a2cfe8`. A aprovação deve ficar disponível porque a ausência de competência é aceita pelo contrato vigente; movimentação ausente e vínculo de imóvel divergente continuam bloqueantes.
 
 Aplicar primeiro a migration `202607140001_correcoes_fechamento_atomicas.sql` em staging. Em seguida executar `node --import tsx scripts/repair-fechamentos-operacionais.ts` em dry-run, revisar o relatório dos fechamentos Terreno Castelão, João Cordeiro, Galpão Pompílio Gomes e Grand Messejana II de maio/2026 e somente então repetir com `--commit`. Validar na revisão: março como competência original onde documentado, maio como recebimento, `10` como dia, IPTU do Pompílio em R$ 342,04 apenas na discriminação, comissão GM II 1.218,45 + 65,52 = 1.283,97, despesas detalhadas e bloqueio de aprovação por vínculo de imóvel pendente (competência ausente não bloqueia mais — ajuste de 2026-07-15). Confirmar auditoria antes/depois e nenhuma alteração em indicadores ou eGestor.
@@ -105,6 +107,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-24 - Alias de empreendimento (LOCMAIS II herda a regra de LOCMAIS)
+
+Status: código concluído; aplicação da migration e do dado de alias em produção pendentes.
+Job: responder se a regra comercial de LOCMAIS vale para "LOCMAIS II" — hoje não valia: o rótulo "LOCMAIS II" não batia com o nome normalizado "Locmais" e o sistema criava silenciosamente um empreendimento novo sem `regras_comerciais`, pulando a conferência da comissão de administração.
+Outcome entregue: nova coluna `aliases text[]` em `empreendimentos`; helper `matchesEmpreendimento` (`lib/server/cadastros.ts`) casa um rótulo tanto pelo nome quanto por qualquer alias cadastrado, ambos normalizados; as duas trilhas de resolução (`findOrCreateEmpreendimento` em `lib/server/persist-prestacao.ts` e `lib/server/persist-package.ts`, antes duplicadas byte a byte) passam a usar o helper compartilhado.
+Validação: `pnpm lint`, suíte completa (`pnpm test`, 216/216, incluindo os novos casos de `matchesEmpreendimento`) e `pnpm build` passaram.
+Decisões: LOCMAIS e LOCMAIS II são o mesmo empreendimento para efeito de regras comerciais — LOCMAIS II deve resolver para o mesmo `empreendimento_id`/regra de LOCMAIS (Alive, 7% admin / 60% intermediação), não um registro próprio. A decisão sobre a TED de R$ 11,10 permanece em aberto e continua como bloqueio explícito, sem rateio automático. Um guardrail genérico para empreendimento novo sem regra comercial (hoje pula a conferência em silêncio) ficou fora de escopo por decisão do operador. O alias real (`LOCMAIS II` apontando para o registro `Locmais`) é dado de produção, aplicado fora do Git (repositório é público).
+Arquivos/docs impactados: `supabase/migrations/202607240001_empreendimento_aliases.sql`, `lib/server/cadastros.ts`, `lib/server/cadastros.test.ts`, `lib/server/persist-prestacao.ts`, `lib/server/persist-package.ts`, `docs/12-execution-roadmap.md`.
+Próxima ação: aplicar a migration em produção e, via psql (pooler us-east-2, autorização explícita por operação de escrita), gravar `aliases = array['LOCMAIS II']` no registro `Locmais`; depois processar um fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o mesmo empreendimento e que a comissão de administração é conferida (7%/60%), não pulada.
 
 ### 2026-07-17 - Aprovação de receita legada sem competência original
 

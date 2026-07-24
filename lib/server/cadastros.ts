@@ -118,3 +118,16 @@ export function normalizeCadastroKey(value: string | null | undefined) {
     .toLowerCase()
     .replace(/\s+/g, " ")
 }
+
+// Compara um empreendimento cadastrado (nome + aliases opcionais) contra um
+// r\u00f3tulo de entrada (documento/IA). Aliases permitem que uma varia\u00e7\u00e3o de nome
+// (ex.: sufixo de fase/etapa) resolva para o MESMO registro/regra comercial,
+// em vez de criar silenciosamente um empreendimento novo sem regra associada.
+export function matchesEmpreendimento(
+  row: { nome: string; aliases?: string[] | null },
+  nome: string,
+): boolean {
+  const alvo = normalizeCadastroKey(nome)
+  if (normalizeCadastroKey(row.nome) === alvo) return true
+  return (row.aliases ?? []).some((alias) => normalizeCadastroKey(alias) === alvo)
+}
