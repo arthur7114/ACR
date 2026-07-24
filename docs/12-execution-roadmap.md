@@ -8,7 +8,7 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 ## Proxima acao recomendada
 
-Aplicar a migration `202607240001_empreendimento_aliases.sql` em produção e gravar via psql `aliases = array['LOCMAIS II']` no empreendimento "Locmais" (fora do Git). Depois processar um fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o mesmo `empreendimento_id` de Locmais, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de pular a conferência. A decisão sobre a TED de R$ 11,10 segue em aberto — nenhum rateio automático.
+Quando LOCMAIS II sair de obras e entrar em operação, processar o primeiro fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o `empreendimento_id` de "LOCMAIS" (`ae2d3019-b916-4511-9294-55eab91ba812`) via o alias já gravado, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de criar um empreendimento novo sem regra. A decisão sobre a TED de R$ 11,10 segue em aberto — nenhum rateio automático.
 
 Publicar a correção do gate de aprovação para receitas legadas sem competência original e repetir o smoke autenticado no fechamento `e6f5cd8a-1081-4294-82ce-205883a2cfe8`. A aprovação deve ficar disponível porque a ausência de competência é aceita pelo contrato vigente; movimentação ausente e vínculo de imóvel divergente continuam bloqueantes.
 
@@ -107,6 +107,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-24 - Rollout em produção do alias LOCMAIS/LOCMAIS II
+
+Status: done.
+Job: aplicar em produção a migration `202607240001_empreendimento_aliases.sql` e o alias real de "LOCMAIS II" para a regra comercial de LOCMAIS.
+Outcome entregue: migration aplicada (coluna `aliases` confirmada via `information_schema`). A investigação em produção revelou uma divergência do plano original: existem três registros "locmais" — "LOCMAIS" (`ae2d3019...`, ativo, com a regra comercial real 7%/60% e 6 fechamentos vinculados), "Locmais" (`cdff2cdc...`, inativo desde a dedup de acentos de 2026-06-25) e "LOCMAIS II" (`6a4d2927...`, ativo, criado em 2026-07-16, órfão — zero vínculos em `imoveis`/`fechamentos`/`regras_comerciais`). O alias foi gravado no registro correto e ativo ("LOCMAIS", não "Locmais" como o plano assumia); o registro órfão "LOCMAIS II" foi desativado (`ativo=false`, reversível).
+Validação: `select` de conferência confirmou os três registros no estado esperado após as escritas.
+Decisões: LOCMAIS II ainda está em obras — só LOCMAIS (fase I) está em operação hoje. O alias foi aplicado preventivamente mesmo sem uso imediato, para que o primeiro fechamento real de LOCMAIS II já resolva para a regra comercial correta em vez de repetir o footgun. Cada escrita em produção (alias + desativação do órfão) foi autorizada nomeadamente pelo operador antes de rodar, dado que investigação revelou dados diferentes do que o plano previa.
+Arquivos/docs impactados: dado de produção (fora do Git) em `public.empreendimentos`; `docs/12-execution-roadmap.md`.
+Próxima ação: nenhuma pendente — revisitar apenas quando LOCMAIS II entrar em operação (ver "Proxima acao recomendada").
 
 ### 2026-07-24 - Alias de empreendimento (LOCMAIS II herda a regra de LOCMAIS)
 
