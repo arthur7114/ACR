@@ -1,5 +1,5 @@
 import type { PackageAnalysis, PrestacaoAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
-import { normalizeCadastroKey } from "./cadastros"
+import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
 import { createSupabaseAdmin } from "./supabase"
 
 export type ImovelStatus = "ocupado" | "vago" | "inadimplente" | "em_rescisao" | "em_negociacao" | "inativo"
@@ -85,9 +85,10 @@ export function vincularReceitasExistentes(
 }
 
 function findExactCandidates(apto: string, imoveis: ImovelVinculoCadastro[]) {
-  const key = normalizeCadastroKey(apto)
+  const key = normalizeCodigoImovel(apto)
+  if (!key) return []
   const candidates = imoveis.filter(
-    (item) => normalizeCadastroKey(item.codigo_imobiliaria) === key || normalizeCadastroKey(item.unidade) === key,
+    (item) => normalizeCodigoImovel(item.codigo_imobiliaria) === key || normalizeCodigoImovel(item.unidade) === key,
   )
   return [...new Map(candidates.map((item) => [item.id, item])).values()]
 }

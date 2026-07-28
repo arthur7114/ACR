@@ -51,6 +51,8 @@ type FechamentoRow = {
   id: string
   competencia: string
   status: string
+  imobiliaria_id: string | null
+  empreendimento_id: string | null
   analise_completa: PackageAnalysis | null
   imobiliarias: { id: string; nome: string; egestor_contato_id: number | null; egestor_tag_id: string | null } | null
   empreendimentos: { nome: string; egestor_tag_id: string | null; egestor_conta_id: string | null } | null
@@ -110,8 +112,11 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   conta.cod_disponivel_padrao = codDisponivel
   const maps = await getMapeamentos(supabase, conta.id)
   const codContato = await resolveContato(supabase, fechamento, conta)
+  const diaVencimentoPadrao = await getDiaVencimentoPadrao(supabase, fechamento)
   const drafts = buildDrafts(fechamento, conta)
-  const rows = drafts.map((draft) => buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome))
+  const rows = drafts.map((draft) =>
+    buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome, diaVencimentoPadrao),
+  )
   const { data: sentRows, error: sentError } = await supabase
     .from("egestor_lancamentos")
     .select("id")
@@ -121,7 +126,15 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   if (sentError) throw sentError
   if (sentRows && sentRows.length > 0) throw new Error("Fechamento ja possui lancamentos enviados ao eGestor.")
 
-  await supabase.from("egestor_lancamentos").delete().eq("fechamento_id", fechamentoId).is("egestor_codigo", null)
+  // Regenerar a previa apaga apenas as linhas automaticas nao enviadas; linhas
+  // manuais (origem_manual) sobrevivem para nao se perder o que o operador
+  // adicionou (ex.: IPTU de outro imovel).
+  await supabase
+    .from("egestor_lancamentos")
+    .delete()
+    .eq("fechamento_id", fechamentoId)
+    .is("egestor_codigo", null)
+    .eq("origem_manual", false)
 
   if (rows.length > 0) {
     const { error } = await supabase.from("egestor_lancamentos").upsert(rows, {
@@ -456,13 +469,14 @@ function buildLancamentoRow(
   codContato: number | null,
   draft: DraftLancamento,
   disponivelNome: string | null = null,
+  diaVencimentoPadrao: number | null = null,
 ) {
   const map = maps.get(draft.categoria)
   const codDisponivel = conta.cod_disponivel_padrao
   const codPlanoContas = map?.cod_plano_contas ?? null
   const tags = buildTags(fechamento, conta)
   const validation = validateLancamento(codContato, codDisponivel, codPlanoContas)
-  const payload = buildPayload(fechamento, conta, draft, codContato, codDisponivel, codPlanoContas, tags, disponivelNome)
+  const payload = buildPayload(fechamento, conta, draft, codContato, codDisponivel, codPlanoContas, tags, disponivelNome, diaVencimentoPadrao)
 
   return {
     fechamento_id: fechamento.id,
@@ -492,10 +506,15 @@ function buildPayload(
   codPlanoContas: number | null,
   tags: string[],
   disponivelNome: string | null = null,
+  diaVencimentoPadrao: number | null = null,
 ) {
   const analysis = fechamento.analise_completa
   const repasseDate = analysis?.repasse?.data ?? null
   const competencia = toDateOnly(fechamento.competencia)
+  // Sem comprovante (pagamento feito pela imobiliaria), o vencimento cai no mes
+  // seguinte a competencia, no dia configurado na regra comercial. Sem dia
+  // configurado, mantem o comportamento historico (competencia).
+  const vencimentoSemComprovante = proximoVencimento(fechamento.competencia, diaVencimentoPadrao) ?? competencia
   // Descricao = etiqueta da conta (ex.: MMC) + empreendimento + item, sem
   // competencia (ela ja vai em numDoc/dtComp) e sem acentos (ex.: MARACANAU).
   const prefixo = contaTagPrefix(conta)
@@ -509,7 +528,7 @@ function buildPayload(
     numDoc: `${prefixo}-${formatCompetencia(fechamento.competencia)}-${draft.categoria}`,
     descricao,
     valor: Number(draft.valor.toFixed(2)),
-    dtVenc: repasseDate ?? competencia,
+    dtVenc: repasseDate ?? vencimentoSemComprovante,
     dtComp: competencia,
     codContato,
     codDisponivel,
@@ -549,9 +568,9 @@ function validateLancamento(codContato: number | null, codDisponivel: number | n
 
 async function getFechamento(supabase: SupabaseClient, fechamentoId: string) {
   const withConta =
-    "id,competencia,status,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id,egestor_conta_id)"
+    "id,competencia,status,imobiliaria_id,empreendimento_id,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id,egestor_conta_id)"
   const withoutConta =
-    "id,competencia,status,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id)"
+    "id,competencia,status,imobiliaria_id,empreendimento_id,analise_completa,imobiliarias(id,nome,egestor_contato_id,egestor_tag_id),empreendimentos(nome,egestor_tag_id)"
 
   const primary = await supabase.from("fechamentos").select(withConta).eq("id", fechamentoId).single()
   let data: unknown = primary.data
@@ -777,6 +796,79 @@ async function getMapeamentos(supabase: SupabaseClient, contaId: string) {
   return new Map((primary.data as DbMapeamento[]).map((row) => [row.categoria, row]))
 }
 
+// Adiciona um lancamento MANUAL a previa (linha que nao vem da analise do
+// documento, ex.: IPTU de outro imovel). Reaproveita a mesma resolucao de
+// conta/contato/plano/tags dos lancamentos automaticos, marcando origem_manual.
+export async function addManualEgestorLancamento(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+  input: { tipo: EgestorTipoLancamento; categoria: EgestorCategoria; descricao: string; valor: number },
+) {
+  const fechamento = await getFechamento(supabase, fechamentoId)
+  if (!["aprovado", "preparado_egestor", "erro_egestor"].includes(fechamento.status)) {
+    throw new Error("Gere a previa eGestor antes de adicionar um lancamento manual.")
+  }
+
+  const { data: sentRows, error: sentError } = await supabase
+    .from("egestor_lancamentos")
+    .select("id")
+    .eq("fechamento_id", fechamentoId)
+    .not("egestor_codigo", "is", null)
+    .limit(1)
+  if (sentError) throw sentError
+  if (sentRows && sentRows.length > 0) throw new Error("Fechamento ja possui lancamentos enviados ao eGestor.")
+
+  const conta = await resolveContaForFechamento(supabase, fechamento)
+  const { cod: codDisponivel, nome: disponivelNome } = await resolveDisponivel(supabase, conta)
+  conta.cod_disponivel_padrao = codDisponivel
+  const maps = await getMapeamentos(supabase, conta.id)
+  const codContato = await resolveContato(supabase, fechamento, conta)
+  const diaVencimentoPadrao = await getDiaVencimentoPadrao(supabase, fechamento)
+
+  const draft: DraftLancamento = {
+    tipo: input.tipo,
+    categoria: input.categoria,
+    descricao: input.descricao,
+    valor: input.valor,
+  }
+  const row = buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome, diaVencimentoPadrao)
+
+  const { error } = await supabase.from("egestor_lancamentos").insert({ ...row, origem_manual: true })
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error("Ja existe um lancamento com esse tipo e categoria neste fechamento.")
+    }
+    throw error
+  }
+  return getLancamentos(supabase, fechamentoId)
+}
+
+// Remove um lancamento MANUAL ainda nao enviado. Linhas automaticas ou ja
+// enviadas ao eGestor nao podem ser removidas por aqui.
+export async function deleteManualEgestorLancamento(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+  lancamentoId: string,
+) {
+  const { data: row, error } = await supabase
+    .from("egestor_lancamentos")
+    .select("id,origem_manual,egestor_codigo")
+    .eq("id", lancamentoId)
+    .eq("fechamento_id", fechamentoId)
+    .maybeSingle()
+  if (error) throw error
+  if (!row) throw new Error("Lancamento nao encontrado.")
+  if ((row as { egestor_codigo: number | null }).egestor_codigo != null) {
+    throw new Error("Lancamento ja enviado ao eGestor nao pode ser removido.")
+  }
+  if (!(row as { origem_manual?: boolean }).origem_manual) {
+    throw new Error("Apenas lancamentos manuais podem ser removidos.")
+  }
+  const { error: delError } = await supabase.from("egestor_lancamentos").delete().eq("id", lancamentoId)
+  if (delError) throw delError
+  return getLancamentos(supabase, fechamentoId)
+}
+
 async function getLancamentos(supabase: SupabaseClient, fechamentoId: string) {
   const { data, error } = await supabase
     .from("egestor_lancamentos")
@@ -942,4 +1034,41 @@ function formatCompetencia(date: string) {
 
 function toDateOnly(date: string) {
   return date.slice(0, 10)
+}
+
+// Vencimento no mes SEGUINTE a competencia, no dia informado. competencia chega
+// como "YYYY-MM-01". Retorna null quando nao ha dia configurado. O dia e limitado
+// ao ultimo dia do mes de destino (ex.: dia 31 em mes de 30 vira 30).
+export function proximoVencimento(competencia: string, dia: number | null): string | null {
+  if (!dia || !Number.isInteger(dia) || dia < 1 || dia > 31) return null
+  const [anoStr, mesStr] = toDateOnly(competencia).split("-")
+  const ano = Number(anoStr)
+  const mes = Number(mesStr)
+  if (!Number.isInteger(ano) || !Number.isInteger(mes) || mes < 1 || mes > 12) return null
+  const proximoMes = mes === 12 ? 1 : mes + 1
+  const proximoAno = mes === 12 ? ano + 1 : ano
+  const ultimoDia = new Date(proximoAno, proximoMes, 0).getDate()
+  const diaFinal = Math.min(dia, ultimoDia)
+  return `${proximoAno}-${String(proximoMes).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`
+}
+
+// Dia de vencimento padrao da regra comercial (imobiliaria x empreendimento).
+// Resiliente: qualquer erro (inclusive coluna ausente antes da migration) resolve
+// para null, sem bloquear a geracao da previa.
+async function getDiaVencimentoPadrao(supabase: SupabaseClient, fechamento: FechamentoRow): Promise<number | null> {
+  if (!fechamento.imobiliaria_id || !fechamento.empreendimento_id) return null
+  try {
+    const { data, error } = await supabase
+      .from("regras_comerciais")
+      .select("dia_vencimento_padrao")
+      .eq("imobiliaria_id", fechamento.imobiliaria_id)
+      .eq("empreendimento_id", fechamento.empreendimento_id)
+      .eq("ativo", true)
+      .maybeSingle()
+    if (error) return null
+    const dia = (data as { dia_vencimento_padrao?: number | null } | null)?.dia_vencimento_padrao ?? null
+    return typeof dia === "number" ? dia : null
+  } catch {
+    return null
+  }
 }

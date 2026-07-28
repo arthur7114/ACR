@@ -49,6 +49,7 @@ export type RegraComercial = {
   empreendimento_id: string
   taxa_administracao_percent: number
   taxa_intermediacao_percent: number
+  dia_vencimento_padrao?: number | null
   ativo: boolean
   imobiliarias?: { nome: string } | null
   empreendimentos?: { nome: string } | null

@@ -55,6 +55,7 @@ type RegraComercialForm = {
   empreendimento_id: string
   taxa_administracao_percent: string
   taxa_intermediacao_percent: string
+  dia_vencimento_padrao: string
   ativo: boolean
 }
 
@@ -154,6 +155,7 @@ const emptyRegraComercial: RegraComercialForm = {
   empreendimento_id: "",
   taxa_administracao_percent: "",
   taxa_intermediacao_percent: "",
+  dia_vencimento_padrao: "",
   ativo: true,
 }
 
@@ -667,13 +669,14 @@ export function ImoveisView({
           {tab === "regras" && (
             <RegistrySection
               rows={regrasComerciais}
-              headers={["Imobiliária", "Empreendimento", "Tx admin.", "Tx intermediação", "Status", "Ações"]}
+              headers={["Imobiliária", "Empreendimento", "Tx admin.", "Tx intermediação", "Dia venc.", "Status", "Ações"]}
               renderRow={(item) => (
                 <tr key={item.id} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                   <td className="px-4 py-3 font-medium text-[#3D4F3F]">{item.imobiliarias?.nome ?? "-"}</td>
                   <td className="px-4 py-3 text-[#3D4F3F]">{item.empreendimentos?.nome ?? "-"}</td>
                   <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(item.taxa_administracao_percent)}</td>
                   <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(item.taxa_intermediacao_percent)}</td>
+                  <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{item.dia_vencimento_padrao ?? "-"}</td>
                   <td className="px-4 py-3"><ActiveBadge active={item.ativo} /></td>
                   <td className="px-4 py-3">
                     <RowActions
@@ -712,6 +715,9 @@ export function ImoveisView({
                     <Field label="Tx admin. %"><Input type="number" value={regraComercialForm.taxa_administracao_percent} onChange={(value) => setRegraComercialForm((form) => ({ ...form, taxa_administracao_percent: value }))} /></Field>
                     <Field label="Tx intermediação %"><Input type="number" value={regraComercialForm.taxa_intermediacao_percent} onChange={(value) => setRegraComercialForm((form) => ({ ...form, taxa_intermediacao_percent: value }))} /></Field>
                   </TwoColumns>
+                  <Field label="Dia de vencimento (repasse sem comprovante)">
+                    <Input type="number" value={regraComercialForm.dia_vencimento_padrao} onChange={(value) => setRegraComercialForm((form) => ({ ...form, dia_vencimento_padrao: value }))} />
+                  </Field>
                 </FormPanel>
               }
             />
@@ -1021,6 +1027,7 @@ function fromRegraComercial(regra: RegraComercial): RegraComercialForm {
     empreendimento_id: regra.empreendimento_id,
     taxa_administracao_percent: regra.taxa_administracao_percent.toString(),
     taxa_intermediacao_percent: regra.taxa_intermediacao_percent.toString(),
+    dia_vencimento_padrao: regra.dia_vencimento_padrao != null ? regra.dia_vencimento_padrao.toString() : "",
     ativo: regra.ativo,
   }
 }
@@ -1051,6 +1058,7 @@ function toRegraComercialPayload(form: RegraComercialForm) {
     ...form,
     taxa_administracao_percent: form.taxa_administracao_percent || "0",
     taxa_intermediacao_percent: form.taxa_intermediacao_percent || "0",
+    dia_vencimento_padrao: form.dia_vencimento_padrao.trim() === "" ? null : form.dia_vencimento_padrao,
   }
 }
 
