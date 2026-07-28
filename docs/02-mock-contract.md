@@ -92,6 +92,12 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
   `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`,
   `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
+- Refinamento responsivo aprovado: título e filtros só compartilham a mesma
+  linha quando a área útil comporta os quatro campos; o banner distribui a
+  cobertura em colunas flexíveis e nunca cria overflow horizontal da página.
+- O banner apresenta estado, cobertura e lacunas acionáveis. Motivos técnicos
+  internos da avaliação não são repetidos como ressalva textual no topo; os
+  valores ainda sem classificação permanecem visíveis na conciliação.
 
 ### Ajuste registrado — fechamento operacional e competência da receita (2026-07-14)
 

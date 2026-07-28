@@ -117,6 +117,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-28 - Indicadores: correção de overflow e simplificação do banner
+
+Status: concluído e validado localmente.
+Job: corrigir o corte horizontal dos quatro filtros e da cobertura em `/indicadores`, além de retirar do banner a ressalva técnica sobre valores sem classificação.
+Outcome entregue: o título só divide a linha com os filtros em telas extra largas; entre tablet e desktop os campos usam a largura disponível em grade responsiva. O banner passou de `flex` com grade rígida para duas colunas flexíveis, e a cobertura usa 2, 3 ou 4 colunas conforme o espaço. Os motivos técnicos continuam no DTO e na conciliação, mas deixam de ser repetidos no topo para o cliente.
+Validação: navegador autenticado em 1280 px confirmou filtros completos, cobertura sem corte, `scrollWidth = clientWidth = 1280`, texto retirado e zero erro de console. Suíte completa 272/272, typecheck, lint e build passaram. A auditoria UX passou; o checker geral de acessibilidade não apontou ocorrência nos arquivos alterados e manteve 9 achados preexistentes fora deste escopo.
+Decisões: não esconder `Com divergência`, contagens ou lacunas; remover apenas a justificativa técnica redundante. A quebra responsiva é orientada pela área útil após a sidebar, não apenas pela largura total da viewport.
+Arquivos/docs impactados: `components/acr/views/indicadores-view.tsx`, `components/acr/indicadores/primitives/dashboard-ui.tsx`, teste de apresentação e docs 02/06/12.
+Próxima ação: publicar a correção e repetir o smoke no domínio implantado.
+
 ### 2026-07-28 - Correções a partir de vídeos de revisão (vínculo, referência multi-mês, vencimento, lançamento manual)
 
 Status: concluído e validado em produção. Migrations aplicadas, dias de vencimento configurados e fluxo exercitado em navegador com fechamento real.

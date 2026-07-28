@@ -146,7 +146,7 @@ export function IndicadoresView() {
 
   return (
     <div className="min-w-0 max-w-full text-acr-ink" aria-busy={isLoading}>
-      <header className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+      <header className="mb-4 flex flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-[-0.025em] text-acr-ink text-balance">Operação financeira da carteira</h1>
@@ -239,7 +239,7 @@ function FiltersBar({
   disabled: boolean
 }) {
   return (
-    <div className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-4" aria-label="Filtros dos indicadores">
+    <div className="grid min-w-0 w-full gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:w-auto" aria-label="Filtros dos indicadores">
       <FilterSelect name="competencia" label="Competência" value={filters.competencia || data?.meta.competencia || ""} options={data?.filtros.competencias ?? []} onChange={(value) => onChange("competencia", value)} disabled={disabled} emptyLabel="Sem competências" />
       <FilterSelect name="empresa" label="Empresa" value={filters.empresaId} options={data?.filtros.empresas ?? []} onChange={(value) => onChange("empresaId", value)} disabled={disabled} emptyLabel="Todas as empresas" allowAll />
       <FilterSelect name="empreendimento" label="Empreendimento" value={filters.empreendimentoId} options={data?.filtros.empreendimentos ?? []} onChange={(value) => onChange("empreendimentoId", value)} disabled={disabled} emptyLabel="Todos os empreendimentos" allowAll />
@@ -276,7 +276,7 @@ function FilterSelect({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
-        className="min-h-11 w-full min-w-0 rounded-lg border border-acr-line-2 bg-white px-3 text-sm font-medium text-acr-ink outline-none focus:border-acr-green focus:ring-2 focus:ring-acr-green/15 disabled:cursor-not-allowed disabled:opacity-55 xl:w-44"
+        className="min-h-11 w-full min-w-0 rounded-lg border border-acr-line-2 bg-white px-3 text-sm font-medium text-acr-ink outline-none focus:border-acr-green focus:ring-2 focus:ring-acr-green/15 disabled:cursor-not-allowed disabled:opacity-55 2xl:w-44"
       >
         {(allowAll || options.length === 0) && <option value="">{emptyLabel}</option>}
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}

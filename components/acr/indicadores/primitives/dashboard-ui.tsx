@@ -190,7 +190,7 @@ export function CoverageBanner({ data }: { data: IndicadoresData }) {
         status === "com_divergencia" && "border-acr-red/30 bg-acr-red-soft",
       )}
     >
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.35fr)] xl:items-start">
         <div className="flex min-w-0 items-start gap-3">
           <ConfidenceIcon status={status} />
           <div className="min-w-0 flex-1">
@@ -213,17 +213,12 @@ export function CoverageBanner({ data }: { data: IndicadoresData }) {
             <p className="mt-1 text-sm leading-5 text-acr-muted-2">
               {confidence.description} {closings.processados} de {closings.esperados} fechamentos esperados estão processados.
             </p>
-            {data.meta.motivosConfianca?.length > 0 && (
-              <p className="mt-1 text-xs leading-5 text-acr-muted-2">
-                {data.meta.motivosConfianca.join(" · ")}
-              </p>
-            )}
             <div className="mt-2">
               <HowToReadPanel />
             </div>
           </div>
         </div>
-        <dl className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 xl:grid-cols-5">
+        <dl className="grid min-w-0 grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 2xl:grid-cols-4">
           <CoverageItem label="Fechamentos esperados" value={`${formatCount(closings.processados)}/${formatCount(closings.esperados)}`} />
           <CoverageItem label="Histórico por imóvel" value={formatPercent(data.cobertura.imoveis.percentual)} />
           <CoverageItem label="Contratos conhecidos" value={coverage.contratos ? formatCount(coverage.contratos.conhecidos) : "—"} />

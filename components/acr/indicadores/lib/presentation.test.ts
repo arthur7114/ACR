@@ -105,4 +105,10 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
   ]) {
     assert.equal(source.includes(requiredTerm), true, `termo obrigatório ausente: ${requiredTerm}`)
   }
+
+  assert.equal(
+    source.includes("motivosConfianca"),
+    false,
+    "motivos técnicos de confiança não devem aparecer no banner",
+  )
 })
