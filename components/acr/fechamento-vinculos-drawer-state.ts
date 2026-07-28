@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
 import type {
   FechamentoVinculosImoveis,
   ImovelVinculoCadastro,
@@ -11,10 +12,6 @@ export type VinculoMode = "existente" | "criar"
 export type VinculoForm = { codigo: string; unidade: string; inquilino: string; status: string; aluguel: string }
 export type VinculoUpdates = { inquilino: boolean; status: boolean; aluguel: boolean }
 type VinculoFormState = Pick<VinculoController, "current" | "mode" | "selectedId" | "form" | "updates">
-
-function normalize(value: string | null | undefined) {
-  return (value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
-}
 
 function defaultForm(current: ReceitaSemImovel): VinculoForm {
   return {
@@ -61,10 +58,13 @@ async function sendResolution(fechamentoId: string, body: unknown) {
 }
 
 function filterCandidates(imoveis: ImovelVinculoCadastro[], search: string) {
-  const query = normalize(search)
+  // normalizeCodigoImovel tira acento/caixa E zeros a esquerda de sequencias
+  // de digitos, entao "0002520" passa a casar com o cadastro "2520". Nomes de
+  // inquilino continuam buscaveis (o zero-strip so afeta digitos).
+  const query = normalizeCodigoImovel(search)
   if (!query) return imoveis
   return imoveis.filter((item) =>
-    normalize(`${item.codigo_imobiliaria} ${item.unidade} ${item.inquilino_nome ?? ""}`).includes(query),
+    normalizeCodigoImovel(`${item.codigo_imobiliaria} ${item.unidade} ${item.inquilino_nome ?? ""}`).includes(query),
   )
 }
 

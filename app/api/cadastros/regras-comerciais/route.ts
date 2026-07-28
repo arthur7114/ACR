@@ -9,6 +9,7 @@ const selectFields = `
   empreendimento_id,
   taxa_administracao_percent,
   taxa_intermediacao_percent,
+  dia_vencimento_padrao,
   ativo,
   imobiliarias ( nome ),
   empreendimentos ( nome )

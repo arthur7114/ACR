@@ -342,7 +342,7 @@ function isDescontoLancamento(item: Lancamento): boolean {
   return /\bDESCONTO\b/.test(descricao) || /\bDESC\./.test(descricao)
 }
 
-function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): ReceitaPorImovel[] {
+export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): ReceitaPorImovel[] {
   const porImovel = new Map<string, Lancamento[]>()
   for (const lancamento of lancamentos) {
     const grupo = porImovel.get(lancamento.codigo) ?? []
@@ -355,66 +355,114 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
     if (!codigos.includes(codigo)) codigos.push(codigo)
   }
 
-  return codigos.map((codigo) => {
+  return codigos.flatMap((codigo) => {
     const imovel = relacao.find((item) => item.codigo === codigo) ?? null
     const grupo = porImovel.get(codigo) ?? []
 
     if (grupo.length === 0) {
       const ultimoPagamento = imovel?.ultimoPagamento ? ` (ult. pg ${imovel.ultimoPagamento})` : ""
-      return buildReceita(codigo, "", {
-        observacao: joinObservacao(imovel?.endereco, `Sem lancamentos no mes${ultimoPagamento}.`),
-      })
+      return [
+        buildReceita(codigo, "", {
+          observacao: joinObservacao(imovel?.endereco, `Sem lancamentos no mes${ultimoPagamento}.`),
+        }),
+      ]
     }
-
-    const creditos = grupo.filter((item) => item.credito !== null)
-    const aluguelCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("ALUGUEL"))
-    const iptuCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("IPTU"))
-    const comissoes = grupo.filter(
-      (item) => item.debito !== null && normalize(item.descricao).includes("COMISSAO"),
-    )
-    // Descontos sao debitos (ex.: "DESC. LOCATARIO", "DESCONTO FORNECIDO"); o
-    // credito de "ENCARGOS FINANCEIROS POR ATRASO" nao entra aqui.
-    const descontos = grupo.filter((item) => isDescontoLancamento(item) && !comissoes.includes(item))
-    const outros = grupo.filter(
-      (item) =>
-        !aluguelCreditos.includes(item) &&
-        !iptuCreditos.includes(item) &&
-        !comissoes.includes(item) &&
-        !descontos.includes(item),
-    )
-
-    const detalhes = outros.map((item) => {
-      const natureza = item.credito !== null ? "credito" : "debito"
-      const valor = item.credito ?? item.debito ?? 0
-      return `${item.descricao}: ${natureza} de ${formatBRL(valor)}`
-    })
-
-    const aluguel = sumOrNull(aluguelCreditos.map((item) => item.credito ?? 0))
-    const desconto = sumOrNull(descontos.map((item) => item.debito ?? 0))
-    const aluguelComDesconto =
-      desconto === null ? null : aluguel === null ? null : roundMoney(Math.max(aluguel - desconto, 0))
-
-    // Mes de referencia do aluguel (competencia do proprio lancamento). Quando
-    // difere da competencia do fechamento, sinaliza pagamento de mes anterior.
-    const vencimento =
-      aluguelCreditos.map((item) => item.mesAno).find((mes): mes is string => Boolean(mes)) ?? null
 
     // O nome do inquilino nao consta neste layout: usa o endereco como
     // identificacao da unidade (por isso o endereco sai da observacao).
     const inquilino = grupo[0].inquilino.trim() || imovel?.endereco?.trim() || ""
 
-    return buildReceita(codigo, inquilino, {
-      aluguel,
-      desconto,
-      aluguel_com_desconto: aluguelComDesconto,
-      iptu: sumOrNull(iptuCreditos.map((item) => item.credito ?? 0)),
-      comissao: sumOrNull(comissoes.map((item) => item.debito ?? 0)),
-      total: roundMoney(creditos.reduce((total, item) => total + (item.credito ?? 0), 0)),
-      repasse: grupo[grupo.length - 1].saldo,
-      competencia_original: vencimento,
-      vencimento,
-      observacao: detalhes.join("; ") || null,
+    // Meses distintos de ALUGUEL recebidos para este imovel no fechamento.
+    const mesesAluguel = [
+      ...new Set(
+        grupo
+          .filter((item) => item.credito !== null && normalize(item.descricao).startsWith("ALUGUEL"))
+          .map((item) => item.mesAno)
+          .filter((mes): mes is string => Boolean(mes)),
+      ),
+    ]
+
+    // Caso comum (0 ou 1 mes de aluguel): UMA linha, repasse = saldo final do
+    // grupo. Comportamento historico preservado byte a byte.
+    if (mesesAluguel.length <= 1) {
+      return [
+        buildReceitaDoGrupo(codigo, inquilino, grupo, {
+          competencia: mesesAluguel[0] ?? null,
+          repasse: grupo[grupo.length - 1].saldo,
+        }),
+      ]
+    }
+
+    // Inquilino pagou 2+ meses de aluguel no mesmo fechamento (pagamento em
+    // atraso). Gera UMA linha por mes para que a receita/aluguel seja atribuida
+    // a competencia correta nos indicadores. Lancamentos sem mes (ou de mes fora
+    // da lista de alugueis) sao alocados na PRIMEIRA competencia. Como o saldo e
+    // um acumulado do grupo, o repasse por mes vira o liquido (creditos-debitos)
+    // daquele mes.
+    const primeiroMes = mesesAluguel[0]
+    return mesesAluguel.map((mes) => {
+      const itens = grupo.filter((item) => {
+        if (item.mesAno === mes) return true
+        const foraDaLista = !item.mesAno || !mesesAluguel.includes(item.mesAno)
+        return foraDaLista && mes === primeiroMes
+      })
+      const repasse = roundMoney(
+        itens.reduce((soma, item) => soma + (item.credito ?? 0) - (item.debito ?? 0), 0),
+      )
+      return buildReceitaDoGrupo(codigo, inquilino, itens, { competencia: mes, repasse })
     })
+  })
+}
+
+// Monta uma ReceitaPorImovel a partir de um conjunto de lancamentos ja
+// pertencentes ao mesmo imovel (e, no caso multi-mes, a um unico mes). A
+// competencia e o repasse sao fornecidos pelo chamador porque dependem do
+// modo (linha unica x split por mes).
+function buildReceitaDoGrupo(
+  codigo: string,
+  inquilino: string,
+  itens: Lancamento[],
+  options: { competencia: string | null; repasse: number | null },
+): ReceitaPorImovel {
+  const creditos = itens.filter((item) => item.credito !== null)
+  const aluguelCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("ALUGUEL"))
+  const iptuCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("IPTU"))
+  const comissoes = itens.filter(
+    (item) => item.debito !== null && normalize(item.descricao).includes("COMISSAO"),
+  )
+  // Descontos sao debitos (ex.: "DESC. LOCATARIO", "DESCONTO FORNECIDO"); o
+  // credito de "ENCARGOS FINANCEIROS POR ATRASO" nao entra aqui.
+  const descontos = itens.filter((item) => isDescontoLancamento(item) && !comissoes.includes(item))
+  const outros = itens.filter(
+    (item) =>
+      !aluguelCreditos.includes(item) &&
+      !iptuCreditos.includes(item) &&
+      !comissoes.includes(item) &&
+      !descontos.includes(item),
+  )
+
+  const detalhes = outros.map((item) => {
+    const natureza = item.credito !== null ? "credito" : "debito"
+    const valor = item.credito ?? item.debito ?? 0
+    return `${item.descricao}: ${natureza} de ${formatBRL(valor)}`
+  })
+
+  const aluguel = sumOrNull(aluguelCreditos.map((item) => item.credito ?? 0))
+  const desconto = sumOrNull(descontos.map((item) => item.debito ?? 0))
+  const aluguelComDesconto =
+    desconto === null ? null : aluguel === null ? null : roundMoney(Math.max(aluguel - desconto, 0))
+
+  return buildReceita(codigo, inquilino, {
+    aluguel,
+    desconto,
+    aluguel_com_desconto: aluguelComDesconto,
+    iptu: sumOrNull(iptuCreditos.map((item) => item.credito ?? 0)),
+    comissao: sumOrNull(comissoes.map((item) => item.debito ?? 0)),
+    total: roundMoney(creditos.reduce((total, item) => total + (item.credito ?? 0), 0)),
+    repasse: options.repasse,
+    competencia_original: options.competencia,
+    vencimento: options.competencia,
+    observacao: detalhes.join("; ") || null,
   })
 }
 

@@ -20,6 +20,8 @@ import {
   MessageSquare,
   Info,
   Zap,
+  Plus,
+  Trash2,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import { calcularIntermediacao } from "@/lib/intermediacao"
@@ -591,6 +593,14 @@ export function RevisaoView({
   const [editandoCampo, setEditandoCampo] = useState<{ campo: "descricao" | "valor" | "tags"; lancamentoId: string } | null>(null)
   const [valorEdicao, setValorEdicao] = useState("")
   const [salvandoLancamento, setSalvandoLancamento] = useState(false)
+  const [adicionandoLinha, setAdicionandoLinha] = useState(false)
+  const [salvandoNovaLinha, setSalvandoNovaLinha] = useState(false)
+  const [novaLinha, setNovaLinha] = useState<{ tipo: "recebimento" | "pagamento"; categoria: string; descricao: string; valor: string }>({
+    tipo: "pagamento",
+    categoria: "iptu",
+    descricao: "",
+    valor: "",
+  })
   const [vinculosOpen, setVinculosOpen] = useState(false)
 
   useEffect(() => {
@@ -730,6 +740,43 @@ export function RevisaoView({
     if (onRefresh) await onRefresh()
   }
 
+  async function adicionarLancamentoManual() {
+    setSalvandoNovaLinha(true)
+    setEgestorError(null)
+    const response = await fetch(`/api/fechamentos/${fechamentoId}/egestor/lancamentos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tipo: novaLinha.tipo,
+        categoria: novaLinha.categoria,
+        descricao: novaLinha.descricao.trim(),
+        valor: Number(novaLinha.valor.replace(",", ".")),
+      }),
+    })
+    const payload = await response.json()
+    setSalvandoNovaLinha(false)
+    if (!response.ok || payload.error) {
+      setEgestorError(payload.error ?? "Falha ao adicionar o lançamento.")
+      return
+    }
+    setAdicionandoLinha(false)
+    setNovaLinha({ tipo: "pagamento", categoria: "iptu", descricao: "", valor: "" })
+    if (onRefresh) await onRefresh()
+  }
+
+  async function removerLancamentoManual(lancamentoId: string) {
+    setEgestorError(null)
+    const response = await fetch(`/api/fechamentos/${fechamentoId}/egestor/lancamentos/${lancamentoId}`, {
+      method: "DELETE",
+    })
+    const payload = await response.json()
+    if (!response.ok || payload.error) {
+      setEgestorError(payload.error ?? "Falha ao remover o lançamento.")
+      return
+    }
+    if (onRefresh) await onRefresh()
+  }
+
   const empreendimentoNome = fechamento?.empreendimentos?.nome ?? prestacao?.empreendimento ?? "Empreendimento não identificado"
   const empreendimentoId = fechamento?.empreendimento_id ?? null
   const imobiliariaNome = fechamento?.imobiliarias?.nome ?? prestacao?.imobiliaria ?? "Imobiliária não identificada"
@@ -804,20 +851,35 @@ export function RevisaoView({
   const comissaoAdminExibida = resumoComissao.total
   // Parte da comissão que vem além das linhas regulares (acordos/atrasos do mês).
   const comissaoOutras = resumoComissao.acordos
-  const linhasAlugadas = linhasImoveis.filter(isRentedCurrentRow)
+  // Aluguel em atraso pode gerar 2+ linhas para o MESMO imovel (uma por
+  // competencia — ver split em cesar-rego-parser). Para contagens de ocupacao e
+  // media (1 unidade = 1 imovel), conta uma linha por apto. Os totais somados
+  // (receita, comissao) continuam sobre todas as linhas. No caso comum (1 linha
+  // por imovel) esta lista e identica a linhasImoveis.
+  const linhasUnidades = (() => {
+    const vistos = new Set<string>()
+    return linhasImoveis.filter((row) => {
+      const key = aptoKey(row.apto)
+      if (!key) return true
+      if (vistos.has(key)) return false
+      vistos.add(key)
+      return true
+    })
+  })()
+  const linhasAlugadas = linhasUnidades.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
   const mediaAluguel = linhasAluguelValido.length > 0
     ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
     : 0
   const isInadimplenteEfetivo = (row: ReceitaPorImovel) =>
     isDelinquentRow(row) && (isExplicitInadimplencia(row) || !acordoAptos.has(aptoKey(row.apto)))
-  const inadimplentes = linhasImoveis.filter(isInadimplenteEfetivo).length
-  const vagos = linhasImoveis.filter(isVacantRow).length
-  const airbnb = linhasImoveis.filter(isAirbnbRow).length
+  const inadimplentes = linhasUnidades.filter(isInadimplenteEfetivo).length
+  const vagos = linhasUnidades.filter(isVacantRow).length
+  const airbnb = linhasUnidades.filter(isAirbnbRow).length
   // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
   // Usa as linhas marcadas INTERMEDIACAO; se nao houver linha, cai na contagem de
   // acordos de intermediacao do mes.
-  const intermediadasRows = linhasImoveis.filter(isIntermediacaoRow).length
+  const intermediadasRows = linhasUnidades.filter(isIntermediacaoRow).length
   const intermediadas = intermediadasRows > 0 ? intermediadasRows : intermediacoes.length
 
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
@@ -1359,12 +1421,12 @@ export function RevisaoView({
             </thead>
             <tbody>
               {linhasImoveisExibicao.length > 0 ? (
-                linhasImoveisExibicao.map((row) => {
+                linhasImoveisExibicao.map((row, idx) => {
                   const badge = getRowBadge(row, acordoAptos)
                   const competenciaAtual = row.competencia_original ? formatCompetenciaMes(row.competencia_original) : ""
                   const competenciaAtrasada = Boolean(row.competencia_original && competenciaMesAno && competenciaAtual !== competenciaMesAno)
                   return (
-                  <tr key={`${row.apto}-${row.inquilino}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
+                  <tr key={`${row.apto}-${row.inquilino}-${row.competencia_original ?? ""}-${idx}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
                     <td className="px-4 py-3.5 text-[#1A2B1C] font-medium">
                       {empreendimentoId && row.apto?.trim() ? (
                         <button
@@ -1671,6 +1733,17 @@ export function RevisaoView({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              {isApproved && !hasSentEgestor && (
+                <button
+                  onClick={() => setAdicionandoLinha((v) => !v)}
+                  disabled={egestorAction !== "idle"}
+                  title="Adicionar um lançamento manual (ex.: IPTU de outro imóvel)"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] font-medium text-[#3D4F3F] hover:bg-[#EEF1EE] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Plus size={14} />
+                  Adicionar lançamento
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 border-t border-[#EEF1EE] pt-2 sm:border-l sm:border-t-0 sm:pl-2 sm:pt-0">
               <button
@@ -1696,6 +1769,81 @@ export function RevisaoView({
           <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#FCA5A5] bg-[#FEF2F2] p-3 text-[13px] text-[#991B1B]">
             <AlertTriangle size={15} />
             {egestorError}
+          </div>
+        )}
+        {adicionandoLinha && isApproved && !hasSentEgestor && (
+          <div className="mt-3 rounded-lg border border-[#BBD6BE] bg-[#F8FAF8] p-3">
+            <p className="mb-2 text-[12px] font-semibold text-[#1A2B1C]">Novo lançamento manual</p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+              <label className="flex flex-col gap-1 text-[11px] font-medium text-[#6B7F6E]">
+                Tipo
+                <select
+                  value={novaLinha.tipo}
+                  onChange={(e) => setNovaLinha((f) => ({ ...f, tipo: e.target.value as "recebimento" | "pagamento" }))}
+                  className="h-8 rounded-md border border-[#BBD6BE] px-2 text-[13px] text-[#1A2B1C] focus:border-[#2D8C3A] focus:outline-none"
+                >
+                  <option value="pagamento">pagamento</option>
+                  <option value="recebimento">recebimento</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-medium text-[#6B7F6E]">
+                Categoria
+                <select
+                  value={novaLinha.categoria}
+                  onChange={(e) => setNovaLinha((f) => ({ ...f, categoria: e.target.value }))}
+                  className="h-8 rounded-md border border-[#BBD6BE] px-2 text-[13px] text-[#1A2B1C] focus:border-[#2D8C3A] focus:outline-none"
+                >
+                  {["iptu", "agua", "energia", "seguro", "outras_despesas", "comissao_administrativa", "repasse_mensal"].map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-1 flex-col gap-1 text-[11px] font-medium text-[#6B7F6E]">
+                Descrição
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={novaLinha.descricao}
+                  onChange={(e) => setNovaLinha((f) => ({ ...f, descricao: e.target.value }))}
+                  placeholder="Ex.: IPTU imóvel 0002599 (abatido em maio)"
+                  className="h-8 min-w-[220px] rounded-md border border-[#BBD6BE] px-2 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] font-medium text-[#6B7F6E]">
+                Valor
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={novaLinha.valor}
+                  onChange={(e) => setNovaLinha((f) => ({ ...f, valor: e.target.value }))}
+                  placeholder="445,95"
+                  className="h-8 w-28 rounded-md border border-[#BBD6BE] px-2 text-[13px] tabular-nums focus:border-[#2D8C3A] focus:outline-none"
+                />
+              </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void adicionarLancamentoManual()}
+                  disabled={salvandoNovaLinha || novaLinha.descricao.trim().length === 0 || !(Number(novaLinha.valor.replace(",", ".")) > 0)}
+                  className="h-8 rounded-md bg-[#2D8C3A] px-3 text-[12px] font-semibold text-white disabled:opacity-50"
+                >
+                  {salvandoNovaLinha ? "Adicionando..." : "Adicionar"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdicionandoLinha(false)}
+                  disabled={salvandoNovaLinha}
+                  className="h-8 rounded-md px-2 text-[12px] font-medium text-[#6B7F6E] hover:text-[#1A2B1C]"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-[#6B7F6E]">
+              A prévia só admite uma linha por tipo+categoria. Linhas manuais sobrevivem ao &quot;Gerar prévia&quot;.
+            </p>
           </div>
         )}
         {!isApproved ? (
@@ -1728,7 +1876,26 @@ export function RevisaoView({
               <tbody className="divide-y divide-[#EEF1EE]">
                 {egestorLancamentos.map((lancamento) => (
                   <tr key={lancamento.id}>
-                    <td className="px-3 py-2 text-[#3D4F3F]">{lancamento.tipo}</td>
+                    <td className="px-3 py-2 text-[#3D4F3F]">
+                      <div className="flex items-center gap-1.5">
+                        <span>{lancamento.tipo}</span>
+                        {lancamento.origem_manual && (
+                          <span className="inline-flex h-4 items-center rounded-full bg-[#EAF3EC] px-1.5 text-[9px] font-semibold uppercase tracking-wide text-[#2D8C3A]">
+                            manual
+                          </span>
+                        )}
+                        {lancamento.origem_manual && !hasSentEgestor && lancamento.egestor_codigo === null && (
+                          <button
+                            type="button"
+                            title="Remover lançamento manual"
+                            onClick={() => void removerLancamentoManual(lancamento.id)}
+                            className="text-[#B91C1C] hover:text-[#7F1D1D]"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2 font-medium text-[#1A2B1C]">{lancamento.categoria}</td>
                     <td className="px-3 py-2 text-[#3D4F3F]">
                       {editandoCampo?.campo === "descricao" && editandoCampo.lancamentoId === lancamento.id ? (

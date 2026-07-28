@@ -73,6 +73,11 @@ export const regraComercialInputSchema = z.object({
   empreendimento_id: z.string().uuid(),
   taxa_administracao_percent: z.coerce.number().finite().min(0).max(100),
   taxa_intermediacao_percent: z.coerce.number().finite().min(0).max(100),
+  // Dia do vencimento do repasse no mes seguinte a competencia quando nao ha
+  // comprovante. Vazio/ausente = null (usa a competencia).
+  dia_vencimento_padrao: z
+    .preprocess((v) => (v === "" || v === undefined ? null : v), z.coerce.number().int().min(1).max(31).nullable())
+    .optional(),
   ativo: z.boolean().default(true),
 })
 

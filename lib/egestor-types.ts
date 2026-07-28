@@ -57,6 +57,7 @@ export type EgestorLancamento = {
   egestor_cod_modulo: number | null
   anexo_status: string | null
   anexo_mensagem: string | null
+  origem_manual?: boolean
   revalidado_em?: string | null
   revalidacao_status?: string | null
   revalidacao_mensagem?: string | null
