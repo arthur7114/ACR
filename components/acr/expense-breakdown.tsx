@@ -5,6 +5,25 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { formatBRL } from "@/lib/format"
 import type { GrupoDespesaFechamento } from "@/lib/fechamento-operacional"
 
+export function ExpenseBreakdownCard({
+  groups,
+  total,
+}: {
+  groups: GrupoDespesaFechamento[]
+  total: number
+}) {
+  return (
+    <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #D97706" }}>
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#D97706]">Outras despesas</p>
+      <ExpenseBreakdown groups={groups} />
+      <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
+        <span className="font-semibold text-[#D97706]">Abatido do repasse</span>
+        <span className="font-bold tabular-nums text-[#D97706]">− {formatBRL(total)}</span>
+      </div>
+    </div>
+  )
+}
+
 export function ExpenseBreakdown({ groups }: { groups: GrupoDespesaFechamento[] }) {
   if (groups.length === 0) {
     return <p className="text-[12px] text-[#6B7F6E]">Nenhum item discriminado.</p>

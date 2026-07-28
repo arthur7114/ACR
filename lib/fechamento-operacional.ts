@@ -22,6 +22,14 @@ export interface GrupoDespesaFechamento {
   itens: ItemDespesaFechamento[]
 }
 
+export interface ResumoReceitasAdicionais {
+  acordos: number
+  rescisoes: number
+  inadimplenciasPagas: number
+  outros: number
+  total: number
+}
+
 const ORDEM_CATEGORIAS: CategoriaDespesaFechamento[] = [
   "energia",
   "agua_esgoto",
@@ -89,6 +97,42 @@ export function calcularResumoComissaoFechamento(prestacao: PrestacaoAnalysis | 
   return { regular, acordos: Math.max(roundMoney(total - regular), 0), total }
 }
 
+export function calcularResumoReceitasAdicionais(
+  prestacao: PrestacaoAnalysis | null,
+): ResumoReceitasAdicionais {
+  const resumo = {
+    acordos: 0,
+    rescisoes: 0,
+    inadimplenciasPagas: 0,
+    outros: 0,
+  }
+
+  for (const item of prestacao?.acordos_rescisoes_recebidos ?? []) {
+    if (item.tipo === "intermediacao") continue
+    if (item.tipo === "acordo") resumo.acordos += item.valor
+    else if (item.tipo === "rescisao") resumo.rescisoes += item.valor
+    else if (item.tipo === "atraso") resumo.inadimplenciasPagas += item.valor
+    else resumo.outros += item.valor
+  }
+
+  const normalized = {
+    acordos: roundMoney(resumo.acordos),
+    rescisoes: roundMoney(resumo.rescisoes),
+    inadimplenciasPagas: roundMoney(resumo.inadimplenciasPagas),
+    outros: roundMoney(resumo.outros),
+  }
+
+  return {
+    ...normalized,
+    total: roundMoney(
+      normalized.acordos
+      + normalized.rescisoes
+      + normalized.inadimplenciasPagas
+      + normalized.outros,
+    ),
+  }
+}
+
 export function classificarDespesaFechamento(descricao: string): CategoriaDespesaFechamento {
   const text = normalizeText(descricao)
   if (/estorno|revers|duplic|devolu|ajuste|correcao|credito/.test(text)) return "ajustes"
@@ -131,7 +175,13 @@ export function desdobrarDespesasFechamento({
   resumoItens?: PrestacaoResumoDespesa[]
   despesas?: Despesa[]
 }): GrupoDespesaFechamento[] {
-  const itens = resumoItens.length > 0 ? resumoItens.map(resumoToItem) : despesas.map(despesaToItem)
+  const despesasItens = despesas.map(despesaToItem)
+  const totalDespesasDocumento = roundMoney(
+    despesasItens.reduce((total, item) => total + item.valor, 0),
+  )
+  const itens = totalDespesasDocumento > 0.01
+    ? despesasItens
+    : resumoItens.map(resumoToItem)
   const somaItens = roundMoney(itens.reduce((total, item) => total + item.valor, 0))
   const residual = roundMoney(totalDespesas - somaItens)
 

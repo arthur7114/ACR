@@ -30,6 +30,7 @@ import { classificarLancamento } from "@/lib/despesas-locador"
 import {
   calcularIptuRecebidoExibicao,
   calcularResumoComissaoFechamento,
+  calcularResumoReceitasAdicionais,
   desdobrarDespesasFechamento,
 } from "@/lib/fechamento-operacional"
 import { formatCompetenciaMes } from "@/lib/competencia-fechamento"
@@ -48,7 +49,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
-import { ExpenseBreakdown } from "@/components/acr/expense-breakdown"
+import { ExpenseBreakdownCard } from "@/components/acr/expense-breakdown"
 import { FechamentoVinculosDrawer } from "@/components/acr/fechamento-vinculos-drawer"
 import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
@@ -796,6 +797,7 @@ export function RevisaoView({
   // #3: comissao retida nos acordos/rescisoes do mes soma-se a comissao de administracao.
   const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
   const resumoComissao = calcularResumoComissaoFechamento(prestacao)
+  const receitasAdicionais = calcularResumoReceitasAdicionais(prestacao)
   // Totais para o rodape da tabela de acordos (espelha o TOTAL impresso no documento).
   const acordosValorTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
   const acordosRepasseTotal = acordosValorTotal - acordosComissao
@@ -818,20 +820,24 @@ export function RevisaoView({
   const vagasTotais = rowTotals.vagas + vagasAcordos
   const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
   const comissaoCalculada = totals.comissao_administracao_calculada ?? null
-  const baseComissao = totals.base_comissao_administracao ?? 0
   // Comissao realizada = comissao das linhas da tabela / total das linhas da tabela
   // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
   const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
-  // A intermediação tem categoria própria (acima das receitas). Quando ela aparece
-  // dentro de outras_comissoes_despesas (dado antigo), removemos da lista/contagem
-  // de "outras despesas" — o total monetario do documento ja a desconsidera.
-  const outrasDespesasExibicao = outrasComissoesDespesas.filter((d) => classificarLancamento(d.descricao) !== "intermediacao")
+  // Comissão e intermediação têm baldes próprios. Em análises antigas, ambas
+  // podem aparecer misturadas no array genérico; só despesas reais entram aqui.
+  const outrasDespesasExibicao = outrasComissoesDespesas.filter(
+    (item) => classificarLancamento(item.descricao) === "despesa",
+  )
   const despesasDesdobradas = desdobrarDespesasFechamento({
     totalDespesas: totals.total_despesas,
     resumoItens: outrasDespesasExibicao,
     despesas: despesas?.despesas ?? [],
   })
+  const despesasItemCount = despesasDesdobradas.reduce(
+    (total, group) => total + group.itens.length,
+    0,
+  )
   const iptuRecebidoExibicao = calcularIptuRecebidoExibicao(prestacao, totals.total_iptu ?? rowTotals.iptu)
   // Intermediação: categoria própria (acordos tipo "intermediacao"). Fallback para
   // dado antigo que ainda trazia intermediação dentro de outras_comissoes_despesas.
@@ -1071,7 +1077,7 @@ export function RevisaoView({
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">Despesas</p>
                 <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#D97706]">{formatBRL(totals.total_despesas)}</p>
-                <p className="text-[11px] text-[#6B7F6E]">{outrasDespesasExibicao.length} item(ns)</p>
+                <p className="text-[11px] text-[#6B7F6E]">{despesasItemCount} item(ns)</p>
               </div>
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">=</span>
               <div>
@@ -1088,8 +1094,7 @@ export function RevisaoView({
             </div>
 
             {/* Três grupos: Receitas | Comissão | Despesas */}
-            {linhasImoveis.length > 0 ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 {/* Receitas */}
                 <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #2D8C3A" }}>
                   <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#2D8C3A]">Receitas</p>
@@ -1114,6 +1119,30 @@ export function RevisaoView({
                       <span className="text-[#6B7F6E]">Seguro incêndio</span>
                       <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(totals.total_seguro_incendio ?? rowTotals.seguro)}</span>
                     </div>
+                    {receitasAdicionais.acordos > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Acordos</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.acordos)}</span>
+                      </div>
+                    )}
+                    {receitasAdicionais.rescisoes > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Rescisões</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.rescisoes)}</span>
+                      </div>
+                    )}
+                    {receitasAdicionais.inadimplenciasPagas > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Inadimplência paga</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.inadimplenciasPagas)}</span>
+                      </div>
+                    )}
+                    {receitasAdicionais.outros > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Outros recebimentos</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.outros)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1155,30 +1184,8 @@ export function RevisaoView({
                 </div>
 
                 {/* Despesas */}
-                <div className="rounded-xl border border-[#EEF1EE] bg-white p-4" style={{ borderTop: "2px solid #D97706" }}>
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#D97706]">Outras despesas</p>
-                  <ExpenseBreakdown groups={despesasDesdobradas} />
-                  <div className="mt-3 flex justify-between border-t border-[#EEF1EE] pt-2.5 text-[13px]">
-                    <span className="font-semibold text-[#D97706]">Abatido do repasse</span>
-                    <span className="font-bold tabular-nums text-[#D97706]">− {formatBRL(totals.total_despesas)}</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Fallback sem linhas de imóveis */
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <MetricTile label="Comissão admin." value={formatBRL(rowTotals.comissao)} subtext={`${formatPercent(comissaoRealizadaPercent)} realizada`} tooltip={taxaAdministracao ? `Taxa cadastrada: ${formatPercent(taxaAdministracao ?? 0)}\nBase de cálculo (total): ${formatBRL(baseComissao ?? 0)}\nValor calculado: ${formatBRL(comissaoCalculada ?? 0)}` : "Comissão das linhas da tabela ÷ total da tabela."} />
-                <MetricTile label="Outras despesas" value={formatBRL(totals.total_despesas)} subtext={`${outrasDespesasExibicao.length} item(ns) no resumo`} tooltip="Soma de outras retenções ou despesas, descontadas do repasse final." />
-                <MetricTile label="Comissão + despesas" value={formatBRL(totals.total_comissao_despesas)} subtext="Total abatido do repasse" tooltip="Valor consolidado retido pela imobiliária antes de efetuar o repasse." />
-                <MetricTile
-                  label="Diferença"
-                  value={totals.diferenca_repasse === null ? "-" : formatBRL(totals.diferenca_repasse)}
-                  tone={totals.diferenca_repasse ? "danger" : "positive"}
-                  subtext="Entre cálculo e comprovante"
-                  tooltip="Diferença entre o Total a Repassar (calculado) e o valor pago encontrado no comprovante de repasse."
-                />
-              </div>
-            )}
+                <ExpenseBreakdownCard groups={despesasDesdobradas} total={totals.total_despesas} />
+            </div>
             </div>
 
             {/* Lateral: total a repassar + recebido (conforme o layout aprovado) */}
