@@ -46,6 +46,18 @@ export function formatCount(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value)
 }
 
+export function formatHistoryCoverage(
+  recordedMonths: number,
+  classifiedMonths: number,
+  totalMonths: number,
+): string {
+  if (recordedMonths === 0 || totalMonths === 0) return "Sem histórico no período"
+  if (recordedMonths === classifiedMonths) {
+    return `${classifiedMonths} de ${totalMonths} ${totalMonths === 1 ? "mês" : "meses"} com status`
+  }
+  return `${recordedMonths} de ${totalMonths} registrados · ${classifiedMonths} com status`
+}
+
 export function formatDateTime(value: string | null): string {
   if (!value) return "—"
   const date = new Date(value)
@@ -155,8 +167,8 @@ export function occupancyLabel(status: OccupancyStatus): string {
 
 export function qualityLabel(quality: "completo" | "parcial" | "sem_linha"): string {
   if (quality === "completo") return "Completo"
-  if (quality === "parcial") return "Parcial"
-  return "Sem linha vinculada"
+  if (quality === "parcial") return "Dados parciais"
+  return "Vínculo pendente"
 }
 
 export function escapeCsv(value: string | number | null): string {

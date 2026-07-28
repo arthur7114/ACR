@@ -204,11 +204,6 @@ export function CoverageBanner({ data }: { data: IndicadoresData }) {
               )}>
                 {confidence.label}
               </span>
-              {data.meta.historicoRecomposto && (
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-acr-muted-2">
-                  Histórico reconstruído
-                </span>
-              )}
             </div>
             <p className="mt-1 text-sm leading-5 text-acr-muted-2">
               {confidence.description} {closings.processados} de {closings.esperados} fechamentos esperados estão processados.

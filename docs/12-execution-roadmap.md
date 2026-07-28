@@ -2,7 +2,7 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. A revisão v2 de confiabilidade de `/indicadores` foi aplicada ao Supabase fornecido para o rollout: backup lógico íntegro, migrations aditivas, 104 documentos com SHA-256, reparo transacional dos fechamentos e 731 snapshots materializados. O verificador remoto cobre 731/731 chaves, sem duplicidade, checksum inválido, linha sem vínculo ou falha de reconciliação; o reparador idempotente retorna 53 fechamentos sem mudança, zero divergentes e 1 explicitamente incompleto (César Rêgo janeiro, sem fechamento de destino para 0002520/0002521). As 13 unidades Airbnb estão classificadas como receita variável, sem aluguel fixo zero. QA autenticada passou nas quatro abas em 360, 390, 768, 1024, 1280 e 1440 px, incluindo teclado, foco, toque e CSV. Após a integração com as correções recentes da `main`, suíte completa 272/272, typecheck, lint, build e checklist 6/6 estão verdes.
+Status atual: Etapas 1, 2 e 3 concluídas. A revisão v2 de confiabilidade de `/indicadores` foi aplicada ao Supabase fornecido para o rollout: backup lógico íntegro, migrations aditivas, 104 documentos com SHA-256, reparo transacional dos fechamentos e 731 snapshots materializados. O verificador remoto cobre 731/731 chaves, sem duplicidade, checksum inválido, linha sem vínculo ou falha de reconciliação; o reparador idempotente retorna 53 fechamentos sem mudança, zero divergentes e 1 explicitamente incompleto (César Rêgo janeiro, sem fechamento de destino para 0002520/0002521). As 13 unidades Airbnb estão classificadas como receita variável, sem aluguel fixo zero. QA autenticada passou nas quatro abas em 360, 390, 768, 1024, 1280 e 1440 px, incluindo teclado, foco, toque e CSV. O mapa de riscos agora apresenta cada unidade como histórico mensal, separando meses registrados de meses com status definido e sem repetir a origem recomposta em cada célula. Após a integração com as correções recentes da `main`, suíte completa 273/273, typecheck, lint, build e checklist 6/6 estão verdes.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
@@ -46,7 +46,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | v2 aplicada e validada | Migrations, hashes, reparo e 731 snapshots aplicados no Supabase fornecido; 54/54 pontes reconciliadas, 1 fechamento incompleto explícito; QA autenticada 4 abas × 6 larguras e gates verdes. Falta apenas publicar este código no host da aplicação. |
+| Indicadores operacionais | v2 aplicada e validada | Migrations, hashes, reparo e 731 snapshots aplicados no Supabase fornecido; 54/54 pontes reconciliadas, 1 fechamento incompleto explícito; QA autenticada 4 abas × 6 larguras e gates verdes. O histórico mensal por unidade foi simplificado e diferencia registro, status definido e ausência. Falta apenas publicar este código no host da aplicação. |
 | Fechamentos operacionais | codigo concluido; rollout pendente | Competência, IPTU, despesas, comissão e vínculos implementados; falta aplicar migration, executar reparo real e QA autenticada. |
 
 ## Decisoes registradas
@@ -116,6 +116,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
 ## Historico de ciclos
+
+### 2026-07-28 - Indicadores: histórico mensal por unidade legível
+
+Status: done
+Job: remover a repetição de “Histórico reconstruído” no mapa de riscos e tornar evidente o histórico mensal de cada unidade.
+Outcome entregue: cada linha resume meses registrados e meses com status definido; as células priorizam o estado mensal, explicam ausência com “Sem dados no mês” e distinguem indisponibilidade de zero. O selo repetitivo saiu do mapa e do banner. A origem necessária para auditoria passou a se chamar “Importado de documentos” no detalhamento e no CSV. Qualidade parcial e ausência de vínculo usam “Dados parciais” e “Vínculo pendente”. O mapa preserva a coluna “Hoje” e a rolagem horizontal interna.
+Validacao: teste focado 5/5, suíte completa 273/273, `pnpm exec tsc --noEmit`, `pnpm lint` e `pnpm build` passaram. QA autenticada em 1280 px confirmou ausência de overflow da página, rolagem interna do mapa, foco na região rolável, alternância inadimplência/vacância, ausência do termo removido e nenhum erro no console. `ux_audit.py` passou; o verificador estático de acessibilidade manteve 9 apontamentos preexistentes fora dos arquivos alterados. Checklist mestre passou Segurança, Lint, Schema, Testes, UX e SEO (6/6).
+Decisoes: “Histórico reconstruído” não deve ocupar cada célula nem o banner de confiança. A leitura principal é o estado da unidade em cada competência; registros sem status ficam explícitos e não contam como histórico classificado.
+Arquivos/docs impactados: `components/acr/indicadores/tabs/view-mapa.tsx`, `components/acr/indicadores/tabs/view-registro.tsx`, `components/acr/indicadores/primitives/dashboard-ui.tsx`, `components/acr/indicadores/lib/presentation.ts`, `components/acr/indicadores/lib/presentation.test.ts`, `docs/02-mock-contract.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: publicar a `main` e executar smoke no domínio implantado em “Riscos por imóvel”, verificando uma unidade com meses ausentes e outra com registros sem status.
 
 ### 2026-07-28 - Indicadores: correção de overflow e simplificação do banner
 

@@ -4,10 +4,18 @@ import test from "node:test"
 import {
   formatContractedRent,
   formatCurrency,
+  formatHistoryCoverage,
   formatPortfolioContractedRent,
   formatReference,
   getFinancialReferences,
 } from "./presentation.ts"
+
+test("resume a cobertura histórica de cada unidade sem jargão técnico", () => {
+  assert.equal(formatHistoryCoverage(0, 0, 6), "Sem histórico no período")
+  assert.equal(formatHistoryCoverage(1, 1, 1), "1 de 1 mês com status")
+  assert.equal(formatHistoryCoverage(5, 5, 6), "5 de 6 meses com status")
+  assert.equal(formatHistoryCoverage(6, 1, 6), "6 de 6 registrados · 1 com status")
+})
 
 test("apresenta referência financeira mensal e dia isolado sem ambiguidade", () => {
   assert.equal(formatReference("2026-05"), "05/2026")
@@ -90,6 +98,7 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     '"Ref. financeira"',
     '"Snapshot nativo"',
     '"Histórico recomposto"',
+    '"Histórico reconstruído"',
     "Reconstr.",
   ]) {
     assert.equal(source.includes(retiredTerm), false, `termo aposentado encontrado: ${retiredTerm}`)
@@ -111,4 +120,6 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     false,
     "motivos técnicos de confiança não devem aparecer no banner",
   )
+  assert.equal(source.includes("Sem dados no mês"), true, "o mapa deve explicar células sem histórico")
+  assert.equal(source.includes("formatHistoryCoverage"), true, "o mapa deve resumir a cobertura por unidade")
 })

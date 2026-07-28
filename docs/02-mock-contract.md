@@ -88,6 +88,10 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Semântica visual: `—` é ausência, `R$ 0,00` é zero confirmado e `Não se
   aplica` identifica receita variável. Ocupação sempre mostra percentual,
   classificados e cobertura lado a lado.
+- Leitura do histórico: “Riscos por imóvel” prioriza o estado de cada
+  competência e resume, por unidade, meses registrados e meses com status
+  definido. A origem recomposta não aparece como selo repetido; quando a
+  auditoria exige essa origem, o texto é “Importado de documentos”.
 - Fonte da decisão e fórmulas: revisão v2 de
   `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`,

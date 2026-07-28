@@ -2,7 +2,13 @@
 
 import type { IndicadoresData, IndicadoresHeatCell } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
-import { formatCurrency, formatPercent, occupancyLabel, type HeatMetric } from "../lib/presentation"
+import {
+  formatCurrency,
+  formatHistoryCoverage,
+  formatPercent,
+  occupancyLabel,
+  type HeatMetric,
+} from "../lib/presentation"
 import { EmptyState, Panel, PanelHeader, StatusChip, ToggleButton } from "../primitives/dashboard-ui"
 
 export type { HeatMetric }
@@ -20,14 +26,14 @@ export function ViewMapa({
     <Panel className="min-w-0 overflow-hidden">
       <PanelHeader
         title={heatMetric === "inad" ? "Riscos por imóvel · inadimplência" : "Riscos por imóvel · vacância"}
-        description="O histórico mensal não é inferido a partir da posição atual. A coluna Hoje usa o cadastro vigente."
+        description="Cada linha acompanha uma unidade mês a mês. O estado vem primeiro; percentual e valor completam a leitura."
         source="Histórico mensal por imóvel e cadastro atual"
         help={{
-          short: "Mostra riscos mensais sem inventar o passado.",
+          short: "Acompanha o histórico mensal de cada unidade.",
           title: "Riscos por imóvel",
           definition: "Histórico de inadimplência ou vacância para cada imóvel e competência.",
           source: "Histórico mensal por imóvel; apenas a coluna Hoje vem do cadastro atual.",
-          limitation: "— significa ausência de dado e não equivale a risco zero.",
+          limitation: "Sem dados no mês não equivale a risco zero.",
         }}
         action={
           <div className="inline-flex min-h-11 shrink-0 rounded-lg border border-acr-line-2 bg-white p-1" role="group" aria-label="Risco exibido">
@@ -60,21 +66,30 @@ export function ViewMapa({
                 </tr>
               </thead>
               <tbody>
-                {data.heat.linhas.map((row) => (
-                  <tr key={row.imovelId}>
-                    <th scope="row" className="sticky left-0 z-10 max-w-56 border-b border-r border-acr-line bg-white px-4 py-3 text-left">
-                      <span className="block truncate font-bold text-acr-ink">{row.unidade}</span>
-                      <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.empreendimentoNome}</span>
-                    </th>
-                    {data.heat.meses.map((month) => {
-                      const cell = row.celulas.find((candidate) => candidate.competencia === month.competencia) ?? null
-                      return <HeatCell key={month.competencia} cell={cell} metric={heatMetric} month={month.label} unit={row.unidade} />
-                    })}
-                    <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center">
-                      <StatusChip status={row.hoje} />
-                    </td>
-                  </tr>
-                ))}
+                {data.heat.linhas.map((row) => {
+                  const recordedMonths = row.celulas.filter((cell) => cell.origem !== null).length
+                  const classifiedMonths = row.celulas.filter(
+                    (cell) => cell.statusOcupacao !== null && cell.statusOcupacao !== "desconhecido",
+                  ).length
+                  return (
+                    <tr key={row.imovelId}>
+                      <th scope="row" className="sticky left-0 z-10 min-w-64 max-w-64 border-b border-r border-acr-line bg-white px-4 py-3 text-left">
+                        <span className="block truncate font-bold text-acr-ink">{row.unidade}</span>
+                        <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.empreendimentoNome}</span>
+                        <span className="mt-2 block text-[10px] font-semibold leading-4 text-acr-green-strong">
+                          {formatHistoryCoverage(recordedMonths, classifiedMonths, data.heat.meses.length)}
+                        </span>
+                      </th>
+                      {data.heat.meses.map((month) => {
+                        const cell = row.celulas.find((candidate) => candidate.competencia === month.competencia) ?? null
+                        return <HeatCell key={month.competencia} cell={cell} metric={heatMetric} month={month.label} unit={row.unidade} />
+                      })}
+                      <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center">
+                        <StatusChip status={row.hoje} />
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -103,11 +118,16 @@ function HeatCell({
 }) {
   const percentage = cell ? (metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual) : null
   const status = cell?.statusOcupacao ?? null
-  const isBackfill = cell?.origem === "backfill"
-  const qualityDescription = cell?.qualidade === "parcial" ? ", qualidade parcial" : cell?.qualidade === "sem_linha" ? ", sem linha vinculada" : ""
-  const accessible = cell === null || status === null || percentage === null
+  const metricDescription = metric === "inad" ? "de inadimplência" : "de vacância"
+  const valueDescription = cell === null || cell.valor === null
+    ? "valor indisponível"
+    : metric === "inad" && percentage === 0 && cell.valor > 0
+      ? `${formatCurrency(cell.valor)} de diferença`
+      : `${formatCurrency(cell.valor)} não recebido`
+  const qualityDescription = cell?.qualidade === "parcial" ? ", dados parciais" : cell?.qualidade === "sem_linha" ? ", vínculo pendente" : ""
+  const accessible = cell === null || status === null
     ? `${unit}, ${month}: sem dado`
-    : `${unit}, ${month}: ${occupancyLabel(status)}, ${formatPercent(percentage)}, valor não recebido ${formatCurrency(cell.valor)}${isBackfill ? ", histórico reconstruído" : ""}${qualityDescription}`
+    : `${unit}, ${month}: ${occupancyLabel(status)}, ${percentage === null ? "percentual indisponível" : `${formatPercent(percentage)} ${metricDescription}`}, ${valueDescription}${qualityDescription}`
 
   return (
     <td
@@ -117,16 +137,26 @@ function HeatCell({
         heatTone(percentage, metric),
       )}
     >
-      {percentage === null || status === null ? (
-        <span className="text-sm font-bold text-acr-muted-2">—</span>
+      {status === null ? (
+        <div className="flex min-h-20 flex-col items-center justify-center">
+          <span className="text-sm font-bold text-acr-muted-2">—</span>
+          <span className="mt-1 text-[10px] font-medium text-acr-muted-2">Sem dados no mês</span>
+        </div>
       ) : (
-        <div className="flex min-h-14 flex-col items-center justify-center">
-          <span className="text-sm font-bold">{formatPercent(percentage)}</span>
-          <span className="mt-0.5 text-[10px] font-medium">{occupancyLabel(status)}</span>
-          <span className="mt-0.5 text-[10px]">{formatCurrency(cell?.valor ?? null)}</span>
-          {isBackfill && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Histórico reconstruído</span>}
-          {cell?.qualidade === "parcial" && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Parcial</span>}
-          {cell?.qualidade === "sem_linha" && <span className="mt-1 rounded bg-white/75 px-1.5 py-0.5 text-[9px] font-bold">Sem linha</span>}
+        <div className="flex min-h-20 flex-col items-center justify-center">
+          <span className="text-xs font-bold text-acr-ink">{occupancyLabel(status)}</span>
+          {percentage === null && (cell === null || cell.valor === null) ? (
+            <span className="mt-1 text-[10px] font-medium">Sem cálculo financeiro</span>
+          ) : (
+            <>
+              <span className="mt-1 text-[11px] font-semibold">
+                {percentage === null ? "Percentual indisponível" : `${formatPercent(percentage)} ${metricDescription}`}
+              </span>
+              <span className="mt-0.5 text-[10px]">{valueDescription}</span>
+            </>
+          )}
+          {cell?.qualidade === "parcial" && <span className="mt-1 text-[9px] font-bold">Dados parciais</span>}
+          {cell?.qualidade === "sem_linha" && <span className="mt-1 text-[9px] font-bold">Vínculo pendente</span>}
         </div>
       )}
     </td>
@@ -167,7 +197,6 @@ function HeatLegend({ metric }: { metric: HeatMetric }) {
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> — sem dado
         </span>
-        <span className="font-semibold">“Histórico reconstruído” identifica competências recompostas a partir dos documentos.</span>
         {metric === "vac" && <span className="font-semibold">Vacância é um estado mensal por imóvel, não uma escala contínua.</span>}
       </div>
     </div>

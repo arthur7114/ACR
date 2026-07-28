@@ -235,7 +235,7 @@ function QualityCell({ row }: { row: IndicadoresPropertyRevenue }) {
   return (
     <span className="inline-flex flex-col gap-0.5 text-[10px] font-semibold text-acr-muted-2">
       <span>{qualityLabel(row.qualidade)}</span>
-      <span className={row.origem === "backfill" ? "text-[#72500f]" : "text-acr-green-strong"}>{row.origem === "backfill" ? "Histórico reconstruído" : "Gerado no fechamento"}</span>
+      <span className={row.origem === "backfill" ? "text-[#72500f]" : "text-acr-green-strong"}>{row.origem === "backfill" ? "Importado de documentos" : "Gerado no fechamento"}</span>
     </span>
   )
 }
@@ -326,7 +326,7 @@ function buildCsvHref(rows: IndicadoresPropertyRevenue[]) {
       references.rentCompetence,
       references.receiptCompetence,
       references.dueDay,
-      row.origem === "backfill" ? "Histórico reconstruído" : "Gerado no fechamento",
+      row.origem === "backfill" ? "Importado de documentos" : "Gerado no fechamento",
       qualityLabel(row.qualidade),
     ].map(escapeCsv).join(";")
   })
