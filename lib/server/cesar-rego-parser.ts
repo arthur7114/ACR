@@ -185,8 +185,13 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
     throw new Error("Layout Cesar Rego identificado, mas nenhuma secao foi extraida do PDF.")
   }
 
-  const receitas = buildReceitas(relacao, lancamentos)
+  let receitas = buildReceitas(relacao, lancamentos)
   const resumo = buildResumo(resumoValores, receitas, alertas)
+  receitas = reconcileReceitaTotals(
+    receitas,
+    resumo.recebidosEmNomeLocador,
+    alertas,
+  )
 
   const totalLinhasReceitas = roundMoney(receitas.reduce((total, row) => total + row.total, 0))
   const totalLinhasComissoes = roundMoney(receitas.reduce((total, row) => total + (row.comissao ?? 0), 0))
@@ -222,7 +227,10 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
       confianca: 1.0,
     },
     totais: {
-      total_receitas: totalLinhasReceitas,
+      // A verdade financeira deste layout e o RESUMO do proprio extrato. As
+      // linhas podem conter IPTU e outros movimentos de passagem, que nao sao
+      // receita economica do locador.
+      total_receitas: resumo.recebidosEmNomeLocador ?? totalLinhasReceitas,
       total_comissoes: totalLinhasComissoes,
       total_repassar: resumo.totalARepassar ?? totalLinhasRepasse,
     },
@@ -369,18 +377,26 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
     const creditos = grupo.filter((item) => item.credito !== null)
     const aluguelCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("ALUGUEL"))
     const iptuCreditos = creditos.filter((item) => normalize(item.descricao).startsWith("IPTU"))
+    const outrosCreditos = creditos.filter(
+      (item) => !aluguelCreditos.includes(item) && !iptuCreditos.includes(item),
+    )
     const comissoes = grupo.filter(
       (item) => item.debito !== null && normalize(item.descricao).includes("COMISSAO"),
     )
     // Descontos sao debitos (ex.: "DESC. LOCATARIO", "DESCONTO FORNECIDO"); o
     // credito de "ENCARGOS FINANCEIROS POR ATRASO" nao entra aqui.
     const descontos = grupo.filter((item) => isDescontoLancamento(item) && !comissoes.includes(item))
+    const iptuDebitos = grupo.filter(
+      (item) => item.debito !== null && normalize(item.descricao).startsWith("IPTU"),
+    )
     const outros = grupo.filter(
       (item) =>
         !aluguelCreditos.includes(item) &&
         !iptuCreditos.includes(item) &&
+        !outrosCreditos.includes(item) &&
         !comissoes.includes(item) &&
-        !descontos.includes(item),
+        !descontos.includes(item) &&
+        !iptuDebitos.includes(item),
     )
 
     const detalhes = outros.map((item) => {
@@ -408,14 +424,47 @@ function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): Rec
       desconto,
       aluguel_com_desconto: aluguelComDesconto,
       iptu: sumOrNull(iptuCreditos.map((item) => item.credito ?? 0)),
+      outros_recebimentos: sumOrNull(outrosCreditos.map((item) => item.credito ?? 0)),
+      entradas_passagem: sumOrNull(iptuCreditos.map((item) => item.credito ?? 0)),
+      saidas_passagem: sumOrNull(iptuDebitos.map((item) => item.debito ?? 0)),
       comissao: sumOrNull(comissoes.map((item) => item.debito ?? 0)),
-      total: roundMoney(creditos.reduce((total, item) => total + (item.credito ?? 0), 0)),
+      // Primeiro materializamos somente os créditos econômicos. O RESUMO do
+      // documento decide depois se descontos foram abatidos de
+      // "ALUGUÉIS CREDITADOS" ou lançados em "OUTROS DÉBITOS", pois o layout
+      // histórico alterna entre as duas apresentações.
+      total: roundMoney((aluguel ?? 0) + (sumOrNull(outrosCreditos.map((item) => item.credito ?? 0)) ?? 0)),
       repasse: grupo[grupo.length - 1].saldo,
       competencia_original: vencimento,
       vencimento,
       observacao: detalhes.join("; ") || null,
     })
   })
+}
+
+function reconcileReceitaTotals(
+  receitas: ReceitaPorImovel[],
+  sourceRevenue: number | null,
+  alertas: string[],
+) {
+  if (sourceRevenue === null) return receitas
+  let reduction = roundMoney(
+    receitas.reduce((total, row) => total + row.total, 0) - sourceRevenue,
+  )
+  const reconciled = receitas.map((row) => {
+    if (reduction <= 0 || !row.desconto) return row
+    const applied = Math.min(row.desconto, reduction)
+    reduction = roundMoney(reduction - applied)
+    return { ...row, total: roundMoney(row.total - applied) }
+  })
+  const difference = roundMoney(
+    sourceRevenue - reconciled.reduce((total, row) => total + row.total, 0),
+  )
+  if (Math.abs(difference) > 0.01) {
+    alertas.push(
+      `ALUGUEIS CREDITADOS nao foi integralmente distribuido pelas linhas: diferenca de ${formatBRL(difference)}.`,
+    )
+  }
+  return reconciled
 }
 
 function buildReceita(
@@ -434,6 +483,9 @@ function buildReceita(
       | "competencia_original"
       | "competencia_recebimento"
       | "dia_vencimento"
+      | "outros_recebimentos"
+      | "entradas_passagem"
+      | "saidas_passagem"
       | "vencimento"
       | "observacao"
     >
@@ -456,6 +508,9 @@ function buildReceita(
     competencia_original: values.competencia_original ?? null,
     competencia_recebimento: values.competencia_recebimento ?? null,
     dia_vencimento: values.dia_vencimento ?? null,
+    outros_recebimentos: values.outros_recebimentos ?? null,
+    entradas_passagem: values.entradas_passagem ?? null,
+    saidas_passagem: values.saidas_passagem ?? null,
     vencimento: values.vencimento ?? null,
     observacao: values.observacao ?? null,
     confianca: 1.0,

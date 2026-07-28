@@ -9,9 +9,10 @@ import {
   type OccupancyStatus,
 } from "@/lib/indicadores-domain"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+import type { IndicadoresRevenueModel } from "@/lib/indicadores-types"
 import type { createSupabaseAdmin } from "./supabase"
 
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "indicadores-operacionais-v1"
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "indicadores-confiabilidade-v2"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -23,6 +24,8 @@ export interface IndicadoresSnapshotProperty {
   id: string
   unit: string
   expectedRent: number | null
+  revenueModel?: IndicadoresRevenueModel
+  expectedRentSource?: string | null
   realEstateAgencyName: string | null
   developmentName: string | null
 }
@@ -35,13 +38,23 @@ export interface IndicadoresSnapshotRow {
   status_origem: string
   inquilino_nome: string | null
   aluguel_esperado: number | null
-  aluguel_esperado_origem: "cadastro" | null
+  aluguel_esperado_origem: "cadastro" | "vigencia" | null
   aluguel_recebido: number | null
+  aluguel_competencia?: number | null
+  atrasos_recuperados?: number | null
+  outros_recebimentos?: number | null
+  entradas_passagem?: number | null
+  saidas_passagem?: number | null
   receita_total: number | null
   desconto: number | null
   comissao_administracao: number | null
   repasse_apurado: number | null
   vencimento_referencia: string | null
+  competencia_original?: string | null
+  competencia_recebimento?: string | null
+  dia_vencimento?: number | null
+  modelo_receita?: IndicadoresRevenueModel
+  status_mensal_explicito?: OccupancyStatus | null
   quantidade_linhas: number
   origem: IndicadoresSnapshotOrigin
   qualidade: IndicadoresSnapshotQuality
@@ -91,16 +104,38 @@ const propertyRowSchema = z.object({
   imobiliarias: relationSchema,
   empreendimentos: relationSchema,
 })
+const snapshotVigencyRowSchema = z.object({
+  imovel_id: z.string(),
+  modelo_receita: z.enum(["fixo", "variavel", "nao_aplicavel"]),
+  aluguel_contratado: z.union([z.number(), z.string(), z.null()]),
+  fonte: z.string(),
+})
 
 export function buildIndicadoresSnapshotRows(input: BuildIndicadoresSnapshotRowsInput) {
   const competencia = normalizeCompetence(input.competencia)
   const origem = input.origem ?? "processamento"
   const context = resolvePropertyContext(input)
   const lines = input.analysis.prestacao?.receitas_por_imovel ?? []
-  const lineGroups = groupLines(lines, context)
   const propertyByKey = indexProperties(input.properties, context)
+  const solePropertyKey =
+    input.properties.length === 1
+      ? buildContextPropertyKey(context, input.properties[0].unit)
+      : null
+  const resolveLineKey = (line: ReceitaPorImovel) => {
+    const extractedKey = buildContextPropertyKey(context, line.apto)
+    if (
+      propertyByKey.has(extractedKey) ||
+      solePropertyKey === null ||
+      !isUnambiguousSinglePropertyLine(line)
+    ) {
+      return extractedKey
+    }
+    return solePropertyKey
+  }
+  const lineGroups = groupLines(lines, resolveLineKey)
   const terminationKeys = buildTerminationKeys(input.analysis, context)
   const delinquencyKeys = buildDelinquencyKeys(input.analysis, context)
+  const agreementGroups = groupAgreements(input.analysis, context)
 
   const rows = input.properties
     .map((property) => {
@@ -115,6 +150,7 @@ export function buildIndicadoresSnapshotRows(input: BuildIndicadoresSnapshotRows
         origem,
         terminationKeys,
         delinquencyKeys,
+        agreements: agreementGroups.get(propertyKey) ?? [],
       })
     })
     .sort((left, right) => left.imovel_id.localeCompare(right.imovel_id))
@@ -122,7 +158,7 @@ export function buildIndicadoresSnapshotRows(input: BuildIndicadoresSnapshotRows
   const unlinkedLines = lines
     .map((line, lineIndex) => ({
       lineIndex,
-      propertyKey: buildContextPropertyKey(context, line.apto),
+      propertyKey: resolveLineKey(line),
       unit: line.apto,
       tenantName: cleanText(line.inquilino),
     }))
@@ -143,26 +179,50 @@ export async function loadActiveIndicadoresProperties(input: {
   supabase: SupabaseAdmin
   imobiliariaId: string
   empreendimentoId: string
+  competencia?: string
 }) {
-  const { data, error } = await input.supabase
+  const competence = input.competencia
+    ? normalizeCompetence(input.competencia)
+    : null
+  const vigencies = competence
+    ? await loadSnapshotVigencies(input, competence)
+    : []
+  const vigencyByProperty = new Map(
+    vigencies.map((vigency) => [vigency.imovel_id, vigency]),
+  )
+  let query = input.supabase
     .from("imoveis")
     .select(
       "id, unidade, valor_aluguel_esperado, imobiliarias ( nome ), empreendimentos ( nome )",
     )
     .eq("imobiliaria_id", input.imobiliariaId)
     .eq("empreendimento_id", input.empreendimentoId)
-    .eq("ativo", true)
-    .order("id")
+  query =
+    vigencies.length > 0
+      ? query.in("id", vigencies.map((vigency) => vigency.imovel_id))
+      : query.eq("ativo", true)
+  const { data, error } = await query.order("id")
 
   if (error) throw error
 
-  return z.array(propertyRowSchema).parse(data ?? []).map((property) => ({
-    id: property.id,
-    unit: property.unidade,
-    expectedRent: toNullableMoney(property.valor_aluguel_esperado),
-    realEstateAgencyName: getRelationName(property.imobiliarias),
-    developmentName: getRelationName(property.empreendimentos),
-  })) satisfies IndicadoresSnapshotProperty[]
+  return z.array(propertyRowSchema).parse(data ?? []).map((property) => {
+    const vigency = vigencyByProperty.get(property.id)
+    const revenueModel = vigency?.modelo_receita ?? "fixo"
+    return {
+      id: property.id,
+      unit: property.unidade,
+      expectedRent:
+        revenueModel === "fixo"
+          ? toNullableMoney(
+              vigency?.aluguel_contratado ?? property.valor_aluguel_esperado,
+            )
+          : null,
+      revenueModel,
+      expectedRentSource: vigency ? "vigencia" : "cadastro",
+      realEstateAgencyName: getRelationName(property.imobiliarias),
+      developmentName: getRelationName(property.empreendimentos),
+    }
+  }) satisfies IndicadoresSnapshotProperty[]
 }
 
 export async function upsertIndicadoresSnapshotRows(
@@ -178,10 +238,47 @@ export async function upsertIndicadoresSnapshotRows(
   if (error) throw error
 }
 
+async function loadSnapshotVigencies(
+  input: {
+    supabase: SupabaseAdmin
+    imobiliariaId: string
+    empreendimentoId: string
+  },
+  competence: string,
+) {
+  const { data, error } = await input.supabase
+    .from("imovel_vigencias")
+    .select("imovel_id, modelo_receita, aluguel_contratado, fonte")
+    .eq("imobiliaria_id", input.imobiliariaId)
+    .eq("empreendimento_id", input.empreendimentoId)
+    .eq("ativo", true)
+    .lte("vigencia_inicio", competence)
+    .or(`vigencia_fim.is.null,vigencia_fim.gte.${competence}`)
+    .order("imovel_id")
+  if (error) {
+    if (isMissingDatabaseObject(error)) return []
+    throw error
+  }
+  return z.array(snapshotVigencyRowSchema).parse(data ?? [])
+}
+
+function isMissingDatabaseObject(error: { code?: string; message?: string }) {
+  return (
+    error.code === "42P01" ||
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    error.code === "PGRST205" ||
+    /does not exist|could not find|schema cache/i.test(error.message ?? "")
+  )
+}
+
 export async function materializeIndicadoresSnapshots(
   input: MaterializeIndicadoresSnapshotsInput,
 ) {
-  const properties = await loadActiveIndicadoresProperties(input)
+  const properties = await loadActiveIndicadoresProperties({
+    ...input,
+    competencia: input.competencia,
+  })
   const result = buildIndicadoresSnapshotRows({
     properties,
     fechamentoId: input.fechamentoId,
@@ -207,6 +304,7 @@ function buildSnapshotRow(input: {
   origem: IndicadoresSnapshotOrigin
   terminationKeys: Set<string>
   delinquencyKeys: Set<string>
+  agreements: NonNullable<SnapshotAnalysis["prestacao"]>["acordos_rescisoes_recebidos"]
 }) {
   const { property, propertyLines } = input
   const amounts = aggregateSnapshotLines(
@@ -222,10 +320,57 @@ function buildSnapshotRow(input: {
   const observation = joinKnownText(propertyLines.map((line) => line.observacao))
   const tenantName = selectStableText(propertyLines.map((line) => line.inquilino))
   const evidenceText = joinKnownText([tenantName, observation])
+  const originalCompetence = selectStableText(
+    propertyLines.map((line) => normalizeOptionalCompetence(line.competencia_original)),
+  )
+  const receiptCompetence =
+    selectStableText(
+      propertyLines.map((line) => normalizeOptionalCompetence(line.competencia_recebimento)),
+    ) ??
+    (propertyLines.length > 0 || input.agreements.length > 0
+      ? input.competencia
+      : null)
+  const currentRent = sumLineRent(
+    propertyLines.filter((line) =>
+      belongsToCurrentCompetence(line, input.competencia),
+    ),
+  )
+  const recoveredFromLines = sumLineRent(
+    propertyLines.filter((line) =>
+      belongsToEarlierCompetence(line, input.competencia),
+    ),
+  )
+  const recoveredFromAgreements = sumKnownMoney(
+    input.agreements
+      .filter((item) => item.tipo === "atraso")
+      .map((item) => item.valor),
+  )
+  const recoveredLate = sumNullableMoney(recoveredFromLines, recoveredFromAgreements)
+  const otherFromLines = sumKnownMoney(
+    propertyLines.map((line) => {
+      if (typeof line.outros_recebimentos === "number") return line.outros_recebimentos
+      const rent = line.aluguel_com_desconto ?? line.aluguel ?? 0
+      // `total` é receita econômica da linha. Movimentos de passagem vivem em
+      // campos próprios e não devem ser somados ou subtraídos novamente aqui.
+      return roundMoney(line.total - rent)
+    }),
+  )
+  const otherFromAgreements = sumKnownMoney(
+    input.agreements
+      .filter((item) => item.tipo !== "atraso")
+      .map((item) => item.valor),
+  )
+  const otherReceipts = sumNullableMoney(otherFromLines, otherFromAgreements)
+  const passageEntries = sumKnownMoney(
+    propertyLines.map((line) => line.entradas_passagem),
+  )
+  const passageExits = sumKnownMoney(
+    propertyLines.map((line) => line.saidas_passagem),
+  )
   const evidence = {
     tenantName,
     observation,
-    rentReceived: amounts.rentReceived,
+    rentReceived: currentRent,
     hasTermination:
       input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText),
     hasDelinquency:
@@ -233,8 +378,12 @@ function buildSnapshotRow(input: {
     hasVacancy: hasVacancyEvidence(evidenceText),
   }
   const status = classifyOccupancy(evidence)
-  const expectedRent = property.expectedRent
-  const quality = resolveQuality(propertyLines.length, expectedRent, amounts.rentReceived)
+  const revenueModel = property.revenueModel ?? "fixo"
+  const expectedRent = revenueModel === "fixo" ? property.expectedRent : null
+  const quality = resolveQuality(propertyLines.length, expectedRent, currentRent, revenueModel)
+  const dayDue = selectStableNumber(propertyLines.map((line) => line.dia_vencimento))
+  const statusExplicit =
+    evidence.hasTermination || evidence.hasDelinquency || evidence.hasVacancy
   const withoutChecksum = {
     imovel_id: property.id,
     fechamento_id: input.fechamentoId,
@@ -243,13 +392,28 @@ function buildSnapshotRow(input: {
     status_origem: resolveStatusOrigin(status, evidence, propertyLines.length),
     inquilino_nome: tenantName,
     aluguel_esperado: expectedRent,
-    aluguel_esperado_origem: expectedRent === null ? null : ("cadastro" as const),
-    aluguel_recebido: amounts.rentReceived,
+    aluguel_esperado_origem:
+      expectedRent === null
+        ? null
+        : property.expectedRentSource === "vigencia"
+          ? ("vigencia" as const)
+          : ("cadastro" as const),
+    aluguel_recebido: sumNullableMoney(currentRent, recoveredLate),
+    aluguel_competencia: currentRent,
+    atrasos_recuperados: recoveredLate,
+    outros_recebimentos: otherReceipts,
+    entradas_passagem: passageEntries,
+    saidas_passagem: passageExits,
     receita_total: amounts.revenueTotal,
     desconto: amounts.discount,
     comissao_administracao: amounts.administrationCommission,
     repasse_apurado: amounts.assessedTransfer,
     vencimento_referencia: selectStableText(propertyLines.map((line) => line.vencimento)),
+    competencia_original: originalCompetence,
+    competencia_recebimento: receiptCompetence,
+    dia_vencimento: dayDue,
+    modelo_receita: revenueModel,
+    status_mensal_explicito: statusExplicit ? status : null,
     quantidade_linhas: propertyLines.length,
     origem: input.origem,
     qualidade: quality,
@@ -310,12 +474,39 @@ function indexProperties(
 
 function groupLines(
   lines: ReceitaPorImovel[],
-  context: ReturnType<typeof resolvePropertyContext>,
+  resolveKey: (line: ReceitaPorImovel) => string,
 ) {
   const groups = new Map<string, ReceitaPorImovel[]>()
   for (const line of lines) {
-    const key = buildContextPropertyKey(context, line.apto)
+    const key = resolveKey(line)
     groups.set(key, [...(groups.get(key) ?? []), line])
+  }
+  return groups
+}
+
+function isUnambiguousSinglePropertyLine(line: ReceitaPorImovel) {
+  const unit = cleanText(line.apto)
+  if (unit === null) return true
+  const tenant = cleanText(line.inquilino)
+  return (
+    tenant !== null &&
+    normalizePropertyKeyPart(unit) === normalizePropertyKeyPart(tenant)
+  )
+}
+
+function groupAgreements(
+  analysis: SnapshotAnalysis,
+  context: ReturnType<typeof resolvePropertyContext>,
+) {
+  const groups = new Map<
+    string,
+    NonNullable<SnapshotAnalysis["prestacao"]>["acordos_rescisoes_recebidos"]
+  >()
+  for (const item of analysis.prestacao?.acordos_rescisoes_recebidos ?? []) {
+    const unit = cleanText(item.apto)
+    if (!unit) continue
+    const key = buildContextPropertyKey(context, unit)
+    groups.set(key, [...(groups.get(key) ?? []), item])
   }
   return groups
 }
@@ -357,9 +548,11 @@ function resolveQuality(
   lineCount: number,
   expectedRent: number | null,
   receivedRent: number | null,
+  revenueModel: IndicadoresRevenueModel,
 ): IndicadoresSnapshotQuality {
   if (lineCount === 0) return "sem_linha"
-  return expectedRent !== null && receivedRent !== null ? "completo" : "parcial"
+  const hasContract = revenueModel !== "fixo" || expectedRent !== null
+  return hasContract && receivedRent !== null ? "completo" : "parcial"
 }
 
 function resolveStatusOrigin(
@@ -438,6 +631,51 @@ function selectStableText(values: Array<string | null | undefined>) {
 function joinKnownText(values: Array<string | null | undefined>) {
   const known = values.map(cleanText).filter((value): value is string => value !== null)
   return known.length === 0 ? null : known.sort().join(" | ")
+}
+
+function selectStableNumber(values: Array<number | null | undefined>) {
+  const known = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  )
+  return known.length === 0 ? null : [...known].sort((left, right) => left - right)[0]
+}
+
+function sumLineRent(lines: ReceitaPorImovel[]) {
+  return sumKnownMoney(lines.map((line) => line.aluguel_com_desconto ?? line.aluguel))
+}
+
+function sumKnownMoney(values: Array<number | null | undefined>) {
+  const known = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  )
+  return known.length === 0
+    ? null
+    : roundMoney(known.reduce((total, value) => total + value, 0))
+}
+
+function sumNullableMoney(left: number | null, right: number | null) {
+  if (left === null && right === null) return null
+  return roundMoney((left ?? 0) + (right ?? 0))
+}
+
+function belongsToCurrentCompetence(line: ReceitaPorImovel, competence: string) {
+  const original = normalizeOptionalCompetence(line.competencia_original)
+  return original === null || original === competence
+}
+
+function belongsToEarlierCompetence(line: ReceitaPorImovel, competence: string) {
+  const original = normalizeOptionalCompetence(line.competencia_original)
+  return original !== null && original < competence
+}
+
+function normalizeOptionalCompetence(value: string | null | undefined) {
+  const text = cleanText(value)
+  if (!text) return null
+  const iso = text.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/)
+  if (iso) return `${iso[1]}-${iso[2]}-01`
+  const brazilian = text.match(/^(0?[1-9]|1[0-2])\/(\d{4})$/)
+  if (brazilian) return `${brazilian[2]}-${brazilian[1].padStart(2, "0")}-01`
+  return null
 }
 
 export function createIndicadoresSnapshotChecksum(

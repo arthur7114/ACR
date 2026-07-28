@@ -2,7 +2,14 @@
 
 import type { IndicadoresData, IndicadoresOccupancy } from "@/lib/indicadores-types"
 import { MonthlySeries } from "../charts/monthly-series"
-import { formatCompactCurrency, formatCount, formatPercent, type DashboardMetric } from "../lib/presentation"
+import {
+  formatCurrency,
+  formatCount,
+  formatPortfolioContractedRent,
+  formatPercent,
+  resolveMetricValue,
+  type DashboardMetric,
+} from "../lib/presentation"
 import { EmptyState, Kpi, MetricToggle, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 export function ViewGeral({
@@ -15,47 +22,81 @@ export function ViewGeral({
   onMetricChange: (metric: DashboardMetric) => void
 }) {
   const { resumo } = data
-  const quality = data.meta.qualidade
   const byProperty = data.filtros.selecionados.imovelId !== null
 
   return (
     <div className="space-y-4">
       <section aria-label="Resumo financeiro" className="grid overflow-hidden rounded-xl border border-acr-line bg-acr-line sm:grid-cols-2 xl:grid-cols-5">
         <Kpi
-          label="Receita total"
-          value={formatCompactCurrency(resumo.receitaTotal)}
-          detail={byProperty ? "Receita atribuída ao imóvel no snapshot da competência." : "Receitas declaradas nos fechamentos elegíveis."}
-          source={byProperty ? "Snapshot do imóvel · receita total" : "PackageTotals · total_receitas"}
-          quality={quality}
+          label="Receitas do fechamento"
+          value={formatCurrency(resolveMetricValue(resumo.receitasEconomicas, resumo.receitaTotal))}
+          detail={byProperty ? "Receitas econômicas atribuídas ao imóvel." : "Receitas econômicas dos fechamentos da competência."}
+          source={byProperty ? "Histórico mensal por imóvel" : "Fechamentos da competência"}
+          help={{
+            short: "Receitas econômicas reconhecidas no fechamento.",
+            title: "Receitas do fechamento",
+            definition: "Soma das receitas econômicas da competência, sem movimentos de passagem.",
+            source: "Fechamentos da competência.",
+            limitation: "Entradas como IPTU de passagem aparecem apenas na conciliação financeira.",
+          }}
         />
         <Kpi
           label="Aluguel contratado"
-          value={formatCompactCurrency(resumo.aluguelContratado)}
-          detail="Aluguéis esperados conhecidos na competência."
-          source="Snapshots · aluguel esperado"
-          quality={quality}
+          value={formatPortfolioContractedRent(
+            resumo.aluguelContratado,
+            data.cobertura.contratos,
+          )}
+          detail="Aluguéis fixos conhecidos nos contratos vigentes."
+          source="Contratos históricos"
+          help={{
+            short: "Valor contratual fixo vigente na competência.",
+            title: "Aluguel contratado",
+            definition: "Soma dos aluguéis fixos previstos nos contratos históricos vigentes.",
+            source: "Contratos históricos por imóvel.",
+            limitation: "Receitas variáveis são Não se aplica; contratos ausentes aparecem como —.",
+          }}
         />
         <Kpi
-          label="Aluguel recebido"
-          value={formatCompactCurrency(resumo.aluguelRecebido)}
-          detail="Aluguel com desconto; sem usar o total da linha."
-          source="Prestação · receitas por imóvel"
-          quality={quality}
+          label="Aluguel recebido da competência"
+          value={formatCurrency(resumo.aluguelRecebidoCompetencia)}
+          detail="Somente aluguel referente à competência selecionada."
+          source="Histórico mensal por imóvel"
+          help={{
+            short: "Aluguel da competência, sem atrasos recuperados.",
+            title: "Aluguel recebido da competência",
+            definition: "Valor do aluguel desta competência efetivamente recebido no mês.",
+            source: "Histórico mensal por imóvel gerado no fechamento.",
+            limitation: "Recebimentos de competências anteriores são mostrados separadamente.",
+          }}
         />
         <Kpi
           label="Ocupação da competência"
-          value={formatPercent(resumo.ocupacaoCompetencia.percentual)}
-          detail={`${formatCount(resumo.ocupacaoCompetencia.numerador)} de ${formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis classificados.`}
-          source="Snapshots mensais"
-          quality={quality}
+          value={`${formatPercent(resumo.ocupacaoCompetencia.percentual)} dos classificados`}
+          detail={`${formatCount(resumo.ocupacaoCompetencia.numerador)} de ${formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis · cobertura ${formatPercent(resumo.ocupacaoCompetencia.coberturaPercentual)}.`}
+          source="Histórico mensal por imóvel"
           tone={resumo.ocupacaoCompetencia.desconhecidos > 0 ? "warning" : "default"}
+          help={{
+            short: "Percentual ocupado e base efetivamente classificada.",
+            title: "Ocupação da competência",
+            definition: "Proporção de imóveis ocupados entre os imóveis com situação mensal classificada.",
+            formula: "ocupados ÷ imóveis classificados × 100",
+            source: "Histórico mensal por imóvel.",
+            limitation: "Leia sempre junto com a cobertura; imóveis sem histórico não entram no denominador.",
+          }}
         />
         <Kpi
-          label="Repasse apurado"
-          value={formatCompactCurrency(resumo.repasseApurado)}
-          detail={byProperty ? "Valor líquido atribuído ao imóvel no snapshot da competência." : "Valor líquido calculado nos fechamentos."}
-          source={byProperty ? "Snapshot do imóvel · repasse apurado" : "PackageTotals · total_a_repassar"}
-          quality={quality}
+          label="Repasse calculado"
+          value={formatCurrency(resolveMetricValue(resumo.repasseCalculado, resumo.repasseApurado))}
+          detail={byProperty ? "Valor líquido atribuído ao imóvel." : "Valor líquido resultante da conciliação financeira."}
+          source={byProperty ? "Histórico mensal por imóvel" : "Fechamentos da competência"}
+          help={{
+            short: "Valor líquido calculado pela ponte financeira.",
+            title: "Repasse calculado",
+            definition: "Resultado financeiro após receitas, passagens, comissões, despesas e tarifas.",
+            formula: "receitas econômicas + entradas de passagem − comissões − despesas − tarifas − saídas de passagem",
+            source: "Fechamentos da competência.",
+            limitation: "Confirmação de pagamento depende de comprovante bancário externo.",
+          }}
         />
       </section>
 
@@ -63,8 +104,8 @@ export function ViewGeral({
         <Panel className="min-w-0 overflow-hidden">
           <PanelHeader
             title="Evolução até a competência selecionada"
-            description={metric === "valor" ? "Receita, aluguel recebido e repasse apurado por mês." : "Ocupação e cobertura histórica dos snapshots."}
-            source={byProperty ? "Snapshots mensais do imóvel" : "Fechamentos elegíveis e snapshots mensais"}
+            description={metric === "valor" ? "Receitas do fechamento, aluguel recebido da competência e repasse calculado por mês." : "Ocupação e cobertura do histórico mensal."}
+            source={byProperty ? "Histórico mensal por imóvel" : "Fechamentos da competência e histórico mensal por imóvel"}
             action={<MetricToggle value={metric} onChange={onMetricChange} />}
           />
           {data.serieMensal.length > 0 ? (
@@ -78,9 +119,9 @@ export function ViewGeral({
 
         <Panel>
           <PanelHeader
-            title="Competência versus Hoje"
-            description="O histórico usa snapshots; Hoje usa o cadastro atual."
-            source="Snapshots + cadastro de imóveis"
+            title="Competência versus hoje"
+            description="A competência usa o histórico mensal; Hoje usa a situação cadastral atual."
+            source="Histórico mensal por imóvel e cadastro de imóveis"
           />
           <div className="divide-y divide-acr-line px-4 sm:px-5">
             <OccupancyBlock label={data.meta.competenciaLabel} occupancy={resumo.ocupacaoCompetencia} />
@@ -93,13 +134,14 @@ export function ViewGeral({
         <PanelHeader
           title="Retenções e inadimplência"
           description="Valores preservam a diferença entre zero confirmado e dado ausente."
-          source={byProperty ? "Snapshot do imóvel; campos não atribuíveis aparecem como —" : "Fechamentos elegíveis da competência"}
+          source={byProperty ? "Histórico mensal por imóvel; campos não atribuíveis aparecem como —" : "Fechamentos da competência"}
         />
-        <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryValue label="Comissão administrativa" value={formatCompactCurrency(resumo.comissaoAdministracao)} />
-          <SummaryValue label="Comissão de intermediação" value={formatCompactCurrency(resumo.comissaoIntermediacao)} />
-          <SummaryValue label="Despesas retidas" value={formatCompactCurrency(resumo.despesasRetidas)} />
-          <SummaryValue label="Inadimplência acumulada" value={formatCompactCurrency(resumo.inadimplenciaAcumulada)} warning />
+        <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-5">
+          <SummaryValue label="Comissão administrativa" value={formatCurrency(resumo.comissaoAdministracao)} />
+          <SummaryValue label="Comissão de intermediação" value={formatCurrency(resumo.comissaoIntermediacao)} />
+          <SummaryValue label="Despesas retidas" value={formatCurrency(resumo.despesasRetidas)} />
+          <SummaryValue label="Tarifas" value={formatCurrency(resolveMetricValue(resumo.tarifas))} />
+          <SummaryValue label="Inadimplência acumulada" value={formatCurrency(resumo.inadimplenciaAcumulada)} warning />
         </dl>
       </Panel>
     </div>
@@ -111,9 +153,13 @@ function OccupancyBlock({ label, occupancy }: { label: string; occupancy: Indica
     <div className="py-4">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-bold text-acr-ink">{label}</h3>
-        <span className="text-lg font-bold text-acr-ink tabular-nums">{formatPercent(occupancy.percentual)}</span>
+        <span className="text-right text-sm font-bold text-acr-ink tabular-nums">
+          {formatPercent(occupancy.percentual)} dos classificados
+        </span>
       </div>
-      <p className="mt-1 text-xs text-acr-muted-2">Cobertura classificada: {formatPercent(occupancy.coberturaPercentual)}</p>
+      <p className="mt-1 text-xs text-acr-muted-2">
+        {formatCount(occupancy.numerador)} de {formatCount(occupancy.denominador)} imóveis · cobertura {formatPercent(occupancy.coberturaPercentual)}
+      </p>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {occupancy.ocupados > 0 && <CountChip status="ocupado" count={occupancy.ocupados} />}
         {occupancy.inadimplentes > 0 && <CountChip status="inadimplente" count={occupancy.inadimplentes} />}

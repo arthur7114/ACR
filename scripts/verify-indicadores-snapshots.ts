@@ -26,9 +26,12 @@ interface SnapshotVerificationInput extends SnapshotKeyInput {
 interface ReconciliationInput {
   closureId: string
   totalRevenue: number
+  passageEntries?: number
   administrationCommission: number
   retainedExpenses: number
   intermediationCommission: number
+  tariffs?: number
+  passageExits?: number
   assessedTransfer: number
 }
 
@@ -128,10 +131,13 @@ function normalizeCompetence(value: string) {
 
 function financialResidual(input: ReconciliationInput) {
   return roundMoney(
-    input.totalRevenue -
+    input.totalRevenue +
+      (input.passageEntries ?? 0) -
       input.administrationCommission -
       input.retainedExpenses -
       input.intermediationCommission -
+      (input.tariffs ?? 0) -
+      (input.passageExits ?? 0) -
       input.assessedTransfer,
   )
 }
@@ -168,9 +174,12 @@ function buildReconciliations(
     return {
       closureId: closure.id,
       totalRevenue: totals.total_receitas,
+      passageEntries: totals.entradas_passagem ?? 0,
       administrationCommission: totals.total_comissoes,
       retainedExpenses: totals.total_despesas,
       intermediationCommission: roundMoney(intermediationCommission),
+      tariffs: totals.total_tarifas ?? 0,
+      passageExits: totals.saidas_passagem ?? 0,
       assessedTransfer: totals.total_a_repassar,
     }
   })

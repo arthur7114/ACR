@@ -13,12 +13,20 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 ## Entidades principais
 
 - Fechamento: imobiliaria, empreendimento, competencia, status, totais, valor comprovado, diferenca, tolerancia, aprovacao e auditoria.
-- Documento do fechamento: arquivo original imutavel, hash SHA-256, tipo, status de processamento, confianca, parser, erro, classificacao manual e remessa.
+- Fonte documental: binário original imutável identificado por SHA-256 e
+  reutilizável entre fechamentos sem compartilhar valores ou vínculos.
+- Documento do fechamento: vínculo contextual entre fonte e fechamento, com
+  tipo, status de processamento, confiança, parser, erro, classificação manual,
+  remessa e referência de duplicidade; redundância é preservada e marcada, não
+  apagada.
 - Imobiliaria: nome, CNPJ, layout, tolerancia de repasse e janela de conciliacao.
 - Empreendimento: agrupador de imoveis.
 - Regra comercial: taxa de administracao e taxa de intermediacao por imobiliaria + empreendimento, com uma regra ativa por par.
-- Imovel: unidade, inquilino, status, aluguel esperado e taxa de administracao.
-- Imovel por competencia: snapshot mensal imutavel na leitura, ligado ao imovel e ao fechamento que o materializou, com status de ocupacao, aluguel esperado/recebido, receita, desconto, comissao, repasse, origem, qualidade, versao de calculo e checksum. O cadastro do imovel continua sendo a fonte separada da posicao atual ("Hoje").
+- Imovel: unidade e posição cadastral atual, separada do histórico.
+- Vigência do imóvel: período com início/fim, modelo de receita
+  `fixo|variavel|nao_aplicavel`, aluguel contratado nullable e fonte
+  rastreável. É a fonte da cobertura e do contrato em cada competência.
+- Imovel por competencia: snapshot mensal imutavel na leitura, ligado ao imovel e ao fechamento que o materializou, com status de ocupacao, aluguel contratado da vigência, aluguel da competência, atrasos recuperados, outros recebimentos, entradas/saídas de passagem, competência original/recebimento, dia de vencimento, receita, desconto, comissao, repasse, origem, qualidade, versao de calculo e checksum. O cadastro do imovel continua sendo a fonte separada da posicao atual ("Hoje").
 - Movimentacao: receitas, despesas, comissoes, descontos, repasses, parcelas, origem documental, confianca, imóvel vinculado, competência original e correcao manual.
 - Receita por imóvel: linha da prestação com `competencia_original`, `competencia_recebimento`, `dia_vencimento` e `imovel_id`; os quatro conceitos são independentes e o vínculo só existe quando o ID foi persistido.
 - Acordo/rescisao recebido: item extraido da prestacao quando houver pagamento, acordo, rescisao, parcela ou decisao recebida no mes, com tipo, inquilino, unidade, valor, competencia original, competencia de recebimento, observacao e confianca.
@@ -29,7 +37,9 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Envio eGestor: `egestor_envios` registra acao, payload, resposta, status e erro de envio, retry de anexo e revalidacao.
 - Auditoria de status: `fechamento_status_eventos` registra status anterior, status novo, usuario, motivo e data/hora para aprovacao e transicoes eGestor.
 - Revalidacao eGestor: lancamento enviado pode gravar `revalidado_em`, `revalidacao_status` e `revalidacao_mensagem`; revalidacao nao cria novo lancamento financeiro.
-- Cobertura de indicadores: uniao dos pares ativos imobiliaria + empreendimento presentes em regras comerciais ou imoveis ativos, comparada aos fechamentos elegiveis e snapshots da competencia.
+- Cobertura de indicadores: vigências ativas na competência agrupadas por
+  imobiliária + empreendimento e comparadas aos fechamentos elegíveis e
+  snapshots. Regras comerciais e aliases inativos não criam expectativa.
 
 ## RBAC
 
@@ -48,7 +58,9 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Dia de vencimento é inteiro de 1 a 31. Um valor isolado como `10` nunca satisfaz a competência original.
 - Referência de IPTU, seguro ou outra despesa não pode ser inferida como competência do aluguel. Competência ausente ou inválida bloqueia aprovação.
 - A movimentação `receita_aluguel` usa a competência original; o fechamento preserva o total do mês de recebimento.
-- IPTU de passagem pode ser exposto na discriminação de receitas, mas se anula financeiramente e não altera receita total, despesa ou repasse.
+- IPTU de passagem é separado da receita/despesa econômica, mas entra na ponte
+  como entrada e/ou saída de passagem; assim o caixa reconcilia sem inflar
+  desempenho.
 - Receita só está vinculada quando a linha e a movimentação apontam para um `imovel_id` ativo do mesmo par imobiliária + empreendimento; código/unidade equivalente serve apenas como sugestão.
 - Correções de competência ou vínculo atualizam fechamento, movimentação, validações, cadastro quando aplicável e auditoria na mesma transação.
 - Divergencia de repasse:
@@ -68,10 +80,23 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Lancamento eGestor com `egestor_codigo` salvo e imutavel para reenvio V1; operador pode apenas revalidar status ou reenviar anexos pendentes.
 - Falha de anexo eGestor nao desfaz recebimento/pagamento criado; o lancamento fica `anexo_pendente` ate retry bem-sucedido.
 - Indicadores incluem apenas fechamentos nao arquivados, com `analise_completa`, nos status `pendente_revisao`, `processado_com_sucesso`, `processado_com_alertas`, `aprovado`, `preparado_egestor`, `lancado_egestor` e `erro_egestor`. Reprocessamento ativo preserva a ultima analise valida e sinaliza "Em atualizacao".
-- A competencia dos indicadores e `completa` somente quando todos os pares esperados foram processados e nao ha lacuna estrutural; caso contrario e `preliminar`.
-- Receita total, aluguel contratado e aluguel recebido sao conceitos diferentes: receita total vem de `PackageTotals.total_receitas`; contratado vem do aluguel esperado dos snapshots; recebido usa `aluguel_com_desconto`, com fallback apenas para `aluguel`.
-- Ponte financeira: `receita bruta - comissao administrativa - despesas do locador - comissao de intermediacao = repasse apurado`, tolerancia de R$ 0,01. Comprovado ausente permanece `null`; repasse embutido e rotulado como informado no extrato.
-- Realizacao do aluguel: `contratado - vacancia - inadimplencia do mes - descontos +/- outros ajustes = recebido`. Inadimplencia acumulada permanece separada.
+- A confiança da competência é `confirmado`, `em_conferencia`, `incompleto` ou
+  `com_divergencia`. Confirmação exige cobertura integral, fechamento final,
+  nenhum valor não explicado e comprovantes externos necessários.
+- Receitas do fechamento, aluguel contratado, aluguel recebido da competência,
+  atrasos recuperados, outros recebimentos e movimentos de passagem são
+  conceitos independentes. Contratado vem da vigência; receita variável é
+  `nao_aplicavel`, nunca zero.
+- Ponte financeira: `receitas econômicas + entradas de passagem - comissões -
+  despesas - tarifas - saídas de passagem = repasse calculado`, tolerância de
+  R$ 0,01. Repasse declarado pela imobiliária é separado do confirmado pelo
+  banco; a diferença bancária só usa fechamentos comprovados.
+- Realização do aluguel: `contratado - vacância - inadimplência - descontos +
+  ajustes classificados = recebido da competência`; somando atrasos
+  recuperados obtém-se o aluguel recebido no mês.
 - Status mensal do imovel e um de `ocupado`, `inadimplente`, `vago`, `em_rescisao` ou `desconhecido`. Zero sem evidencia suficiente e `desconhecido`, nunca vacancia.
 - Taxa de ocupacao mensal usa ocupado + inadimplente + em rescisao no numerador e adiciona vago no denominador; desconhecidos ficam fora do denominador e reduzem a cobertura.
-- `null` significa dado ausente; `0` significa zero confirmado. Series terminam na competencia selecionada e taxas agregadas sao ponderadas pelos seus denominadores.
+- `null` significa dado ausente; `0` significa zero confirmado;
+  `nao_aplicavel` significa conceito incompatível com o modelo de receita.
+  Series terminam na competencia selecionada e taxas agregadas sao ponderadas
+  pelos seus denominadores.

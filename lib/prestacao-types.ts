@@ -47,6 +47,11 @@ export const receitaPorImovelSchema = z
     competencia_original: z.string().nullable().optional(),
     competencia_recebimento: z.string().nullable().optional(),
     dia_vencimento: z.number().int().min(1).max(31).nullable().optional(),
+    // Dimensoes da conciliacao v2. Permanecem opcionais para que analises
+    // historicas continuem validas ate serem reprocessadas.
+    outros_recebimentos: z.number().nullable().optional(),
+    entradas_passagem: z.number().nullable().optional(),
+    saidas_passagem: z.number().nullable().optional(),
     vencimento: z.string().nullable(),
     observacao: z.string().nullable(),
     confianca: z.number().min(0).max(1),
@@ -72,6 +77,9 @@ export interface ReceitaPorImovel {
   competencia_original?: string | null
   competencia_recebimento?: string | null
   dia_vencimento?: number | null
+  outros_recebimentos?: number | null
+  entradas_passagem?: number | null
+  saidas_passagem?: number | null
   vencimento: string | null
   observacao: string | null
   confianca: number
@@ -110,6 +118,8 @@ export const inadimplenciaAcumuladaSchema = z
     valor: z.number(),
     condicao: z.string().nullable(),
     observacao: z.string().nullable(),
+    competencia_original: z.string().nullable().optional(),
+    dia_vencimento: z.number().int().min(1).max(31).nullable().optional(),
     confianca: z.number().min(0).max(1),
   })
   .strict()
@@ -341,6 +351,12 @@ export const packageTotalsSchema = z
     comissao_realizada_percent: z.number().nullable(),
     // Repasse informado no proprio extrato (sem comprovante bancario separado).
     repasse_embutido: z.boolean().optional(),
+    // Dimensoes da conciliacao v2. Opcionais durante o rollout para manter a
+    // leitura de fechamentos materializados pelas versoes anteriores.
+    entradas_passagem: z.number().optional(),
+    saidas_passagem: z.number().optional(),
+    total_tarifas: z.number().optional(),
+    repasse_declarado: z.number().nullable().optional(),
   })
   .strict()
 

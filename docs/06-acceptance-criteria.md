@@ -39,6 +39,7 @@
 - CA14.9: GM II maio exibe taxa cadastrada de 7%, comissão regular de R$ 1.218,45, comissão de acordos/rescisões de R$ 65,52 e total de R$ 1.283,97 sem dupla contagem.
 - CA14.10: receita só deixa a pendência de cadastro com `imovel_id` persistido; o drawer permite buscar/criar, comparar e optar por atualizações sem sobrescrita silenciosa, e aprovação permanece bloqueada enquanto houver pendência.
 - CA14.11: correção de competência ou vínculo grava análise, movimentação, validações, cadastro quando aplicável e auditoria em uma única transação; falha em qualquer etapa reverte tudo.
+- CA14.12: o upload valida a assinatura real de PDF/Excel, normaliza MIME ausente ou genérico antes de enviar à IA e identifica em português o nome do arquivo inválido ou corrompido.
 
 ## Lista de fechamentos
 
@@ -51,16 +52,19 @@
 
 - CA-IND01: o mapa de inadimplência usa seis faixas progressivas de verde (baixo/bom) a vermelho (alto/atenção), passando por amarelo e laranja; vacância por imóvel/competência usa estado binário de 0% (não vago) ou 100% (vago), com legenda própria.
 - CA-IND02: a API inclui apenas fechamentos elegiveis, exclui rascunhos/arquivados/analises ausentes e mantem a ultima analise valida com estado "Em atualizacao" durante reprocessamento.
-- CA-IND03: toda competencia informa pares esperados, processados, aprovados, pendentes, rascunhos, em atualizacao e ausentes, alem de cobertura de imoveis, snapshots e lacunas; cada lacuna identifica os pares, imoveis ou unidades afetados e a competencia so aparece como completa sem par ou lacuna pendente.
-- CA-IND04: receita total, aluguel contratado, aluguel recebido, comissoes, despesas retidas, despesa operacional detalhada, repasse apurado e repasse comprovado seguem as fontes definidas em `docs/PLAN-indicadores-operacionais.md`; ausencia permanece `null` e zero confirmado permanece `0`.
-- CA-IND05: a ponte financeira separa comissao administrativa, despesas do locador e intermediação, preserva o sinal da diferenca `comprovado - apurado` e alerta residuo acima de R$ 0,01.
-- CA-IND06: realizacao do aluguel reconcilia contratado, vacancia, inadimplencia do mes, descontos, outros ajustes e recebido; nao usa receita total como aluguel nem reconstroi potencial de forma circular. Outros ajustes nao zero exibem valor, percentual do contratado e acao de revisao.
-- CA-IND07: ocupacao da competencia usa snapshots mensais com status ocupado, inadimplente, vago, em rescisao ou desconhecido; linha zerada ambigua nunca vira vago. O cadastro atual aparece separadamente como "Hoje".
+- CA-IND03: toda competência informa fechamentos esperados/processados e contratos conhecidos/não aplicáveis/ausentes a partir das vigências históricas; regras ou aliases inativos não criam cobertura. O banner único usa `Confirmado`, `Em conferência`, `Incompleto` ou `Com divergência`.
+- CA-IND04: Receitas do fechamento, aluguel recebido da competência, atrasos recuperados, outros recebimentos, movimentos de passagem, comissões, despesas, tarifas e repasses calculado/declarado/confirmado seguem as fontes da revisão v2 de `docs/PLAN-indicadores-operacionais.md`; `—`, `R$ 0,00` e `Não se aplica` permanecem semanticamente distintos.
+- CA-IND05: a ponte é `receitas econômicas + entradas de passagem − comissões − despesas − tarifas − saídas de passagem = repasse calculado`; diferença não explicada acima de R$ 0,01 impede `Confirmado`. A diferença bancária usa somente fechamentos com comprovante externo e informa a cobertura desses comprovantes.
+- CA-IND06: realização reconcilia `contratado − vacância − inadimplência − descontos + ajustes classificados = recebido da competência`; atrasos recuperados são somados depois. Qualquer valor sem classificação aparece como “Valores ainda sem classificação” e impede `Confirmado`.
+- CA-IND07: ocupação da competência usa snapshots mensais com status ocupado, inadimplente, vago, em rescisão ou desconhecido; inadimplência explícita da competência prevalece sobre pagamento antigo. O painel mostra percentual, base classificada e cobertura juntos; cadastro atual permanece separado como “Hoje”.
 - CA-IND08: filtros de competencia, empresa, empreendimento e imovel por UUID recalculam todos os indicadores; aba e modos `metric`/`heatMetric` persistem na URL; requests obsoletos nao sobrescrevem o estado mais novo.
 - CA-IND09: serie, ranking, mapa e tabela respeitam a competencia selecionada e nao exibem meses futuros; medias e taxas da carteira sao ponderadas.
-- CA-IND10: a quarta aba se chama "Receitas por imovel" e deixa claro que a origem e a prestacao da competencia; oferece uma linha por imovel/competencia, busca, ordenacao, paginacao e CSV.
-- CA-IND11: o heatmap historico deriva apenas dos snapshots, identifica historico recomposto, exibe `—` para ausente, mostra valor/estado alem da cor e separa a coluna "Hoje".
+- CA-IND10: a quarta aba se chama “Detalhamento por imóvel”, informa competência do aluguel, recebido em e dia do vencimento, e oferece uma linha por imóvel/competência, busca, ordenação, paginação e CSV.
+- CA-IND11: “Riscos por imóvel” deriva apenas dos snapshots, identifica “Histórico reconstruído”, exibe `—` para ausente, mostra valor/estado além da cor e separa a coluna “Hoje”.
 - CA-IND12: `/indicadores` e o shell funcionam sem overflow da pagina em 360, 390, 768, 1024, 1280 e 1440 px; tabs, toggles, tabelas e menu sao operaveis por teclado, com foco visivel, contraste AA e reduced motion.
+- CA-IND13: o painel usa valores monetários completos nos KPIs, um único banner de confiança, ajuda “Como ler este painel” e informação contextual acessível por mouse, teclado e toque.
+- CA-IND14: upload repetido no mesmo fechamento é idempotente por SHA-256; uma fonte pode ser reutilizada entre fechamentos sem compartilhar valores/vínculos; redundâncias são preservadas com referência de duplicidade.
+- CA-IND15: o reparador é dry-run por padrão, exige `--commit`, registra antes/depois e bloqueia qualquer fechamento com diferença documental acima de R$ 0,01.
 
 ## IPTU - Contas a pagar manual
 

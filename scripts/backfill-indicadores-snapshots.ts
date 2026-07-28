@@ -6,6 +6,7 @@ import type { PackageAnalysis } from "../lib/prestacao-types"
 import {
   buildIndicadoresSnapshotRows,
   createIndicadoresSnapshotChecksum,
+  loadActiveIndicadoresProperties,
   type IndicadoresSnapshotProperty,
   type IndicadoresSnapshotRow,
 } from "../lib/server/indicadores-snapshots"
@@ -28,6 +29,8 @@ const SOURCE_FINGERPRINT_COLUMNS = {
     "id,status,arquivado,competencia,imobiliaria_id,empreendimento_id,analise_completa,atualizado_em",
   imoveis:
     "id,ativo,unidade,valor_aluguel_esperado,imobiliaria_id,empreendimento_id,atualizado_em",
+  imovel_vigencias:
+    "id,imovel_id,imobiliaria_id,empreendimento_id,vigencia_inicio,vigencia_fim,modelo_receita,aluguel_contratado,fonte,ativo,atualizado_em",
 } as const
 
 export interface BackfillOptions {
@@ -115,16 +118,14 @@ export function buildBackfillPlan(input: {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, candidate]): BackfillOperation => {
       const current = existing.get(key)
-      const kind = resolveOperation(candidate.snapshot, current)
+      const snapshot = preserveNativeOrigin(candidate.snapshot, current)
+      const kind = resolveOperation(snapshot, current)
       return {
         key,
         kind,
-        checksum:
-          kind === "skip" && current?.origin === "processamento"
-            ? current.checksum
-            : candidate.snapshot.checksum,
+        checksum: kind === "skip" && current ? current.checksum : snapshot.checksum,
         closureId: candidate.closureId,
-        snapshot: candidate.snapshot,
+        snapshot,
       }
     })
   const executableWrites =
@@ -191,8 +192,29 @@ function resolveOperation(
   existing: ExistingSnapshot | undefined,
 ): BackfillOperation["kind"] {
   if (!existing) return "insert"
-  if (existing.origin === "processamento") return "skip"
+  if (existing.origin === "processamento" && !candidate.row) return "skip"
   return existing.checksum === candidate.checksum ? "skip" : "update"
+}
+
+function preserveNativeOrigin(
+  candidate: BackfillSnapshotCandidate,
+  existing: ExistingSnapshot | undefined,
+): BackfillSnapshotCandidate {
+  if (existing?.origin !== "processamento" || !candidate.row) return candidate
+  const { checksum: _checksum, ...candidateWithoutChecksum } = candidate.row
+  const withoutChecksum = {
+    ...candidateWithoutChecksum,
+    origem: "processamento" as const,
+  }
+  const checksum = createIndicadoresSnapshotChecksum(withoutChecksum)
+  return {
+    ...candidate,
+    checksum,
+    row: {
+      ...withoutChecksum,
+      checksum,
+    },
+  }
 }
 
 function summarizeCoverage(closures: BackfillClosure[]) {
@@ -242,16 +264,6 @@ interface DatabaseClosureRow {
   empreendimentos: unknown
 }
 
-interface DatabasePropertyRow {
-  id: string
-  unidade: string
-  valor_aluguel_esperado: number | string | null
-  imobiliaria_id: string
-  empreendimento_id: string
-  imobiliarias: unknown
-  empreendimentos: unknown
-}
-
 interface DatabaseSnapshotRow {
   imovel_id: string
   fechamento_id: string
@@ -260,13 +272,23 @@ interface DatabaseSnapshotRow {
   status_origem: string
   inquilino_nome: string | null
   aluguel_esperado: number | string | null
-  aluguel_esperado_origem: "cadastro" | null
+  aluguel_esperado_origem: "cadastro" | "vigencia" | null
   aluguel_recebido: number | string | null
+  aluguel_competencia: number | string | null
+  atrasos_recuperados: number | string | null
+  outros_recebimentos: number | string | null
+  entradas_passagem: number | string | null
+  saidas_passagem: number | string | null
   receita_total: number | string | null
   desconto: number | string | null
   comissao_administracao: number | string | null
   repasse_apurado: number | string | null
   vencimento_referencia: string | null
+  competencia_original: string | null
+  competencia_recebimento: string | null
+  dia_vencimento: number | null
+  modelo_receita: IndicadoresSnapshotRow["modelo_receita"]
+  status_mensal_explicito: IndicadoresSnapshotRow["status_mensal_explicito"]
   quantidade_linhas: number
   origem: "processamento" | "backfill"
   qualidade: IndicadoresSnapshotRow["qualidade"]
@@ -280,14 +302,22 @@ export async function loadBackfillDataset(
   supabase: SupabaseAdmin,
   options: BackfillOptions,
 ) {
-  const [closureResult, propertyResult, snapshotResult] = await Promise.all([
+  const [closureResult, snapshotResult] = await Promise.all([
     loadClosures(supabase, options),
-    loadProperties(supabase, options),
     loadExistingSnapshots(supabase, options),
   ])
-  const propertiesByPair = groupProperties(propertyResult)
-  const closures = closureResult.map((closure) =>
-    buildClosureCandidate(closure, propertiesByPair.get(pairKey(closure.imobiliaria_id, closure.empreendimento_id)) ?? []),
+  const closures = await Promise.all(
+    closureResult.map(async (closure) =>
+      buildClosureCandidate(
+        closure,
+        await loadActiveIndicadoresProperties({
+          supabase,
+          imobiliariaId: closure.imobiliaria_id,
+          empreendimentoId: closure.empreendimento_id,
+          competencia: closure.competencia,
+        }),
+      ),
+    ),
   )
 
   return {
@@ -320,28 +350,16 @@ async function loadClosures(supabase: SupabaseAdmin, options: BackfillOptions) {
   return (data ?? []) as unknown as DatabaseClosureRow[]
 }
 
-async function loadProperties(supabase: SupabaseAdmin, options: BackfillOptions) {
-  let query = supabase
-    .from("imoveis")
-    .select(
-      "id,unidade,valor_aluguel_esperado,imobiliaria_id,empreendimento_id,imobiliarias(nome),empreendimentos(nome)",
-    )
-    .eq("ativo", true)
-    .order("id")
-  if (options.developmentId) query = query.eq("empreendimento_id", options.developmentId)
-  const { data, error } = await query
-  if (error) throw error
-  return (data ?? []) as unknown as DatabasePropertyRow[]
-}
-
 async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillOptions) {
   let query = supabase
     .from(SNAPSHOT_TABLE)
     .select(
       `imovel_id,fechamento_id,competencia,status_ocupacao,status_origem,inquilino_nome,
        aluguel_esperado,aluguel_esperado_origem,aluguel_recebido,receita_total,desconto,
-       comissao_administracao,repasse_apurado,vencimento_referencia,quantidade_linhas,
-       origem,qualidade,calculo_versao,checksum`,
+       aluguel_competencia,atrasos_recuperados,outros_recebimentos,entradas_passagem,
+       saidas_passagem,comissao_administracao,repasse_apurado,vencimento_referencia,
+       competencia_original,competencia_recebimento,dia_vencimento,modelo_receita,
+       status_mensal_explicito,quantidade_linhas,origem,qualidade,calculo_versao,checksum`,
     )
     .order("competencia")
     .order("imovel_id")
@@ -349,22 +367,6 @@ async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillO
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as unknown as DatabaseSnapshotRow[]
-}
-
-function groupProperties(rows: DatabasePropertyRow[]) {
-  const groups = new Map<string, IndicadoresSnapshotProperty[]>()
-  for (const property of rows) {
-    const key = pairKey(property.imobiliaria_id, property.empreendimento_id)
-    const mapped = {
-      id: property.id,
-      unit: property.unidade,
-      expectedRent: nullableNumber(property.valor_aluguel_esperado),
-      realEstateAgencyName: relationName(property.imobiliarias),
-      developmentName: relationName(property.empreendimentos),
-    }
-    groups.set(key, [...(groups.get(key) ?? []), mapped])
-  }
-  return groups
 }
 
 function buildClosureCandidate(
@@ -402,10 +404,6 @@ function buildClosureCandidate(
   }
 }
 
-function pairKey(agencyId: string, developmentId: string) {
-  return `${agencyId}|${developmentId}`
-}
-
 function relationName(value: unknown) {
   const relation = Array.isArray(value) ? value[0] : value
   const name = (relation as { nome?: unknown } | null)?.nome
@@ -430,11 +428,21 @@ function calculatePersistedSnapshotChecksum(snapshot: DatabaseSnapshotRow) {
     aluguel_esperado: nullableNumber(snapshot.aluguel_esperado),
     aluguel_esperado_origem: snapshot.aluguel_esperado_origem,
     aluguel_recebido: nullableNumber(snapshot.aluguel_recebido),
+    aluguel_competencia: nullableNumber(snapshot.aluguel_competencia),
+    atrasos_recuperados: nullableNumber(snapshot.atrasos_recuperados),
+    outros_recebimentos: nullableNumber(snapshot.outros_recebimentos),
+    entradas_passagem: nullableNumber(snapshot.entradas_passagem),
+    saidas_passagem: nullableNumber(snapshot.saidas_passagem),
     receita_total: nullableNumber(snapshot.receita_total),
     desconto: nullableNumber(snapshot.desconto),
     comissao_administracao: nullableNumber(snapshot.comissao_administracao),
     repasse_apurado: nullableNumber(snapshot.repasse_apurado),
     vencimento_referencia: snapshot.vencimento_referencia,
+    competencia_original: snapshot.competencia_original,
+    competencia_recebimento: snapshot.competencia_recebimento,
+    dia_vencimento: snapshot.dia_vencimento,
+    modelo_receita: snapshot.modelo_receita,
+    status_mensal_explicito: snapshot.status_mensal_explicito,
     quantidade_linhas: snapshot.quantidade_linhas,
     origem: snapshot.origem,
     qualidade: snapshot.qualidade,
@@ -456,14 +464,22 @@ async function executePlan(supabase: SupabaseAdmin, plan: ReturnType<typeof buil
 }
 
 export async function readSourceFingerprints(supabase: SupabaseAdmin) {
-  const [closures, properties] = await Promise.all([
+  const [closures, properties, vigencies] = await Promise.all([
     readFingerprint(supabase, "fechamentos"),
     readFingerprint(supabase, "imoveis"),
+    readFingerprint(supabase, "imovel_vigencias"),
   ])
-  return { fechamentos: closures, imoveis: properties }
+  return {
+    fechamentos: closures,
+    imoveis: properties,
+    imovel_vigencias: vigencies,
+  }
 }
 
-async function readFingerprint(supabase: SupabaseAdmin, table: "fechamentos" | "imoveis") {
+async function readFingerprint(
+  supabase: SupabaseAdmin,
+  table: keyof typeof SOURCE_FINGERPRINT_COLUMNS,
+) {
   const rows: unknown[] = []
   let count = 0
   for (let from = 0; ; from += FINGERPRINT_PAGE_SIZE) {

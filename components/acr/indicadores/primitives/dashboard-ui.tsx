@@ -1,14 +1,42 @@
-import type { ReactNode } from "react"
-import { AlertTriangle, CheckCircle2, CircleHelp, Database, Info } from "lucide-react"
+"use client"
+
+import { useId, useState, type KeyboardEvent, type ReactNode } from "react"
+import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  CircleAlert,
+  CircleHelp,
+  Database,
+  Info,
+  ShieldAlert,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { IndicadoresData } from "@/lib/indicadores-types"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   formatCount,
   formatPercent,
+  getClosingsCoverage,
+  getConfidenceStatus,
   occupancyLabel,
+  type ConfidenceStatus,
   type DashboardMetric,
   type OccupancyStatus,
 } from "../lib/presentation"
+
+export interface MetricHelpContent {
+  short: string
+  title: string
+  definition: string
+  formula?: string
+  source?: string
+  limitation?: string
+}
 
 export function Panel({
   children,
@@ -29,16 +57,21 @@ export function PanelHeader({
   description,
   source,
   action,
+  help,
 }: {
   title: string
   description?: string
   source?: string
   action?: ReactNode
+  help?: MetricHelpContent
 }) {
   return (
     <header className="flex flex-col gap-3 border-b border-acr-line px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
       <div className="min-w-0">
-        <h2 className="text-base font-bold text-acr-ink text-pretty">{title}</h2>
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-base font-bold text-acr-ink text-pretty">{title}</h2>
+          {help && <MetricHelp {...help} />}
+        </div>
         {description && <p className="mt-1 max-w-[70ch] text-sm leading-5 text-acr-muted-2">{description}</p>}
         {source && (
           <p className="mt-2 flex items-center gap-1.5 text-xs text-acr-muted-2">
@@ -56,15 +89,15 @@ export function Kpi({
   value,
   detail,
   source,
-  quality,
   tone = "default",
+  help,
 }: {
   label: string
   value: string
   detail: string
   source: string
-  quality: "completa" | "preliminar"
   tone?: "default" | "warning" | "danger"
+  help?: MetricHelpContent
 }) {
   return (
     <article
@@ -75,11 +108,11 @@ export function Kpi({
         tone === "danger" && "border-acr-red",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center gap-1.5">
         <p className="text-sm font-medium text-acr-muted-2">{label}</p>
-        <QualityBadge quality={quality} compact />
+        {help && <MetricHelp {...help} />}
       </div>
-      <p className="mt-3 truncate text-[1.65rem] font-bold leading-none tracking-[-0.025em] text-acr-ink tabular-nums" title={value}>
+      <p className="mt-3 break-words text-[1.55rem] font-bold leading-tight tracking-[-0.025em] text-acr-ink tabular-nums" title={value}>
         {value}
       </p>
       <p className="mt-2 min-h-10 text-xs leading-5 text-acr-muted-2">{detail}</p>
@@ -90,64 +123,117 @@ export function Kpi({
   )
 }
 
-export function QualityBadge({
-  quality,
-  compact = false,
-}: {
-  quality: "completa" | "preliminar"
-  compact?: boolean
-}) {
-  const isComplete = quality === "completa"
+export function MetricHelp({
+  short,
+  title,
+  definition,
+  formula,
+  source,
+  limitation,
+}: MetricHelpContent) {
+  const tooltipId = useId()
+  const [open, setOpen] = useState(false)
+
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full font-semibold",
-        compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs",
-        isComplete ? "bg-acr-green-soft text-acr-green-strong" : "bg-acr-amber-soft text-[#72500f]",
-      )}
-    >
-      {isComplete ? <CheckCircle2 aria-hidden="true" className="size-3" /> : <AlertTriangle aria-hidden="true" className="size-3" />}
-      {isComplete ? "Completa" : "Preliminar"}
-    </span>
+    <Popover open={open} onOpenChange={setOpen}>
+      <span className="group relative -my-1.5 inline-flex size-11 shrink-0">
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-describedby={tooltipId}
+            aria-label={`Saiba mais sobre ${title}`}
+            className="inline-flex size-11 touch-manipulation items-center justify-center rounded-md text-acr-muted-2 transition-colors motion-reduce:transition-none hover:bg-acr-green-tint hover:text-acr-green-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green"
+            onKeyDown={(event) => toggleHelpFromKeyboard(event, () => setOpen((current) => !current))}
+          >
+            <CircleHelp aria-hidden="true" className="size-4" />
+          </button>
+        </PopoverTrigger>
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none invisible absolute left-1/2 top-full z-40 mt-1 w-max max-w-64 -translate-x-1/2 rounded-md bg-acr-ink px-3 py-1.5 text-xs text-white opacity-0 shadow-md transition motion-reduce:transition-none group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          {short}
+        </span>
+      </span>
+      <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] border-acr-line bg-white p-0">
+        <div className="border-b border-acr-line px-4 py-3">
+          <h3 className="text-sm font-bold text-acr-ink">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-acr-muted-2">{definition}</p>
+        </div>
+        <dl className="space-y-3 px-4 py-3 text-xs leading-5">
+          {formula && <HelpDetail label="Fórmula" value={formula} />}
+          {source && <HelpDetail label="Fonte" value={source} />}
+          {limitation && <HelpDetail label="Limitação" value={limitation} />}
+        </dl>
+      </PopoverContent>
+    </Popover>
   )
 }
 
 export function CoverageBanner({ data }: { data: IndicadoresData }) {
-  const isComplete = data.meta.qualidade === "completa"
+  const status = getConfidenceStatus(data)
+  const closings = getClosingsCoverage(data)
+  const coverage = data.cobertura as unknown as {
+    contratos?: { conhecidos: number; naoAplicaveis: number; ausentes: number }
+    comprovantes?: { esperados: number; presentes: number; ausentes: number; percentual: number | null }
+  }
+  const confidence = confidenceContent(status)
+
   return (
     <section
-      aria-label="Cobertura da competência"
+      aria-label={`Confiança da competência: ${confidence.label}`}
       className={cn(
         "mb-4 rounded-xl border p-4",
-        isComplete ? "border-acr-green/30 bg-acr-green-tint" : "border-acr-amber/35 bg-acr-amber-soft",
+        status === "confirmado" && "border-acr-green/30 bg-acr-green-tint",
+        (status === "em_conferencia" || status === "incompleto") && "border-acr-amber/35 bg-acr-amber-soft",
+        status === "com_divergencia" && "border-acr-red/30 bg-acr-red-soft",
       )}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          {isComplete ? (
-            <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-green" />
-          ) : (
-            <AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-amber" />
-          )}
-          <div>
+          <ConfidenceIcon status={status} />
+          <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-bold text-acr-ink">Competência {data.meta.competenciaLabel}</h2>
-              <QualityBadge quality={data.meta.qualidade} />
+              <span className={cn(
+                "rounded-md bg-white/85 px-2 py-1 text-xs font-bold",
+                status === "confirmado" && "text-acr-green-strong",
+                (status === "em_conferencia" || status === "incompleto") && "text-[#72500f]",
+                status === "com_divergencia" && "text-acr-red",
+              )}>
+                {confidence.label}
+              </span>
               {data.meta.historicoRecomposto && (
                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-acr-muted-2">
-                  Histórico recomposto
+                  Histórico reconstruído
                 </span>
               )}
             </div>
             <p className="mt-1 text-sm leading-5 text-acr-muted-2">
-              {data.cobertura.pares.processados} de {data.cobertura.pares.esperados} pares processados. Valores pendentes entram como preliminares; rascunhos não entram nos totais.
+              {confidence.description} {closings.processados} de {closings.esperados} fechamentos esperados estão processados.
             </p>
+            {data.meta.motivosConfianca?.length > 0 && (
+              <p className="mt-1 text-xs leading-5 text-acr-muted-2">
+                {data.meta.motivosConfianca.join(" · ")}
+              </p>
+            )}
+            <div className="mt-2">
+              <HowToReadPanel />
+            </div>
           </div>
         </div>
-        <dl className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4">
-          <CoverageItem label="Pares" value={formatPercent(data.cobertura.pares.percentual)} />
-          <CoverageItem label="Snapshots" value={formatPercent(data.cobertura.imoveis.percentual)} />
-          <CoverageItem label="Ausentes" value={formatCount(data.cobertura.pares.ausentes)} />
+        <dl className="grid shrink-0 grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 xl:grid-cols-5">
+          <CoverageItem label="Fechamentos esperados" value={`${formatCount(closings.processados)}/${formatCount(closings.esperados)}`} />
+          <CoverageItem label="Histórico por imóvel" value={formatPercent(data.cobertura.imoveis.percentual)} />
+          <CoverageItem label="Contratos conhecidos" value={coverage.contratos ? formatCount(coverage.contratos.conhecidos) : "—"} />
+          <CoverageItem label="Contratos não aplicáveis" value={coverage.contratos ? formatCount(coverage.contratos.naoAplicaveis) : "—"} />
+          <CoverageItem label="Contratos ausentes" value={coverage.contratos ? formatCount(coverage.contratos.ausentes) : "—"} />
+          <CoverageItem
+            label="Comprovantes bancários"
+            value={coverage.comprovantes ? `${formatCount(coverage.comprovantes.presentes)}/${formatCount(coverage.comprovantes.esperados)} · ${formatPercent(coverage.comprovantes.percentual)}` : "—"}
+          />
+          <CoverageItem label="Fechamentos ausentes" value={formatCount(closings.ausentes)} />
           <CoverageItem label="Linhas sem vínculo" value={formatCount(data.cobertura.linhasNaoVinculadas)} />
         </dl>
       </div>
@@ -174,6 +260,101 @@ export function CoverageBanner({ data }: { data: IndicadoresData }) {
       )}
     </section>
   )
+}
+
+function HowToReadPanel() {
+  const tooltipId = useId()
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <span className="group relative inline-flex">
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-describedby={tooltipId}
+            className="inline-flex min-h-11 touch-manipulation items-center gap-1.5 rounded-md px-2 text-xs font-bold text-acr-green-strong transition-colors motion-reduce:transition-none hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green"
+            onKeyDown={(event) => toggleHelpFromKeyboard(event, () => setOpen((current) => !current))}
+          >
+            <BookOpen aria-hidden="true" className="size-3.5" />
+            Como ler este painel
+          </button>
+        </PopoverTrigger>
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none invisible absolute left-0 top-full z-40 mt-1 w-max max-w-64 rounded-md bg-acr-ink px-3 py-1.5 text-xs text-white opacity-0 shadow-md transition motion-reduce:transition-none group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        >
+          Entenda fontes, fórmulas e ausências.
+        </span>
+      </span>
+      <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))] border-acr-line bg-white">
+        <h3 className="text-sm font-bold text-acr-ink">Como ler este painel</h3>
+        <ul className="mt-3 space-y-2 text-xs leading-5 text-acr-muted-2">
+          <li><strong className="text-acr-ink">Fonte da verdade:</strong> fechamento aprovado para valores financeiros, comprovante bancário para pagamento e contrato histórico para aluguel contratado.</li>
+          <li><strong className="text-acr-ink">R$ 0,00</strong> é zero confirmado. <strong className="text-acr-ink">—</strong> indica dado ausente. <strong className="text-acr-ink">Não se aplica</strong> identifica receita variável.</li>
+          <li>Os botões de ajuda abrem definição, fórmula, fonte e limitação da métrica.</li>
+          <li>Uma diferença não explicada acima de R$ 0,01 impede o estado Confirmado.</li>
+        </ul>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function toggleHelpFromKeyboard(
+  event: KeyboardEvent<HTMLButtonElement>,
+  toggle: () => void,
+) {
+  if (event.key !== "Enter" && event.key !== " ") return
+  event.preventDefault()
+  toggle()
+}
+
+function HelpDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="font-bold text-acr-ink">{label}</dt>
+      <dd className="text-acr-muted-2">{value}</dd>
+    </div>
+  )
+}
+
+function ConfidenceIcon({ status }: { status: ConfidenceStatus }) {
+  if (status === "confirmado") {
+    return <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-green" />
+  }
+  if (status === "com_divergencia") {
+    return <ShieldAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-red" />
+  }
+  if (status === "incompleto") {
+    return <CircleAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-amber" />
+  }
+  return <AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-acr-amber" />
+}
+
+function confidenceContent(status: ConfidenceStatus) {
+  if (status === "confirmado") {
+    return {
+      label: "Confirmado",
+      description: "Fechamento final, reconciliação íntegra e comprovantes necessários presentes.",
+    }
+  }
+  if (status === "com_divergencia") {
+    return {
+      label: "Com divergência",
+      description: "Há diferença documental ou valor ainda não explicado.",
+    }
+  }
+  if (status === "incompleto") {
+    return {
+      label: "Incompleto",
+      description: "Falta fechamento, contrato, vínculo ou histórico mensal necessário.",
+    }
+  }
+  return {
+    label: "Em conferência",
+    description: "Os dados estão visíveis, mas a aprovação ou comprovação bancária ainda não está completa.",
+  }
 }
 
 function CoverageItem({ label, value }: { label: string; value: string }) {
@@ -215,7 +396,7 @@ export function ToggleButton({
       aria-pressed={selected}
       onClick={onClick}
       className={cn(
-        "min-h-9 rounded-md px-3 text-xs font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green",
+        "min-h-11 rounded-md px-3 text-xs font-semibold transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green",
         selected ? "bg-acr-green-strong text-white" : "text-acr-muted-2 hover:bg-acr-green-tint hover:text-acr-ink",
       )}
     >

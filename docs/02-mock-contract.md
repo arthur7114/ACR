@@ -31,7 +31,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - `imoveis`: area operacional de cadastros com abas para imoveis, imobiliarias, empreendimentos e regras comerciais por imobiliaria + empreendimento, incluindo importacao CSV de imoveis e botao "Sincronizar dos fechamentos" (popula/atualiza o cadastro de imoveis a partir das prestacoes ja processadas). Cada imovel e clicavel e abre um drawer de Historico do imovel (linha do tempo derivada das prestacoes: aluguel pago/inadimplente/vago, acordos, rescisoes, inadimplencia paga e intermediacao), com resumo e periodos por inquilino. O drawer tambem traz a secao "Acordos parcelados" (Nivel 2): acordos/rescisoes parcelados detectados nas prestacoes, com barra de progresso (parcelas pagas/total), valor pago/total e baixa por parcela (automatica pela prestacao ou manual, clicando na parcela). Botao "Sincronizar dos fechamentos" tambem popula os acordos parcelados.
 - `configuracoes`: placeholder atual para preferencias, integracoes e regras.
 - `configuracoes`: area operacional de integracao eGestor, com token, teste de conexao, conta disponivel padrao, planos de contas por categoria, contato/tag por imobiliaria e tag por empreendimento.
-- `indicadores`: painel operacional-financeiro da carteira, com sub-abas Visao geral, Receita & repasse, Mapa de calor e Receitas por imovel. Filtros por competencia, empresa, empreendimento e imovel por UUID; alternancia valor x percentual. Todos os numeros derivam de fechamentos elegiveis, `analise_completa`/PackageTotals, snapshots mensais e cadastro de imoveis, com cobertura e qualidade explicitas.
+- `indicadores`: painel operacional-financeiro da carteira, com sub-abas Visão geral, Conciliação financeira, Riscos por imóvel e Detalhamento por imóvel. Filtros por competência, empresa, empreendimento e imóvel por UUID; alternância valor x percentual. O fechamento documental é a fonte financeira, o comprovante bancário confirma o pagamento e as vigências históricas definem o aluguel contratado. Todo número informa fonte, cobertura e um dos estados `Confirmado`, `Em conferência`, `Incompleto` ou `Com divergência`.
 - `iptu`: tela operacional de contas a pagar de IPTU por imovel. Cards de resumo (aberto, vencido, pago, parcelas vencidas, proximo vencimento), barra de filtros (imobiliaria, empreendimento, ano, status calculado, mes de vencimento, busca), tabela densa de parcelas com selecao, e acoes de geracao de carnes em lote (com revisao), edicao de parcela, ajuste do numero de parcelas do carne, baixa individual e baixa em massa. Somente operacional: nao gera lancamento no eGestor nem altera fechamento financeiro.
 
 ### Adicao registrada — tela `iptu` (2026-07-07)
@@ -66,6 +66,32 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Responsividade: sidebar fixa em desktop, rail em tablet e menu Sheet no mobile, preservando a densidade operacional sem overflow da pagina.
 - Fonte da decisao e formulas: `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
+
+### Substituição registrada — confiabilidade documental dos indicadores (2026-07-28)
+
+- Ponto alterado: `Receita & repasse`, `Mapa de calor` e `Receitas por imóvel`
+  passam a se chamar `Conciliação financeira`, `Riscos por imóvel` e
+  `Detalhamento por imóvel`. `Receita total`, `Repasse apurado`, `Repasse
+  comprovado`, `Informado no extrato`, `Gap` e `Resíduo da reconciliação` são
+  substituídos, respectivamente, por `Receitas do fechamento`, `Repasse
+  calculado`, `Repasse confirmado pelo banco`, `Repasse declarado pela
+  imobiliária`, `Valor não recebido` e `Diferença não explicada`.
+- Por que: o contrato anterior permitia somar crédito de passagem como receita,
+  comparar comprovantes externos com fechamentos sem comprovante e reutilizar
+  cadastro atual para meses históricos. Essas ambiguidades geravam números
+  matematicamente fechados, mas conceitualmente falsos.
+- Melhoria substituta: um banner único de confiança por competência; cobertura
+  derivada de vigências; contratos conhecidos/não aplicáveis/ausentes;
+  separação de aluguel da competência, atrasos, outros recebimentos, passagens,
+  despesas e tarifas; moeda sem abreviação; ajuda “Como ler este painel” e
+  informação acessível por tooltip/popover.
+- Semântica visual: `—` é ausência, `R$ 0,00` é zero confirmado e `Não se
+  aplica` identifica receita variável. Ocupação sempre mostra percentual,
+  classificados e cobertura lado a lado.
+- Fonte da decisão e fórmulas: revisão v2 de
+  `docs/PLAN-indicadores-operacionais.md`.
+- Docs atualizados: este contrato, `docs/03-domain-model.md`,
+  `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
 ### Ajuste registrado — fechamento operacional e competência da receita (2026-07-14)
 
