@@ -5,7 +5,7 @@ import { AlertTriangle, CalendarDays, LoaderCircle, RefreshCw } from "lucide-rea
 import type { IndicadoresData, IndicadoresFiltroOption } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
 import { CoverageBanner, EmptyState } from "../indicadores/primitives/dashboard-ui"
-import { formatDateTime, type DashboardMetric, type DashboardTab, type HeatMetric } from "../indicadores/lib/presentation"
+import { formatDateTime, getClosingsCoverage, type DashboardMetric, type DashboardTab, type HeatMetric } from "../indicadores/lib/presentation"
 import { ViewGeral } from "../indicadores/tabs/view-geral"
 import { ViewReceita } from "../indicadores/tabs/view-receita"
 import { ViewMapa } from "../indicadores/tabs/view-mapa"
@@ -15,9 +15,9 @@ type Filters = { competencia: string; empresaId: string; empreendimentoId: strin
 
 const TABS: Array<{ id: DashboardTab; label: string }> = [
   { id: "geral", label: "Visão geral" },
-  { id: "receita", label: "Receita & repasse" },
-  { id: "mapa", label: "Mapa de calor" },
-  { id: "imoveis", label: "Receitas por imóvel" },
+  { id: "receita", label: "Conciliação financeira" },
+  { id: "mapa", label: "Riscos por imóvel" },
+  { id: "imoveis", label: "Detalhamento por imóvel" },
 ]
 
 export function IndicadoresView() {
@@ -139,7 +139,10 @@ export function IndicadoresView() {
     document.getElementById(`indicadores-tab-${next.id}`)?.focus()
   }
 
-  const hasNoData = data && data.cobertura.pares.esperados === 0 && data.receitasPorImovel.length === 0 && data.serieMensal.length === 0
+  const hasNoData = data
+    && getClosingsCoverage(data).esperados === 0
+    && data.receitasPorImovel.length === 0
+    && data.serieMensal.length === 0
 
   return (
     <div className="min-w-0 max-w-full text-acr-ink" aria-busy={isLoading}>
@@ -154,7 +157,7 @@ export function IndicadoresView() {
             )}
           </div>
           <p className="mt-1 max-w-[70ch] text-sm leading-6 text-acr-muted-2">
-            Receita, despesas, comissões, repasses e ocupação com cobertura e origem visíveis em cada competência.
+            Valores, conciliação, ocupação e riscos com fonte, cobertura e limitações visíveis em cada competência.
           </p>
           {data && (
             <p className="mt-1 flex items-center gap-1.5 text-xs text-acr-muted-2">
@@ -237,15 +240,16 @@ function FiltersBar({
 }) {
   return (
     <div className="grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-4" aria-label="Filtros dos indicadores">
-      <FilterSelect label="Competência" value={filters.competencia || data?.meta.competencia || ""} options={data?.filtros.competencias ?? []} onChange={(value) => onChange("competencia", value)} disabled={disabled} emptyLabel="Sem competências" />
-      <FilterSelect label="Empresa" value={filters.empresaId} options={data?.filtros.empresas ?? []} onChange={(value) => onChange("empresaId", value)} disabled={disabled} emptyLabel="Todas as empresas" allowAll />
-      <FilterSelect label="Empreendimento" value={filters.empreendimentoId} options={data?.filtros.empreendimentos ?? []} onChange={(value) => onChange("empreendimentoId", value)} disabled={disabled} emptyLabel="Todos os empreendimentos" allowAll />
-      <FilterSelect label="Imóvel" value={filters.imovelId} options={data?.filtros.imoveis ?? []} onChange={(value) => onChange("imovelId", value)} disabled={disabled} emptyLabel="Todos os imóveis" allowAll />
+      <FilterSelect name="competencia" label="Competência" value={filters.competencia || data?.meta.competencia || ""} options={data?.filtros.competencias ?? []} onChange={(value) => onChange("competencia", value)} disabled={disabled} emptyLabel="Sem competências" />
+      <FilterSelect name="empresa" label="Empresa" value={filters.empresaId} options={data?.filtros.empresas ?? []} onChange={(value) => onChange("empresaId", value)} disabled={disabled} emptyLabel="Todas as empresas" allowAll />
+      <FilterSelect name="empreendimento" label="Empreendimento" value={filters.empreendimentoId} options={data?.filtros.empreendimentos ?? []} onChange={(value) => onChange("empreendimentoId", value)} disabled={disabled} emptyLabel="Todos os empreendimentos" allowAll />
+      <FilterSelect name="imovel" label="Imóvel" value={filters.imovelId} options={data?.filtros.imoveis ?? []} onChange={(value) => onChange("imovelId", value)} disabled={disabled} emptyLabel="Todos os imóveis" allowAll />
     </div>
   )
 }
 
 function FilterSelect({
+  name,
   label,
   value,
   options,
@@ -254,6 +258,7 @@ function FilterSelect({
   emptyLabel,
   allowAll = false,
 }: {
+  name: string
   label: string
   value: string
   options: IndicadoresFiltroOption[]
@@ -266,6 +271,7 @@ function FilterSelect({
     <label className="min-w-0">
       <span className="mb-1 block text-[11px] font-semibold text-acr-muted-2">{label}</span>
       <select
+        name={`indicadores-${name}`}
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -366,9 +372,18 @@ function isIndicadoresData(value: unknown): value is IndicadoresData {
 
   const meta = value.meta
   const heat = value.heat
+  const hasConfidence = isRecord(meta)
+    && (
+      meta.statusConfianca === "confirmado"
+      || meta.statusConfianca === "em_conferencia"
+      || meta.statusConfianca === "incompleto"
+      || meta.statusConfianca === "com_divergencia"
+      || meta.qualidade === "completa"
+      || meta.qualidade === "preliminar"
+    )
   return isRecord(meta)
     && typeof meta.competencia === "string"
-    && (meta.qualidade === "completa" || meta.qualidade === "preliminar")
+    && hasConfidence
     && isRecord(value.cobertura)
     && isRecord(value.resumo)
     && isRecord(value.ponteFinanceira)

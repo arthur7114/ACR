@@ -4,6 +4,7 @@ import {
   buildBackfillPlan,
   parseBackfillArgs,
 } from "./backfill-indicadores-snapshots.ts"
+import type { IndicadoresSnapshotRow } from "../lib/server/indicadores-snapshots.ts"
 
 const DEVELOPMENT_A = "11111111-1111-4111-8111-111111111111"
 const DEVELOPMENT_B = "22222222-2222-4222-8222-222222222222"
@@ -19,6 +20,7 @@ function closure(input: {
     propertyId: string
     checksum: string
     competence?: string
+    row?: IndicadoresSnapshotRow
   }>
 }) {
   const competence = input.competence ?? "2026-03-01"
@@ -37,7 +39,42 @@ function closure(input: {
       propertyId: snapshot.propertyId,
       competence: snapshot.competence ?? competence,
       checksum: snapshot.checksum,
+      row: snapshot.row,
     })),
+  }
+}
+
+function snapshotRow(origin: IndicadoresSnapshotRow["origem"]): IndicadoresSnapshotRow {
+  return {
+    imovel_id: "property-a",
+    fechamento_id: "eligible",
+    competencia: "2026-03-01",
+    status_ocupacao: "ocupado",
+    status_origem: "recebimento",
+    inquilino_nome: "Maria",
+    aluguel_esperado: 1_000,
+    aluguel_esperado_origem: "vigencia",
+    aluguel_recebido: 1_000,
+    aluguel_competencia: 1_000,
+    atrasos_recuperados: null,
+    outros_recebimentos: null,
+    entradas_passagem: 0,
+    saidas_passagem: 0,
+    receita_total: 1_000,
+    desconto: 0,
+    comissao_administracao: 70,
+    repasse_apurado: 930,
+    vencimento_referencia: "03/2026",
+    competencia_original: "2026-03-01",
+    competencia_recebimento: "2026-03-01",
+    dia_vencimento: 10,
+    modelo_receita: "fixo",
+    status_mensal_explicito: null,
+    quantidade_linhas: 1,
+    origem: origin,
+    qualidade: "completo",
+    calculo_versao: "indicadores-confiabilidade-v2",
+    checksum: "checksum-backfill",
   }
 }
 
@@ -264,6 +301,37 @@ test("preserva snapshot nativo de processamento em vez de substitui-lo por backf
     [{ kind: "skip", checksum: "checksum-processamento" }],
   )
   assert.deepEqual(plan.executableWrites, [])
+})
+
+test("rematerializa snapshot nativo preservando sua origem", () => {
+  const plan = buildBackfillPlan({
+    options: parseBackfillArgs(["--commit"]),
+    closures: [
+      closure({
+        id: "eligible",
+        snapshots: [
+          {
+            propertyId: "property-a",
+            checksum: "checksum-backfill",
+            row: snapshotRow("backfill"),
+          },
+        ],
+      }),
+    ],
+    existingSnapshots: [
+      {
+        propertyId: "property-a",
+        competence: "2026-03-01",
+        checksum: "checksum-processamento-v1",
+        origin: "processamento",
+      },
+    ],
+  })
+
+  assert.equal(plan.operations[0].kind, "update")
+  assert.equal(plan.operations[0].snapshot.row?.origem, "processamento")
+  assert.notEqual(plan.operations[0].checksum, "checksum-backfill")
+  assert.equal(plan.executableWrites.length, 1)
 })
 
 test("rejeita duas propostas para a mesma chave mensal", () => {

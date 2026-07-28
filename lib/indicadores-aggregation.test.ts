@@ -48,6 +48,7 @@ interface PrestacaoFixture {
     competencia_original?: string | null
   }>
   inadimplencias_acumuladas: Array<{ valor: number }>
+  outras_comissoes_despesas?: Array<{ descricao: string; valor: number }>
 }
 
 interface AnalysisFixture {
@@ -61,6 +62,10 @@ interface AnalysisFixture {
     total_iptu: number
     total_seguro_incendio: number
     repasse_embutido: boolean
+    entradas_passagem?: number | null
+    saidas_passagem?: number | null
+    total_tarifas?: number | null
+    repasse_declarado?: number | null
   }
   prestacao: PrestacaoFixture | null
 }
@@ -88,12 +93,19 @@ interface SnapshotFixture {
   repasseApurado: number | null
   origem: "processamento" | "backfill"
   qualidade: "completo" | "parcial" | "sem_linha"
+  modeloReceita?: "fixo" | "variavel" | "nao_aplicavel"
+  aluguelRecebidoCompetencia?: number | null
+  atrasosRecuperados?: number | null
+  outrosRecebimentos?: number | null
+  entradasPassagem?: number | null
+  saidasPassagem?: number | null
 }
 
 interface AggregationFixture {
   calculoVersao: string
   competencia: string
   atualizadoEm: string
+  vigenciasDisponiveis?: boolean
   filtros: {
     empresaId: string | null
     empreendimentoId: string | null
@@ -101,6 +113,16 @@ interface AggregationFixture {
   }
   regrasAtivas: RuleFixture[]
   imoveisAtivos: PropertyFixture[]
+  vigencias?: Array<PairFixture & {
+    id: string
+    imovelId: string
+    vigenciaInicio: string
+    vigenciaFim: string | null
+    modeloReceita: "fixo" | "variavel" | "nao_aplicavel"
+    aluguelContratado: number | null
+    fonte: string
+    ativo: boolean
+  }>
   fechamentos: ClosingFixture[]
   snapshots: SnapshotFixture[]
   linhasNaoVinculadas: Array<{
@@ -146,6 +168,7 @@ function makeAnalysis(overrides: {
   receitas?: RevenueLineFixture[]
   intermediacoes?: PrestacaoFixture["acordos_rescisoes_recebidos"]
   inadimplencias?: PrestacaoFixture["inadimplencias_acumuladas"]
+  outrasDespesas?: PrestacaoFixture["outras_comissoes_despesas"]
 } = {}): AnalysisFixture {
   return {
     totals: {
@@ -175,6 +198,7 @@ function makeAnalysis(overrides: {
         { tipo: "intermediacao", comissao: 50 },
       ],
       inadimplencias_acumuladas: overrides.inadimplencias ?? [],
+      outras_comissoes_despesas: overrides.outrasDespesas,
     },
   }
 }
@@ -290,7 +314,7 @@ test("mantém a última análise válida e marca o par durante reprocessamento",
   assert.equal(result.cobertura.pares.emAtualizacao, 1)
 })
 
-test("forma o universo esperado pela união deduplicada de regras e imóveis ativos", () => {
+test("forma o universo esperado somente pela carteira de imóveis, sem inflar por regras", () => {
   const pairB = makePair("b")
   const pairC = makePair("c")
 
@@ -304,8 +328,8 @@ test("forma o universo esperado pela união deduplicada de regras e imóveis ati
     snapshots: [],
   }))
 
-  assert.equal(result.cobertura.pares.esperados, 3)
-  assert.equal(result.cobertura.pares.ausentes, 3)
+  assert.equal(result.cobertura.fechamentos.esperados, 2)
+  assert.equal(result.cobertura.fechamentos.ausentes, 2)
 })
 
 test("identifica nominalmente pares, imóveis e linhas das lacunas de cobertura", () => {
@@ -449,17 +473,16 @@ test("mantém despesas retidas separadas da despesa operacional detalhada", () =
     total: 125,
   })
   assert.equal(result.resumo.repasseApurado, 1_650)
-  assert.deepEqual(result.ponteFinanceira, {
-    receitaTotal: 2_000,
-    comissaoAdministracao: 100,
-    despesasRetidas: 200,
-    comissaoIntermediacao: 50,
-    repasseApurado: 1_650,
-    residuo: 0,
-    tolerancia: 0.01,
-    reconciliada: true,
-    alerta: false,
-  })
+  assert.equal(result.ponteFinanceira.receitasEconomicas, 2_000)
+  assert.equal(result.ponteFinanceira.entradasPassagem, 0)
+  assert.equal(result.ponteFinanceira.comissoes, 150)
+  assert.equal(result.ponteFinanceira.despesas, 200)
+  assert.equal(result.ponteFinanceira.tarifas, 0)
+  assert.equal(result.ponteFinanceira.saidasPassagem, 0)
+  assert.equal(result.ponteFinanceira.repasseCalculado, 1_650)
+  assert.equal(result.ponteFinanceira.repasseDeclarado, 1_650)
+  assert.equal(result.ponteFinanceira.diferencaNaoExplicada, 0)
+  assert.equal(result.ponteFinanceira.reconciliada, true)
 })
 
 test("preserva ausência legada de prestação como null, nunca como zero", () => {
@@ -511,6 +534,11 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     vacancia: 500,
     inadimplenciaMes: 500,
     descontos: 50,
+    ajustesClassificados: 0,
+    valoresSemClassificacao: -50,
+    recebidoCompetencia: 1_000,
+    atrasosRecuperados: null,
+    alugueisRecebidosMes: 1_000,
     outrosAjustes: -50,
     outrosAjustesPercentualContratado: -50 / 2_100 * 100,
     recebido: 1_000,
@@ -598,10 +626,12 @@ test("mantém a diferença do comprovante externo quando também há repasse inf
     ],
   }))
 
-  assert.equal(result.resumo.repasseApurado, 1_300)
+  assert.equal(result.resumo.repasseCalculado, 3_300)
+  assert.equal(result.resumo.repasseDeclarado, 1_300)
   assert.equal(result.resumo.repasseComprovado, 700)
   assert.equal(result.resumo.repasseInformadoExtrato, 300)
-  assert.equal(result.resumo.diferencaRepasse, -600)
+  assert.equal(result.resumo.repasseCalculadoComprovado, 1_650)
+  assert.equal(result.resumo.diferencaRepasse, -950)
 })
 
 test("calcula diferença com a soma dos comprovantes externos conhecidos", () => {
@@ -630,7 +660,8 @@ test("calcula diferença com a soma dos comprovantes externos conhecidos", () =>
   }))
 
   assert.equal(result.resumo.repasseComprovado, 700)
-  assert.equal(result.resumo.diferencaRepasse, -600)
+  assert.equal(result.resumo.repasseCalculadoComprovado, 1_650)
+  assert.equal(result.resumo.diferencaRepasse, -950)
 })
 
 test("não usa receita total como fallback de aluguel recebido", () => {
@@ -863,7 +894,8 @@ test("filtro por imóvel recalcula dados atribuíveis e anula campos do fechamen
   assert.equal(result.resumo.aluguelContratado, 800)
   assert.equal(result.resumo.aluguelRecebido, 700)
   assert.equal(result.resumo.comissaoAdministracao, 70)
-  assert.equal(result.resumo.repasseApurado, 680)
+  assert.equal(result.resumo.repasseDeclarado, 680)
+  assert.equal(result.resumo.repasseCalculado, null)
   assert.equal(result.resumo.comissaoIntermediacao, null)
   assert.equal(result.resumo.despesasRetidas, null)
   assert.equal(result.resumo.despesaOperacionalDetalhada.total, null)
@@ -1014,4 +1046,291 @@ test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () 
   assert.equal(maio.competenciaAjusteReceita, -900)
   assert.equal(marco.receitaTotal, 900)
   assert.equal(maio.receitaTotal, 0)
+})
+
+test("deriva cobertura da vigência histórica e ignora regra sem imóvel na carteira", () => {
+  const historicalProperty = makeProperty({
+    id: "fernando-ap0361",
+    unidade: "AP0361",
+    ativo: false,
+    aluguelEsperadoAtual: null,
+  })
+  const ghostPair = makePair("regra-fantasma")
+  const competence = "2026-03-01"
+  const result = aggregateIndicadores(makeInput({
+    competencia: competence,
+    regrasAtivas: [makeRule(PAIR_A), makeRule(ghostPair)],
+    imoveisAtivos: [historicalProperty],
+    vigencias: [{
+      ...PAIR_A,
+      id: "vigencia-fernando",
+      imovelId: historicalProperty.id,
+      vigenciaInicio: "2026-01-01",
+      vigenciaFim: "2026-03-01",
+      modeloReceita: "fixo",
+      aluguelContratado: null,
+      fonte: "Fechamento documental",
+      ativo: true,
+    }],
+    fechamentos: [makeClosing({ competencia: competence })],
+    snapshots: [makeSnapshot({
+      imovelId: historicalProperty.id,
+      competencia: competence,
+      aluguelEsperado: null,
+    })],
+  }))
+
+  assert.equal(result.cobertura.fechamentos.esperados, 1)
+  assert.equal(result.cobertura.contratos.ausentes, 1)
+  assert.ok(result.cobertura.lacunas.some((gap) => gap.codigo === "contrato_ausente"))
+})
+
+test("contrato variável é não aplicável e não vira zero nem contrato ausente", () => {
+  const result = aggregateIndicadores(makeInput({
+    vigencias: [{
+      ...PAIR_A,
+      id: "vigencia-airbnb",
+      imovelId: "imovel-a",
+      vigenciaInicio: "2026-01-01",
+      vigenciaFim: null,
+      modeloReceita: "variavel",
+      aluguelContratado: null,
+      fonte: "Contrato de hospedagem",
+      ativo: true,
+    }],
+    snapshots: [makeSnapshot({
+      aluguelEsperado: null,
+      modeloReceita: "variavel",
+      statusOcupacao: "inadimplente",
+    })],
+  }))
+
+  assert.equal(result.cobertura.contratos.conhecidos, 0)
+  assert.equal(result.cobertura.contratos.naoAplicaveis, 1)
+  assert.equal(result.cobertura.contratos.ausentes, 0)
+  assert.equal(result.resumo.aluguelContratado, null)
+  assert.ok(!result.cobertura.lacunas.some((gap) => gap.codigo === "aluguel_esperado_ausente"))
+  assert.equal(result.rankingAtencao[0]?.modeloReceita, "variavel")
+})
+
+test("não estima aluguel contratado quando a fonte histórica está indisponível", () => {
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: false,
+    snapshots: [makeSnapshot({
+      aluguelEsperado: 1_000,
+      aluguelRecebido: 900,
+      statusOcupacao: "inadimplente",
+    })],
+  }))
+
+  assert.equal(result.cobertura.contratos.conhecidos, 0)
+  assert.equal(result.cobertura.contratos.ausentes, 1)
+  assert.equal(result.resumo.aluguelContratado, null)
+  assert.equal(result.realizacaoAluguel.contratado, null)
+  assert.equal(result.realizacaoAluguel.vacancia, null)
+  assert.equal(result.realizacaoAluguel.inadimplenciaMes, null)
+  assert.equal(result.realizacaoAluguel.valoresSemClassificacao, null)
+  assert.equal(result.rankingAtencao[0]?.esperado, null)
+  assert.equal(result.rankingAtencao[0]?.gapValor, null)
+})
+
+test("usa a vigência histórica no lugar do valor legado do snapshot", () => {
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: true,
+    vigencias: [{
+      ...PAIR_A,
+      id: "vigencia-contratual",
+      imovelId: "imovel-a",
+      vigenciaInicio: "2026-01-01",
+      vigenciaFim: null,
+      modeloReceita: "fixo",
+      aluguelContratado: 1_250,
+      fonte: "Contrato histórico",
+      ativo: true,
+    }],
+    snapshots: [makeSnapshot({ aluguelEsperado: 999 })],
+  }))
+
+  assert.equal(result.resumo.aluguelContratado, 1_250)
+  assert.equal(result.realizacaoAluguel.contratado, 1_250)
+  assert.equal(result.rankingAtencao[0]?.esperado, 1_250)
+})
+
+test("expõe os quatro estados de confiança sem promover declaração embutida a comprovante", () => {
+  const confirmed = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { valor_comprovado: 1_650 } }),
+    })],
+  }))
+  const inReview = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { valor_comprovado: null } }),
+    })],
+  }))
+  const incomplete = aggregateIndicadores(makeInput({
+    snapshots: [],
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { valor_comprovado: 1_650 } }),
+    })],
+  }))
+  const divergent = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        totals: { total_a_repassar: 1_649.98, valor_comprovado: 1_650 },
+      }),
+    })],
+  }))
+  const embedded = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        totals: { repasse_embutido: true, valor_comprovado: 1_650 },
+      }),
+    })],
+  }))
+
+  assert.equal(confirmed.meta.statusConfianca, "confirmado")
+  assert.equal(inReview.meta.statusConfianca, "em_conferencia")
+  assert.equal(incomplete.meta.statusConfianca, "incompleto")
+  assert.equal(divergent.meta.statusConfianca, "com_divergencia")
+  assert.equal(embedded.meta.statusConfianca, "em_conferencia")
+  assert.equal(embedded.cobertura.comprovantes.presentes, 0)
+})
+
+test("ponte v2 separa movimentos de passagem e tarifas", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        totals: {
+          total_receitas: 1_000,
+          entradas_passagem: 100,
+          total_comissoes: 80,
+          total_despesas: 50,
+          total_tarifas: 10,
+          saidas_passagem: 100,
+          total_a_repassar: 840,
+          repasse_declarado: 840,
+          valor_comprovado: 840,
+        },
+        intermediacoes: [{ tipo: "intermediacao", comissao: 20 }],
+      }),
+    })],
+  }))
+
+  assert.equal(result.resumo.receitasEconomicas, 1_000)
+  assert.equal(result.resumo.entradasPassagem, 100)
+  assert.equal(result.resumo.despesasRetidas, 50)
+  assert.equal(result.resumo.tarifas, 10)
+  assert.equal(result.resumo.saidasPassagem, 100)
+  assert.equal(result.resumo.repasseCalculado, 840)
+  assert.equal(result.ponteFinanceira.diferencaNaoExplicada, 0)
+})
+
+test("separa tarifa derivada apenas nos fechamentos legados que a incluíam em despesas", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        totals: {
+          total_receitas: 1_000,
+          total_comissoes: 80,
+          total_despesas: 60,
+          total_a_repassar: 840,
+          repasse_declarado: 840,
+          valor_comprovado: 840,
+        },
+        intermediacoes: [{ tipo: "intermediacao", comissao: 20 }],
+        outrasDespesas: [{ descricao: "Tarifa TED", valor: 10 }],
+      }),
+    })],
+  }))
+
+  assert.equal(result.resumo.despesasRetidas, 50)
+  assert.equal(result.resumo.tarifas, 10)
+  assert.equal(result.resumo.repasseCalculado, 840)
+  assert.equal(result.ponteFinanceira.diferencaNaoExplicada, 0)
+})
+
+test("separa aluguel da competência, atrasos recuperados e outros recebimentos", () => {
+  const result = aggregateIndicadores(makeInput({
+    snapshots: [makeSnapshot({
+      aluguelRecebido: 1_607.37,
+      aluguelRecebidoCompetencia: 900,
+      atrasosRecuperados: 707.37,
+      outrosRecebimentos: 75,
+    })],
+  }))
+
+  assert.equal(result.resumo.aluguelRecebidoCompetencia, 900)
+  assert.equal(result.resumo.atrasosRecuperados, 707.37)
+  assert.equal(result.resumo.outrosRecebimentos, 75)
+  assert.equal(result.realizacaoAluguel.alugueisRecebidosMes, 1_607.37)
+  assert.equal(result.serieMensal.at(-1)?.aluguelRecebido, 900)
+})
+
+test("preserva null explícito do aluguel da competência sem usar atrasos como fallback", () => {
+  const result = aggregateIndicadores(makeInput({
+    snapshots: [makeSnapshot({
+      aluguelRecebido: 707.37,
+      aluguelRecebidoCompetencia: null,
+      atrasosRecuperados: 707.37,
+      statusOcupacao: "inadimplente",
+      aluguelEsperado: 705.89,
+      desconto: 0,
+    })],
+  }))
+
+  assert.equal(result.resumo.aluguelRecebidoCompetencia, null)
+  assert.equal(result.resumo.atrasosRecuperados, 707.37)
+  assert.equal(result.realizacaoAluguel.recebidoCompetencia, null)
+  assert.equal(result.realizacaoAluguel.inadimplenciaMes, 705.89)
+  assert.equal(result.receitasPorImovel[0]?.aluguelRecebidoCompetencia, null)
+})
+
+test("classifica a diferença de imóvel em rescisão sem absorver lacunas desconhecidas", () => {
+  const properties = [
+    makeProperty({ id: "rescisao", unidade: "101", aluguelEsperadoAtual: 1_000 }),
+    makeProperty({ id: "desconhecido", unidade: "102", aluguelEsperadoAtual: 500 }),
+  ]
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: properties,
+    snapshots: [
+      makeSnapshot({
+        imovelId: "rescisao",
+        statusOcupacao: "em_rescisao",
+        aluguelEsperado: 1_000,
+        aluguelRecebido: 200,
+        aluguelRecebidoCompetencia: 200,
+        desconto: 50,
+      }),
+      makeSnapshot({
+        imovelId: "desconhecido",
+        statusOcupacao: "desconhecido",
+        aluguelEsperado: 500,
+        aluguelRecebido: null,
+        aluguelRecebidoCompetencia: null,
+        desconto: 0,
+      }),
+    ],
+  }))
+
+  assert.equal(result.realizacaoAluguel.ajustesClassificados, -750)
+  assert.equal(result.realizacaoAluguel.valoresSemClassificacao, -500)
+})
+
+test("valor de aluguel sem classificação acima de um centavo bloqueia confirmação", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { valor_comprovado: 1_650 } }),
+    })],
+    snapshots: [makeSnapshot({
+      aluguelEsperado: 1_000,
+      aluguelRecebido: 899.98,
+      aluguelRecebidoCompetencia: 899.98,
+      desconto: 100,
+    })],
+  }))
+
+  assert.equal(result.realizacaoAluguel.valoresSemClassificacao, -0.02)
+  assert.equal(result.meta.statusConfianca, "com_divergencia")
 })

@@ -194,8 +194,8 @@
     color: #fff;
   }
   .acr-heat-empty {
-    background: repeating-linear-gradient(45deg, #fafbfa, #fafbfa 5px, #f1f4f1 5px, #f1f4f1 10px);
-    color: transparent;
+    background: #fafbfa;
+    color: var(--acr-muted-2);
   }
   /* Card padrao ACR: sombra sutil + borda + radius consistentes (polimento pre-reuniao). */
   .acr-card {

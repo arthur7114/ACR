@@ -2,7 +2,14 @@
 
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react"
 import type { IndicadoresData } from "@/lib/indicadores-types"
-import { formatCurrency, formatPercent } from "../lib/presentation"
+import {
+  formatContractedRent,
+  formatCurrency,
+  formatPortfolioContractedRent,
+  formatPercent,
+  resolveMetricValue,
+  sumKnownValues,
+} from "../lib/presentation"
 import { DataNote, EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 export function ViewReceita({ data }: { data: IndicadoresData }) {
@@ -10,25 +17,57 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
   const realization = data.realizacaoAluguel
   const summary = data.resumo
   const byProperty = data.filtros.selecionados.imovelId !== null
+  const bridgeValues = {
+    receitasEconomicas: resolveMetricValue(bridge.receitasEconomicas, bridge.receitaTotal),
+    entradasPassagem: resolveMetricValue(bridge.entradasPassagem),
+    comissoes: resolveMetricValue(
+      bridge.comissoes,
+      sumKnownValues([bridge.comissaoAdministracao, bridge.comissaoIntermediacao]),
+    ),
+    despesas: resolveMetricValue(bridge.despesas, bridge.despesasRetidas),
+    tarifas: resolveMetricValue(bridge.tarifas),
+    saidasPassagem: resolveMetricValue(bridge.saidasPassagem),
+    repasseCalculado: resolveMetricValue(bridge.repasseCalculado, bridge.repasseApurado),
+    diferencaNaoExplicada: resolveMetricValue(bridge.diferencaNaoExplicada, bridge.residuo),
+  }
+  const valoresSemClassificacao = resolveMetricValue(
+    realization.valoresSemClassificacao,
+    realization.outrosAjustes,
+  )
   const hasUnclassifiedAdjustments =
-    realization.outrosAjustes !== null && realization.outrosAjustes !== 0
+    valoresSemClassificacao !== null
+    && Math.abs(valoresSemClassificacao) > 0.01
+  const contractedRentLabel = formatPortfolioContractedRent(
+    realization.contratado,
+    data.cobertura.contratos,
+  )
 
   return (
     <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
         <Panel>
           <PanelHeader
-            title="Ponte financeira"
-            description="Da receita declarada ao repasse apurado, sem misturar intermediação com outras despesas."
-            source={byProperty ? "Snapshot do imóvel; retenções não atribuíveis ficam ausentes" : "PackageTotals e itens de intermediação"}
+            title="Conciliação financeira"
+            description="Das receitas econômicas ao repasse calculado, com movimentos de passagem e tarifas separados."
+            source={byProperty ? "Histórico mensal por imóvel; retenções não atribuíveis ficam ausentes" : "Fechamentos da competência"}
+            help={{
+              short: "Ponte entre receitas e repasse calculado.",
+              title: "Conciliação financeira",
+              definition: "Explica como as receitas econômicas e os movimentos de caixa resultam no repasse.",
+              formula: "receitas econômicas + entradas de passagem − comissões − despesas − tarifas − saídas de passagem = repasse calculado",
+              source: "Fechamentos da competência.",
+              limitation: "Qualquer diferença não explicada acima de R$ 0,01 bloqueia a confirmação.",
+            }}
           />
           <div className="px-4 py-2 sm:px-5">
-            <FinancialRow label="Receita total" value={bridge.receitaTotal} operation="=" strong />
-            <FinancialRow label="Comissão administrativa" value={bridge.comissaoAdministracao} operation="−" />
-            <FinancialRow label="Despesas retidas" value={bridge.despesasRetidas} operation="−" />
-            <FinancialRow label="Comissão de intermediação" value={bridge.comissaoIntermediacao} operation="−" />
-            <FinancialRow label="Repasse apurado" value={bridge.repasseApurado} operation="=" strong result />
-            <FinancialRow label="Resíduo da reconciliação" value={bridge.residuo} operation="Δ" danger={bridge.alerta} />
+            <FinancialRow label="Receitas do fechamento" value={bridgeValues.receitasEconomicas} operation="=" strong />
+            <FinancialRow label="Entradas de passagem" value={bridgeValues.entradasPassagem} operation="+" />
+            <FinancialRow label="Comissões" value={bridgeValues.comissoes} operation="−" />
+            <FinancialRow label="Despesas" value={bridgeValues.despesas} operation="−" />
+            <FinancialRow label="Tarifas" value={bridgeValues.tarifas} operation="−" />
+            <FinancialRow label="Saídas de passagem" value={bridgeValues.saidasPassagem} operation="−" />
+            <FinancialRow label="Repasse calculado" value={bridgeValues.repasseCalculado} operation="=" strong result />
+            <FinancialRow label="Diferença não explicada" value={bridgeValues.diferencaNaoExplicada} operation="Δ" danger={bridge.alerta} />
           </div>
           <div className="border-t border-acr-line px-4 py-4 sm:px-5">
             {bridge.reconciliada === true && (
@@ -40,7 +79,7 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             {bridge.alerta && (
               <div role="alert" className="flex items-start gap-2 text-sm font-semibold text-acr-red">
                 <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                Resíduo acima da tolerância. Revise as retenções antes de consolidar a competência.
+                Diferença não explicada acima da tolerância. Revise os valores antes de confirmar a competência.
               </div>
             )}
             {bridge.reconciliada === null && (
@@ -52,45 +91,69 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
         <Panel>
           <PanelHeader
             title="Realização do aluguel contratado"
-            description="Reconciliação do contrato até o aluguel efetivamente recebido."
-            source="Snapshots e prestação da competência"
+            description="Do contrato vigente ao aluguel da competência e aos atrasos recuperados no mês."
+            source="Contratos históricos e histórico mensal por imóvel"
+            help={{
+              short: "Reconcilia contrato, perdas e recebimentos.",
+              title: "Realização do aluguel contratado",
+              definition: "Separa o aluguel desta competência dos recebimentos recuperados de meses anteriores.",
+              formula: "contratado − vacância − inadimplência − descontos + ajustes classificados = recebido da competência",
+              source: "Contratos históricos e histórico mensal por imóvel.",
+              limitation: "Receitas variáveis são Não se aplica e não entram no aluguel contratado.",
+            }}
           />
           <div className="px-4 py-2 sm:px-5">
-            <FinancialRow label="Aluguel contratado" value={realization.contratado} operation="=" strong />
+            <FinancialRow
+              label="Aluguel contratado"
+              value={realization.contratado}
+              formattedValue={contractedRentLabel}
+              operation="="
+              strong
+            />
             <FinancialRow label="Vacância" value={realization.vacancia} operation="−" />
             <FinancialRow label="Inadimplência do mês" value={realization.inadimplenciaMes} operation="−" />
             <FinancialRow label="Descontos documentados" value={realization.descontos} operation="−" />
-            <FinancialRow label="Outros ajustes" value={realization.outrosAjustes} operation="±" />
-            <FinancialRow label="Aluguel recebido" value={realization.recebido} operation="=" strong result />
+            <FinancialRow label="Ajustes classificados" value={resolveMetricValue(realization.ajustesClassificados)} operation="±" />
+            <FinancialRow label="Recebido da competência" value={resolveMetricValue(realization.recebidoCompetencia, realization.recebido)} operation="=" strong result />
+            <FinancialRow label="Atrasos recuperados" value={resolveMetricValue(realization.atrasosRecuperados)} operation="+" />
+            <FinancialRow label="Aluguéis recebidos no mês" value={resolveMetricValue(realization.alugueisRecebidosMes, realization.recebido)} operation="=" strong result />
+            <FinancialRow label="Valores ainda sem classificação" value={valoresSemClassificacao} operation="Δ" danger={hasUnclassifiedAdjustments} />
           </div>
           <div className="border-t border-acr-line px-4 py-4 sm:px-5">
             {hasUnclassifiedAdjustments && (
               <div className="mb-3">
                 <DataNote warning>
-                  Há {formatCurrency(realization.outrosAjustes)} em ajustes ainda não classificados ({formatPercent(realization.outrosAjustesPercentualContratado)} do aluguel contratado). Revise os imóveis e a prestação antes de consolidar a competência.
+                  Há {formatCurrency(valoresSemClassificacao)} ainda sem classificação ({formatPercent(realization.outrosAjustesPercentualContratado)} do aluguel contratado). Revise os imóveis e o fechamento antes de confirmar a competência.
                 </DataNote>
               </div>
             )}
-            <DataNote>Outros ajustes preservam excedentes, proporcionalidade e valores ainda não classificados; não são uma reconstrução circular de potencial.</DataNote>
+            <DataNote>Ajustes classificados têm origem documentada. Valores sem classificação permanecem visíveis e impedem a confirmação quando superam a tolerância.</DataNote>
           </div>
         </Panel>
       </div>
 
       <Panel>
         <PanelHeader
-          title="Repasse apurado e evidências"
-          description="Comprovante bancário e valor informado no extrato são fontes diferentes."
-          source={byProperty ? "Snapshot do imóvel; evidências de repasse não são atribuídas por imóvel" : "Fechamento, comprovante e prestação"}
+          title="Repasse e evidências"
+          description="Repasse calculado, declaração da imobiliária e confirmação bancária são fontes distintas."
+          source={byProperty ? "Histórico mensal por imóvel; evidências bancárias não são atribuídas por imóvel" : "Fechamentos da competência e comprovante bancário"}
+          help={{
+            short: "Compara o cálculo somente ao universo comprovado.",
+            title: "Repasse e evidências",
+            definition: "Mantém separados o valor calculado, o declarado pela imobiliária e o confirmado pelo banco.",
+            source: "Fechamentos da competência e comprovantes bancários externos.",
+            limitation: "Declarações embutidas nunca são tratadas como comprovante bancário.",
+          }}
         />
         <dl className="grid gap-px bg-acr-line sm:grid-cols-2 xl:grid-cols-4">
-          <EvidenceValue label="Repasse apurado" value={summary.repasseApurado} detail={byProperty ? "Atribuído no snapshot do imóvel" : "Calculado no fechamento"} />
-          <EvidenceValue label="Repasse comprovado" value={summary.repasseComprovado} detail="Somente comprovante externo conhecido" />
-          <EvidenceValue label="Informado no extrato" value={summary.repasseInformadoExtrato} detail="Declaração embutida na prestação" />
+          <EvidenceValue label="Repasse calculado" value={resolveMetricValue(summary.repasseCalculado, summary.repasseApurado)} detail={byProperty ? "Atribuído no histórico do imóvel" : "Calculado pela conciliação financeira"} />
+          <EvidenceValue label="Repasse confirmado pelo banco" value={resolveMetricValue(summary.repasseConfirmadoBanco, summary.repasseComprovado)} detail="Somente comprovante bancário externo" />
+          <EvidenceValue label="Repasse declarado pela imobiliária" value={resolveMetricValue(summary.repasseDeclarado, summary.repasseInformadoExtrato)} detail="Declaração presente no fechamento" />
           <EvidenceValue
-            label="Diferença comprovado − apurado"
+            label="Diferença no universo comprovado"
             value={summary.diferencaRepasse}
-            detail="Comprovante externo − apurado; o extrato permanece separado"
-            warning={summary.diferencaRepasse !== null && summary.diferencaRepasse !== 0}
+            detail="Banco − calculado, somente nos fechamentos com comprovante"
+            warning={summary.diferencaRepasse !== null && Math.abs(summary.diferencaRepasse) > 0.01}
           />
         </dl>
       </Panel>
@@ -99,8 +162,8 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
         <Panel>
           <PanelHeader
             title="Imóveis que pedem atenção"
-            description="Ordenados pelo maior gap de aluguel em reais."
-            source="Snapshots da competência"
+            description="Ordenados pelo maior valor não recebido."
+            source="Histórico mensal por imóvel"
           />
           {data.rankingAtencao.length > 0 ? (
             <ol className="divide-y divide-acr-line px-4 sm:px-5">
@@ -117,16 +180,23 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
                     </div>
                   </div>
                   <dl className="grid grid-cols-3 gap-3 text-right text-xs sm:min-w-[310px]">
-                    <RankingValue label="Esperado" value={item.esperado} />
+                    <RankingValue
+                      label="Esperado"
+                      value={item.esperado}
+                      formattedValue={formatContractedRent(
+                        item.esperado,
+                        item.modeloReceita,
+                      )}
+                    />
                     <RankingValue label="Recebido" value={item.recebido} />
-                    <RankingValue label="Gap" value={item.gapValor} danger />
+                    <RankingValue label="Valor não recebido" value={item.gapValor} danger />
                   </dl>
                   <ArrowRight aria-hidden="true" className="hidden size-4 text-acr-muted-2 sm:block" />
                 </li>
               ))}
             </ol>
           ) : (
-            <EmptyState title="Nenhum imóvel em atenção" description="Não há gap positivo, inadimplência ou vacância classificada para os filtros atuais." />
+            <EmptyState title="Nenhum imóvel em atenção" description="Não há valor não recebido, inadimplência ou vacância classificada para os filtros atuais." />
           )}
         </Panel>
 
@@ -134,7 +204,7 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
           <PanelHeader
             title="Despesa operacional detalhada"
             description="Recorte de água, IPTU e seguro; não representa todas as despesas retidas."
-            source="Itens detalhados da prestação"
+            source="Fechamentos da competência"
           />
           <dl className="divide-y divide-acr-line px-4 sm:px-5">
             <DetailValue label="Água" value={summary.despesaOperacionalDetalhada.agua} />
@@ -154,6 +224,7 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
 function FinancialRow({
   label,
   value,
+  formattedValue,
   operation,
   strong = false,
   result = false,
@@ -161,6 +232,7 @@ function FinancialRow({
 }: {
   label: string
   value: number | null
+  formattedValue?: string
   operation: string
   strong?: boolean
   result?: boolean
@@ -170,7 +242,7 @@ function FinancialRow({
     <div className={`grid grid-cols-[1.5rem_1fr_auto] items-center gap-2 py-3 ${result ? "border-t-2 border-acr-line-2" : "border-b border-acr-line last:border-0"}`}>
       <span aria-hidden="true" className="text-center text-sm font-bold text-acr-muted-2">{operation}</span>
       <span className={`text-sm ${strong ? "font-bold text-acr-ink" : "font-medium text-acr-muted-2"}`}>{label}</span>
-      <span className={`text-sm font-bold tabular-nums ${danger ? "text-acr-red" : "text-acr-ink"}`}>{formatCurrency(value)}</span>
+      <span className={`text-sm font-bold tabular-nums ${danger ? "text-acr-red" : "text-acr-ink"}`}>{formattedValue ?? formatCurrency(value)}</span>
     </div>
   )
 }
@@ -185,11 +257,21 @@ function EvidenceValue({ label, value, detail, warning = false }: { label: strin
   )
 }
 
-function RankingValue({ label, value, danger = false }: { label: string; value: number | null; danger?: boolean }) {
+function RankingValue({
+  label,
+  value,
+  formattedValue,
+  danger = false,
+}: {
+  label: string
+  value: number | null
+  formattedValue?: string
+  danger?: boolean
+}) {
   return (
     <div>
       <dt className="text-[10px] font-medium text-acr-muted-2">{label}</dt>
-      <dd className={`mt-1 font-bold tabular-nums ${danger ? "text-acr-red" : "text-acr-ink"}`}>{formatCurrency(value)}</dd>
+      <dd className={`mt-1 font-bold tabular-nums ${danger ? "text-acr-red" : "text-acr-ink"}`}>{formattedValue ?? formatCurrency(value)}</dd>
     </div>
   )
 }

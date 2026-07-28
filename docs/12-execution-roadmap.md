@@ -2,11 +2,18 @@
 
 ## Status geral
 
-Status atual: Etapas 1, 2 e 3 concluídas. O pipeline real de pacote completo está funcional com otimização de custo (gpt-4o-mini e parser XLSX local), resolução manual de divergências com auditoria, regras comerciais por imobiliária + empreendimento, revisão com resumo financeiro agrupado por decisão operacional, acordos/rescisões recebidos no mês e bloqueio para possível pagamento repetido. O redesign operacional de `/indicadores` concluiu os Slices 0 a 8 e o rollout. O ciclo de fechamentos operacionais de 2026-07-14 está implementado no código: competências separadas, IPTU/despesas/comissões discriminados, vínculo explícito de imóvel e correções atômicas com auditoria. Suite completa 207/207, typecheck, lint e checklist mestre 6/6 estão verdes; aplicação da migration, dry-run/reparo dos quatro fechamentos reais e QA autenticada continuam pendentes. O build local ficou bloqueado somente pelo acesso do sandbox ao Google Fonts, não por erro de compilação do código.
+Status atual: Etapas 1, 2 e 3 concluídas. A revisão v2 de confiabilidade de `/indicadores` foi aplicada ao Supabase fornecido para o rollout: backup lógico íntegro, migrations aditivas, 104 documentos com SHA-256, reparo transacional dos fechamentos e 731 snapshots materializados. O verificador remoto cobre 731/731 chaves, sem duplicidade, checksum inválido, linha sem vínculo ou falha de reconciliação; o reparador idempotente retorna 53 fechamentos sem mudança, zero divergentes e 1 explicitamente incompleto (César Rêgo janeiro, sem fechamento de destino para 0002520/0002521). As 13 unidades Airbnb estão classificadas como receita variável, sem aluguel fixo zero. QA autenticada passou nas quatro abas em 360, 390, 768, 1024, 1280 e 1440 px, incluindo teclado, foco, toque e CSV. Após a integração com as correções recentes da `main`, suíte completa 272/272, typecheck, lint, build e checklist 6/6 estão verdes.
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
 ## Proxima acao recomendada
+
+Publicar o código validado no ambiente da aplicação e executar um smoke no
+domínio implantado. Para encerrar a única incompletude documental, obter o
+fechamento de destino de César Rêgo de janeiro para as unidades 0002520/0002521;
+até lá, manter o estado `Incompleto`, sem rateio ou zero inventado. Os valores
+de aluguel ainda sem classificação continuam bloqueando `Confirmado` e devem
+ser resolvidos somente com evidência documental por imóvel.
 
 Quando LOCMAIS II sair de obras e entrar em operação, processar o primeiro fechamento real rotulado "LOCMAIS II" e confirmar que resolve para o `empreendimento_id` de "LOCMAIS" (`ae2d3019-b916-4511-9294-55eab91ba812`) via o alias já gravado, recebendo a regra comercial Alive (7% admin / 60% intermediação) em vez de criar um empreendimento novo sem regra.
 
@@ -39,7 +46,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 | 2 - Extracao basica | concluida | Pacote completo com classificação, extração por tipo, stream NDJSON, rechecks determinísticos e revisão persistida, com Mock Mode para desenvolvimento local offline. |
 | 3 - Extracao completa | concluida | Parser local XLSX, migração de agentes para gpt-4o-mini e interface de resolução de conflitos com auditoria (CA10, CA12). |
 | 4 - eGestor e layouts futuros | em andamento | Integracao eGestor validada em producao: primeiro envio real executado (recebimento 8751 + pagamento 8750, GM I 04/2026) com revalidacao ok. Anexos pendentes por permissao Disco Virtual na conta eGestor. |
-| Indicadores operacionais | concluida e validada | Migration e backfill aplicados apos canario descartavel; 565 snapshots de 45 fechamentos verificados, QA autenticada responsiva e gates finais verdes. |
+| Indicadores operacionais | v2 aplicada e validada | Migrations, hashes, reparo e 731 snapshots aplicados no Supabase fornecido; 54/54 pontes reconciliadas, 1 fechamento incompleto explícito; QA autenticada 4 abas × 6 larguras e gates verdes. Falta apenas publicar este código no host da aplicação. |
 | Fechamentos operacionais | codigo concluido; rollout pendente | Competência, IPTU, despesas, comissão e vínculos implementados; falta aplicar migration, executar reparo real e QA autenticada. |
 
 ## Decisoes registradas
@@ -163,6 +170,80 @@ Validação: o teste focado falhou antes da correção e passou depois (2/2); o 
 Decisões: ausência de competência original não invalida uma movimentação já vinculada; movimentação ausente e `imovel_id` divergente permanecem bloqueantes.
 Arquivos/docs impactados: `lib/server/fechamento-approval-gates.ts`, `lib/server/fechamento-approval-gates.test.ts`, `docs/12-execution-roadmap.md`.
 Próxima ação: publicar a branch, repetir o clique autenticado no deployment e confirmar a mudança de status sem erro.
+
+### 2026-07-14 - Hotfix de arquivo rejeitado na classificação
+
+Status: código concluído; novo upload real pendente.
+Job: corrigir o erro `400 The file you uploaded is badly formatted or corrupted` ocorrido em Cesar Rego / Galpão Pompílio Gomes / maio de 2026 antes da classificação do primeiro documento.
+Outcome entregue: o upload não reutiliza mais MIME vazio ou incorreto do navegador. PDF e Excel são identificados pela extensão/tipo e validados pela assinatura binária; arquivos válidos recebem MIME canônico antes da chamada à IA, enquanto conteúdo incompatível é bloqueado localmente. Rejeições externas agora informam em português qual arquivo precisa ser exportado novamente.
+Validação: reprodução mínima confirmou que um PDF válido com MIME vazio seguia como `data:;base64`; o teste ficou verde após a normalização. Suíte completa 211/211, typecheck, lint, build de produção e checklist mestre 6/6 passaram.
+Decisões: não alterar o contrato visual da tela de processamento; a correção fica na fronteira de entrada do backend e melhora a mensagem existente. O arquivo original da tentativa falha não é persistido antes da classificação, portanto não foi possível provar remotamente se ele tinha MIME vazio ou estava realmente corrompido; ambos os casos agora têm tratamento determinístico.
+Arquivos/docs impactados: `lib/server/package-workflow.ts`, teste de regressão, critérios de aceitação e este roadmap.
+Próxima ação: publicar o hotfix e repetir o upload do mesmo pacote; se o conteúdo estiver realmente danificado, exportar apenas o arquivo nominalmente indicado pela nova mensagem.
+
+### 2026-07-28 - Confiabilidade documental e correção integral dos indicadores
+
+Status: rollout de dados e QA autenticada concluídos; publicação externa do
+código pendente no host da aplicação.
+
+Job: tornar `/indicadores` apresentável ao cliente com fonte rastreável,
+conceitos estáveis, números exatos e lacunas explícitas.
+
+Outcome entregue: migration aditiva com vigências históricas, modelos de receita
+e AP0361/Fernando Rocha até março com aluguel desconhecido `null`; canonização
+segura de Alive; fonte documental SHA-256 compartilhável e vínculos duplicados
+preservados; persistência idempotente; snapshots v2; DTO/API com
+`statusConfianca`, cobertura de fechamentos/contratos/comprovantes e separação
+de aluguel da competência, atrasos, outros recebimentos e passagem. O parser
+César Rêgo usa `ALUGUÉIS CREDITADOS`, inclui tarifas e distribui unidades; GM II
+março preserva R$ 707,37 de fevereiro e R$ 705,89 inadimplentes em março; Plural
+maio/junho separa saída R$ 891,90 e entrada R$ 445,95 de IPTU. Junho deixa de
+contabilizar o mesmo extrato César Rêgo duas vezes. A UI usa nomenclatura final,
+moeda completa, banner único, ajuda e tooltips/popovers acessíveis.
+
+Validação executada: antes da escrita foi criado o backup lógico
+`tmp/backups/acr-qeblersdkfzsogqptbdh-pre-indicadores-20260728T1820Z.dump`
+(SHA-256
+`039c3d435451aa07b500d725b265b402311b802457048519dfa3d74bb1d25778`).
+As migrations pendentes e as migrations
+`202607280003_indicadores_confiabilidade.sql` e
+`202607280004_airbnb_receita_variavel.sql` foram aplicadas. O hash documental
+cobriu 104/104 documentos, 46 fontes únicas, 35 redundâncias no mesmo fechamento
+e 0 falhas. O reparo passou pelos canários de março e junho e terminou
+idempotente: 0 novos reparos, 53 sem mudança, 1 incompleto e 0 divergentes. O
+backfill final contém 731 snapshots (625 com linha documental e 106 imóveis
+esperados sem linha), 731/731 chaves disponíveis, 0 duplicidades, 0 checksums
+inválidos, 0 linhas sem vínculo e 54/54 pontes reconciliadas; a repetição propôs
+0 inserts e 0 updates. A suíte da implementação fechou 246/246 e, após a
+integração com as correções recentes da `main`, fechou 272/272; typecheck, lint,
+build e checklist 6/6 passaram. A QA autenticada percorreu as quatro abas em
+360, 390, 768, 1024, 1280
+e 1440 px; clique, setas, Enter, Escape, foco, toque, popovers, moeda completa,
+ausência/zero/não aplicável e CSV foram verificados.
+
+Na integração com `main`, essas duas migrations de indicadores foram
+renumeradas de `001`/`002` para `003`/`004`, sem alterar o SQL, para não colidir
+com as migrations já existentes de vencimento comercial e lançamento manual.
+
+Decisões: fechamento aprovado é verdade financeira; comprovante bancário é
+verdade do pagamento; vigência histórica é verdade do contrato; diferença
+acima de R$ 0,01 impede confirmação. César Rêgo janeiro permanece
+`Incompleto`, pois 0002520/0002521 não têm fechamento de destino — nenhum zero
+ou rateio inventado. A tarifa de R$ 11,10 de César Rêgo junho é subtraída uma
+única vez; a ponte consolidada fecha em R$ 0,00. Treze unidades Airbnb são
+receita variável e exibem `Não se aplica`. O painel mantém `Com divergência`
+quando a realização do aluguel possui valor sem classificação, mesmo com a
+ponte financeira reconciliada.
+
+Arquivos/docs impactados: migration
+`202607280003_indicadores_confiabilidade.sql`,
+`202607280004_airbnb_receita_variavel.sql`, persistência e backfill
+documental, parser César Rêgo, reparador de indicadores, domínio/agregação/API,
+quatro abas e docs 02/03/06/12/PLAN.
+
+Próxima ação: publicar o código validado no host da aplicação e executar smoke
+no domínio implantado; solicitar apenas a documentação que falta para César
+Rêgo janeiro e para classificar os gaps mensais remanescentes.
 
 ### 2026-07-14 - Fechamentos operacionais, competências e vínculos
 

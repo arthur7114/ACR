@@ -1,6 +1,28 @@
 # Plano de execução — Indicadores operacionais confiáveis
 
-Status: aprovado para implementação em 2026-07-13.
+Status: contrato v2 implementado e rollout de dados concluído em 2026-07-28 no
+Supabase fornecido; publicação externa do código pendente no host da aplicação.
+
+## Revisão v2 — fonte da verdade e confiança
+
+Esta revisão substitui as fórmulas, a cobertura e a linguagem v1 sempre que
+houver conflito neste documento.
+
+- o fechamento documental aprovado é a verdade financeira;
+- comprovante bancário externo é a verdade do pagamento; valor declarado no
+  extrato nunca é promovido a comprovante;
+- contrato/vigência histórica é a verdade do aluguel contratado;
+- `statusConfianca` é `confirmado`, `em_conferencia`, `incompleto` ou
+  `com_divergencia`; diferença não explicada acima de R$ 0,01 impede
+  `confirmado`;
+- cobertura esperada deriva de `imovel_vigencias`, e não da união oportunista
+  de cadastro atual com regras comerciais;
+- receita econômica, aluguel da competência, atraso recuperado, outros
+  recebimentos e movimentos de passagem são dimensões distintas;
+- `null`/`—`, zero confirmado e `nao_aplicavel`/“Não se aplica” nunca são
+  intercambiáveis;
+- a versão v1 permanece somente como compatibilidade técnica durante a janela
+  de rollback da publicação externa.
 
 ## 1. Objetivo e escopo
 
@@ -20,9 +42,10 @@ Decisões congeladas:
 - página, sidebar e topbar serão responsivas;
 - a execução ocorre na branch `codex/indicadores-operacional-financeiro`, em
   slices e commits atômicos;
-- permanecem quatro abas: **Visão geral**, **Receita & repasse**, **Mapa de
-  calor** e **Receitas por imóvel**;
-- **Receitas por imóvel** substitui **Registro de pagamentos**, porque a fonte
+- permanecem quatro abas: **Visão geral**, **Conciliação financeira**, **Riscos
+  por imóvel** e **Detalhamento por imóvel**;
+- **Detalhamento por imóvel** substitui **Receitas por imóvel/Registro de
+  pagamentos**, porque a fonte
   atual é a prestação da competência, não um livro bancário;
 - NOI, cap rate, valorização, financiamento, CAPEX e demais indicadores de
   investimento estão fora deste ciclo.
@@ -47,44 +70,59 @@ válida, manter o último resultado e marcar o par como **Em atualização**.
 
 ### 2.2 Cobertura
 
-O universo esperado da competência é a união dos pares ativos
-`imobiliária + empreendimento` presentes em regras comerciais ou imóveis
-ativos.
+O universo esperado da competência vem das vigências históricas de imóveis
+ativas no mês (`inicio <= competência` e `fim` ausente ou posterior). Regra
+comercial não cria fechamento esperado; cadastro inativo ou alias inativo não
+cria cobertura fantasma.
 
 A API retorna separadamente:
 
-- pares esperados, processados, aprovados, pendentes, rascunhos, em atualização
+- fechamentos esperados, processados, aprovados, pendentes, rascunhos, em atualização
   e ausentes;
 - percentual de cobertura;
 - imóveis esperados, snapshots disponíveis e snapshots desconhecidos;
-- imóveis sem aluguel esperado;
+- contratos conhecidos, não aplicáveis e ausentes;
 - linhas da prestação não vinculadas ao cadastro.
 
-A competência é `completa` somente quando todos os pares esperados estão
-processados e não há lacuna estrutural. Nos demais casos é `preliminar`, sem
-limiar arbitrário.
+A competência só é `confirmado` quando a cobertura é integral, todos os
+fechamentos finais estão sem diferença documental e os comprovantes externos
+necessários existem. Dados completos ainda não aprovados/comprovados ficam
+`em_conferencia`; contrato, vínculo, snapshot ou fechamento ausente fica
+`incompleto`; qualquer valor documental não explicado fica
+`com_divergencia`.
 
 ### 2.3 Regras monetárias
 
-- `receitaTotal`: soma de `analysis.totals.total_receitas`.
-- `aluguelContratado`: soma dos aluguéis esperados conhecidos nos snapshots.
-- `aluguelRecebido`: soma de `aluguel_com_desconto`, com fallback para
-  `aluguel`, nunca para `total`.
+- `receitasEconomicas`: receitas do fechamento, sem entradas de passagem.
+- `aluguelContratado`: soma dos aluguéis fixos conhecidos nas vigências
+  históricas da competência; receita variável não entra na soma.
+- `aluguelRecebidoCompetencia`: aluguel cuja competência original é o mês
+  selecionado;
+- `atrasosRecuperados`: aluguel de competência anterior recebido no mês;
+- `outrosRecebimentos`: acordos, rescisões, encargos e demais créditos
+  classificados que não são aluguel da competência;
+- `entradasPassagem`/`saidasPassagem`: valores que transitam no caixa, como
+  IPTU cobrado e pago, sem virar receita/despesa econômica;
 - `comissaoAdministracao`: soma de `analysis.totals.total_comissoes`.
 - `comissaoIntermediacao`: soma das comissões dos itens
   `tipo="intermediacao"`.
 - `despesasRetidas`: soma de `analysis.totals.total_despesas`.
 - `despesaOperacionalDetalhada`: água + IPTU + seguro, sem o rótulo de despesa
   total.
-- `repasseApurado`: soma de `analysis.totals.total_a_repassar`.
-- `repasseComprovado`: soma apenas dos `valor_comprovado` conhecidos; ausência
+- `repasseCalculado`: resultado da ponte financeira;
+- `repasseDeclarado`: valor informado pela imobiliária no fechamento;
+- `repasseConfirmado`: soma apenas dos comprovantes bancários externos; ausência
   permanece `null`.
-- repasse embutido é **Informado no extrato**, nunca comprovante bancário.
-- `diferencaRepasse = comprovado - apurado`, preservando o sinal.
+- repasse embutido é **Repasse declarado pela imobiliária**, nunca comprovante
+  bancário;
+- `diferencaRepasse = confirmado - calculado` somente no universo de
+  fechamentos que têm comprovante externo.
 
-A ponte financeira reconcilia receita, comissão administrativa, despesas,
-intermediação e repasse com tolerância de R$ 0,01. Resíduo acima da tolerância é
-alerta explícito.
+A ponte financeira é:
+
+`receitas econômicas + entradas de passagem − comissões − despesas − tarifas − saídas de passagem = repasse calculado`
+
+Diferença não explicada acima de R$ 0,01 bloqueia `confirmado`.
 
 Atribuição por competência original (ajuste de 2026-07-15): na **série
 mensal**, receita total e aluguel recebido pertencem à competência original do
@@ -100,14 +138,16 @@ por caixa do mês do fechamento e não são ajustados; snapshots não mudam.
 
 Remover a cascata de potencial reconstruído. A reconciliação passa a ser:
 
-`aluguel contratado − vacância − inadimplência do mês − descontos ± outros ajustes = aluguel recebido`
+`contratado − vacância − inadimplência − descontos + ajustes classificados = recebido da competência`
+
+`recebido da competência + atrasos recuperados = aluguéis recebidos no mês`
 
 - vacância: aluguel esperado dos snapshots vagos;
 - inadimplência do mês: diferença positiva entre esperado e recebido nos
   snapshots explicitamente inadimplentes;
 - descontos: descontos documentados;
-- outros ajustes: resíduo de proporcionalidade, excedentes ou dados não
-  classificados;
+- valores sem classificação são expostos como **Valores ainda sem
+  classificação** e impedem `confirmado`;
 - inadimplência acumulada permanece separada e vem da prestação da competência.
 
 ### 2.5 Ocupação
@@ -118,10 +158,14 @@ Status mensal: `ocupado`, `inadimplente`, `vago`, `em_rescisao` ou
 Ordem de classificação:
 
 1. rescisão explícita → `em_rescisao`;
-2. Airbnb ou aluguel corrente positivo → `ocupado`;
-3. inadimplência explícita sem aluguel corrente → `inadimplente`;
+2. inadimplência explícita da competência → `inadimplente`, mesmo que exista
+   recebimento antigo;
+3. aluguel da competência positivo → `ocupado`;
 4. imóvel vago explícito sem aluguel corrente → `vago`;
 5. linha zerada sem evidência suficiente → `desconhecido`, nunca `vago`.
+
+Receita variável, incluindo Airbnb, tem modelo `variavel`/`nao_aplicavel` e
+exibe “Não se aplica” no aluguel contratado; nunca é convertida em zero.
 
 Taxa de ocupação:
 
@@ -134,6 +178,7 @@ Taxa de ocupação:
 - todas as abas respeitam a competência selecionada;
 - séries e heatmaps terminam nela e não mostram meses futuros;
 - `null` significa ausente e `0` significa zero confirmado;
+- `nao_aplicavel` significa que o conceito não mede aquele imóvel;
 - médias da carteira são ponderadas pelos denominadores correspondentes.
 
 ## 3. Schema, persistência, API e tipos
@@ -393,6 +438,19 @@ alterando fontes; filtro incoerente; ausência convertida em zero; 5xx
 inesperado; erro de console; teste instável; typecheck, lint ou build vermelho.
 
 ## 7. Rollout e rollback
+
+Rollout de dados executado em 2026-07-28:
+
+- backup lógico validado antes das escritas;
+- migrations aditivas aplicadas, incluindo a correção de 13 vigências Airbnb
+  para receita variável;
+- 104 documentos com hash, 46 fontes únicas e 35 redundâncias preservadas;
+- canários GM II março e César Rêgo junho reconciliados;
+- reparador final idempotente em 54 fechamentos, com 1 incompleto explícito e
+  nenhuma divergência documental;
+- 731 snapshots materializados, 100% das chaves esperadas, sem duplicidade,
+  checksum inválido, linha sem vínculo ou falha de reconciliação;
+- QA autenticada nas quatro abas e seis larguras.
 
 Rollout:
 

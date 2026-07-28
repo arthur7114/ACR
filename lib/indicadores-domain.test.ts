@@ -44,7 +44,7 @@ test("classifyOccupancy prioriza rescisao sobre todos os demais sinais", () => {
   )
 })
 
-test("classifyOccupancy classifica Airbnb como ocupado antes de inadimplencia ou vacancia", () => {
+test("classifyOccupancy preserva inadimplencia explícita mesmo em imóvel Airbnb", () => {
   assert.equal(
     classifyOccupancy({
       tenantName: "Hospedagem mensal",
@@ -54,11 +54,11 @@ test("classifyOccupancy classifica Airbnb como ocupado antes de inadimplencia ou
       hasDelinquency: true,
       hasVacancy: true,
     }),
-    "ocupado",
+    "inadimplente",
   )
 })
 
-test("classifyOccupancy classifica aluguel corrente positivo como ocupado", () => {
+test("classifyOccupancy não deixa recebimento antigo apagar inadimplencia explícita", () => {
   assert.equal(
     classifyOccupancy({
       tenantName: "Maria",
@@ -67,6 +67,20 @@ test("classifyOccupancy classifica aluguel corrente positivo como ocupado", () =
       hasTermination: false,
       hasDelinquency: true,
       hasVacancy: true,
+    }),
+    "inadimplente",
+  )
+})
+
+test("classifyOccupancy classifica recebimento positivo como ocupado sem inadimplencia explícita", () => {
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "Maria",
+      observation: null,
+      rentReceived: 0.01,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
     }),
     "ocupado",
   )
@@ -258,6 +272,23 @@ test("reconcileFinancialBridge alerta residuo acima de R$ 0,01", () => {
   assert.equal(result.residual, 0.02)
   assert.equal(result.isReconciled, false)
   assert.equal(result.hasAlert, true)
+})
+
+test("reconcileFinancialBridge inclui entradas e saídas de passagem e tarifas", () => {
+  const result = reconcileFinancialBridge({
+    revenueTotal: 1_000,
+    passageEntries: 100,
+    administrationCommission: 80,
+    retainedExpenses: 40,
+    bankingFees: 10,
+    brokerageCommission: 20,
+    passageExits: 100,
+    assessedTransfer: 850,
+  })
+
+  assert.equal(result.calculatedTransfer, 850)
+  assert.equal(result.residual, 0)
+  assert.equal(result.isReconciled, true)
 })
 
 test("calculateRentRealization calcula outros ajustes e reconcilia o recebido", () => {

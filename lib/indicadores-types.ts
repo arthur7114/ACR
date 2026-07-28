@@ -3,6 +3,12 @@ import type { OccupancyStatus } from "./indicadores-domain"
 export type IndicadoresQuality = "completa" | "preliminar"
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
+export type IndicadoresConfidenceStatus =
+  | "confirmado"
+  | "em_conferencia"
+  | "incompleto"
+  | "com_divergencia"
+export type IndicadoresRevenueModel = "fixo" | "variavel" | "nao_aplicavel"
 
 export interface IndicadoresFiltroOption {
   value: string
@@ -15,6 +21,8 @@ export interface IndicadoresCoverageGap {
     | "snapshot_ausente"
     | "snapshot_desconhecido"
     | "aluguel_esperado_ausente"
+    | "contrato_ausente"
+    | "comprovante_ausente"
     | "linha_nao_vinculada"
     | "nao_atribuivel_ao_imovel"
   quantidade: number
@@ -39,12 +47,26 @@ export interface IndicadoresMeta {
   competencia: string
   competenciaLabel: string
   atualizadoEm: string
+  statusConfianca: IndicadoresConfidenceStatus
+  motivosConfianca: string[]
+  /** @deprecated Compatibilidade temporária com consumidores v1. */
   qualidade: IndicadoresQuality
   naturezaBase: "fechamentos_e_snapshots"
   historicoRecomposto: boolean
 }
 
 export interface IndicadoresCoverage {
+  fechamentos: {
+    esperados: number
+    processados: number
+    aprovados: number
+    pendentes: number
+    rascunhos: number
+    emAtualizacao: number
+    ausentes: number
+    percentual: number | null
+  }
+  /** @deprecated Use `fechamentos`. */
   pares: {
     esperados: number
     processados: number
@@ -62,11 +84,35 @@ export interface IndicadoresCoverage {
     semAluguelEsperado: number
     percentual: number | null
   }
+  contratos: {
+    conhecidos: number
+    naoAplicaveis: number
+    ausentes: number
+  }
+  comprovantes: {
+    esperados: number
+    presentes: number
+    ausentes: number
+    percentual: number | null
+  }
   linhasNaoVinculadas: number
   lacunas: IndicadoresCoverageGap[]
 }
 
 export interface IndicadoresSummary {
+  receitasEconomicas: number | null
+  aluguelRecebidoCompetencia: number | null
+  atrasosRecuperados: number | null
+  outrosRecebimentos: number | null
+  entradasPassagem: number | null
+  saidasPassagem: number | null
+  tarifas: number | null
+  repasseCalculado: number | null
+  repasseDeclarado: number | null
+  repasseConfirmadoBanco: number | null
+  repasseCalculadoComprovado: number | null
+  coberturaComprovantesPercentual: number | null
+  /** @deprecated Campos v1 mantidos durante o rollout. */
   receitaTotal: number | null
   aluguelContratado: number | null
   aluguelRecebido: number | null
@@ -89,6 +135,16 @@ export interface IndicadoresSummary {
 }
 
 export interface IndicadoresFinancialBridge {
+  receitasEconomicas: number | null
+  entradasPassagem: number | null
+  comissoes: number | null
+  despesas: number | null
+  tarifas: number | null
+  saidasPassagem: number | null
+  repasseCalculado: number | null
+  repasseDeclarado: number | null
+  diferencaNaoExplicada: number | null
+  /** @deprecated Campos v1 mantidos durante o rollout. */
   receitaTotal: number | null
   comissaoAdministracao: number | null
   despesasRetidas: number | null
@@ -105,6 +161,12 @@ export interface IndicadoresRentRealization {
   vacancia: number | null
   inadimplenciaMes: number | null
   descontos: number | null
+  ajustesClassificados: number | null
+  valoresSemClassificacao: number | null
+  recebidoCompetencia: number | null
+  atrasosRecuperados: number | null
+  alugueisRecebidosMes: number | null
+  /** @deprecated Campos v1 mantidos durante o rollout. */
   outrosAjustes: number | null
   outrosAjustesPercentualContratado: number | null
   recebido: number | null
@@ -125,6 +187,7 @@ export interface IndicadoresMonthlyPoint {
   // O repasse e a ponte financeira permanecem por caixa e nao sao ajustados.
   competenciaAjusteReceita: number
   competenciaAjusteAluguel: number
+  statusConfianca: IndicadoresConfidenceStatus
 }
 
 export interface IndicadoresAttentionItem {
@@ -134,6 +197,7 @@ export interface IndicadoresAttentionItem {
   empreendimentoId: string
   empreendimentoNome: string
   esperado: number | null
+  modeloReceita: IndicadoresRevenueModel
   recebido: number | null
   gapValor: number | null
   statusOcupacao: OccupancyStatus
@@ -168,12 +232,19 @@ export interface IndicadoresPropertyRevenue {
   empreendimentoNome: string
   statusOcupacao: OccupancyStatus
   aluguelEsperado: number | null
+  modeloReceita: IndicadoresRevenueModel
   aluguelRecebido: number | null
+  aluguelRecebidoCompetencia: number | null
+  atrasosRecuperados: number | null
+  outrosRecebimentos: number | null
   receitaTotal: number | null
   desconto: number | null
   comissaoAdministracao: number | null
   repasseApurado: number | null
   vencimentoReferencia: string | null
+  competenciaAluguel: string | null
+  competenciaRecebimento: string | null
+  vencimentoDia: number | null
   origem: IndicadoresSnapshotOrigin
   qualidade: IndicadoresSnapshotQuality
 }

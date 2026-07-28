@@ -42,7 +42,12 @@ export async function* runPackageWorkflowWithEvents(
     const classifications: ClassifiedDocument[] = []
 
     for (const [index, document] of documents.entries()) {
-      const classification = await classifyDocument(document)
+      let classification: ClassifiedDocument
+      try {
+        classification = await classifyDocument(document)
+      } catch (error) {
+        throw describeDocumentProcessingError(error, document.fileName)
+      }
       classifications.push(classification)
       yield event(
         "document_classified",
@@ -150,6 +155,14 @@ export async function* runPackageWorkflowWithEvents(
   }
 }
 
+export function describeDocumentProcessingError(error: unknown, fileName: string) {
+  const message = describeError(error)
+  if (/badly formatted|corrupt|invalid file|could not process/i.test(message)) {
+    return new Error(`Não foi possível ler "${fileName}". O arquivo está inválido ou corrompido; exporte-o novamente em PDF ou Excel e tente de novo.`)
+  }
+  return new Error(`Falha ao analisar "${fileName}": ${message}`)
+}
+
 // Erros do Supabase (PostgrestError, StorageError) sao objetos planos e nao
 // instancias de Error, entao `error instanceof Error` falha e a causa real se
 // perde. Esta funcao extrai a melhor mensagem disponivel em cada formato.
@@ -172,7 +185,7 @@ function describeError(error: unknown): string {
   return "Falha desconhecida no processamento."
 }
 
-async function readAndValidateFiles(files: File[]) {
+export async function readAndValidateFiles(files: File[]) {
   if (files.length === 0) {
     throw new Error("Envie ao menos um arquivo para processamento.")
   }
@@ -180,11 +193,12 @@ async function readAndValidateFiles(files: File[]) {
   const documents: PackageInputDocument[] = []
 
   for (const file of files) {
-    const isPdf = file.type === "application/pdf" || file.name.endsWith(".pdf")
+    const lowerName = file.name.toLowerCase()
+    const isPdf = file.type === "application/pdf" || lowerName.endsWith(".pdf")
     const isExcel = file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
                     file.type === "application/vnd.ms-excel" || 
-                    file.name.endsWith(".xlsx") || 
-                    file.name.endsWith(".xls")
+                    lowerName.endsWith(".xlsx") ||
+                    lowerName.endsWith(".xls")
 
     if (!isPdf && !isExcel) {
       throw new Error(`Arquivo ${file.name} nao e PDF ou Planilha. Neste fluxo, envie apenas PDFs ou planilhas Excel.`)
@@ -200,9 +214,11 @@ async function readAndValidateFiles(files: File[]) {
       throw new Error(`Arquivo ${file.name} esta vazio ou invalido.`)
     }
 
+    const fileType = normalizeDocumentFileType(file, fileBuffer, { isPdf, isExcel })
+
     documents.push({
       fileName: file.name,
-      fileType: file.type,
+      fileType,
       fileSize: file.size,
       fileBase64: fileBuffer.toString("base64"),
       fileBuffer,
@@ -210,6 +226,28 @@ async function readAndValidateFiles(files: File[]) {
   }
 
   return documents
+}
+
+function normalizeDocumentFileType(
+  file: File,
+  buffer: Buffer,
+  kind: { isPdf: boolean; isExcel: boolean },
+) {
+  if (kind.isPdf) {
+    const header = buffer.subarray(0, Math.min(buffer.length, 1024))
+    if (header.indexOf("%PDF-") < 0) {
+      throw new Error(`Arquivo ${file.name} não contém um PDF válido. Exporte o documento novamente e tente o upload.`)
+    }
+    return "application/pdf"
+  }
+
+  const isXlsx = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04
+  const oleHeader = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
+  const isXls = buffer.length >= oleHeader.length && oleHeader.every((byte, index) => buffer[index] === byte)
+  if (kind.isExcel && !isXlsx && !isXls) {
+    throw new Error(`Arquivo ${file.name} não contém uma planilha Excel válida. Exporte o documento novamente e tente o upload.`)
+  }
+  return isXls ? "application/vnd.ms-excel" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 }
 
 async function extractDocuments(

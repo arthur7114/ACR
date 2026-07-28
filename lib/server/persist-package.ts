@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type {
   ClassifiedDocument,
   DespesasAnalysis,
@@ -11,13 +12,15 @@ import type {
 } from "@/lib/prestacao-types"
 import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { FechamentoContext } from "@/lib/fechamento-context"
-import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { ratearTedPorImovel } from "@/lib/despesas-locador"
+import { scopeCesarRegoAnalysisToDevelopment } from "@/lib/indicadores-repair"
+import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
+const DOCUMENT_SOURCE_PREFIX = "fontes/sha256"
 
 export interface ResolvedValidation {
   tipo_validacao: string
@@ -62,6 +65,13 @@ export async function persistPackage(input: PersistPackageInput) {
     supabase,
     { imobiliariaId: imobiliaria.id as string, empreendimentoId: empreendimento.id as string },
     analysis,
+  )
+  // O extrato César Rêgo pode conter unidades de mais de um empreendimento.
+  // O documento físico é compartilhável, mas os valores persistidos no
+  // fechamento precisam permanecer no escopo do empreendimento selecionado.
+  analysis = scopeCesarRegoAnalysisToDevelopment(
+    analysis as PackageAnalysis,
+    empreendimentoNome,
   )
 
   // Fetch existing resolved validations to decide status and preserve them
@@ -119,6 +129,7 @@ export async function persistPackage(input: PersistPackageInput) {
   if (fechamentoError) throw fechamentoError
 
   const persistedDocuments = await persistDocuments({
+    supabase,
     files: input.files,
     fechamentoId: fechamento.id as string,
   })
@@ -183,53 +194,298 @@ export async function persistPackage(input: PersistPackageInput) {
   }
 }
 
-async function persistDocuments({
+export async function persistDocuments({
+  supabase = createSupabaseAdmin(),
   files,
   fechamentoId,
 }: {
+  supabase?: ReturnType<typeof createSupabaseAdmin>
   files: PackageFileForPersistence[]
   fechamentoId: string
 }) {
-  const supabase = createSupabaseAdmin()
-  const persisted = []
+  const persisted: Array<{
+    fileName: string
+    storagePath: string
+    documentoId: string
+  }> = []
 
   for (const file of files) {
-    const storagePath = `alive-gmii/${Date.now()}-${sanitizeFilename(file.fileName)}`
-    const upload = await supabase.storage.from(BUCKET).upload(storagePath, file.fileBuffer, {
-      contentType: file.fileType,
-      upsert: false,
-    })
-
-    if (upload.error) throw upload.error
-
-    const { data: documento, error } = await supabase
-      .from("documentos_fechamento")
-      .insert({
-        fechamento_id: fechamentoId,
-        tipo_documento: file.classification.documentType,
-        nome_arquivo: file.fileName,
-        arquivo_url: storagePath,
-        mime_type: file.fileType,
-        tamanho_bytes: file.fileSize,
-        status_processamento: file.classification.documentType === "desconhecido" ? "erro" : "processado",
-        confianca_classificacao: file.classification.confidence,
-        parser_versao: "mastra-package-v1",
-        erro_processamento: file.classification.documentType === "desconhecido" ? file.classification.reason : null,
-        remessa_numero: 1,
-      })
-      .select("id")
-      .single()
-
-    if (error) throw error
-
-    persisted.push({
-      fileName: file.fileName,
-      storagePath,
-      documentoId: documento.id as string,
-    })
+    persisted.push(await persistDocument({ supabase, file, fechamentoId }))
   }
 
   return persisted
+}
+
+interface PersistDocumentInput {
+  supabase: ReturnType<typeof createSupabaseAdmin>
+  file: PackageFileForPersistence
+  fechamentoId: string
+}
+
+async function persistDocument(input: PersistDocumentInput) {
+  const sha256 = calculateDocumentSha256(input.file.fileBuffer)
+  const existing = await findCanonicalDocument(input, sha256)
+
+  if (!existing.schemaAvailable) {
+    return persistLegacyDocument(input, sha256)
+  }
+
+  if (existing.document) {
+    return buildPersistedDocument(input.file.fileName, existing.document)
+  }
+
+  const source = await findOrCreateDocumentSource(input, sha256)
+  if (!source.schemaAvailable) return persistLegacyDocument(input, sha256)
+
+  const documentRow = buildDocumentRow(
+    input.file,
+    input.fechamentoId,
+    source.storagePath,
+    sha256,
+    source.sourceId,
+  )
+  const { data, error } = await input.supabase
+    .from("documentos_fechamento")
+    .insert(documentRow)
+    .select("id,arquivo_url")
+    .single()
+
+  if (!error && data) return buildPersistedDocument(input.file.fileName, data)
+  if (!isUniqueViolation(error)) throw error
+
+  const raced = await findCanonicalDocument(input, sha256)
+  if (!raced.document) throw error
+  return buildPersistedDocument(input.file.fileName, raced.document)
+}
+
+async function persistLegacyDocument(
+  input: PersistDocumentInput,
+  sha256: string,
+) {
+  const storagePath = buildDocumentStoragePath(sha256)
+  const { data: existing, error: lookupError } = await input.supabase
+    .from("documentos_fechamento")
+    .select("id,arquivo_url")
+    .eq("fechamento_id", input.fechamentoId)
+    .eq("arquivo_url", storagePath)
+    .limit(1)
+    .maybeSingle()
+
+  if (lookupError) throw lookupError
+  if (existing) return buildPersistedDocument(input.file.fileName, existing)
+
+  await ensureDocumentUploaded(input, storagePath)
+  const { data, error } = await input.supabase
+    .from("documentos_fechamento")
+    .insert(
+      buildDocumentRow(
+        input.file,
+        input.fechamentoId,
+        storagePath,
+      ),
+    )
+    .select("id,arquivo_url")
+    .single()
+
+  if (error) throw error
+  return buildPersistedDocument(input.file.fileName, data)
+}
+
+async function findCanonicalDocument(
+  input: PersistDocumentInput,
+  sha256: string,
+) {
+  const { data, error } = await input.supabase
+    .from("documentos_fechamento")
+    .select("id,arquivo_url")
+    .eq("fechamento_id", input.fechamentoId)
+    .eq("sha256", sha256)
+    .is("duplicado_de_id", null)
+    .limit(1)
+    .maybeSingle()
+
+  if (isDedupSchemaUnavailable(error)) {
+    return { schemaAvailable: false as const, document: null }
+  }
+  if (error) throw error
+
+  return {
+    schemaAvailable: true as const,
+    document: data
+      ? { id: data.id as string, arquivo_url: data.arquivo_url as string }
+      : null,
+  }
+}
+
+async function findOrCreateDocumentSource(
+  input: PersistDocumentInput,
+  sha256: string,
+) {
+  const existing = await findDocumentSource(input, sha256)
+  if (!existing.schemaAvailable || existing.source) {
+    return {
+      schemaAvailable: existing.schemaAvailable,
+      sourceId: existing.source?.id ?? "",
+      storagePath: existing.source?.arquivo_url ?? "",
+    }
+  }
+
+  const storagePath = buildDocumentStoragePath(sha256)
+  await ensureDocumentUploaded(input, storagePath)
+  const { data, error } = await input.supabase
+    .from("documento_fontes")
+    .insert({
+      sha256,
+      arquivo_url: storagePath,
+      mime_type: input.file.fileType,
+      tamanho_bytes: input.file.fileSize,
+    })
+    .select("id,arquivo_url")
+    .single()
+
+  if (!error && data) {
+    return {
+      schemaAvailable: true as const,
+      sourceId: data.id as string,
+      storagePath: data.arquivo_url as string,
+    }
+  }
+  if (!isUniqueViolation(error)) throw error
+
+  const raced = await findDocumentSource(input, sha256)
+  if (!raced.source) throw error
+  return {
+    schemaAvailable: true as const,
+    sourceId: raced.source.id,
+    storagePath: raced.source.arquivo_url,
+  }
+}
+
+async function findDocumentSource(
+  input: PersistDocumentInput,
+  sha256: string,
+) {
+  const { data, error } = await input.supabase
+    .from("documento_fontes")
+    .select("id,arquivo_url")
+    .eq("sha256", sha256)
+    .maybeSingle()
+
+  if (isDedupSchemaUnavailable(error)) {
+    return { schemaAvailable: false as const, source: null }
+  }
+  if (error) throw error
+
+  return {
+    schemaAvailable: true as const,
+    source: data
+      ? {
+          id: data.id as string,
+          arquivo_url: data.arquivo_url as string,
+        }
+      : null,
+  }
+}
+
+async function ensureDocumentUploaded(
+  input: PersistDocumentInput,
+  storagePath: string,
+) {
+  const { error } = await input.supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, input.file.fileBuffer, {
+      contentType: input.file.fileType,
+      upsert: false,
+    })
+
+  if (error && !isStorageAlreadyExists(error)) throw error
+}
+
+function buildDocumentRow(
+  file: PackageFileForPersistence,
+  fechamentoId: string,
+  storagePath: string,
+  sha256?: string,
+  sourceId?: string,
+) {
+  return {
+    fechamento_id: fechamentoId,
+    tipo_documento: file.classification.documentType,
+    nome_arquivo: file.fileName,
+    arquivo_url: storagePath,
+    mime_type: file.fileType,
+    tamanho_bytes: file.fileSize,
+    status_processamento:
+      file.classification.documentType === "desconhecido"
+        ? "erro"
+        : "processado",
+    confianca_classificacao: file.classification.confidence,
+    parser_versao: "mastra-package-v2",
+    erro_processamento:
+      file.classification.documentType === "desconhecido"
+        ? file.classification.reason
+        : null,
+    remessa_numero: 1,
+    ...(sha256
+      ? {
+          sha256,
+          fonte_id: sourceId,
+          duplicado_de_id: null,
+        }
+      : {}),
+  }
+}
+
+function buildPersistedDocument(
+  fileName: string,
+  document: { id: unknown; arquivo_url: unknown },
+) {
+  return {
+    fileName,
+    storagePath: document.arquivo_url as string,
+    documentoId: document.id as string,
+  }
+}
+
+export function calculateDocumentSha256(buffer: Buffer) {
+  return createHash("sha256").update(buffer).digest("hex")
+}
+
+export function buildDocumentStoragePath(sha256: string) {
+  return `${DOCUMENT_SOURCE_PREFIX}/${sha256.slice(0, 2)}/${sha256}`
+}
+
+function isDedupSchemaUnavailable(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const value = error as { code?: string; message?: string }
+  return (
+    value.code === "42P01"
+    || value.code === "42703"
+    || value.code === "PGRST204"
+    || /documento_fontes|sha256|duplicado_de_id/i.test(value.message ?? "")
+  )
+}
+
+function isUniqueViolation(error: unknown) {
+  return Boolean(
+    error
+      && typeof error === "object"
+      && (error as { code?: string }).code === "23505",
+  )
+}
+
+function isStorageAlreadyExists(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const value = error as {
+    status?: number
+    statusCode?: string | number
+    message?: string
+  }
+  return (
+    value.status === 409
+    || String(value.statusCode) === "409"
+    || /already exists|duplicate|resource exists/i.test(value.message ?? "")
+  )
 }
 
 async function persistMovimentacoes({
@@ -351,7 +607,7 @@ export function buildPrestacaoMovimentacoes({
     confianca_extracao: row.confianca,
     status_validacao: "pendente",
     imovel_id: row.imovel_id ?? null,
-    dados_extraidos: row as Record<string, unknown>,
+    dados_extraidos: row as unknown as Record<string, unknown>,
   }))
 
   // Rateio da TED itemizada: uma despesa por imóvel, dividida igualmente. A TED
@@ -462,10 +718,6 @@ export async function persistValidacoes(input: BuildValidacoesInput) {
 
 function getDocumentoId(documents: ClassifiedDocument[], documentType: string) {
   return documents.find((document) => document.documentType === documentType)?.documentoId ?? null
-}
-
-function sanitizeFilename(filename: string) {
-  return filename.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-")
 }
 
 function normalizeCompetencia(value: string) {

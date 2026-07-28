@@ -52,12 +52,14 @@ export function buildPropertyKey(input: PropertyKeyInput) {
 
 export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus {
   if (evidence.hasTermination) return "em_rescisao"
+  // A inadimplência explícita descreve a competência corrente. Um valor positivo
+  // pode ser recuperação de mês anterior e, por isso, não pode apagá-la.
+  if (evidence.hasDelinquency) return "inadimplente"
 
   const context = normalizePropertyKeyPart(
     [evidence.tenantName, evidence.observation].filter(Boolean).join(" "),
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
-  if (evidence.hasDelinquency) return "inadimplente"
   if (evidence.hasVacancy) return "vago"
   return "desconhecido"
 }
@@ -95,16 +97,22 @@ export function calculateOccupancy(statuses: OccupancyStatus[]) {
 
 export function reconcileFinancialBridge(input: {
   revenueTotal: number
+  passageEntries?: number
   administrationCommission: number
   retainedExpenses: number
+  bankingFees?: number
   brokerageCommission: number
+  passageExits?: number
   assessedTransfer: number
 }) {
   const calculatedTransfer = roundMoney(
-    input.revenueTotal -
+    input.revenueTotal +
+      (input.passageEntries ?? 0) -
       input.administrationCommission -
       input.retainedExpenses -
-      input.brokerageCommission,
+      (input.bankingFees ?? 0) -
+      input.brokerageCommission -
+      (input.passageExits ?? 0),
   )
   const residual = roundMoney(calculatedTransfer - input.assessedTransfer)
   const isReconciled = Math.abs(residual) <= 0.01
@@ -122,17 +130,27 @@ export function calculateRentRealization(input: {
   vacancy: number
   currentDelinquency: number
   discounts: number
+  classifiedAdjustments?: number
   receivedRent: number
+  recoveredLateRent?: number
 }) {
   const classifiedReceived = roundMoney(
-    input.contractedRent - input.vacancy - input.currentDelinquency - input.discounts,
+    input.contractedRent -
+      input.vacancy -
+      input.currentDelinquency -
+      input.discounts +
+      (input.classifiedAdjustments ?? 0),
   )
   const otherAdjustments = roundMoney(input.receivedRent - classifiedReceived)
   const reconciledReceived = roundMoney(classifiedReceived + otherAdjustments)
+  const rentsReceivedInMonth = roundMoney(
+    input.receivedRent + (input.recoveredLateRent ?? 0),
+  )
 
   return {
     otherAdjustments,
     reconciledReceived,
+    rentsReceivedInMonth,
     isReconciled: Math.abs(roundMoney(input.receivedRent - reconciledReceived)) <= 0.01,
   }
 }

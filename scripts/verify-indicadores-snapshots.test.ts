@@ -151,6 +151,39 @@ test("aceita residuo de ate um centavo e bloqueia diferenca maior", () => {
   })
 })
 
+test("reconcilia tarifas e movimentos de passagem pela ponte v2", () => {
+  const report = verifyIndicadoresSnapshots({
+    expectedProperties: [],
+    snapshots: [],
+    reconciliations: [
+      {
+        closureId: "cesar-rego",
+        totalRevenue: 12_032.74,
+        passageEntries: 342.04,
+        administrationCommission: 494.99,
+        retainedExpenses: 0,
+        intermediationCommission: 0,
+        tariffs: 11.1,
+        passageExits: 342.04,
+        assessedTransfer: 11_526.65,
+      },
+      {
+        closureId: "plural",
+        totalRevenue: 3_200,
+        passageEntries: 445.95,
+        administrationCommission: 256,
+        retainedExpenses: 0,
+        intermediationCommission: 0,
+        passageExits: 0,
+        assessedTransfer: 3_389.95,
+      },
+    ],
+  })
+
+  assert.equal(report.ok, true)
+  assert.deepEqual(report.reconciliation, { checked: 2, failures: [] })
+})
+
 test("detecta qualquer alteracao de contagem ou checksum nas tabelas-fonte", () => {
   const report = verifyIndicadoresSnapshots({
     expectedProperties: [],
