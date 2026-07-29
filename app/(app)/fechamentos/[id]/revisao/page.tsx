@@ -10,6 +10,7 @@ import { formatBRL } from "@/lib/format"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
+import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -52,6 +53,7 @@ export default function RevisaoPage({ params }: PageProps) {
     pendentes: [],
     imoveis: [],
   })
+  const [inadimplenciaMes, setInadimplenciaMes] = useState<InadimplenciaMes>({ valor: 0, unidades: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState({ open: false, apto: "", inquilino: "", valor: 0 })
@@ -90,6 +92,7 @@ export default function RevisaoPage({ params }: PageProps) {
         setEgestorEnvios(payload.egestor_envios ?? [])
         setStatusEventos(payload.status_eventos ?? [])
         setVinculosImoveis(payload.vinculos_imoveis ?? { total_receitas: 0, total_vinculadas: 0, pendentes: [], imoveis: [] })
+        setInadimplenciaMes(payload.inadimplencia_mes ?? { valor: 0, unidades: [] })
         return false
       })
       .catch((err) => {
@@ -133,6 +136,7 @@ export default function RevisaoPage({ params }: PageProps) {
         egestorEnvios={egestorEnvios}
         statusEventos={statusEventos}
         vinculosImoveis={vinculosImoveis}
+        inadimplenciaMes={inadimplenciaMes}
         onVinculosChange={setVinculosImoveis}
         onOpenModal={(apto, inquilino, valor) => setModal({ open: true, apto, inquilino, valor })}
         onRefresh={loadFromApi}
