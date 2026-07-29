@@ -42,6 +42,7 @@
 - CA14.10: receita só deixa a pendência de cadastro com `imovel_id` persistido; o drawer permite buscar/criar, comparar e optar por atualizações sem sobrescrita silenciosa, e aprovação permanece bloqueada enquanto houver pendência.
 - CA14.11: correção de competência ou vínculo grava análise, movimentação, validações, cadastro quando aplicável e auditoria em uma única transação; falha em qualquer etapa reverte tudo.
 - CA14.12: o upload valida a assinatura real de PDF/Excel, normaliza MIME ausente ou genérico antes de enviar à IA e identifica em português o nome do arquivo inválido ou corrompido.
+- CA14.13: criar cadastro de imóvel com código canônico César Rêgo (0002520/0002521 → João Cordeiro; 0002526/0002527 → Galpão Pompílio Gomes) no empreendimento errado é bloqueado com HTTP 409 e mensagem acionável orientando corrigir o empreendimento do fechamento em vez de criar outro cadastro; a revisão não oferece criar/vincular unidade já cadastrada nesses códigos.
 
 ## Lista de fechamentos
 
@@ -67,6 +68,7 @@
 - CA-IND13: o painel usa valores monetários completos nos KPIs, um único banner de confiança, ajuda “Como ler este painel” e informação contextual acessível por mouse, teclado e toque.
 - CA-IND14: upload repetido no mesmo fechamento é idempotente por SHA-256; uma fonte pode ser reutilizada entre fechamentos sem compartilhar valores/vínculos; redundâncias são preservadas com referência de duplicidade.
 - CA-IND15: o reparador é dry-run por padrão, exige `--commit`, registra antes/depois e bloqueia qualquer fechamento com diferença documental acima de R$ 0,01.
+- CA-IND16: o reparo César Rêgo vincula as linhas históricas aos cadastros canônicos existentes e envia à RPC apenas movimentações `receita_aluguel`; as despesas de rateio da TED não vazam para `p_receitas`. Após o reparo, não há receita César Rêgo sem vínculo válido nem cadastro no empreendimento errado.
 
 ## IPTU - Contas a pagar manual
 

@@ -3,6 +3,10 @@ import type {
   PrestacaoAnalysis,
   ReceitaPorImovel,
 } from "./prestacao-types"
+import {
+  CESAR_REGO_DEVELOPMENTS,
+  getCesarRegoDevelopmentByName,
+} from "./cesar-rego-properties"
 
 export const REPAIR_TOLERANCE = 0.01
 
@@ -34,11 +38,6 @@ export interface CesarClosureRepair extends CesarClosureInput {
   propertyCodes: string[]
 }
 
-const CESAR_CODES_BY_DEVELOPMENT: Array<{ name: RegExp; codes: string[] }> = [
-  { name: /joao cordeiro/i, codes: ["0002520", "0002521"] },
-  { name: /pompilio gomes/i, codes: ["0002526", "0002527"] },
-]
-
 export function scopeCesarRegoAnalysisToDevelopment(
   analysis: PackageAnalysis,
   developmentName: string,
@@ -47,12 +46,10 @@ export function scopeCesarRegoAnalysisToDevelopment(
   if (!prestacao || !normalizeText(prestacao.imobiliaria).includes("cesar rego")) {
     return analysis
   }
-  const currentDefinition = CESAR_CODES_BY_DEVELOPMENT.find((candidate) =>
-    candidate.name.test(normalizeText(developmentName)),
-  )
+  const currentDefinition = getCesarRegoDevelopmentByName(developmentName)
   if (!currentDefinition) return analysis
   const knownCodes = new Set(
-    CESAR_CODES_BY_DEVELOPMENT.flatMap((candidate) => candidate.codes),
+    CESAR_REGO_DEVELOPMENTS.flatMap((candidate) => candidate.codes),
   )
   const hasForeignRows = prestacao.receitas_por_imovel.some(
     (row) => knownCodes.has(row.apto) && !currentDefinition.codes.includes(row.apto),
@@ -60,14 +57,12 @@ export function scopeCesarRegoAnalysisToDevelopment(
   if (!hasForeignRows) return analysis
 
   const plan = buildCesarMonthRepairs(
-    CESAR_CODES_BY_DEVELOPMENT.map((definition, index) => ({
+    CESAR_REGO_DEVELOPMENTS.map((definition, index) => ({
       id: `escopo-${index}`,
       empreendimentoNome:
         definition === currentDefinition
           ? developmentName
-          : definition.name.source.includes("joao")
-            ? "João Cordeiro"
-            : "Galpão Pompílio Gomes",
+          : definition.canonicalName,
       analysis,
     })),
     prestacao,
@@ -217,9 +212,7 @@ export function buildCesarMonthRepairs(
 } {
   const allocations = closures.map((closure) => {
     const propertyCodes =
-      CESAR_CODES_BY_DEVELOPMENT.find((candidate) =>
-        candidate.name.test(normalizeText(closure.empreendimentoNome)),
-      )?.codes ?? []
+      getCesarRegoDevelopmentByName(closure.empreendimentoNome)?.codes ?? []
     const rows = parsed.receitas_por_imovel
       .filter((row) => propertyCodes.includes(row.apto))
       .map((row) => {

@@ -29,6 +29,10 @@ import {
 import {
   buildPrestacaoMovimentacoes,
 } from "../lib/server/persist-package"
+import {
+  type ImovelVinculoCadastro,
+  vincularReceitasExistentes,
+} from "../lib/server/fechamento-imoveis"
 import { materializeIndicadoresSnapshots } from "../lib/server/indicadores-snapshots"
 
 const BUCKET = "fechamento-documentos"
@@ -135,6 +139,31 @@ export function analysesAreEquivalent(
   )
 }
 
+// O RPC aplicar_reparo_indicadores_v2 gerencia apenas as movimentações
+// receita_aluguel (rejeita qualquer outro tipo em p_receitas). As despesas de
+// rateio da TED que buildPrestacaoMovimentacoes também emite ficam a cargo do
+// reprocessamento completo, não deste reparo cirúrgico.
+export function buildReparoReceitas(input: {
+  fechamentoId: string
+  documentoId: string | null
+  prestacao: PrestacaoAnalysis | null
+}) {
+  return buildPrestacaoMovimentacoes(input).filter(
+    (row) => row.tipo_movimentacao === "receita_aluguel",
+  )
+}
+
+export function attachAnalysisToExistingProperties(
+  analysis: PackageAnalysis,
+  properties: ImovelVinculoCadastro[],
+) {
+  if (!analysis.prestacao) return analysis
+  return {
+    ...analysis,
+    prestacao: vincularReceitasExistentes(analysis.prestacao, properties),
+  }
+}
+
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson)
   if (value === null || typeof value !== "object") return value
@@ -180,6 +209,7 @@ async function buildRepairPlan(
   documents: DocumentRow[],
 ) {
   const records: RepairRecord[] = []
+  const propertiesByClosure = await loadPropertiesByClosure(supabase, closures)
   const documentByClosure = new Map<string, DocumentRow>()
   for (const document of documents) {
     if (!documentByClosure.has(document.fechamento_id)) {
@@ -214,7 +244,10 @@ async function buildRepairPlan(
       ),
       source.parsed,
     )
-    if (!plan.sourceReconciled) {
+    const canRepairAvailableClosures =
+      plan.repairs.length > 0 &&
+      plan.repairs.every((repair) => repair.reconciliation.reconciliado)
+    if (!plan.sourceReconciled && !canRepairAvailableClosures) {
       const reason =
         `Documento César Rêgo ${competence} não pôde ser integralmente distribuído; ` +
         `unidades sem fechamento: ${plan.missingPropertyCodes.join(", ") || "nenhuma"}; ` +
@@ -230,13 +263,42 @@ async function buildRepairPlan(
     for (const repair of plan.repairs) {
       const closure = monthClosures.find((candidate) => candidate.id === repair.id)!
       handled.add(closure.id)
+      const analysisRepaired = attachAnalysisToExistingProperties(
+        repair.analysisRepaired,
+        propertiesByClosure.get(closure.id) ?? [],
+      )
+      const unlinkedCodes =
+        analysisRepaired.prestacao?.receitas_por_imovel
+          .filter((row) => !row.imovel_id)
+          .map((row) => row.apto) ?? []
+      if (unlinkedCodes.length > 0) {
+        records.push(
+          buildIncompleteRecord(
+            closure,
+            `Imóveis cadastrados não encontrados para: ${unlinkedCodes.join(", ")}.`,
+          ),
+        )
+        continue
+      }
+      const missingDestinationNote = plan.sourceReconciled
+        ? ""
+        : ` A fonte também contém ${plan.missingPropertyCodes.join(", ")}, sem fechamento de destino nesta competência.`
       records.push(
         buildRepairedRecord(
           closure,
-          repair.analysisRepaired,
+          analysisRepaired,
           repair.reconciliation,
-          `César Rêgo ${competence}: linhas distribuídas por empreendimento; resumo documental usado como fonte.`,
+          `César Rêgo ${competence}: linhas distribuídas por empreendimento e vinculadas ao cadastro existente.${missingDestinationNote}`,
           documentByClosure.get(closure.id)?.id ?? null,
+        ),
+      )
+    }
+    for (const closure of monthClosures.filter((candidate) => !handled.has(candidate.id))) {
+      handled.add(closure.id)
+      records.push(
+        buildIncompleteRecord(
+          closure,
+          `Empreendimento sem regra de distribuição para o documento César Rêgo ${competence}.`,
         ),
       )
     }
@@ -305,6 +367,37 @@ async function buildRepairPlan(
   )
 }
 
+async function loadPropertiesByClosure(
+  supabase: SupabaseClient,
+  closures: ClosureRow[],
+) {
+  const agencyIds = [...new Set(closures.map((closure) => closure.imobiliaria_id))]
+  if (agencyIds.length === 0) return new Map<string, ImovelVinculoCadastro[]>()
+  const { data, error } = await supabase
+    .from("imoveis")
+    .select("id,imobiliaria_id,empreendimento_id,codigo_imobiliaria,unidade,inquilino_nome,status,valor_aluguel_esperado")
+    .in("imobiliaria_id", agencyIds)
+    .eq("ativo", true)
+  if (error) throw error
+
+  const properties = (data ?? []) as Array<
+    ImovelVinculoCadastro & {
+      imobiliaria_id: string
+      empreendimento_id: string
+    }
+  >
+  return new Map(
+    closures.map((closure) => [
+      closure.id,
+      properties.filter(
+        (property) =>
+          property.imobiliaria_id === closure.imobiliaria_id &&
+          property.empreendimento_id === closure.empreendimento_id,
+      ),
+    ]),
+  )
+}
+
 async function loadCesarSource(
   supabase: SupabaseClient,
   closures: ClosureRow[],
@@ -367,7 +460,7 @@ async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) 
       total_comissoes: analysis.totals.total_comissoes,
       total_repassar: analysis.totals.total_a_repassar,
     }
-    const receitas = buildPrestacaoMovimentacoes({
+    const receitas = buildReparoReceitas({
       fechamentoId: record.fechamentoId,
       documentoId: record.documentId,
       prestacao: analysis.prestacao,
@@ -539,7 +632,9 @@ function parseUuid(value: string) {
 }
 
 function toError(value: unknown) {
-  return value instanceof Error ? value : new Error(String(value))
+  if (value instanceof Error) return value
+  if (value && typeof value === "object") return new Error(JSON.stringify(value))
+  return new Error(String(value))
 }
 
 function loadEnvLocal() {

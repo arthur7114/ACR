@@ -61,17 +61,17 @@ export async function persistPackage(input: PersistPackageInput) {
   const empreendimento = input.fechamentoContext?.empreendimentoId
     ? { id: input.fechamentoContext.empreendimentoId }
     : await findOrCreateEmpreendimento(supabase, empreendimentoNome)
-  analysis = await attachExistingImovelLinks(
-    supabase,
-    { imobiliariaId: imobiliaria.id as string, empreendimentoId: empreendimento.id as string },
-    analysis,
-  )
   // O extrato César Rêgo pode conter unidades de mais de um empreendimento.
   // O documento físico é compartilhável, mas os valores persistidos no
   // fechamento precisam permanecer no escopo do empreendimento selecionado.
   analysis = scopeCesarRegoAnalysisToDevelopment(
     analysis as PackageAnalysis,
     empreendimentoNome,
+  )
+  analysis = await attachExistingImovelLinks(
+    supabase,
+    { imobiliariaId: imobiliaria.id as string, empreendimentoId: empreendimento.id as string },
+    analysis,
   )
 
   // Fetch existing resolved validations to decide status and preserve them

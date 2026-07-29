@@ -117,6 +117,17 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-28 - César Rêgo: fonte única de mapeamento, guarda de escopo e commit do reparo
+
+Status: done
+Job: impedir que a revisão peça para criar/vincular unidades César Rêgo já cadastradas (que gerava duplicatas na tela de imóveis), reparar os vínculos históricos e remover os cadastros incorretos.
+Outcome entregue: mapeamento canônico código→empreendimento consolidado em `lib/cesar-rego-properties.ts` (0002520/0002521 → João Cordeiro; 0002526/0002527 → Galpão Pompílio Gomes), consumido por `indicadores-repair` e pela guarda de criação em `vincular-imovel-fechamento` (bloqueia criar código César Rêgo no empreendimento errado com HTTP 409 e mensagem acionável). O reparo histórico passou a vincular as linhas aos cadastros existentes e a reparar a parcela reconciliada mesmo quando outra parcela não tem fechamento de destino. O reparo foi commitado no Supabase (8 fechamentos reparados, idempotente na segunda execução) e os 2 cadastros incorretos (`ec28fc98…`, `eac046a2…`) foram excluídos após reconferência (0 movimentações/acordos/IPTU), cascateando 12 snapshots + 2 vigências sem tocar os 4 canônicos.
+Causa raiz e correção adicional: o `--commit` falhava com erro mascarado (`[object Object]`). Causa real: a RPC `aplicar_reparo_indicadores_v2` só aceita `receita_aluguel` em `p_receitas`, mas `commitRecords` enviava também as linhas de rateio da TED (tipo `despesa`) produzidas por `buildPrestacaoMovimentacoes`. Corrigido com `buildReparoReceitas`, que filtra `p_receitas` para `receita_aluguel` (as despesas de TED ficam a cargo do reprocessamento completo); `toError` deixou de achatar erros do Supabase em `[object Object]`.
+Validacao: testes 280/280, `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, `api_validator` (4 passed, 0 critical), checklist mestre 6/6 e `git diff --check` verdes. Verificação remota read-only pós-reparo: 0 receitas César Rêgo sem vínculo válido (era 16) e 0 cadastros no empreendimento errado (era 2); os 4 cadastros César ativos batem com o empreendimento canônico, sem duplicatas.
+Decisoes: o mapeamento César Rêgo é fonte única; criar código canônico no empreendimento errado é bloqueado no servidor, não corrigido silenciosamente. Janeiro mantém 0002520/0002521 como lacuna de cobertura (sem fechamento de destino), sem rateio nem zero inventado.
+Arquivos/docs impactados: `lib/cesar-rego-properties.ts`, `lib/cesar-rego-properties.test.ts`, `lib/indicadores-repair.ts`, `lib/server/persist-package.ts`, `lib/server/vincular-imovel-fechamento.ts`, `scripts/repair-indicadores-confiabilidade.ts`, `scripts/repair-indicadores-confiabilidade.test.ts`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: smoke autenticado nas revisões César Rêgo de janeiro, março e junho (sem banner para criar/vincular unidade já cadastrada e sem duplicatas na busca de imóveis); concluir os anexos pendentes no eGestor (permissão Disco Virtual + arquivo ausente no Storage do fechamento `45d0ea82-6eca-428b-846c-34614f65b011`).
+
 ### 2026-07-28 - Fechamentos: breakdown consistente de receitas e despesas
 
 Status: done

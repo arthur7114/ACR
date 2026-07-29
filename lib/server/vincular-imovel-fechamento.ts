@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 import { imovelInputSchema, imovelStatusSchema } from "./cadastros"
 import { applyFechamentoCorrection, FechamentoCorrectionError, resolveReceitaMovement } from "./fechamento-corrections"
 import {
@@ -50,13 +51,18 @@ export async function vincularImovelFechamento(input: VincularInput) {
 async function loadFechamento(supabase: ReturnType<typeof createSupabaseAdmin>, id: string) {
   const { data, error } = await supabase
     .from("fechamentos")
-    .select("id,imobiliaria_id,empreendimento_id,status,analise_completa,atualizado_em")
+    .select("id,imobiliaria_id,empreendimento_id,status,analise_completa,atualizado_em,imobiliarias(nome),empreendimentos(nome)")
     .eq("id", id)
     .maybeSingle()
   if (error) throw error
   if (!data) throw new FechamentoCorrectionError("Fechamento não encontrado.", 404)
   if (!EDITABLE_STATUSES.has(data.status)) throw new FechamentoCorrectionError("Reabra a revisão antes de resolver vínculos.", 409)
-  return { ...data, analise_completa: data.analise_completa as PackageAnalysis | null }
+  return {
+    ...data,
+    analise_completa: data.analise_completa as PackageAnalysis | null,
+    imobiliaria_nome: relationName(data.imobiliarias),
+    empreendimento_nome: relationName(data.empreendimentos),
+  }
 }
 
 function getReceitaContext(analysis: PackageAnalysis | null, index: number) {
@@ -115,7 +121,12 @@ function buildExistingChanges(row: ReceitaPorImovel, input: VincularInput) {
 }
 
 function prepareCreateResolution(
-  fechamento: { imobiliaria_id: string; empreendimento_id: string },
+  fechamento: {
+    imobiliaria_id: string
+    empreendimento_id: string
+    imobiliaria_nome: string
+    empreendimento_nome: string
+  },
   input: VincularInput,
 ) {
   const cadastro = input.cadastro ?? {}
@@ -126,6 +137,23 @@ function prepareCreateResolution(
     ativo: true,
   })
   if (!parsed.success) throw new FechamentoCorrectionError(parsed.error.issues.map((item) => item.message).join("; "), 400)
+  const scopeConflict =
+    findCesarRegoPropertyScopeConflict({
+      agencyName: fechamento.imobiliaria_nome,
+      developmentName: fechamento.empreendimento_nome,
+      propertyCode: parsed.data.codigo_imobiliaria,
+    }) ??
+    findCesarRegoPropertyScopeConflict({
+      agencyName: fechamento.imobiliaria_nome,
+      developmentName: fechamento.empreendimento_nome,
+      propertyCode: parsed.data.unidade,
+    })
+  if (scopeConflict) {
+    throw new FechamentoCorrectionError(
+      `O imóvel ${scopeConflict.propertyCode} pertence a ${scopeConflict.expectedDevelopment}. Corrija o empreendimento do fechamento em vez de criar outro cadastro.`,
+      409,
+    )
+  }
   const imovel: ImovelVinculoCadastro = {
     id: randomUUID(),
     codigo_imobiliaria: parsed.data.codigo_imobiliaria,
@@ -135,6 +163,14 @@ function prepareCreateResolution(
     valor_aluguel_esperado: parsed.data.valor_aluguel_esperado ?? null,
   }
   return { imovel, before: null, mode: "criar" as const, operation: { modo: "criar", id: imovel.id, dados: imovel } }
+}
+
+function relationName(value: unknown) {
+  if (Array.isArray(value)) return String(value[0]?.nome ?? "")
+  if (value && typeof value === "object" && "nome" in value) {
+    return String((value as { nome: unknown }).nome ?? "")
+  }
+  return ""
 }
 
 function replaceReceita(analysis: PackageAnalysis | null, index: number, row: ReceitaPorImovel): PackageAnalysis {
