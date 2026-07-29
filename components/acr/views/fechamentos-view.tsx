@@ -432,16 +432,18 @@ export function FechamentosView() {
             ) : (
               <>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1000px] table-fixed text-sm">
+                  <table className="w-full min-w-[1140px] table-fixed text-sm">
                     <colgroup>
                       <col className="w-[125px]" />
-                      <col className="w-[115px]" />
-                      <col className="w-[140px]" />
-                      <col className="w-[160px]" />
-                      <col className="w-[105px]" />
-                      <col className="w-[105px]" />
-                      <col className="w-[105px]" />
-                      <col className="w-[155px]" />
+                      <col className="w-[128px]" />
+                      <col className="w-[150px]" />
+                      <col className="w-[150px]" />
+                      {/* Colunas de moeda: largura suficiente para "R$ 11.859,02" sem cortar. */}
+                      <col className="w-[128px]" />
+                      <col className="w-[128px]" />
+                      <col className="w-[122px]" />
+                      {/* Ações: comporta o botão + arquivar + excluir sem estourar. */}
+                      <col className="w-[210px]" />
                     </colgroup>
                     <thead>
                       <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
@@ -474,53 +476,57 @@ export function FechamentosView() {
                             {row.diferenca !== null ? `${row.diferenca < 0 ? "−" : ""}${formatBRL(Math.abs(row.diferenca))}` : "—"}
                           </td>
                           <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-end gap-1">
                               <Link
                                 href={row.href}
-                                className={`inline-flex h-8 items-center rounded-lg px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D8C3A] ${
+                                className={`inline-flex h-8 min-w-[104px] items-center justify-center rounded-lg px-3 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2D8C3A] ${
                                   row.status === "pendente" || row.status === "rascunho"
                                     ? "bg-[#2D8C3A] text-white hover:bg-[#1A5C24]"
-                                    : "border border-[#D5DDD6] bg-white text-[#3D4F3F] hover:bg-[#EEF1EE]"
+                                    : "border border-[#D5DDD6] bg-white text-[#3D4F3F] hover:border-[#BBD6BE] hover:bg-[#EFF7F1]"
                                 }`}
                               >
                                 {row.actionLabel}
                               </Link>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setConfirm({
-                                    title: row.arquivado ? "Desarquivar fechamento" : "Arquivar fechamento",
-                                    description: row.arquivado
-                                      ? `"${label(row)}" volta para a lista principal.`
-                                      : `"${label(row)}" será ocultado da lista (sem apagar nada).`,
-                                    confirmLabel: row.arquivado ? "Desarquivar" : "Arquivar",
-                                    onConfirm: () => setArquivado(row, !row.arquivado),
-                                  })
-                                }
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white text-[#92400E] hover:bg-[#FEF3C7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#92400E]"
-                                aria-label={`${row.arquivado ? "Desarquivar" : "Arquivar"} ${label(row)}`}
-                                title={row.arquivado ? "Desarquivar" : "Arquivar"}
-                              >
-                                {row.arquivado ? <ArchiveRestore aria-hidden="true" size={14} /> : <Archive aria-hidden="true" size={14} />}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setConfirm({
-                                    title: "Excluir fechamento",
-                                    description: `Isto apaga "${label(row)}" DEFINITIVAMENTE, junto com documentos, movimentações e lançamentos eGestor. Não pode ser desfeito. Digite EXCLUIR para confirmar.`,
-                                    confirmLabel: "Excluir definitivamente",
-                                    danger: true,
-                                    requireText: "EXCLUIR",
-                                    onConfirm: () => excluir(row),
-                                  })
-                                }
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#D5DDD6] bg-white text-[#DC2626] hover:bg-[#FEF2F2] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#DC2626]"
-                                aria-label={`Excluir definitivamente ${label(row)}`}
-                                title="Excluir definitivamente"
-                              >
-                                <Trash2 aria-hidden="true" size={14} />
-                              </button>
+                              {/* Ferramentas da linha: recuadas em cinza; a cor/intencao aparece
+                                  no hover/foco para nao competir com os numeros a cada linha. */}
+                              <div className="ml-1 flex items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirm({
+                                      title: row.arquivado ? "Desarquivar fechamento" : "Arquivar fechamento",
+                                      description: row.arquivado
+                                        ? `"${label(row)}" volta para a lista principal.`
+                                        : `"${label(row)}" será ocultado da lista (sem apagar nada).`,
+                                      confirmLabel: row.arquivado ? "Desarquivar" : "Arquivar",
+                                      onConfirm: () => setArquivado(row, !row.arquivado),
+                                    })
+                                  }
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[#8A9A8C] transition-colors hover:bg-[#FEF3C7] hover:text-[#92400E] focus-visible:bg-[#FEF3C7] focus-visible:text-[#92400E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#92400E]"
+                                  aria-label={`${row.arquivado ? "Desarquivar" : "Arquivar"} ${label(row)}`}
+                                  title={row.arquivado ? "Desarquivar" : "Arquivar"}
+                                >
+                                  {row.arquivado ? <ArchiveRestore aria-hidden="true" size={15} /> : <Archive aria-hidden="true" size={15} />}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirm({
+                                      title: "Excluir fechamento",
+                                      description: `Isto apaga "${label(row)}" DEFINITIVAMENTE, junto com documentos, movimentações e lançamentos eGestor. Não pode ser desfeito. Digite EXCLUIR para confirmar.`,
+                                      confirmLabel: "Excluir definitivamente",
+                                      danger: true,
+                                      requireText: "EXCLUIR",
+                                      onConfirm: () => excluir(row),
+                                    })
+                                  }
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[#8A9A8C] transition-colors hover:bg-[#FEF2F2] hover:text-[#DC2626] focus-visible:bg-[#FEF2F2] focus-visible:text-[#DC2626] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#DC2626]"
+                                  aria-label={`Excluir definitivamente ${label(row)}`}
+                                  title="Excluir definitivamente"
+                                >
+                                  <Trash2 aria-hidden="true" size={15} />
+                                </button>
+                              </div>
                             </div>
                           </td>
                         </tr>

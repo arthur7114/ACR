@@ -34,6 +34,7 @@ import {
   desdobrarDespesasFechamento,
 } from "@/lib/fechamento-operacional"
 import { formatCompetenciaMes } from "@/lib/competencia-fechamento"
+import { derivePendencias, getValidationSummary, isResolvedCheck } from "@/lib/revisao-pendencias"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
 import type { AcordoRescisaoRecebido, PackageAnalysis, PrestacaoRecheck, ReceitaPorImovel, TechnicalOpinion } from "@/lib/prestacao-types"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -52,6 +53,7 @@ import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 import { ExpenseBreakdownCard } from "@/components/acr/expense-breakdown"
 import { FechamentoVinculosDrawer } from "@/components/acr/fechamento-vinculos-drawer"
 import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
+import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 
 type StatusEvento = {
@@ -82,6 +84,7 @@ interface RevisaoViewProps {
   egestorEnvios?: EgestorEnvio[]
   statusEventos?: StatusEvento[]
   vinculosImoveis?: FechamentoVinculosImoveis
+  inadimplenciaMes?: InadimplenciaMes
   onVinculosChange?: (vinculos: FechamentoVinculosImoveis) => void
   onOpenModal: (apto: string, inquilino: string, valor: number) => void
   onRefresh?: () => void
@@ -174,47 +177,8 @@ function getCheckLabel(check: PrestacaoRecheck) {
   return "OK"
 }
 
-function isActionableWarning(check: PrestacaoRecheck) {
-  const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
-  if (check.status === "passed" && !isResolved) return false
-  if (check.id === "required_prestacao_contas" || check.id === "required_comprovante_repasse") return true
-  if (check.id === "rows_present") return check.status === "failed" || isResolved
-  if (check.id === "repasse_conciliation") return true
-  if (check.id === "resumo_financeiro") return true
-  if (check.id === "total_linhas_receitas") return typeof check.difference === "number"
-  if (check.id === "total_linhas_comissoes") return typeof check.difference === "number"
-  if (check.id === "total_linhas_repasse") return typeof check.difference === "number"
-  if (check.id === "comissao_administracao_regra") return true
-  if (check.id === "acordos_competencias") return check.status === "warning" || isResolved
-  if (check.id === "duplicate_agreement_payment") return true
-  return false
-}
-
-function isResolvedCheck(check: PrestacaoRecheck) {
-  return check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
-}
-
-function isObjectiveValidation(check: PrestacaoRecheck) {
-  return !check.id.endsWith("_confidence")
-}
-
 function pluralize(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`
-}
-
-function getValidationSummary(rechecks: PrestacaoRecheck[]) {
-  const objectiveChecks = rechecks.filter(isObjectiveValidation)
-
-  return objectiveChecks.reduce(
-    (summary, check) => {
-      const isResolved = isResolvedCheck(check)
-      if (isResolved || check.status === "passed") return { ...summary, passed: summary.passed + 1 }
-      if (check.status === "failed") return { ...summary, blocked: summary.blocked + 1 }
-      if (check.status === "warning") return { ...summary, warnings: summary.warnings + 1 }
-      return summary
-    },
-    { blocked: 0, warnings: 0, passed: 0 },
-  )
 }
 
 function getValidationSummaryLabel(summary: { blocked: number; warnings: number; passed: number }) {
@@ -570,6 +534,7 @@ export function RevisaoView({
   egestorEnvios = [],
   statusEventos = [],
   vinculosImoveis = { total_receitas: 0, total_vinculadas: 0, pendentes: [], imoveis: [] },
+  inadimplenciaMes = { valor: 0, unidades: [] },
   onVinculosChange,
 }: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
@@ -650,9 +615,10 @@ export function RevisaoView({
   const { prestacao, repasse, despesas, reajuste, totals, parecer } = analysisResult
   const documents = analysisResult.documents ?? []
   const rechecks = analysisResult.rechecks ?? []
-  const actionableRechecks = rechecks.filter(isActionableWarning)
-  const failedRechecks = actionableRechecks.filter((check) => check.status === "failed" && !isResolvedCheck(check))
-  const warningRechecks = actionableRechecks.filter((check) => check.status === "warning" && !isResolvedCheck(check))
+  // Contagem (parecer) e lista (pendencias) saem da MESMA peneira, para o topo
+  // nunca dizer "N alertas" e a abinha mostrar menos.
+  const { failed: failedRechecks, warning: warningRechecks, resolved: resolvedRechecks } = derivePendencias(rechecks)
+  const temPendencias = failedRechecks.length + warningRechecks.length + resolvedRechecks.length > 0
   const validationSummary = getValidationSummary(rechecks)
   const blockingCount = validationSummary.blocked + vinculosImoveis.pendentes.length
   const hasBlocking = blockingCount > 0
@@ -664,7 +630,6 @@ export function RevisaoView({
   const repasseConciliacao = getRepasseConciliacao(rechecks, totals)
   const heroTone = getHeroToneClasses(repasseConciliacao.tone)
   const bannerState: "blocked" | "warning" | "ok" = hasBlocking ? "blocked" : validationSummary.warnings > 0 ? "warning" : "ok"
-  const resolvedRechecks = actionableRechecks.filter(isResolvedCheck)
   const pendenciasDefault = failedRechecks.length > 0 ? ["bloqueios"] : warningRechecks.length > 0 ? ["alertas"] : []
 
   const openResolve = (check: PrestacaoRecheck) => {
@@ -1018,7 +983,7 @@ export function RevisaoView({
             <p className="text-[12px] text-[#6B7F6E] mt-1">
               Este resumo vem das validações automáticas do fechamento, não da confiança da IA.
             </p>
-            {actionableRechecks.length > 0 && (
+            {temPendencias && (
               <button
                 type="button"
                 onClick={() => document.getElementById("pendencias-revisao")?.scrollIntoView({ behavior: "smooth", block: "start" })}
@@ -1237,6 +1202,18 @@ export function RevisaoView({
                   subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
                 />
               </div>
+              {inadimplenciaMes.valor > 0 && (
+                <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#DC2626]">Inadimplência do mês</p>
+                    <p className="mt-0.5 text-[12px] text-[#991B1B]">
+                      {pluralize(inadimplenciaMes.unidades.length, "unidade não paga neste mês", "unidades não pagas neste mês")}
+                      {" · valor esperado (histórico)"}
+                    </p>
+                  </div>
+                  <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">{formatBRL(inadimplenciaMes.valor)}</p>
+                </div>
+              )}
               {inadimplenciasAcumuladas.length > 0 && (
                 <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
                   <div>
@@ -1252,7 +1229,7 @@ export function RevisaoView({
       </section>
 
       <section id="pendencias-revisao" className={`bg-white border rounded-xl px-4 ${hasBlocking ? "border-[#DC2626]" : "border-[#D5DDD6]"}`}>
-        {actionableRechecks.length > 0 ? (
+        {temPendencias ? (
           <Accordion type="multiple" defaultValue={pendenciasDefault}>
             {failedRechecks.length > 0 && (
               <AccordionItem value="bloqueios" className="border-0">

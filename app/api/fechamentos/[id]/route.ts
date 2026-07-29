@@ -3,6 +3,7 @@ import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { purgeFechamentos } from "@/lib/server/cadastros-delete"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import { loadFechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
+import { loadInadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
@@ -103,6 +104,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     analise_completa: analiseCompleta,
   })
 
+  const inadimplenciaMes = await loadInadimplenciaMes(supabase, {
+    competencia: data.competencia,
+    analiseCompleta,
+  })
+
   return NextResponse.json({
     fechamento: {
       id: data.id,
@@ -131,6 +137,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     egestor_envios: await getEgestorEnvios(supabase, id),
     status_eventos: await getStatusEventos(supabase, id),
     vinculos_imoveis: vinculosImoveis,
+    inadimplencia_mes: inadimplenciaMes,
   })
 }
 
