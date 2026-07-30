@@ -55,6 +55,10 @@ export function ResolveConflictModal({
   const hasExpected = validation.valor_esperado !== null
   const hasFound = validation.valor_encontrado !== null
   const hasDifference = typeof validation.diferenca === "number" && validation.diferenca > 0
+  // Pendência sem valor a decidir (documento opcional ausente, alerta
+  // informativo): não há número a escolher. Forçar um valor manual gravaria um
+  // "0" espúrio na auditoria; a ação correta é apenas ignorar com justificativa.
+  const isValuelessAlert = !hasExpected && !hasFound
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,31 +68,35 @@ export function ResolveConflictModal({
       return
     }
 
-    if (option === "custom" && (!customValue || isNaN(Number(customValue)))) {
+    if (!isValuelessAlert && option === "custom" && (!customValue || isNaN(Number(customValue)))) {
       toast.error("Informe um valor manual válido.")
       return
     }
 
     setLoading(true)
 
-    let chosenValText = ""
     let officialValue: number | null = null
-    let valueOrigin: "sistema" | "documento" | "manual" = "sistema"
-    if (option === "esperado") {
-      officialValue = validation.valor_esperado
-      valueOrigin = "sistema"
-      chosenValText = `Valor calculado pelo sistema: ${formatCurrency(validation.valor_esperado)}`
-    } else if (option === "encontrado") {
-      officialValue = validation.valor_encontrado
-      valueOrigin = "documento"
-      chosenValText = `Valor informado no documento: ${formatCurrency(validation.valor_encontrado)}`
+    let valueOrigin: "sistema" | "documento" | "manual" | undefined
+    let fullJustification: string
+    if (isValuelessAlert) {
+      fullJustification = `[Ignorado] ${justification.trim()}`
     } else {
-      officialValue = Number(customValue)
-      valueOrigin = "manual"
-      chosenValText = `Valor manual: ${formatCurrency(officialValue)}`
+      let chosenValText = ""
+      if (option === "esperado") {
+        officialValue = validation.valor_esperado
+        valueOrigin = "sistema"
+        chosenValText = `Valor calculado pelo sistema: ${formatCurrency(validation.valor_esperado)}`
+      } else if (option === "encontrado") {
+        officialValue = validation.valor_encontrado
+        valueOrigin = "documento"
+        chosenValText = `Valor informado no documento: ${formatCurrency(validation.valor_encontrado)}`
+      } else {
+        officialValue = Number(customValue)
+        valueOrigin = "manual"
+        chosenValText = `Valor manual: ${formatCurrency(officialValue)}`
+      }
+      fullJustification = `[Resolvido - Aceito ${chosenValText}] ${justification.trim()}`
     }
-
-    const fullJustification = `[Resolvido - Aceito ${chosenValText}] ${justification.trim()}`
 
     try {
       const res = await fetch(`/api/validacoes/${validation.id}/resolver`, {
@@ -109,7 +117,7 @@ export function ResolveConflictModal({
         throw new Error(err.error || "Falha ao resolver divergência.")
       }
 
-      toast.success("Pendência marcada como resolvida.")
+      toast.success(isValuelessAlert ? "Pendência ignorada com justificativa." : "Pendência marcada como resolvida.")
       onResolveSuccess()
       onClose()
     } catch (err) {
@@ -129,7 +137,9 @@ export function ResolveConflictModal({
             Resolver pendência do fechamento
           </DialogTitle>
           <DialogDescription className="mt-2 text-[13px] leading-relaxed text-[#6B7F6E]">
-            Escolha o valor que ficará registrado e informe uma justificativa. A decisão será salva no histórico de auditoria.
+            {isValuelessAlert
+              ? "Este alerta não tem valor a ajustar. Informe uma justificativa para ignorá-lo; nenhum valor da prestação é alterado. A decisão fica registrada no histórico de auditoria."
+              : "Escolha o valor que ficará registrado e informe uma justificativa. A decisão será salva no histórico de auditoria."}
           </DialogDescription>
         </DialogHeader>
         </div>
@@ -140,6 +150,8 @@ export function ResolveConflictModal({
             <p className="mt-1 text-[13px] leading-relaxed text-[#5C4A23]">{validation.mensagem}</p>
           </div>
 
+          {!isValuelessAlert && (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-[#D5DDD6] bg-white p-4">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Sistema calculou</span>
@@ -207,6 +219,8 @@ export function ResolveConflictModal({
               />
             </div>
           )}
+          </>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="justification" className="text-[13px] font-bold text-[#1A2B1C]">
@@ -224,7 +238,9 @@ export function ResolveConflictModal({
 
           <div className="flex items-start gap-2 rounded-lg border border-[#D1E7D6] bg-[#F4F9F5] px-3 py-2 text-[12px] text-[#1A5C24]">
             <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
-            Resolver remove a pendência da lista, mas mantém a decisão rastreável no histórico.
+            {isValuelessAlert
+              ? "Ignorar remove a pendência da lista sem alterar nenhum valor da prestação; a decisão fica rastreável no histórico."
+              : "Resolver remove a pendência da lista, mas mantém a decisão rastreável no histórico."}
           </div>
 
           <DialogFooter className="gap-2 border-t border-[#EEF1EE] pt-4">
@@ -242,7 +258,7 @@ export function ResolveConflictModal({
               disabled={loading}
               className="h-10 bg-[#2D8C3A] text-white hover:bg-[#1A5C24]"
             >
-              {loading ? "Salvando..." : "Salvar resolução"}
+              {loading ? "Salvando..." : isValuelessAlert ? "Ignorar pendência" : "Salvar resolução"}
             </Button>
           </DialogFooter>
         </form>

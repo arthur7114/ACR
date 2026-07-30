@@ -117,6 +117,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-29 - Revisão: "Ignorar" pendência sem valor no modal de resolução
+
+Status: done
+Job: no feedback da reunião (César Rêgo/Pompílio e José Walter), os alertas de documento opcional (relatório de locação/reajuste, despesas e comprovantes) são falso-positivos para imobiliárias com extrato consolidado, e o modal de resolução forçava informar um valor manual — botar zero sujava a auditoria e passava a impressão de alterar a prestação.
+Outcome entregue: o `ResolveConflictModal` detecta pendência sem valor a decidir (sem valor esperado/encontrado/diferença) e passa a exibir apenas a justificativa e o botão "Ignorar pendência", enviando `valor_oficial: null`. O endpoint `/api/validacoes/[id]/resolver` já não altera a prestação (só atualiza status e grava auditoria), então "Ignorar" apenas libera a pendência de forma rastreável, sem gravar valor espúrio.
+Validacao: testes 288/288, `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm build`, checklist e `git diff --check` verdes. Verificação visual do modal fica para o smoke autenticado (o Mock Mode cobre só a extração da IA, não a revisão).
+Decisoes: pendência sem número não deve forçar valor; a ação é ignorar com justificativa, sem tocar na prestação. Renomear os alertas por imobiliária (feedback inicial) foi descartado em favor de resolver a raiz no fluxo de resolução.
+Arquivos/docs impactados: `components/acr/resolve-conflict-modal.tsx`, `docs/02-mock-contract.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: itens restantes do feedback da reunião — inadimplência acumulada puxando coluna errada (GM I junho), transparência da comissão administrativa calculada (593,84 vs soma das linhas) e contagem de acordos/rescisões tratada como valor. Smoke autenticado do "Ignorar" numa revisão César Rêgo/José Walter com alerta de documento.
+
 ### 2026-07-28 - César Rêgo: fonte única de mapeamento, guarda de escopo e commit do reparo
 
 Status: done

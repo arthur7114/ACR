@@ -136,7 +136,7 @@ Estados e acoes relevantes:
 - Processamento mostra progresso por etapa.
 - Revisao mostra bloqueio de aprovacao quando ha divergencia bloqueante.
 - Revisao nao usa percentual de confianca como indicador operacional principal; qualidade de leitura fica restrita a documentos/linhas extraidas.
-- Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria.
+- Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria. Quando a pendencia nao tem valor a decidir (documento opcional ausente ou alerta informativo), o modal omite os valores e a escolha e oferece apenas "Ignorar pendencia" com justificativa, sem alterar nenhum valor da prestacao.
 - Leitura do documento e documentos processados ficam no fim da revisao, em secoes colapsaveis fechadas por padrao, para nao deslocar o resumo financeiro operacional.
 - Possivel pagamento repetido de acordo/rescisao e pendencia bloqueante ate resolucao ou justificativa.
 - Fechamentos aprovados podem ser vistos em detalhes.
