@@ -115,6 +115,18 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - A lista de fechamentos usa consulta local imediata sobre a colecao carregada: busca e filtros combinaveis, ordenacao em todas as colunas de dados, 25 itens por pagina e estado completo persistido na URL. A tabela preserva alinhamento financeiro e rolagem interna sem causar overflow da pagina.
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
+## Historico de ciclos
+
+### 2026-07-31 - Mapa de riscos: percentual só aparece quando carrega informação real
+
+Status: done
+Job: durante o smoke autenticado do resumo de inadimplência, o usuário notou que células "Ocupado" no mapa mostravam "0% de inadimplência" e "R$ 0,00 não recebido" — obriga o leitor a decodificar uma dupla negativa para descobrir que está tudo em dia, e é redundante já que "Ocupado" sozinho já diz isso.
+Outcome entregue: `describeHeatCellDetail` (pura, testada) decide o que mostrar sob o status de cada célula do mapa. Vacância nunca mostra percentual (é binária — 0/100, ver `HeatLegend` — o status já expressa o estado). Inadimplência com 0% e nada em aberto também não mostra número (kind `"oculto"`); só mostra percentual/valor quando carrega informação real: inadimplência parcial/total, ou uma diferença residual mesmo com percentual zerado (preservado o caso "0% mas com diferença", que não é "em dia"). `HeatCell` em `view-mapa.tsx` foi simplificado para consumir o resultado.
+Validacao: testes 309/309 (5 novos cobrindo sem_calculo, vac sempre oculto, inad em dia oculto, inad parcial detalhado, 0%-com-diferença detalhado), `tsc`, `lint`, `build`, `api_validator` e checklist verdes. Verificado ao vivo no navegador autenticado: células "Ocupado" em dia (GA0002, 0002526, 0002527) agora mostram só o status, sem "0%"/"R$ 0,00"; células com dado genuinamente ausente continuam mostrando "Sem cálculo financeiro" normalmente.
+Decisoes: percentual só aparece quando muda a decisão do leitor (quanto falta, se é parcial ou total); status sozinho já responde "está tudo bem?" sem precisar de número.
+Arquivos/docs impactados: `components/acr/indicadores/lib/presentation.ts`, `components/acr/indicadores/lib/presentation.test.ts`, `components/acr/indicadores/tabs/view-mapa.tsx`, `docs/12-execution-roadmap.md`.
+Proxima acao: observado durante o smoke (fora de escopo desta correção) um número alto de unidades marcadas "inadimplente" na competência com valor em aberto R$ 0,00 ou "—" na lista de resumo — investigar se é qualidade de dado no snapshot (aluguel esperado ausente/zero) antes de tratar como sinal real de inadimplência.
+
 ### 2026-07-31 - Pente fino de nomenclatura: tooltips nas colunas abreviadas da revisão
 
 Status: done

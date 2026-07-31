@@ -4,6 +4,7 @@ import test from "node:test"
 import type { IndicadoresHeatRow } from "@/lib/indicadores-types"
 import {
   buildDelinquencySummary,
+  describeHeatCellDetail,
   formatContractedRent,
   formatCurrency,
   formatHistoryCoverage,
@@ -126,6 +127,39 @@ test("nenhuma unidade inadimplente agora produz lista vazia sem quebrar os totai
   assert.deepEqual(summary.unidades, [])
   assert.equal(summary.mesAtual, 0)
   assert.equal(summary.totalEmAberto, 0)
+})
+
+test("mapa de riscos: sem cálculo quando falta status e valor", () => {
+  const detail = describeHeatCellDetail({ metric: "inad", percentage: null, valor: null })
+  assert.equal(detail.kind, "sem_calculo")
+  assert.equal(detail.percentualLabel, null)
+  assert.equal(detail.valorLabel, null)
+})
+
+test("mapa de riscos: vacância nunca mostra percentual (é binária, o status já diz tudo)", () => {
+  const ocupado = describeHeatCellDetail({ metric: "vac", percentage: 0, valor: 0 })
+  assert.equal(ocupado.kind, "oculto")
+  const vago = describeHeatCellDetail({ metric: "vac", percentage: 100, valor: 0 })
+  assert.equal(vago.kind, "oculto")
+})
+
+test("mapa de riscos: inadimplência em dia (0% e nada em aberto) não mostra número", () => {
+  const detail = describeHeatCellDetail({ metric: "inad", percentage: 0, valor: 0 })
+  assert.equal(detail.kind, "oculto")
+})
+
+test("mapa de riscos: inadimplência parcial mostra percentual e valor não recebido", () => {
+  const detail = describeHeatCellDetail({ metric: "inad", percentage: 45, valor: 500 })
+  assert.equal(detail.kind, "detalhado")
+  assert.equal(detail.percentualLabel, "45% de inadimplência")
+  assert.equal(detail.valorLabel, "R$ 500,00 não recebido")
+})
+
+test("mapa de riscos: 0% com diferença residual ainda mostra o valor (não é 'em dia')", () => {
+  const detail = describeHeatCellDetail({ metric: "inad", percentage: 0, valor: 50 })
+  assert.equal(detail.kind, "detalhado")
+  assert.equal(detail.percentualLabel, "0% de inadimplência")
+  assert.equal(detail.valorLabel, "R$ 50,00 de diferença")
 })
 
 test("resume a cobertura histórica de cada unidade sem jargão técnico", () => {

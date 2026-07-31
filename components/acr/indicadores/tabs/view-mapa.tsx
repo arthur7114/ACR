@@ -5,9 +5,9 @@ import type { IndicadoresData, IndicadoresHeatCell } from "@/lib/indicadores-typ
 import { cn } from "@/lib/utils"
 import {
   buildDelinquencySummary,
+  describeHeatCellDetail,
   formatCurrency,
   formatHistoryCoverage,
-  formatPercent,
   occupancyLabel,
   type HeatMetric,
 } from "../lib/presentation"
@@ -233,16 +233,13 @@ function HeatCell({
 }) {
   const percentage = cell ? (metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual) : null
   const status = cell?.statusOcupacao ?? null
-  const metricDescription = metric === "inad" ? "de inadimplência" : "de vacância"
-  const valueDescription = cell === null || cell.valor === null
-    ? "valor indisponível"
-    : metric === "inad" && percentage === 0 && cell.valor > 0
-      ? `${formatCurrency(cell.valor)} de diferença`
-      : `${formatCurrency(cell.valor)} não recebido`
+  const detail = describeHeatCellDetail({ metric, percentage, valor: cell?.valor ?? null })
   const qualityDescription = cell?.qualidade === "parcial" ? ", dados parciais" : cell?.qualidade === "sem_linha" ? ", vínculo pendente" : ""
   const accessible = cell === null || status === null
     ? `${unit}, ${month}: sem dado`
-    : `${unit}, ${month}: ${occupancyLabel(status)}, ${percentage === null ? "percentual indisponível" : `${formatPercent(percentage)} ${metricDescription}`}, ${valueDescription}${qualityDescription}`
+    : detail.kind === "oculto"
+      ? `${unit}, ${month}: ${occupancyLabel(status)}, sem pendência${qualityDescription}`
+      : `${unit}, ${month}: ${occupancyLabel(status)}, ${detail.percentualLabel ?? "percentual indisponível"}, ${detail.valorLabel}${qualityDescription}`
 
   return (
     <td
@@ -260,14 +257,13 @@ function HeatCell({
       ) : (
         <div className="flex min-h-20 flex-col items-center justify-center">
           <span className="text-xs font-bold text-acr-ink">{occupancyLabel(status)}</span>
-          {percentage === null && (cell === null || cell.valor === null) ? (
+          {detail.kind === "sem_calculo" && (
             <span className="mt-1 text-[10px] font-medium">Sem cálculo financeiro</span>
-          ) : (
+          )}
+          {detail.kind === "detalhado" && (
             <>
-              <span className="mt-1 text-[11px] font-semibold">
-                {percentage === null ? "Percentual indisponível" : `${formatPercent(percentage)} ${metricDescription}`}
-              </span>
-              <span className="mt-0.5 text-[10px]">{valueDescription}</span>
+              <span className="mt-1 text-[11px] font-semibold">{detail.percentualLabel}</span>
+              <span className="mt-0.5 text-[10px]">{detail.valorLabel}</span>
             </>
           )}
           {cell?.qualidade === "parcial" && <span className="mt-1 text-[9px] font-bold">Dados parciais</span>}

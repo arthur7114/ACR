@@ -238,6 +238,42 @@ export function buildDelinquencySummary(input: {
   return { mesAtual, acumulada, totalEmAberto, unidades }
 }
 
+export interface HeatCellDetail {
+  kind: "sem_calculo" | "oculto" | "detalhado"
+  percentualLabel: string | null
+  valorLabel: string | null
+}
+
+// Decide o que mostrar sob o status de uma célula do mapa de riscos. "0% de
+// inadimplência" força o leitor a decodificar uma dupla negativa para
+// descobrir que está tudo em dia; e vacância é binária (0/100, ver
+// HeatLegend) — o percentual nunca acrescenta nada ao status já exibido. Só
+// vale mostrar número quando ele carrega informação real: inadimplência
+// parcial/total, ou uma diferença residual mesmo com percentual zerado.
+export function describeHeatCellDetail(input: {
+  metric: HeatMetric
+  percentage: number | null
+  valor: number | null
+}): HeatCellDetail {
+  const { metric, percentage, valor } = input
+  if (percentage === null && valor === null) {
+    return { kind: "sem_calculo", percentualLabel: null, valorLabel: null }
+  }
+  if (metric === "vac") {
+    return { kind: "oculto", percentualLabel: null, valorLabel: null }
+  }
+  if (percentage === 0 && (valor ?? 0) <= 0) {
+    return { kind: "oculto", percentualLabel: null, valorLabel: null }
+  }
+  const percentualLabel = percentage === null ? "Percentual indisponível" : `${formatPercent(percentage)} de inadimplência`
+  const valorLabel = valor === null
+    ? "valor indisponível"
+    : percentage === 0 && valor > 0
+      ? `${formatCurrency(valor)} de diferença`
+      : `${formatCurrency(valor)} não recebido`
+  return { kind: "detalhado", percentualLabel, valorLabel }
+}
+
 export function escapeCsv(value: string | number | null): string {
   if (value === null) return ""
   const raw = String(value)
