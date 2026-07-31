@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
+import type { IndicadoresHeatRow } from "@/lib/indicadores-types"
 import {
+  buildDelinquencySummary,
   formatContractedRent,
   formatCurrency,
   formatHistoryCoverage,
@@ -9,6 +11,122 @@ import {
   formatReference,
   getFinancialReferences,
 } from "./presentation.ts"
+
+const MESES = [
+  { competencia: "2026-04-01", label: "Abr/26" },
+  { competencia: "2026-05-01", label: "Mai/26" },
+  { competencia: "2026-06-01", label: "Jun/26" },
+]
+
+function makeRow(overrides: Partial<IndicadoresHeatRow> & { imovelId: string }): IndicadoresHeatRow {
+  return {
+    unidade: overrides.imovelId,
+    inquilinoNome: null,
+    empreendimentoId: "emp-1",
+    empreendimentoNome: "Grand Messejana I",
+    hoje: "ocupado",
+    celulas: MESES.map((mes) => ({
+      competencia: mes.competencia,
+      statusOcupacao: null,
+      valor: null,
+      inadimplenciaPercentual: null,
+      vacanciaPercentual: null,
+      origem: null,
+      qualidade: null,
+    })),
+    ...overrides,
+  }
+}
+
+test("resume inadimplência do mês, acumulada e total, listando só quem está inadimplente agora", () => {
+  const inadimplenteRepetido = makeRow({
+    imovelId: "apto-7",
+    hoje: "inadimplente",
+    celulas: [
+      { competencia: "2026-04-01", statusOcupacao: "inadimplente", valor: 700, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: 810.44, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+    ],
+  })
+  const quitouNoPassado = makeRow({
+    imovelId: "apto-3",
+    hoje: "ocupado",
+    celulas: [
+      { competencia: "2026-04-01", statusOcupacao: "inadimplente", valor: 300, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+    ],
+  })
+  const inadimplenteAgoraSoAgora = makeRow({
+    imovelId: "apto-9",
+    hoje: "inadimplente",
+    celulas: [
+      { competencia: "2026-04-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: 200, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+    ],
+  })
+
+  const summary = buildDelinquencySummary({
+    competenciaAtual: "2026-06-01",
+    meses: MESES,
+    linhas: [inadimplenteRepetido, quitouNoPassado, inadimplenteAgoraSoAgora],
+    inadimplenciaAcumulada: 1500,
+  })
+
+  // Mês atual soma só o valor de junho das unidades inadimplentes AGORA
+  // (810.44 do apto-7 + 200 do apto-9); apto-3 não conta (quitou, não está mais inadimplente).
+  assert.equal(summary.mesAtual, 1010.44)
+  assert.equal(summary.acumulada, 1500)
+  assert.equal(summary.totalEmAberto, 2510.44)
+
+  // Só lista quem está inadimplente na competência atual; ordenado por valor em aberto desc.
+  assert.equal(summary.unidades.length, 2)
+  assert.equal(summary.unidades[0]?.imovelId, "apto-7")
+  assert.equal(summary.unidades[0]?.valorEmAberto, 1510.44)
+  assert.deepEqual(
+    summary.unidades[0]?.meses.map((mes) => mes.competencia),
+    ["2026-04-01", "2026-06-01"],
+  )
+  assert.equal(summary.unidades[1]?.imovelId, "apto-9")
+  assert.equal(summary.unidades[1]?.valorEmAberto, 200)
+})
+
+test("mês atual fica indisponível (não zero) quando falta o valor esperado de alguma unidade inadimplente", () => {
+  const semValorConhecido = makeRow({
+    imovelId: "apto-12",
+    hoje: "inadimplente",
+    celulas: [
+      { competencia: "2026-04-01", statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
+      { competencia: "2026-05-01", statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
+      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: null, inadimplenciaPercentual: null, vacanciaPercentual: 0, origem: "processamento", qualidade: "parcial" },
+    ],
+  })
+
+  const summary = buildDelinquencySummary({
+    competenciaAtual: "2026-06-01",
+    meses: MESES,
+    linhas: [semValorConhecido],
+    inadimplenciaAcumulada: 0,
+  })
+
+  assert.equal(summary.mesAtual, null)
+  assert.equal(summary.totalEmAberto, null)
+  assert.equal(summary.unidades[0]?.valorEmAberto, null)
+})
+
+test("nenhuma unidade inadimplente agora produz lista vazia sem quebrar os totais", () => {
+  const semPendencia = makeRow({ imovelId: "apto-1", hoje: "ocupado" })
+  const summary = buildDelinquencySummary({
+    competenciaAtual: "2026-06-01",
+    meses: MESES,
+    linhas: [semPendencia],
+    inadimplenciaAcumulada: 0,
+  })
+  assert.deepEqual(summary.unidades, [])
+  assert.equal(summary.mesAtual, 0)
+  assert.equal(summary.totalEmAberto, 0)
+})
 
 test("resume a cobertura histórica de cada unidade sem jargão técnico", () => {
   assert.equal(formatHistoryCoverage(0, 0, 6), "Sem histórico no período")

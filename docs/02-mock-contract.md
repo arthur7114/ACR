@@ -91,7 +91,12 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Leitura do histórico: “Riscos por imóvel” prioriza o estado de cada
   competência e resume, por unidade, meses registrados e meses com status
   definido. A origem recomposta não aparece como selo repetido; quando a
-  auditoria exige essa origem, o texto é “Importado de documentos”.
+  auditoria exige essa origem, o texto é “Importado de documentos”. No modo
+  Inadimplência, um resumo antecede o mapa: inadimplência do mês e acumulada
+  lado a lado (naturezas diferentes, nunca substituídas uma pela outra) mais o
+  total somado, e a lista das unidades inadimplentes na competência com seus
+  meses de inadimplência e valor em aberto; clicar na unidade rola até a linha
+  correspondente no mapa.
 - Fonte da decisão e fórmulas: revisão v2 de
   `docs/PLAN-indicadores-operacionais.md`.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`,

@@ -115,6 +115,18 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - A lista de fechamentos usa consulta local imediata sobre a colecao carregada: busca e filtros combinaveis, ordenacao em todas as colunas de dados, 25 itens por pagina e estado completo persistido na URL. A tabela preserva alinhamento financeiro e rolagem interna sem causar overflow da pagina.
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
+## Historico de ciclos
+
+### 2026-07-31 - Resumo de inadimplência no mapa de riscos por imóvel
+
+Status: done
+Job: no feedback da reunião de 30/07, o mapa de riscos ("aquele mapa tá fraco") não respondia direto: qual é a inadimplência, quais apartamentos, em quais meses, e qual a situação de cada um — exigia escanear a grade mês a mês inteira. Shape confirmado com o usuário antes de codar: mostrar mês atual e acumulado separados mas juntos (com total somado), complementando o heatmap existente (sem substituí-lo).
+Outcome entregue: `buildDelinquencySummary` (components/acr/indicadores/lib/presentation.ts) deriva, só a partir de `data.heat.linhas` já carregado (nenhuma chamada nova), a inadimplência do mês (soma do valor não pago na competência selecionada), reaproveita `resumo.inadimplenciaAcumulada` já existente para a acumulada, e soma os dois para o total em aberto — sem inventar zero quando falta o aluguel esperado de alguma unidade (usa `sumKnownValues`, mesma disciplina do resto do painel). Um novo painel em `view-mapa.tsx`, visível só no toggle Inadimplência, mostra os três KPIs e lista apenas as unidades inadimplentes na competência selecionada, cada uma com situação (`StatusChip`), os meses em que ficou inadimplente (dentro da janela visível) e o valor em aberto; clicar na unidade rola até a linha correspondente no heatmap abaixo, com respeito a `prefers-reduced-motion`.
+Validacao: testes 300/300 (3 novos cobrindo o agregado, incluindo o caso de valor indisponível e o de lista vazia), `tsc`, `lint`, `build`, `api_validator` e checklist verdes. Verificação visual não foi possível nesta sessão (a página exige login autenticado, sem credenciais disponíveis); fica para o smoke autenticado.
+Decisoes: inadimplência do mês e acumulada são naturezas diferentes (não pago este mês vs. dívida documental de meses anteriores) e nunca se substituem uma pela outra, mas o total somado é útil e correto de mostrar. A lista só traz quem está inadimplente AGORA (na competência selecionada); quem já quitou não aparece, mesmo com meses inadimplentes no histórico — isso é intencional (a pergunta é "quem está inadimplente", não "quem já esteve").
+Arquivos/docs impactados: `components/acr/indicadores/lib/presentation.ts`, `components/acr/indicadores/lib/presentation.test.ts`, `components/acr/indicadores/tabs/view-mapa.tsx`, `docs/02-mock-contract.md`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: smoke autenticado (login necessário) confirmando os três KPIs, a lista e o scroll-to-row; depois eGestor (anexos pendentes) e pente fino de nomenclatura.
+
 ### 2026-07-31 - Validação: leitura do Pompílio Gomes é determinística, não é visão computacional
 
 Status: done

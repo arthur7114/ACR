@@ -1,4 +1,4 @@
-import type { IndicadoresData } from "@/lib/indicadores-types"
+import type { IndicadoresData, IndicadoresHeatRow } from "@/lib/indicadores-types"
 
 export type DashboardMetric = "valor" | "percentual"
 export type HeatMetric = "inad" | "vac"
@@ -169,6 +169,73 @@ export function qualityLabel(quality: "completo" | "parcial" | "sem_linha"): str
   if (quality === "completo") return "Completo"
   if (quality === "parcial") return "Dados parciais"
   return "Vínculo pendente"
+}
+
+export interface DelinquentUnitMonth {
+  competencia: string
+  label: string
+  valor: number | null
+}
+
+export interface DelinquentUnit {
+  imovelId: string
+  unidade: string
+  empreendimentoNome: string
+  hoje: OccupancyStatus
+  valorEmAberto: number | null
+  meses: DelinquentUnitMonth[]
+}
+
+export interface DelinquencySummary {
+  mesAtual: number | null
+  acumulada: number | null
+  totalEmAberto: number | null
+  unidades: DelinquentUnit[]
+}
+
+// Responde direto: quanto é a inadimplência (do mês, acumulada e total), quais
+// unidades estão inadimplentes agora e em quais meses (dentro da janela
+// visível do mapa) — sem recalcular nada, só agregando os valores por célula
+// que o heatmap já usa. "Mês atual" e "acumulada" são naturezas diferentes
+// (não pagou este mês vs. dívida de meses anteriores) e não se substituem.
+export function buildDelinquencySummary(input: {
+  competenciaAtual: string
+  meses: Array<{ competencia: string; label: string }>
+  linhas: IndicadoresHeatRow[]
+  inadimplenciaAcumulada: number | null
+}): DelinquencySummary {
+  const labelByCompetencia = new Map(input.meses.map((month) => [month.competencia, month.label]))
+  const unidades: DelinquentUnit[] = []
+  const valoresMesAtual: Array<number | null> = []
+
+  for (const row of input.linhas) {
+    const celulaAtual = row.celulas.find((cell) => cell.competencia === input.competenciaAtual)
+    if (celulaAtual?.statusOcupacao !== "inadimplente") continue
+    valoresMesAtual.push(celulaAtual.valor)
+    const meses = row.celulas
+      .filter((cell) => cell.statusOcupacao === "inadimplente")
+      .map((cell) => ({
+        competencia: cell.competencia,
+        label: labelByCompetencia.get(cell.competencia) ?? cell.competencia,
+        valor: cell.valor,
+      }))
+    unidades.push({
+      imovelId: row.imovelId,
+      unidade: row.unidade,
+      empreendimentoNome: row.empreendimentoNome,
+      hoje: row.hoje,
+      valorEmAberto: sumKnownValues(meses.map((mes) => mes.valor)),
+      meses,
+    })
+  }
+
+  unidades.sort((a, b) => (b.valorEmAberto ?? -1) - (a.valorEmAberto ?? -1))
+
+  const mesAtual = sumKnownValues(valoresMesAtual)
+  const acumulada = input.inadimplenciaAcumulada
+  const totalEmAberto = sumKnownValues([mesAtual, acumulada])
+
+  return { mesAtual, acumulada, totalEmAberto, unidades }
 }
 
 export function escapeCsv(value: string | number | null): string {
