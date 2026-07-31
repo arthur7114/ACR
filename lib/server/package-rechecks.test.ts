@@ -531,6 +531,81 @@ test("Terreno Castelao: recupera marco da observacao sem inferir inadimplencia a
   assert.doesNotMatch(row?.observacao ?? "", /INADIMPLENCIA/)
 })
 
+test("rescisao proporcional nao vira desconto integral quando a coluna DESCONTO do documento vem em branco", () => {
+  // Grand Maracanaú junho/2026, apto 202: o documento mostra DESCONTO em
+  // branco e ALUGUEL C/DESCONTO = ALUGUEL (13,33); a extração duplicou o
+  // aluguel em desconto, zerando aluguel_com_desconto. Sinal determinístico:
+  // aluguel_com_desconto (zerado) + demais componentes não fecha com total.
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      receitas_por_imovel: [
+        {
+          ...base.receitas_por_imovel[0],
+          apto: "202",
+          inquilino: "BRUNO EDUARDO DA SILVA",
+          aluguel: 13.33,
+          desconto: 13.33,
+          aluguel_com_desconto: 0,
+          garagem: 0,
+          agua: 0,
+          iptu: 0,
+          seguro_incendio: 0,
+          total: 13.33,
+          comissao: 0.93,
+          repasse: 12.4,
+          observacao: "RESCISÃO. PROPORCIONAL DE 01 DIA (01/06). SEGURO QUITADO. IPTU 2026 QUITADO.",
+        },
+      ],
+    }),
+    repasse: createRepasse(12.4),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const row = result.prestacao?.receitas_por_imovel[0]
+  assert.equal(row?.desconto, 0)
+  assert.equal(row?.aluguel_com_desconto, 13.33)
+  assert.equal(row?.total, 13.33)
+})
+
+test("desconto real e proporcional (com componentes consistentes) permanece intacto", () => {
+  // Grand Maracanaú junho/2026, apto 112: desconto de 20 sobre 416,49 de
+  // aluguel; aluguel_com_desconto (396,49) + garagem+iptu+seguro fecha com o
+  // total (501,90) — não é o sinal de inconsistência, não deve ser tocado.
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      receitas_por_imovel: [
+        {
+          ...base.receitas_por_imovel[0],
+          apto: "112",
+          aluguel: 416.49,
+          desconto: 20,
+          aluguel_com_desconto: 396.49,
+          garagem: 16.53,
+          agua: 0,
+          iptu: 0,
+          seguro_incendio: 88.88,
+          total: 501.9,
+          comissao: 35.13,
+          repasse: 466.77,
+          observacao: "SEGURO (1/1). IPTU 2026 QUITADO. GARAGEM PARA MOTO.",
+        },
+      ],
+    }),
+    repasse: createRepasse(466.77),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const row = result.prestacao?.receitas_por_imovel[0]
+  assert.equal(row?.desconto, 20)
+  assert.equal(row?.aluguel_com_desconto, 396.49)
+})
+
 test("nao bloqueia aprovacao quando aluguel recebido esta sem competencia original", () => {
   const base = createPrestacao()
   const result = validatePackage({

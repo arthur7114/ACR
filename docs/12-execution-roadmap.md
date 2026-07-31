@@ -117,6 +117,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-31 - Rescisão proporcional não vira desconto integral quando a coluna vem em branco
+
+Status: done
+Job: nas anotações da reunião de 30/07, o apto 202 do Grand Maracanaú junho/2026 (rescisão proporcional de 1 dia, R$ 13,33) apareceu classificado como "desconto" de 100%, quando na verdade era aluguel proporcional recebido; a coluna DESCONTO do documento estava em branco para essa linha.
+Outcome entregue: `repararDescontoIntegralInconsistente` (package-rechecks.ts) detecta o sinal determinístico — `desconto === aluguel` (100%) e `aluguel_com_desconto + demais componentes` não reconciliando com o `total` da linha, algo que nunca acontece num desconto real (confirmado contra um caso legítimo do mesmo documento, apto 112) — e corrige `desconto` para 0 e `aluguel_com_desconto` para o valor do aluguel. Escaneados todos os fechamentos ativos: o caso era isolado (só essa linha). Reparo do dado histórico aplicado via `scripts/repair-linha-desconto-inconsistente.ts`, que reaproveita `validatePackage` e aborta se qualquer total já confirmado/enviado ao eGestor mudar (guarda de invariância); confirmado que total_receitas, total_despesas, total_comissoes, total_comissao_despesas, total_a_repassar e valor_comprovado permaneceram bit-a-bit idênticos (6.559,24 / 88,88 / 459,15 / 548,03 / 6.011,21 / 6.011,21).
+Validacao: testes 295/295, `tsc`, `lint`, `build`, `api_validator` e checklist verdes. Reparo aplicado e verificado idempotente (segunda execução: `unchanged`); scan geral pós-reparo confirma 0 linhas inconsistentes no sistema.
+Decisoes: desconto extraído só é confiável quando reconcilia com o total da própria linha; divergência é tratada como erro de leitura, não como fato financeiro. Reparo de dado histórico só é aplicado quando prova, por reconstrução do pipeline real, que nenhum total já comunicado externamente muda.
+Arquivos/docs impactados: `lib/server/package-rechecks.ts`, `lib/server/package-rechecks.test.ts`, `scripts/repair-linha-desconto-inconsistente.ts`, `scripts/repair-linha-desconto-inconsistente.test.ts`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: alerta de acordos/rescisões tratando contagem como valor (GM I junho), reprocessamento 5× do Pompílio para confirmar leitura consistente e redesenho do mapa de inadimplência dos indicadores.
+
 ### 2026-07-31 - Comissão de administração: base com IPTU e recálculo no reparo por empreendimento
 
 Status: done

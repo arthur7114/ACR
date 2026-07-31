@@ -105,7 +105,7 @@ function normalizePrestacao(analysis: PrestacaoAnalysis): PrestacaoAnalysis {
       confianca: clampConfidence(row.confianca),
     }
     // #3 IPTU de passagem: crédito e débito de mesmo valor se anulam.
-    return anularIptuDePassagem(base)
+    return anularIptuDePassagem(repararDescontoIntegralInconsistente(base))
   })
 
   // ADR-0001: receita BRUTA + desconto/reembolso/taxas itemizados como despesa do
@@ -172,6 +172,37 @@ function anularIptuDePassagem<T extends { iptu: number | null; total: number; ob
     total: roundMoney(row.total - iptu),
     observacao: appendObservacao(row.observacao, `IPTU de passagem (R$ ${iptu.toFixed(2)}) anulado: cobrado do inquilino e repassado.`),
   }
+}
+
+// Corrige desconto integral inconsistente: a IA às vezes duplica o valor do
+// aluguel na coluna DESCONTO quando ela vem em branco no documento (visto em
+// rescisões proporcionais de poucos dias), zerando aluguel_com_desconto.
+// Sinal determinístico, sem depender de heurística de texto: se
+// aluguel_com_desconto + demais componentes não reconstrói o total da linha,
+// o desconto é artefato de leitura, não um desconto real (um desconto real
+// sempre reconcilia com o total, como em qualquer linha extraída corretamente).
+function repararDescontoIntegralInconsistente<
+  T extends {
+    aluguel: number | null
+    desconto: number | null
+    aluguel_com_desconto: number | null
+    garagem: number | null
+    agua: number | null
+    iptu: number | null
+    seguro_incendio: number | null
+    total: number
+  },
+>(row: T): T {
+  const { aluguel, desconto } = row
+  // Só considera "desconto integral" suspeito: o valor extraído bate
+  // exatamente com o aluguel (100% de desconto), o que é raro num real.
+  if (aluguel === null || desconto === null || desconto !== aluguel) return row
+  const outrosComponentes =
+    (row.garagem ?? 0) + (row.agua ?? 0) + (row.iptu ?? 0) + (row.seguro_incendio ?? 0)
+  const reconciliaComTotal =
+    Math.abs((row.aluguel_com_desconto ?? 0) + outrosComponentes - row.total) <= MONEY_TOLERANCE
+  if (reconciliaComTotal) return row
+  return { ...row, desconto: 0, aluguel_com_desconto: aluguel }
 }
 
 function appendObservacao(atual: string | null, extra: string): string {
