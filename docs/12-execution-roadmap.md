@@ -117,6 +117,20 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-31 - eGestor: um documento quebrado não bloqueia mais o anexo dos demais
+
+Status: done (parcial — depende de ação externa para desbloquear os casos reais)
+Job: investigar os anexos pendentes do eGestor (herdado do handoff anterior): 5 fechamentos por permissão `Disco Virtual` e 1 por documento ausente no Storage (`45d0ea82…`, Grand Messejana II junho).
+Investigação (read-only, sem escrita no banco nem chamada à API do eGestor):
+- Reconferido o estado atual: 5 lançamentos pendentes por `Disco Virtual` (Grand Messejana I entrou na lista desde o handoff anterior) + 1 por documento ausente. Nenhum mudou desde o handoff — ambos os problemas continuam em aberto.
+- Para o documento ausente (`45d0ea82…`): baixado o registro dos 2 documentos (`prestacao_contas`, `comprovante_repasse`) e testado o download real do Storage — ambos retornam 404 "Object not found". Listado o bucket inteiro (179 objetos) e a janela exata de tempo em que esses uploads deveriam ter ocorrido (28/07 ~19:58) — nenhum objeto existe sob nenhum nome nessa janela (os uploads de GM I, feitos minutos antes, e de Grand Maracanaú, feitos depois, estão lá normalmente). Não há cópia local em `tmp/pdfs`. Conclusão: os bytes originais não estão em lugar nenhum acessível; não é bug de código recuperável, é reenvio necessário.
+- Causa raiz separada e corrigível encontrada: `uploadAnexos` parava no **primeiro** documento que falhasse ao baixar/anexar e nunca tentava os seguintes — um documento quebrado bloqueava o lote inteiro para sempre, mesmo que outro documento do mesmo fechamento fosse perfeitamente anexável.
+Outcome entregue: `uploadAnexos` agora tenta todos os documentos do fechamento independentemente uns dos outros; `summarizeAttachmentAttempts` (função pura, testada) decide o resultado final — `enviado` só quando todos anexam, `pendente` com mensagem detalhando quantos/quais falharam e por quê caso contrário. Não altera `status` do lançamento (o financeiro já foi enviado antes; isto é só o anexo).
+Validacao: testes 304/304 (4 novos cobrindo sucesso parcial, sucesso total, falha total e zero documentos), `tsc`, `lint`, `build`, `api_validator` e checklist verdes.
+Decisoes: não rodar `retry-anexos` nem tocar nos 6 lançamentos reais nesta sessão — a permissão `Disco Virtual` (5 casos) e o reenvio do documento (1 caso) são ações externas que só o usuário pode fazer (configuração de conta no eGestor e reprocessamento do fechamento com o PDF correto); rodar o retry antes disso só repetiria a mesma falha já diagnosticada.
+Arquivos/docs impactados: `lib/server/egestor.ts`, `lib/server/egestor.test.ts`, `docs/12-execution-roadmap.md`.
+Proxima acao: usuário habilita `Disco Virtual` na conta eGestor correta e reenvia/reprocessa o fechamento `45d0ea82…` com os PDFs corretos de junho/2026 (GM II); depois rodar `retry-anexos` nos 6 lançamentos e confirmar `anexo_status = enviado` sem novo lançamento financeiro.
+
 ### 2026-07-31 - Resumo de inadimplência no mapa de riscos por imóvel
 
 Status: done

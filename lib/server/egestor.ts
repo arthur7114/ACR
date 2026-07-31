@@ -309,11 +309,15 @@ async function uploadAnexos(supabase: SupabaseClient, client: EgestorClient, lan
     .eq("fechamento_id", lancamento.fechamento_id)
     .limit(3)
 
+  // Um documento com storage quebrado (ou anexo rejeitado pelo eGestor) nao
+  // impede tentar os demais: cada um e independente, e um em falta nao deve
+  // bloquear para sempre os que sao anexaveis.
+  const resultados: AttachmentAttempt[] = []
   for (const doc of docs ?? []) {
     const download = await supabase.storage.from(BUCKET).download(doc.arquivo_url)
     if (download.error || !download.data) {
-      await markAnexoPendente(supabase, lancamento.id, "Documento nao encontrado no Storage.")
-      return
+      resultados.push({ nomeArquivo: doc.nome_arquivo, ok: false, motivo: "Documento nao encontrado no Storage." })
+      continue
     }
     try {
       await client.uploadDiscoVirtual({
@@ -324,18 +328,47 @@ async function uploadAnexos(supabase: SupabaseClient, client: EgestorClient, lan
         descricao: lancamento.descricao,
         tags: lancamento.tags ?? [],
       })
+      resultados.push({ nomeArquivo: doc.nome_arquivo, ok: true })
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Falha ao anexar documento."
-      await markAnexoPendente(supabase, lancamento.id, friendlyAnexoError(raw))
-      return
+      resultados.push({ nomeArquivo: doc.nome_arquivo, ok: false, motivo: friendlyAnexoError(raw) })
     }
   }
 
+  const resumo = summarizeAttachmentAttempts(resultados)
   await supabase.from("egestor_lancamentos").update({
-    status: "enviado",
-    anexo_status: "enviado",
-    anexo_mensagem: null,
+    ...(resumo.status === "enviado" ? { status: "enviado" } : {}),
+    anexo_status: resumo.status,
+    anexo_mensagem: resumo.mensagem,
   }).eq("id", lancamento.id)
+}
+
+interface AttachmentAttempt {
+  nomeArquivo: string
+  ok: boolean
+  motivo?: string
+}
+
+// Decide o anexo_status final a partir das tentativas por documento. So marca
+// "enviado" quando TODOS os documentos do fechamento foram anexados; sucesso
+// parcial ou total fica "pendente" com o detalhe de quais faltam e por que,
+// em vez de travar no primeiro documento quebrado (ver uploadAnexos).
+export function summarizeAttachmentAttempts(
+  resultados: AttachmentAttempt[],
+): { status: "enviado" | "pendente"; mensagem: string | null } {
+  if (resultados.length === 0) {
+    return { status: "pendente", mensagem: "Nenhum documento encontrado para anexar." }
+  }
+  const falhas = resultados.filter((item) => !item.ok)
+  if (falhas.length === 0) {
+    return { status: "enviado", mensagem: null }
+  }
+  const sucesso = resultados.length - falhas.length
+  const detalhe = falhas.map((item) => `${item.nomeArquivo}: ${item.motivo ?? "falha desconhecida"}`).join("; ")
+  return {
+    status: "pendente",
+    mensagem: `${sucesso} de ${resultados.length} documento(s) anexado(s). Pendente(s): ${detalhe}`,
+  }
 }
 
 async function revalidateLancamento(supabase: SupabaseClient, client: EgestorClient, lancamento: PersistedLancamento) {
@@ -991,16 +1024,6 @@ function friendlyAnexoError(raw: string): string {
     return 'Anexo nao enviado: habilite "Disco Virtual" no eGestor e use "Reenviar anexos".'
   }
   return raw
-}
-
-// Falha de anexo NAO e erro do lancamento: o lancamento financeiro ja foi
-// enviado. Mantemos o status "enviado" e registramos apenas o anexo como
-// pendente (anexo_status/anexo_mensagem) — exibido como detalhe discreto.
-async function markAnexoPendente(supabase: SupabaseClient, lancamentoId: string, message: string) {
-  await supabase.from("egestor_lancamentos").update({
-    anexo_status: "pendente",
-    anexo_mensagem: message,
-  }).eq("id", lancamentoId)
 }
 
 async function updateConnectionStatus(supabase: SupabaseClient, contaId: string, status: string, message: string) {

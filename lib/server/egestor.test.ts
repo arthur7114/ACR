@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { PackageAnalysis, PrestacaoAnalysis } from "@/lib/prestacao-types"
 import { EgestorClient } from "./egestor-client.ts"
-import { buildEgestorDrafts, buildLancamentoUpdate } from "./egestor.ts"
+import { buildEgestorDrafts, buildLancamentoUpdate, summarizeAttachmentAttempts } from "./egestor.ts"
 
 function createAnalysis(overrides: Partial<PackageAnalysis> = {}): PackageAnalysis {
   return {
@@ -200,4 +200,39 @@ test("buildLancamentoUpdate atualiza etiquetas e rejeita lista vazia", () => {
   assert.deepEqual(result.tags, ["ACR", "MARACANAU"])
   assert.deepEqual(result.payload.tags, ["ACR", "MARACANAU"])
   assert.throws(() => buildLancamentoUpdate(atual, { tags: [] }), /etiqueta/i)
+})
+
+test("um documento quebrado não bloqueia o anexo dos demais: sucesso parcial fica pendente com detalhe", () => {
+  const resumo = summarizeAttachmentAttempts([
+    { nomeArquivo: "1. Prestação.pdf", ok: false, motivo: "Documento nao encontrado no Storage." },
+    { nomeArquivo: "2. Repasse.pdf", ok: true },
+  ])
+  assert.equal(resumo.status, "pendente")
+  assert.match(resumo.mensagem ?? "", /1 de 2/)
+  assert.match(resumo.mensagem ?? "", /1\. Prestação\.pdf/)
+  assert.match(resumo.mensagem ?? "", /Documento nao encontrado no Storage\./)
+})
+
+test("todos os documentos anexados marca enviado sem mensagem", () => {
+  const resumo = summarizeAttachmentAttempts([
+    { nomeArquivo: "1. Prestação.pdf", ok: true },
+    { nomeArquivo: "2. Repasse.pdf", ok: true },
+  ])
+  assert.equal(resumo.status, "enviado")
+  assert.equal(resumo.mensagem, null)
+})
+
+test("todos os documentos falham mantém pendente com o motivo mais recente por arquivo", () => {
+  const resumo = summarizeAttachmentAttempts([
+    { nomeArquivo: "1. Prestação.pdf", ok: false, motivo: "Documento nao encontrado no Storage." },
+    { nomeArquivo: "2. Repasse.pdf", ok: false, motivo: "Documento nao encontrado no Storage." },
+  ])
+  assert.equal(resumo.status, "pendente")
+  assert.match(resumo.mensagem ?? "", /0 de 2/)
+})
+
+test("nenhum documento no fechamento não gera divisão por zero nem status enviado falso", () => {
+  const resumo = summarizeAttachmentAttempts([])
+  assert.equal(resumo.status, "pendente")
+  assert.match(resumo.mensagem ?? "", /nenhum documento/i)
 })
