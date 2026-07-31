@@ -563,6 +563,8 @@ function financialSnapshot(analysis: PackageAnalysis | null) {
     repasseCalculado: analysis.totals.total_a_repassar,
     repasseDeclarado:
       analysis.totals.repasse_declarado ?? analysis.totals.total_a_repassar,
+    baseComissao: analysis.totals.base_comissao_administracao,
+    comissaoCalculada: analysis.totals.comissao_administracao_calculada,
   }
 }
 

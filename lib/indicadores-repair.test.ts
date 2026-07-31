@@ -14,6 +14,7 @@ import {
   extractPdfTextLines,
   parseCesarRegoPrestacao,
 } from "./server/cesar-rego-parser.ts"
+import { commissionBaseComponents } from "./comissao.ts"
 
 test("ponte v2 exige diferença não explicada de no máximo um centavo", () => {
   const reconciled = reconcileFinancialDimensions({
@@ -150,6 +151,22 @@ test("César Rêgo março distribui as linhas sem duplicar o documento consolida
     plan.repairs.find((repair) => repair.id === "joao")?.propertyCodes,
     ["0002520", "0002521"],
   )
+
+  // A base de comissão do reparo reflete SÓ as linhas do empreendimento
+  // (incluindo o IPTU), não o total do documento consolidado. Sem isso, a base
+  // herdaria o valor do consolidado inteiro e ficaria maior que a receita.
+  for (const repair of plan.repairs) {
+    const rows = repair.analysisRepaired.prestacao?.receitas_por_imovel ?? []
+    const expected = commissionBaseComponents(rows)
+    assert.equal(
+      repair.analysisRepaired.totals.base_comissao_administracao,
+      expected.base,
+    )
+    assert.equal(
+      repair.analysisRepaired.totals.total_iptu,
+      expected.totalIptu,
+    )
+  }
 
   const scoped = scopeCesarRegoAnalysisToDevelopment(
     makePackage(parsed, {

@@ -13,6 +13,7 @@ import type {
 import type { CommercialRuleForValidation } from "./regras-comerciais"
 import { reconciliarResumoDespesas } from "@/lib/despesas-locador"
 import { resolveReceitaCompetencias } from "@/lib/competencia-fechamento"
+import { commissionBaseComponents, calculatedAdminCommission as computeAdminCommission } from "@/lib/comissao"
 import { ensureReceitaLineIds } from "./fechamento-corrections"
 
 const MONEY_TOLERANCE = 0.01
@@ -256,14 +257,16 @@ function calculateTotals(
   const lineTotalReceitas = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? []))
   const lineTotalComissoes = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.comissao ?? 0) ?? []))
   const lineTotalRepasse = roundMoney(sum(prestacao?.receitas_por_imovel.map((row) => row.repasse ?? 0) ?? []))
-  const totalAluguel = roundMoney(sum(rows.map((row) => row.aluguel_com_desconto ?? row.aluguel ?? 0)))
-  const totalGaragem = roundMoney(sum(rows.map((row) => row.garagem ?? 0)))
-  const totalAgua = roundMoney(sum(rows.map((row) => row.agua ?? 0)))
-  const totalIptu = roundMoney(sum(rows.map((row) => row.iptu ?? 0)))
-  const totalSeguroIncendio = roundMoney(sum(rows.map((row) => row.seguro_incendio ?? 0)))
-  const commissionBase = roundMoney(totalAluguel + totalGaragem + totalAgua + totalIptu + totalSeguroIncendio)
+  const {
+    totalAluguel,
+    totalGaragem,
+    totalAgua,
+    totalIptu,
+    totalSeguroIncendio,
+    base: commissionBase,
+  } = commissionBaseComponents(rows)
   const calculatedAdminCommission = commercialRule
-    ? roundMoney((commissionBase * commercialRule.taxa_administracao_percent) / 100)
+    ? computeAdminCommission(commissionBase, commercialRule.taxa_administracao_percent)
     : null
   const resumo = prestacao?.resumo_financeiro
   const resumoOutrasDespesas = roundMoney(resumo?.total_outras_comissoes_despesas ?? sum(resumo?.outras_comissoes_despesas.map((item) => item.valor) ?? []))

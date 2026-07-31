@@ -117,6 +117,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-31 - Comissão de administração: base com IPTU e recálculo no reparo por empreendimento
+
+Status: done
+Job: na reunião de 30/07, o "Valor calculado" da comissão do Pompílio Gomes junho aparecia como 593,84 sem ninguém conseguir reproduzir a conta; a comissão real era 494,99. Dois problemas: o reparo César Rêgo não recalculava a base ao separar o extrato consolidado por empreendimento (herdava a base do documento inteiro, deixando "aluguel" maior que a receita do fechamento), e a conferência precisava refletir que a imobiliária cobra 4% sobre aluguel + IPTU (apontado pelo cliente e confirmado: 4% × (12.032,74 + 342,04) = 494,99 exato).
+Outcome entregue: helper único `lib/comissao.ts` (base = aluguel com desconto quando houver + garagem + água + IPTU + seguro incêndio) usado por `calculateTotals` e pelo reparo; `applyFinancialDimensions` agora recalcula `total_aluguel/garagem/agua/iptu/seguro`, `base_comissao_administracao` e `comissao_administracao_calculada` a partir das linhas restritas do empreendimento. Re-reparo aplicado no Supabase (9 fechamentos César regravados; dry-run subsequente 0 repaired / 54 unchanged). Tooltip no "Valor calculado" da revisão decompõe a base, mostra a taxa e orienta conferir contra a tabela — divergência de leitura fica visível na hora. Relatório do reparador passou a registrar base e comissão calculada no antes/depois.
+Validacao: Pompílio junho no banco: base 14.845,97 → 12.374,78 e valor calculado 593,84 → 494,99 (= comissão real). Testes 291/291, `tsc`, `lint` e `eslint` no arquivo da revisão verdes.
+Decisoes: a base da comissão nunca é herdada de documento consolidado; é sempre recalculada das linhas do próprio fechamento e inclui o IPTU. A taxa cadastrada da César Rego permanece 4% (a conta fecha com a base correta).
+Arquivos/docs impactados: `lib/comissao.ts`, `lib/comissao.test.ts`, `lib/indicadores-repair.ts`, `lib/indicadores-repair.test.ts`, `lib/server/package-rechecks.ts`, `scripts/repair-indicadores-confiabilidade.ts`, `components/acr/views/revisao-view.tsx`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: apto 202 Maracanaú junho (proporcional de rescisão classificado como desconto), alerta de acordos/rescisões tratando contagem como valor, reprocessamento 5× do Pompílio para confirmar leitura consistente e redesenho do mapa de inadimplência dos indicadores.
+
 ### 2026-07-29 - Revisão: "Ignorar" pendência sem valor no modal de resolução
 
 Status: done

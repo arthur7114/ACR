@@ -70,6 +70,8 @@
 - CA-IND14: upload repetido no mesmo fechamento é idempotente por SHA-256; uma fonte pode ser reutilizada entre fechamentos sem compartilhar valores/vínculos; redundâncias são preservadas com referência de duplicidade.
 - CA-IND15: o reparador é dry-run por padrão, exige `--commit`, registra antes/depois e bloqueia qualquer fechamento com diferença documental acima de R$ 0,01.
 - CA-IND16: o reparo César Rêgo vincula as linhas históricas aos cadastros canônicos existentes e envia à RPC apenas movimentações `receita_aluguel`; as despesas de rateio da TED não vazam para `p_receitas`. Após o reparo, não há receita César Rêgo sem vínculo válido nem cadastro no empreendimento errado.
+- CA-IND17: a base da comissão de administração é a soma das receitas comissionáveis das linhas do próprio fechamento (aluguel com desconto quando houver, garagem, água, IPTU e seguro incêndio) — nunca herdada do documento consolidado. No reparo por empreendimento, `base_comissao_administracao` e `comissao_administracao_calculada` são recalculadas das linhas restritas. Ex.: Pompílio junho, 4% × (12.032,74 + 342,04) = 494,99, igual à comissão real.
+- CA14.15: o "Valor calculado" da comissão exibe tooltip com a decomposição da base (aluguel + garagem + água + IPTU + seguro), a taxa cadastrada e o resultado, permitindo conferir a leitura contra a tabela do documento.
 
 ## IPTU - Contas a pagar manual
 

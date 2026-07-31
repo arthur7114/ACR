@@ -785,6 +785,21 @@ export function RevisaoView({
   const vagasTotais = rowTotals.vagas + vagasAcordos
   const taxaAdministracao = totals.taxa_administracao_percent ?? fechamento?.regra_comercial?.taxa_administracao_percent ?? null
   const comissaoCalculada = totals.comissao_administracao_calculada ?? null
+  // Decomposição da base do "Valor calculado": mostra de onde cada parcela vem
+  // para o operador conferir contra a tabela e pegar divergência na hora.
+  const baseComissao = totals.base_comissao_administracao ?? null
+  const comissaoCalculadaTooltip = (() => {
+    if (comissaoCalculada === null || baseComissao === null || !taxaAdministracao) return undefined
+    const partes = [
+      ["Aluguel", totals.total_aluguel],
+      ["Garagem", totals.total_garagem],
+      ["Água", totals.total_agua],
+      ["IPTU", totals.total_iptu],
+      ["Seguro incêndio", totals.total_seguro_incendio],
+    ].filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] !== 0)
+    const composicao = partes.map(([label, valor]) => `${label} ${formatBRL(valor)}`).join(" + ")
+    return `Base ${formatBRL(baseComissao)}${composicao ? ` = ${composicao}` : ""}\n× taxa cadastrada ${formatPercent(taxaAdministracao)} = ${formatBRL(comissaoCalculada)}\nConfira contra a tabela: se a base divergir das linhas, há erro de leitura.`
+  })()
   // Comissao realizada = comissao das linhas da tabela / total das linhas da tabela
   // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
   const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
@@ -1126,8 +1141,11 @@ export function RevisaoView({
                       </div>
                     )}
                     {comissaoCalculada !== null && (
-                      <div className="flex justify-between text-[13px]">
-                        <span className="text-[#6B7F6E]">Valor calculado</span>
+                      <div className="flex justify-between text-[13px]" title={comissaoCalculadaTooltip}>
+                        <span className="flex items-center gap-1 text-[#6B7F6E]">
+                          Valor calculado
+                          {comissaoCalculadaTooltip && <Info size={12} className="cursor-help text-[#8A9A8C]" aria-label="Como o valor calculado é composto" />}
+                        </span>
                         <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(comissaoCalculada)}</span>
                       </div>
                     )}

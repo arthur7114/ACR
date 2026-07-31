@@ -7,6 +7,7 @@ import {
   CESAR_REGO_DEVELOPMENTS,
   getCesarRegoDevelopmentByName,
 } from "./cesar-rego-properties"
+import { calculatedAdminCommission, commissionBaseComponents } from "./comissao"
 
 export const REPAIR_TOLERANCE = 0.01
 
@@ -372,6 +373,11 @@ function applyFinancialDimensions(
 ): PackageAnalysis {
   const prestacao = analysis.prestacao
   if (!prestacao) throw new Error("Prestação ausente no reparo financeiro.")
+  // A base de comissão precisa refletir SOMENTE as linhas deste empreendimento.
+  // Sem recalcular aqui, os totais herdariam a base do documento consolidado
+  // inteiro (César Rêgo cobre dois empreendimentos no mesmo extrato), deixando
+  // aluguel/base maiores que a receita do fechamento. A base inclui o IPTU.
+  const commission = commissionBaseComponents(prestacao.receitas_por_imovel)
   return {
     ...analysis,
     prestacao: {
@@ -417,6 +423,16 @@ function applyFinancialDimensions(
       saidas_passagem: reconciliation.saidasPassagem,
       total_tarifas: reconciliation.tarifas,
       repasse_declarado: reconciliation.repasseDeclarado,
+      total_aluguel: commission.totalAluguel,
+      total_garagem: commission.totalGaragem,
+      total_agua: commission.totalAgua,
+      total_iptu: commission.totalIptu,
+      total_seguro_incendio: commission.totalSeguroIncendio,
+      base_comissao_administracao: commission.base,
+      comissao_administracao_calculada: calculatedAdminCommission(
+        commission.base,
+        analysis.totals.taxa_administracao_percent,
+      ),
     },
   }
 }
