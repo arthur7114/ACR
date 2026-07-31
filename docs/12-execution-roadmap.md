@@ -115,7 +115,15 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - A lista de fechamentos usa consulta local imediata sobre a colecao carregada: busca e filtros combinaveis, ordenacao em todas as colunas de dados, 25 itens por pagina e estado completo persistido na URL. A tabela preserva alinhamento financeiro e rolagem interna sem causar overflow da pagina.
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
-## Historico de ciclos
+### 2026-07-31 - Validação: leitura do Pompílio Gomes é determinística, não é visão computacional
+
+Status: done
+Job: na reunião de 30/07 (21:00), levantou-se a hipótese de que a divergência da comissão do Pompílio Gomes viesse de leitura inconsistente do PDF via visão computacional a cada processamento; pediu-se reprocessar o documento 5 vezes para checar.
+Outcome: baixado o PDF real do fechamento (`0c41aee2…`, César Rego junho/2026) e rodado o pipeline exato de produção (`extractPdfTextLines` + `parseCesarRegoPrestacao`, o mesmo caminho que `extractPrestacaoAliveFromPdf` usa) 5 vezes sobre os mesmos bytes. As 5 execuções produziram hash SHA-256 idêntico (5 linhas, total 15.022,33, sem variação). A hipótese está descartada: o parser da César Rego é determinístico por design — `isCesarRegoConsolidado` detecta o layout e desvia para o parser de texto/regex puro **antes** de qualquer chamada à OpenAI; não há visão computacional nesse caminho. A causa real da divergência (593,84 vs 494,99) já havia sido encontrada e corrigida no ciclo "Comissão de administração" (base de comissão não recalculada no reparo por empreendimento), não uma inconsistência de leitura.
+Validacao: 5/5 execuções com hash idêntico sobre o documento real de produção.
+Decisoes: não migrar a César Rego para ingestão via Excel (pedido nas notas da reunião) só por causa desta hipótese — ela não se confirmou; a decisão de formato de documento fica em aberto por outros motivos, se houver.
+Arquivos/docs impactados: `docs/12-execution-roadmap.md` (nenhum código alterado).
+Proxima acao: redesenho do mapa de inadimplência dos indicadores; itens 6-8 do plano de 30/07 (smoke autenticado, eGestor, nomenclatura).
 
 ### 2026-07-31 - Contagem de acordos/rescisões não é mais tratada como valor monetário
 
