@@ -1207,7 +1207,7 @@ export function RevisaoView({
               <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância, aplicativos e intermediação são contagens separadas." />
               <div className={`grid grid-cols-2 gap-3 md:grid-cols-6 ${intermediadas > 0 ? "lg:grid-cols-7" : ""}`}>
                 <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
-                <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Aluguel zerado/obs" tone={inadimplentes > 0 ? "danger" : "default"} />
+                <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Sem aluguel recebido no mês" tone={inadimplentes > 0 ? "danger" : "default"} />
                 <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
                 <MetricTile label="Aplicativos" value={`${airbnb}`} subtext="Não contam como vagos" />
                 {intermediadas > 0 && (
@@ -1344,9 +1344,20 @@ export function RevisaoView({
             <table className="w-full min-w-[1180px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
-                  {["Apto", "Inquilino", "Aluguel/base", "IPTU", "Total recebido", "Comissão interm.", "%", "Repasse", "Competência", "Obs"].map((header) => (
-                    <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
-                      {header}
+                  {[
+                    { label: "Apto" },
+                    { label: "Inquilino" },
+                    { label: "Aluguel/base", title: "Aluguel usado como base da comissão de intermediação" },
+                    { label: "IPTU" },
+                    { label: "Total recebido" },
+                    { label: "Comissão interm.", title: "Comissão de intermediação" },
+                    { label: "%" },
+                    { label: "Repasse" },
+                    { label: "Competência" },
+                    { label: "Obs", title: "Observação" },
+                  ].map(({ label, title }) => (
+                    <th key={label} title={title} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
+                      {label}
                     </th>
                   ))}
                 </tr>
@@ -1414,9 +1425,24 @@ export function RevisaoView({
           <table className="w-full min-w-[1320px] text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#F8FAF8] border-b border-[#EEF1EE]">
-                {["Apto", "Inquilino", "Aluguel", "Valor c/ desc.", "Garagem (R$)", "Vagas", "Água", "IPTU", "Seg. inc.", "Total", "Comissão", "Repasse", "Ref.", "Obs"].map((header) => (
-                  <th key={header} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
-                    {header}
+                {[
+                  { label: "Apto" },
+                  { label: "Inquilino" },
+                  { label: "Aluguel" },
+                  { label: "Valor c/ desc.", title: "Valor do aluguel com desconto aplicado" },
+                  { label: "Garagem (R$)" },
+                  { label: "Vagas" },
+                  { label: "Água" },
+                  { label: "IPTU" },
+                  { label: "Seg. inc.", title: "Seguro incêndio" },
+                  { label: "Total" },
+                  { label: "Comissão" },
+                  { label: "Repasse" },
+                  { label: "Ref.", title: "Competência original do documento" },
+                  { label: "Obs", title: "Observação" },
+                ].map(({ label, title }) => (
+                  <th key={label} title={title} className="text-left px-4 py-3 text-[11px] uppercase tracking-wide text-[#6B7F6E] font-medium">
+                    {label}
                   </th>
                 ))}
               </tr>

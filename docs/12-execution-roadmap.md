@@ -115,7 +115,15 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - A lista de fechamentos usa consulta local imediata sobre a colecao carregada: busca e filtros combinaveis, ordenacao em todas as colunas de dados, 25 itens por pagina e estado completo persistido na URL. A tabela preserva alinhamento financeiro e rolagem interna sem causar overflow da pagina.
 - O contrato completo de elegibilidade, formulas, snapshots, API, responsividade, testes e rollout esta em `docs/PLAN-indicadores-operacionais.md`.
 
-## Historico de ciclos
+### 2026-07-31 - Pente fino de nomenclatura: tooltips nas colunas abreviadas da revisão
+
+Status: done
+Job: na reunião de 30/07 (12:12), o Júnior (em treinamento, cuida do dia a dia com a MMC) achou a nomenclatura confusa, sem lista específica de termos. Levantamento próprio feito contra o código (sem lista externa): as colunas abreviadas das tabelas de receitas por imóvel e intermediação, na tela de revisão, são texto puro sem nenhum `title`/tooltip — uma pessoa nova não tem como saber o que significam sem perguntar.
+Outcome entregue: adicionado `title` explicativo a 6 cabeçalhos abreviados (Valor c/ desc., Seg. inc., Ref., Obs, Aluguel/base, Comissão interm.) nas duas tabelas da revisão, sem renomear nenhum rótulo — `Ref.` e `Aluguel/base` são nomes travados pelo mock contract e não podem divergir sem justificativa; os demais não são travados, mas manter a abreviação com tooltip evita reduzir a densidade da tabela (já larga, `min-w-[1320px]`/`min-w-[1180px]`). O subtexto "Aluguel zerado/obs" do card "Inadimplentes" (esse não travado pelo contrato) foi reescrito para "Sem aluguel recebido no mês".
+Validacao: testes 304/304 (sem mudança de lógica, só JSX), `tsc`, `lint`, `build`, `api_validator` e checklist verdes. Verificação visual fica para o smoke autenticado (mesma limitação de login já registrada nos ciclos anteriores).
+Decisoes: preferir tooltip a renomear quando o rótulo já é curto e a tabela é densa; só reescrever texto livre (subtextos, não cabeçalhos de coluna com posição fixa) quando a abreviação some sem perda de contexto.
+Arquivos/docs impactados: `components/acr/views/revisao-view.tsx`, `docs/12-execution-roadmap.md`.
+Proxima acao: smoke autenticado cobrindo os 8 itens acumulados desta rodada (Ignorar, tooltip de comissão, mapa de inadimplência, tooltips de nomenclatura, César Rêgo sem duplicatas).
 
 ### 2026-07-31 - eGestor: um documento quebrado não bloqueia mais o anexo dos demais
 
