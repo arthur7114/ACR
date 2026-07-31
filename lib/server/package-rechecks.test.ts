@@ -342,7 +342,11 @@ test("alerta quando acordo recebido no mes tem competencia original diferente", 
   const check = result.rechecks.find((item) => item.id === "acordos_competencias")
 
   assert.equal(check?.status, "warning")
-  assert.equal(check?.actual, 1)
+  // Contagem (1 acordo), não valor monetário: não populamos actual/expected
+  // para não ser exibida/resolvida como se fosse dinheiro (R$ 1,00).
+  assert.equal(check?.actual, null)
+  assert.equal(check?.expected, null)
+  assert.match(check?.message ?? "", /1 acordo/)
 })
 
 test("bloqueia possivel acordo ou rescisao repetido", () => {
@@ -373,7 +377,10 @@ test("bloqueia possivel acordo ou rescisao repetido", () => {
   const check = result.rechecks.find((item) => item.id === "duplicate_agreement_payment")
 
   assert.equal(check?.status, "failed")
-  assert.equal(check?.actual, 1)
+  // Contagem (1 possível repetição), não valor monetário.
+  assert.equal(check?.actual, null)
+  assert.equal(check?.expected, null)
+  assert.match(check?.message ?? "", /1 possivel/)
   assert.equal(result.parecer.status, "bloqueado")
 })
 
@@ -405,7 +412,7 @@ test("nao bloqueia parcelas do mesmo acordo recebidas em meses diferentes", () =
   const check = result.rechecks.find((item) => item.id === "duplicate_agreement_payment")
 
   assert.equal(check?.status, "passed")
-  assert.equal(check?.actual, 0)
+  assert.equal(check?.actual, null)
 })
 
 test("Pompilio: validatePackage expoe receita bruta e 3 despesas itemizadas", () => {

@@ -73,6 +73,7 @@
 - CA-IND17: a base da comissão de administração é a soma das receitas comissionáveis das linhas do próprio fechamento (aluguel com desconto quando houver, garagem, água, IPTU e seguro incêndio) — nunca herdada do documento consolidado. No reparo por empreendimento, `base_comissao_administracao` e `comissao_administracao_calculada` são recalculadas das linhas restritas. Ex.: Pompílio junho, 4% × (12.032,74 + 342,04) = 494,99, igual à comissão real.
 - CA14.15: o "Valor calculado" da comissão exibe tooltip com a decomposição da base (aluguel + garagem + água + IPTU + seguro), a taxa cadastrada e o resultado, permitindo conferir a leitura contra a tabela do documento.
 - CA14.16: quando `desconto` extraído for igual ao aluguel (100%) e `aluguel_com_desconto + demais componentes` não reconciliar com o `total` da linha, o desconto é tratado como artefato de leitura (coluna em branco duplicada) e corrigido para 0, restaurando `aluguel_com_desconto` ao valor do aluguel; um desconto real sempre reconcilia com o total e não é tocado.
+- CA14.17: os rechecks `acordos_competencias` e `duplicate_agreement_payment` nunca populam `actual`/`expected` (campos monetários, formatados como R$ na lista de pendências e no modal) com a contagem de acordos/rescisões; a contagem aparece só no texto da mensagem. Sem valor a decidir, resolver a pendência oferece apenas "Ignorar pendência".
 
 ## IPTU - Contas a pagar manual
 

@@ -117,6 +117,17 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-07-31 - Contagem de acordos/rescisões não é mais tratada como valor monetário
+
+Status: done
+Job: no vídeo do GM I junho/2026, o alerta "competências de acordos e rescisões" mostrava 3 acordos, mas ao resolver o modal pedia um valor — o operador não sabia se colocava "o valor dos acordos" ou zero. A transcrição da reunião de 30/07 confirma que, no Grand Maracanaú, a equipe efetivamente digitou um valor zerado para se livrar do alerta.
+Causa raiz: os rechecks `acordos_competencias` e `duplicate_agreement_payment` usavam `actual`/`expected` — campos monetários formatados como R$ em toda a UI (lista de pendências e modal de resolução) — para guardar uma contagem. "3 acordos" virava "R$ 3,00".
+Outcome entregue: os dois rechecks pararam de popular `actual`/`expected`; a contagem já está no texto da mensagem. Sem valor, a pendência aciona automaticamente o fluxo "Ignorar pendência" (entrega de 2026-07-29). Escaneados os 54 fechamentos ativos: todos tinham o campo contaminado (a maioria com 0, cosmético); 6 tinham valor real (>0) causando confusão de verdade, incluindo o GM I junho do vídeo (ainda aberto) e o Maracanaú (já "resolvido" com valor zerado). Reparo de dado aplicado via `scripts/repair-rechecks-contagem.ts`, que toca apenas o array `rechecks` (com concorrência otimista), sem alterar prestação, totais ou status.
+Validacao: testes 297/297, `tsc`, `lint`, `build`, `api_validator` e checklist verdes. Reparo aplicado (54/54 fechamentos); dry-run subsequente confirma 0 afetados (idempotente). Recheck do GM I junho verificado ao vivo: `actual: null, expected: null`, mensagem preserva "3 acordo(s)...".
+Decisoes: campos monetários (`actual`/`expected`/`difference`) nunca carregam contagem; uma contagem se comunica só pelo texto da mensagem.
+Arquivos/docs impactados: `lib/server/package-rechecks.ts`, `lib/server/package-rechecks.test.ts`, `lib/rechecks-contagem.ts`, `lib/rechecks-contagem.test.ts`, `scripts/repair-rechecks-contagem.ts`, `docs/06-acceptance-criteria.md`, `docs/12-execution-roadmap.md`.
+Proxima acao: reprocessamento 5× do Pompílio para confirmar leitura consistente e redesenho do mapa de inadimplência dos indicadores.
+
 ### 2026-07-31 - Rescisão proporcional não vira desconto integral quando a coluna vem em branco
 
 Status: done

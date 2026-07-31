@@ -419,13 +419,18 @@ function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): Presta
     return original && received && original !== received
   })
 
+  // actual/expected são campos monetários (a UI de resolução e a lista de
+  // pendências formatam ambos como R$); uma contagem de acordos NUNCA deve ir
+  // ali — a contagem já está no texto da mensagem. Ver repararDescontoIntegralInconsistente
+  // acima para outro caso de sinal determinístico; aqui o sinal é o tipo do dado.
   if (differentCompetencies.length === 0) {
     return {
       id: "acordos_competencias",
       label: "Competencias de acordos e rescisoes",
       status: "passed",
       message: items.length > 0 ? "Acordos e rescisoes recebidos no mes foram lidos sem divergencia de competencia." : "Nenhum acordo ou rescisao recebido no mes foi identificado.",
-      actual: items.length,
+      actual: null,
+      expected: null,
     }
   }
 
@@ -434,7 +439,8 @@ function checkAgreementCompetencies(prestacao: PrestacaoAnalysis | null): Presta
     label: "Competencias de acordos e rescisoes",
     status: "warning",
     message: `${differentCompetencies.length} acordo(s) ou rescisao(oes) foram recebidos no mes com competencia original diferente. Confira antes de aprovar.`,
-    actual: differentCompetencies.length,
+    actual: null,
+    expected: null,
   }
 }
 
@@ -451,13 +457,15 @@ function checkDuplicateAgreementPayments(prestacao: PrestacaoAnalysis | null, hi
     seen.add(key)
   }
 
+  // Contagem, não valor monetário (mesmo motivo do recheck acima).
   if (duplicated.size === 0) {
     return {
       id: "duplicate_agreement_payment",
       label: "Pagamento de acordo/rescisao repetido",
       status: "passed",
       message: "Nenhum acordo ou rescisao repetido foi identificado pelos dados disponiveis.",
-      actual: 0,
+      actual: null,
+      expected: null,
     }
   }
 
@@ -466,7 +474,8 @@ function checkDuplicateAgreementPayments(prestacao: PrestacaoAnalysis | null, hi
     label: "Pagamento de acordo/rescisao repetido",
     status: "failed",
     message: `${duplicated.size} possivel(is) pagamento(s) de acordo/rescisao repetido(s). Resolva ou justifique antes de aprovar.`,
-    actual: duplicated.size,
+    actual: null,
+    expected: null,
   }
 }
 
