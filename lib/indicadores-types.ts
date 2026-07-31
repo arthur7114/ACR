@@ -32,6 +32,7 @@ export interface IndicadoresCoverageGap {
 
 export interface IndicadoresOccupancy {
   ocupados: number
+  alugadosApp: number
   inadimplentes: number
   emRescisao: number
   vagos: number

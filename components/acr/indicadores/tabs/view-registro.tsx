@@ -13,7 +13,7 @@ import {
   qualityLabel,
   resolveMetricValue,
 } from "../lib/presentation"
-import { EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
+import { DataNote, EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 const PAGE_SIZE = 20
 
@@ -65,7 +65,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
           title: "Detalhamento por imóvel",
           definition: "Relaciona contrato, recebimentos, retenções e repasse calculado de cada imóvel.",
           source: "Fechamentos da competência e histórico mensal por imóvel.",
-          limitation: "Evidências bancárias são conciliadas por fechamento e não atribuídas artificialmente a cada imóvel.",
+          limitation: "Evidências bancárias são conciliadas por fechamento e não atribuídas artificialmente a cada imóvel. Receitas sem imóvel vinculado (acordos, atrasos e intermediação) entram no total da competência, mas não aparecem em nenhuma linha desta tabela.",
         }}
         action={
           <a
@@ -161,6 +161,11 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
           </div>
 
           <Pagination page={safePage} pageCount={pageCount} onPageChange={setPage} />
+          <div className="border-t border-acr-line px-4 py-3 sm:px-5">
+            <DataNote>
+              A soma das “Receitas do fechamento” por imóvel pode ficar abaixo do total da competência: acordos, atrasos e intermediação sem imóvel vinculado compõem o fechamento, mas não entram em nenhuma linha desta tabela.
+            </DataNote>
+          </div>
         </>
       ) : (
         <EmptyState

@@ -376,6 +376,7 @@ function buildSnapshotRow(input: {
     hasDelinquency:
       input.delinquencyKeys.has(input.propertyKey) || hasDelinquencyEvidence(evidenceText),
     hasVacancy: hasVacancyEvidence(evidenceText),
+    isVariableRevenue: (property.revenueModel ?? "fixo") === "variavel",
   }
   const status = classifyOccupancy(evidence)
   const revenueModel = property.revenueModel ?? "fixo"
@@ -560,16 +561,19 @@ function resolveStatusOrigin(
   evidence: Parameters<typeof classifyOccupancy>[0],
   lineCount: number,
 ) {
-  if (lineCount === 0) return "sem_linha"
   if (status === "em_rescisao") return "prestacao_rescisao"
   if (status === "inadimplente") return "prestacao_inadimplencia"
   if (status === "vago") return "prestacao_vacancia"
   if (status === "ocupado") {
+    // Ocupada sem linha só acontece pela receita variável do cadastro; a origem
+    // precisa revelar que a evidência veio do cadastro, não da prestação.
+    if (lineCount === 0) return "cadastro_receita_variavel"
     const context = normalizePropertyKeyPart(
       [evidence.tenantName, evidence.observation].filter(Boolean).join(" "),
     )
     return context.includes("airbnb") ? "prestacao_airbnb" : "prestacao_aluguel"
   }
+  if (lineCount === 0) return "sem_linha"
   return "prestacao_sem_evidencia"
 }
 

@@ -164,6 +164,68 @@ test("materializa imóvel esperado sem linha como desconhecido e sem_linha", () 
   assert.equal(result.rows[0].repasse_apurado, null)
 })
 
+test("imóvel de receita variável sem linha é ocupado pelo cadastro, não desconhecido", () => {
+  // Caso Airbnb do Grand Maracanaú: unidade de temporada não listada na
+  // prestação do mês. O cadastro (receita variável) resolve a ocupação.
+  const analysis = {
+    prestacao: {
+      tipo_documento: "prestacao_contas",
+      imobiliaria: "Alive Imóveis",
+      empreendimento: "GRAND MARACANAÚ",
+      competencia: "2026-05",
+      plano_extracao: {
+        documento_lido_integralmente: true,
+        secoes_identificadas: ["receitas"],
+        estrategia: ["Extrair linhas por imóvel."],
+        alertas: [],
+      },
+      receitas_por_imovel: [],
+      acordos_rescisoes_recebidos: [],
+      inadimplencias_acumuladas: [],
+      resumo_financeiro: {
+        total_linhas_receitas: 0,
+        total_linhas_comissoes: 0,
+        total_linhas_repasse: 0,
+        comissao_administracao: 0,
+        outras_comissoes_despesas: [],
+        total_outras_comissoes_despesas: 0,
+        total_comissao_despesas: 0,
+        recebidos_em_nome_locador: 0,
+        total_a_repassar: 0,
+        confianca: 0.96,
+      },
+      totais: { total_receitas: 0, total_comissoes: 0, total_repassar: 0 },
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.96,
+    },
+  } satisfies Pick<PackageAnalysis, "prestacao">
+
+  const result = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "imovel-airbnb",
+        unit: "103",
+        expectedRent: null,
+        revenueModel: "variavel",
+        realEstateAgencyName: "Alive Imoveis",
+        developmentName: "GRAND MARACANAÚ",
+      },
+    ],
+    fechamentoId: "fechamento-maio",
+    competencia: "2026-05",
+    analysis,
+  })
+
+  assert.equal(result.rows[0].status_ocupacao, "ocupado")
+  assert.equal(result.rows[0].status_origem, "cadastro_receita_variavel")
+  assert.equal(result.rows[0].quantidade_linhas, 0)
+  // Sem inventar dinheiro: receita variável sem linha não recebeu nada.
+  assert.equal(result.rows[0].aluguel_recebido, null)
+  assert.equal(result.rows[0].receita_total, null)
+  assert.equal(result.rows[0].aluguel_esperado, null)
+})
+
 test("distingue zero ambiguo de vacancia explicita no inquilino ou observacao", () => {
   const analysis = {
     prestacao: {

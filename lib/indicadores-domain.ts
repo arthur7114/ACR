@@ -1,5 +1,6 @@
 export type OccupancyStatus =
   | "ocupado"
+  | "alugado_app"
   | "inadimplente"
   | "vago"
   | "em_rescisao"
@@ -18,6 +19,9 @@ interface OccupancyEvidence {
   hasTermination: boolean
   hasDelinquency: boolean
   hasVacancy: boolean
+  // Receita variável (Airbnb) é operação de temporada conhecida pelo cadastro.
+  // Um mês sem linha na prestação não a torna desconhecida.
+  isVariableRevenue?: boolean
 }
 
 export interface SnapshotLineAmounts {
@@ -61,6 +65,9 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
   if (evidence.hasVacancy) return "vago"
+  // Sem evidência na prestação, a receita variável recorre ao cadastro: é
+  // operação ativa, não dado ausente.
+  if (evidence.isVariableRevenue) return "ocupado"
   return "desconhecido"
 }
 

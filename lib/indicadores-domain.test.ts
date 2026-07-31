@@ -128,6 +128,50 @@ test("classifyOccupancy mantem linha zerada sem evidencia como desconhecida", ()
   )
 })
 
+test("classifyOccupancy trata receita variavel sem evidencia como ocupada, nao desconhecida", () => {
+  // Airbnb (receita variável) sem linha na prestação do mês: o cadastro já sabe
+  // que é operação de temporada, então não é dado desconhecido.
+  assert.equal(
+    classifyOccupancy({
+      tenantName: null,
+      observation: null,
+      rentReceived: 0,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
+      isVariableRevenue: true,
+    }),
+    "ocupado",
+  )
+})
+
+test("classifyOccupancy nao deixa receita variavel encobrir vacancia ou inadimplencia explicita", () => {
+  assert.equal(
+    classifyOccupancy({
+      tenantName: null,
+      observation: "Imovel desocupado",
+      rentReceived: 0,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: true,
+      isVariableRevenue: true,
+    }),
+    "vago",
+  )
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "Airbnb",
+      observation: null,
+      rentReceived: 0,
+      hasTermination: false,
+      hasDelinquency: true,
+      hasVacancy: false,
+      isVariableRevenue: true,
+    }),
+    "inadimplente",
+  )
+})
+
 test("aggregateSnapshotLines usa aluguel com desconto e nunca receita total como aluguel", () => {
   const result = aggregateSnapshotLines([
     {

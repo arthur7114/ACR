@@ -108,6 +108,12 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
   internos da avaliação não são repetidos como ressalva textual no topo; os
   valores ainda sem classificação permanecem visíveis na conciliação.
 
+### Ajuste registrado — locação por app na ocupação (2026-07-31)
+
+- Ponto alterado: a ocupação ganha a categoria própria `Alugado por app`, separada de `Ocupado`, com etiqueta e contagem próprias nos blocos de ocupação, na tabela `Detalhamento por imóvel` e no mapa `Riscos por imóvel`. Conta como ocupada no numerador do percentual.
+- Regra: é derivada na apresentação a partir do modelo de receita variável da vigência (Airbnb/temporada); não é um estado persistido nem altera o snapshot no banco. Vacância, inadimplência e rescisão explícitas continuam tendo prioridade sobre a categoria.
+- Por que: as unidades de temporada por app são receita variável conhecida pelo cadastro; exibi-las como `Ocupado` genérico ou `Desconhecido` escondia a natureza da operação. Nenhum valor financeiro é inventado (aluguel esperado e recebido seguem as regras existentes de ausência).
+
 ### Ajuste registrado — fechamento operacional e competência da receita (2026-07-14)
 
 - Ponto alterado: a coluna `Ref.` deixa de aceitar dia isolado como mês/ano e passa a editar a competência original da receita; o mês do fechamento continua representando o recebimento.

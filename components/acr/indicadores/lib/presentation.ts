@@ -157,6 +157,7 @@ function numericDay(value: unknown): number | null {
 export function occupancyLabel(status: OccupancyStatus): string {
   const labels: Record<OccupancyStatus, string> = {
     ocupado: "Ocupado",
+    alugado_app: "Alugado por app",
     inadimplente: "Inadimplente",
     vago: "Vago",
     em_rescisao: "Em rescisão",

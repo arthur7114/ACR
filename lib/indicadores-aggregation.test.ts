@@ -1003,6 +1003,50 @@ test("atraso pago em maio move receita para marco sem inventar aluguel recebido"
   assert.equal(maio.competenciaAjusteReceita, -1_717.36)
 })
 
+test("atraso com competencia original fora da janela nao inventa mes na serie", () => {
+  // Caso real: atraso de 04/2025 quitado em 05/2026. A competencia original fica
+  // fora do historico exibivel (sem fechamento/snapshot). A serie nao deve criar
+  // um mes-fantasma 2025-04 nem vazar o valor: ele permanece no mes do recebimento.
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 100 },
+        receitas: [
+          { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 100 },
+        ],
+      }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 776.97 },
+        receitas: [
+          { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
+        ],
+        intermediacoes: [
+          { tipo: "atraso", comissao: 0, apto: "101", valor: 776.97, competencia_original: "04/2025" },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "fechamento-marco", competencia: "2026-03-01", aluguelRecebido: 100, receitaTotal: 100 }),
+    makeSnapshot({ fechamentoId: "fechamento-maio", competencia: "2026-05-01", aluguelRecebido: 0, receitaTotal: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings, snapshots }))
+
+  // Nenhum mes fora do historico com lastro (fechamento/snapshot).
+  assert.equal(result.serieMensal.find((point) => point.competencia === "2025-04-01"), undefined)
+  // O valor nao vaza: permanece no mes do recebimento, sem realocacao.
+  const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
+  assert.equal(maio.competenciaAjusteReceita, 0)
+  assert.equal(maio.receitaTotal, 776.97)
+})
+
 test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () => {
   const propertyA = makeProperty({ id: "imovel-a", unidade: "101" })
   const propertyB = makeProperty({ id: "imovel-b", unidade: "102" })
@@ -1333,4 +1377,31 @@ test("valor de aluguel sem classificação acima de um centavo bloqueia confirma
 
   assert.equal(result.realizacaoAluguel.valoresSemClassificacao, -0.02)
   assert.equal(result.meta.statusConfianca, "com_divergencia")
+})
+
+test("imóvel de receita variável ocupado vira categoria alugado por app", () => {
+  const result = aggregateIndicadores(
+    makeInput({
+      snapshots: [makeSnapshot({ statusOcupacao: "ocupado", modeloReceita: "variavel" })],
+    }),
+  )
+
+  // Categoria própria, separada de "ocupado", contando como ocupado no numerador.
+  assert.equal(result.resumo.ocupacaoCompetencia.alugadosApp, 1)
+  assert.equal(result.resumo.ocupacaoCompetencia.ocupados, 0)
+  assert.equal(result.resumo.ocupacaoCompetencia.numerador, 1)
+  assert.equal(result.resumo.ocupacaoCompetencia.percentual, 100)
+  // Na tabela por imóvel o status de exibição também é a categoria de app.
+  assert.equal(result.receitasPorImovel[0]?.statusOcupacao, "alugado_app")
+})
+
+test("receita fixa ocupada permanece ocupado, não vira alugado por app", () => {
+  const result = aggregateIndicadores(
+    makeInput({
+      snapshots: [makeSnapshot({ statusOcupacao: "ocupado", modeloReceita: "fixo" })],
+    }),
+  )
+
+  assert.equal(result.resumo.ocupacaoCompetencia.ocupados, 1)
+  assert.equal(result.resumo.ocupacaoCompetencia.alugadosApp, 0)
 })

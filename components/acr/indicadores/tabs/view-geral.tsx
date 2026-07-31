@@ -37,7 +37,7 @@ export function ViewGeral({
             title: "Receitas do fechamento",
             definition: "Soma das receitas econômicas da competência, sem movimentos de passagem.",
             source: "Fechamentos da competência.",
-            limitation: "Entradas como IPTU de passagem aparecem apenas na conciliação financeira.",
+            limitation: "Entradas como IPTU de passagem aparecem apenas na conciliação financeira. Este é o caixa do fechamento da competência; a evolução mensal atribui a receita à competência de origem, então o valor por mês no gráfico pode diferir deste total.",
           }}
         />
         <Kpi
@@ -104,8 +104,15 @@ export function ViewGeral({
         <Panel className="min-w-0 overflow-hidden">
           <PanelHeader
             title="Evolução até a competência selecionada"
-            description={metric === "valor" ? "Receitas do fechamento, aluguel recebido da competência e repasse calculado por mês." : "Ocupação e cobertura do histórico mensal."}
+            description={metric === "valor" ? "Receita, aluguel recebido e repasse por mês, atribuídos à competência de origem do aluguel." : "Ocupação e cobertura do histórico mensal."}
             source={byProperty ? "Histórico mensal por imóvel" : "Fechamentos da competência e histórico mensal por imóvel"}
+            help={metric === "valor" ? {
+              short: "Cada mês segue a competência de origem do aluguel.",
+              title: "Evolução por competência",
+              definition: "Cada mês soma a receita e o aluguel na competência de origem do aluguel, não no mês em que o valor entrou no caixa. Um aluguel de março pago em maio conta em março.",
+              source: "Fechamentos da competência e histórico mensal por imóvel.",
+              limitation: "Por isso o valor de um mês pode diferir do card “Receitas do fechamento” do topo, que mostra o caixa do fechamento da competência selecionada. Atrasos recuperados movem só receita, nunca o aluguel recebido. Recebimentos cuja competência de origem fica fora do histórico permanecem no mês do recebimento.",
+            } : undefined}
             action={<MetricToggle value={metric} onChange={onMetricChange} />}
           />
           {data.serieMensal.length > 0 ? (
@@ -162,6 +169,7 @@ function OccupancyBlock({ label, occupancy }: { label: string; occupancy: Indica
       </p>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {occupancy.ocupados > 0 && <CountChip status="ocupado" count={occupancy.ocupados} />}
+        {occupancy.alugadosApp > 0 && <CountChip status="alugado_app" count={occupancy.alugadosApp} />}
         {occupancy.inadimplentes > 0 && <CountChip status="inadimplente" count={occupancy.inadimplentes} />}
         {occupancy.emRescisao > 0 && <CountChip status="em_rescisao" count={occupancy.emRescisao} />}
         {occupancy.vagos > 0 && <CountChip status="vago" count={occupancy.vagos} />}

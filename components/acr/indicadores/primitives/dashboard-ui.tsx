@@ -401,6 +401,7 @@ export function StatusChip({ status }: { status: OccupancyStatus }) {
       className={cn(
         "inline-flex min-h-6 items-center rounded-md px-2 py-1 text-[11px] font-semibold",
         status === "ocupado" && "bg-acr-green-soft text-acr-green-strong",
+        status === "alugado_app" && "bg-[#ece7f7] text-[#5b3f97]",
         status === "inadimplente" && "bg-acr-red-soft text-acr-red",
         status === "vago" && "bg-acr-amber-soft text-[#72500f]",
         status === "em_rescisao" && "bg-[#e8eef6] text-[#315b88]",

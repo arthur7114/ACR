@@ -214,6 +214,11 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     currentSnapshots,
     input.competencia,
   )
+  const appPropertyIds = new Set(
+    vigenciesAtCompetence(scope.vigencies, input.competencia)
+      .filter((vigency) => vigency.modeloReceita === "variavel")
+      .map((vigency) => vigency.imovelId),
+  )
   const summary = buildSummary(
     input,
     expectedProperties,
@@ -221,6 +226,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     currentSnapshots,
     coverage,
     contractedRent,
+    appPropertyIds,
   )
   const bridge = buildFinancialBridge(summary)
   const realization = buildRentRealization(currentSnapshots, contractedRent)
@@ -532,6 +538,7 @@ function buildSummary(
   snapshots: IndicadoresSnapshotInput[],
   coverage: IndicadoresCoverage,
   contractedRent: number | null,
+  appPropertyIds: Set<string>,
 ): IndicadoresSummary {
   const byProperty = input.filtros.imovelId !== null
   const analyses = eligibleClosings
@@ -611,9 +618,15 @@ function buildSummary(
         ? roundMoney(confirmedTransfer - transferEvidence!.comparableCalculated!)
         : null,
     ocupacaoCompetencia: summarizeOccupancy(
-      snapshots.map((snapshot) => snapshot.statusOcupacao),
+      snapshots.map((snapshot) =>
+        presentOccupancyStatus(snapshot.statusOcupacao, snapshot.modeloReceita === "variavel"),
+      ),
     ),
-    ocupacaoHoje: summarizeOccupancy(properties.map((property) => property.statusAtual)),
+    ocupacaoHoje: summarizeOccupancy(
+      properties.map((property) =>
+        presentOccupancyStatus(property.statusAtual, appPropertyIds.has(property.id)),
+      ),
+    ),
     inadimplenciaAcumulada: byProperty ? null : sumAccumulatedDelinquency(analyses),
   }
 }
@@ -757,6 +770,7 @@ interface CompetenciaReallocation {
 function buildCompetenciaReallocations(
   closings: IndicadoresClosingInput[],
   imovelId: string | null,
+  eligibleMonths: Set<string>,
 ) {
   const map = new Map<string, CompetenciaReallocation>()
   const entry = (month: string) => {
@@ -775,6 +789,10 @@ function buildCompetenciaReallocations(
       if (imovelId && line.imovel_id !== imovelId) continue
       const original = competenciaMesToDatabase(line.competencia_original)
       if (!original || original === current) continue
+      // A competencia de origem so recebe a reatribuicao quando ela mesma existe
+      // no historico exibivel. Origem fora da janela (sem fechamento/snapshot)
+      // manteria o valor no mes do recebimento em vez de inventar um mes solto.
+      if (!eligibleMonths.has(original)) continue
       const aluguel = line.aluguel_com_desconto ?? line.aluguel ?? 0
       const receita = line.total ?? aluguel
       const from = entry(current)
@@ -790,6 +808,7 @@ function buildCompetenciaReallocations(
       if (item.tipo !== "atraso") continue
       const original = competenciaMesToDatabase(item.competencia_original)
       if (!original || original === current) continue
+      if (!eligibleMonths.has(original)) continue
       const valor = item.valor ?? 0
       if (valor === 0) continue
       const from = entry(current)
@@ -807,12 +826,19 @@ function applyReallocation(base: number | null, incoming = 0, outgoing = 0) {
 }
 
 function buildMonthlySeries(input: IndicadoresAggregationInput, scope: AggregationScope) {
-  const reallocations = buildCompetenciaReallocations(scope.closings, input.filtros.imovelId)
+  // O historico exibivel sao as competencias com lastro (fechamento ou snapshot)
+  // ate o mes de referencia. A serie nao materializa meses que existiriam apenas
+  // por reatribuicao de competencia original.
   const months = uniqueSorted([
     ...scope.closings.map((closing) => closing.competencia),
     ...scope.snapshots.map((snapshot) => snapshot.competencia),
-    ...reallocations.keys(),
   ]).filter((month) => month <= input.competencia)
+  const eligibleMonths = new Set(months)
+  const reallocations = buildCompetenciaReallocations(
+    scope.closings,
+    input.filtros.imovelId,
+    eligibleMonths,
+  )
 
   return months.map((competencia) => {
     const expectedProperties = propertiesAtCompetence(
@@ -840,7 +866,11 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       competencia,
     )
     const analyses = eligible.map((closing) => closing.analiseCompleta!)
-    const occupancy = summarizeOccupancy(snapshots.map((snapshot) => snapshot.statusOcupacao))
+    const occupancy = summarizeOccupancy(
+      snapshots.map((snapshot) =>
+        presentOccupancyStatus(snapshot.statusOcupacao, snapshot.modeloReceita === "variavel"),
+      ),
+    )
     const processed = expectedPairSet(eligible, expectedPairs).size
     const approved = expectedPairSet(
       eligible.filter((closing) => APPROVED_STATUSES.has(closing.status)),
@@ -1034,7 +1064,10 @@ function buildHeatCell(
 
   return {
     competencia,
-    statusOcupacao: snapshot.statusOcupacao,
+    statusOcupacao: presentOccupancyStatus(
+      snapshot.statusOcupacao,
+      snapshot.modeloReceita === "variavel",
+    ),
     valor: gap,
     inadimplenciaPercentual: delinquencyPercentage,
     vacanciaPercentual: hasKnownStatus ? (snapshot.statusOcupacao === "vago" ? 100 : 0) : null,
@@ -1060,7 +1093,10 @@ function buildPropertyRevenues(
         inquilinoNome: snapshot.inquilinoNome ?? null,
         empreendimentoId: property.empreendimentoId,
         empreendimentoNome: property.empreendimentoNome ?? property.empreendimentoId,
-        statusOcupacao: snapshot.statusOcupacao,
+        statusOcupacao: presentOccupancyStatus(
+          snapshot.statusOcupacao,
+          snapshot.modeloReceita === "variavel",
+        ),
         aluguelEsperado: snapshot.aluguelEsperado,
         modeloReceita: snapshot.modeloReceita ?? "fixo",
         aluguelRecebido: snapshot.aluguelRecebido,
@@ -1133,17 +1169,26 @@ function buildFilters(input: IndicadoresAggregationInput): IndicadoresData["filt
   }
 }
 
+// Locação por app (Airbnb) é receita variável em operação: uma categoria de
+// exibição separada de "ocupado", derivada do modelo de receita. Nunca é
+// persistida — o snapshot no banco continua "ocupado".
+function presentOccupancyStatus(status: OccupancyStatus, isAppRental: boolean): OccupancyStatus {
+  return status === "ocupado" && isAppRental ? "alugado_app" : status
+}
+
 function summarizeOccupancy(statuses: OccupancyStatus[]): IndicadoresOccupancy {
   const ocupados = count(statuses, "ocupado")
+  const alugadosApp = count(statuses, "alugado_app")
   const inadimplentes = count(statuses, "inadimplente")
   const emRescisao = count(statuses, "em_rescisao")
   const vagos = count(statuses, "vago")
   const desconhecidos = count(statuses, "desconhecido")
-  const numerador = ocupados + inadimplentes + emRescisao
+  const numerador = ocupados + alugadosApp + inadimplentes + emRescisao
   const denominador = numerador + vagos
 
   return {
     ocupados,
+    alugadosApp,
     inadimplentes,
     emRescisao,
     vagos,
