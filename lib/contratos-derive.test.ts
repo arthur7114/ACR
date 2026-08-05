@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { deriveContracts, type SnapshotMes } from "./contratos-derive"
+import { deriveContracts, fimDoBanco, fimParaBanco, type SnapshotMes } from "./contratos-derive"
 
 function mes(
   competencia: string,
@@ -106,4 +106,13 @@ test("contrato sem valor conhecido fica com valores vazios", () => {
   ])
   assert.equal(contratos.length, 1)
   assert.deepEqual(contratos[0].valores, [])
+})
+
+test("fimParaBanco converte fim exclusivo para o ultimo mes coberto", () => {
+  assert.equal(fimParaBanco("2026-02-01"), "2026-01-01")
+  assert.equal(fimParaBanco(null), null)
+})
+
+test("fimDoBanco e fimParaBanco sao inversas", () => {
+  assert.equal(fimDoBanco(fimParaBanco("2026-07-01")), "2026-07-01")
 })

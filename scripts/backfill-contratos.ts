@@ -2,21 +2,15 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { deriveContracts, type ContratoDerivado, type SnapshotMes } from "../lib/contratos-derive"
-import { normalizePropertyKeyPart } from "../lib/indicadores-domain"
+import {
+  deriveContracts,
+  fimParaBanco,
+  type ContratoDerivado,
+  type SnapshotMes,
+} from "../lib/contratos-derive"
+import { isImovelAirbnb } from "../lib/indicadores-domain"
 
 const PAGE_SIZE = 1_000
-
-// Converte o `fim` exclusivo do `deriveContracts` ("primeiro mês não coberto")
-// para o `fim` inclusivo esperado pela constraint de exclusão do banco
-// (`contratos_locacao_sem_sobreposicao`, que soma 1 dia a `fim`). Usar apenas
-// na fronteira de escrita da linha `contratos_locacao` — todo consumo em
-// memória (encontrarContrato etc.) continua usando o `fim` exclusivo original.
-function previousMonth(competencia: string): string {
-  const [year, month] = competencia.split("-").map(Number)
-  const date = new Date(Date.UTC(year, month - 2, 1))
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
-}
 
 export interface BackfillImovel {
   id: string
@@ -43,6 +37,7 @@ export interface BackfillContratoRow {
   inicio: string
   fim: string | null
   origem: "backfill"
+  ativo: true
 }
 
 export interface BackfillValorRow {
@@ -75,24 +70,24 @@ export interface BackfillRows {
 
 type ContratoComId = ContratoDerivado & { id: string }
 
-// Airbnb detectado por imoveis.tipo OU imoveis.inquilino_nome (mesmo critério
-// já usado em 202607280004_airbnb_receita_variavel.sql). Nos dados reais,
-// `tipo` está nulo nas 13 unidades Airbnb conhecidas — a marcação vive em
-// `inquilino_nome = 'AIRBNB'`. Checar apenas `tipo` (como um resumo de
-// contexto sugeriu) detecta zero unidades; checar os dois é o que reproduz o
-// comportamento já estabelecido no schema.
-function isImovelAirbnb(tipo: string | null | undefined, inquilinoNome: string | null | undefined) {
-  return (
-    normalizePropertyKeyPart(tipo ?? "") === "airbnb" ||
-    normalizePropertyKeyPart(inquilinoNome ?? "") === "airbnb"
-  )
-}
-
 /**
  * Monta as linhas de `contratos_locacao`, `contrato_valores` e
  * `lancamentos_competencia` a partir do histórico de ocupação mensal.
- * Função pura: nenhuma chamada de I/O. Ver `.superpowers/sdd/task-1.3-brief.md`
- * para as 5 regras de comportamento implementadas aqui.
+ * Função pura: nenhuma chamada de I/O.
+ *
+ * Regras:
+ * 1. Lê `imoveis` (com `tipo`) e `imovel_competencias` completo (feito pelo
+ *    chamador em `main()`; esta função só recebe os dois arrays já carregados).
+ * 2. Agrupa snapshots por `imovel_id`; Airbnb (`isImovelAirbnb`) sempre vira
+ *    `alugado_app`, nunca gera contrato nem lançamento.
+ * 3. `deriveContracts` roda por imóvel — nunca com snapshots de imóveis
+ *    diferentes agrupados juntos.
+ * 4. Cada snapshot pode gerar até 4 lançamentos: aluguel recebido no mês,
+ *    aluguel em aberto (se inadimplente), atraso recuperado, e outros
+ *    recebimentos — ver `supabase/migrations/202608050001_contratos_locacao.sql`
+ *    para os campos de cada um.
+ * 5. Todo lançamento é ligado (`contrato_id`) ao contrato cujo intervalo
+ *    contém sua `competencia_origem` (D14) via `encontrarContrato`.
  */
 export function buildBackfillRows(
   imoveis: BackfillImovel[],
@@ -134,8 +129,9 @@ export function buildBackfillRows(
         imovel_id: imovelId,
         locatario_nome: contrato.locatarioNome,
         inicio: contrato.inicio,
-        fim: contrato.fim ? previousMonth(contrato.fim) : null,
+        fim: fimParaBanco(contrato.fim),
         origem: "backfill",
+        ativo: true,
       })
       for (const valor of contrato.valores) {
         valores.push({
@@ -154,14 +150,13 @@ export function buildBackfillRows(
       const statusEfetivo = snapshotsMeses[index].statusOcupacao
 
       if ((raw.aluguel_competencia ?? 0) > 0) {
-        const competenciaOrigem = raw.competencia_original ?? raw.competencia
         lancamentos.push(
           criarLancamento({
             imovelId,
             contratos: contratosDoImovel,
             rubrica: "aluguel",
             valor: raw.aluguel_competencia as number,
-            competenciaOrigem,
+            competenciaOrigem: raw.competencia,
             competenciaRecebimento: raw.competencia,
             situacao: "recebido",
           }),

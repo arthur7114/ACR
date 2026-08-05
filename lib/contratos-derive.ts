@@ -29,6 +29,32 @@ function nextMonth(competencia: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
 }
 
+/**
+ * Converte o `fim` exclusivo de ContratoDerivado (primeiro mês não coberto)
+ * para a convenção inclusiva (último mês coberto) esperada pela constraint de
+ * exclusão do banco em `contratos_locacao.fim` (que soma 1 dia a `fim` — ver
+ * `supabase/migrations/202608050001_contratos_locacao.sql`). Use apenas na
+ * fronteira de escrita da linha do banco; todo cálculo em memória sobre
+ * `ContratoDerivado` deve continuar usando o `fim` exclusivo original.
+ */
+export function fimParaBanco(fimExclusivo: string | null): string | null {
+  return fimExclusivo ? previousMonth(fimExclusivo) : null
+}
+
+/**
+ * Converte de volta: do `fim` inclusivo armazenado no banco para o `fim`
+ * exclusivo usado nos cálculos em memória (comparações `data < fim`).
+ */
+export function fimDoBanco(fimInclusivo: string | null): string | null {
+  return fimInclusivo ? nextMonth(fimInclusivo) : null
+}
+
+function previousMonth(competencia: string): string {
+  const [year, month] = competencia.split("-").map(Number)
+  const date = new Date(Date.UTC(year, month - 2, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
 export function deriveContracts(snapshots: SnapshotMes[]): ContratoDerivado[] {
   const ordered = [...snapshots].sort((a, b) =>
     a.competencia.localeCompare(b.competencia),

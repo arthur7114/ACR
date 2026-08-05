@@ -40,6 +40,24 @@ test("airbnb detectado por inquilino_nome quando tipo é nulo (dados reais não 
   assert.equal(rows.lancamentos.length, 0)
 })
 
+test("aluguel do mes corrente mantem competencia_origem propria mesmo com atraso na mesma linha", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-4", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-4", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 800, aluguel_recebido: 800, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      { imovel_id: "im-4", competencia: "2026-06-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 800, aluguel_recebido: 1300, atrasos_recuperados: 500, outros_recebimentos: null, competencia_original: "2026-05-01" },
+    ],
+  )
+  const aluguelJunho = rows.lancamentos.find(
+    (l) => l.rubrica === "aluguel" && l.valor === 800 && l.competencia_recebimento === "2026-06-01" && l.descricao === null,
+  )
+  const atrasoRecuperado = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
+  assert.ok(aluguelJunho, "deveria existir um lançamento de aluguel do mês corrente")
+  assert.equal(aluguelJunho?.competencia_origem, "2026-06-01")
+  assert.ok(atrasoRecuperado, "deveria existir um lançamento de atraso recuperado")
+  assert.equal(atrasoRecuperado?.competencia_origem, "2026-05-01")
+})
+
 test("fim do contrato gravado é o último mês coberto, não o mês seguinte (convenção da constraint do banco)", () => {
   const rows = buildBackfillRows(
     [{ id: "im-3", tipo: "apartamento" }],

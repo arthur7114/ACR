@@ -11,6 +11,7 @@ create table if not exists public.contratos_locacao (
   fim date,
   origem text not null default 'backfill'
     check (origem in ('backfill', 'fechamento', 'manual')),
+  ativo boolean not null default true,
   observacao text,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now(),
@@ -18,12 +19,14 @@ create table if not exists public.contratos_locacao (
   constraint contratos_locacao_fim_dia1
     check (fim is null or extract(day from fim) = 1),
   constraint contratos_locacao_intervalo check (fim is null or fim >= inicio),
-  -- D16: um contrato vigente por imóvel por vez.
+  -- D16: um contrato vigente por imóvel por vez. Escopado a `ativo` para que
+  -- um contrato lançado por engano possa ser desativado sem bloquear
+  -- permanentemente a reutilização daquele intervalo de datas.
   constraint contratos_locacao_sem_sobreposicao
     exclude using gist (
       imovel_id with =,
       daterange(inicio, coalesce(fim + 1, 'infinity'::date), '[)') with &&
-    )
+    ) where (ativo)
 );
 
 create index if not exists contratos_locacao_imovel_idx

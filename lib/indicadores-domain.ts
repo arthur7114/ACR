@@ -48,6 +48,21 @@ export function normalizePropertyKeyPart(value: string) {
     .replace(/\s+/g, " ")
 }
 
+// Airbnb detectado por imoveis.tipo OU imoveis.inquilino_nome (mesmo critério
+// já usado em 202607280004_airbnb_receita_variavel.sql). Nos dados reais,
+// `tipo` está nulo nas unidades Airbnb conhecidas — a marcação vive em
+// `inquilino_nome = 'AIRBNB'`. Checar apenas `tipo` detecta zero unidades;
+// checar os dois é o que reproduz o comportamento já estabelecido no schema.
+export function isImovelAirbnb(
+  tipo: string | null | undefined,
+  inquilinoNome: string | null | undefined,
+) {
+  return (
+    normalizePropertyKeyPart(tipo ?? "") === "airbnb" ||
+    normalizePropertyKeyPart(inquilinoNome ?? "") === "airbnb"
+  )
+}
+
 export function buildPropertyKey(input: PropertyKeyInput) {
   return [input.realEstateAgency, input.development, input.unit]
     .map(normalizePropertyKeyPart)
