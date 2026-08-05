@@ -257,7 +257,6 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
   }
 
   for (const requiredTerm of [
-    "Como ler este painel",
     "Conciliação financeira",
     "Riscos por imóvel",
     "Detalhamento por imóvel",

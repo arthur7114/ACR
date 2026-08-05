@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react"
 import { AlertTriangle, CalendarDays, LoaderCircle, RefreshCw } from "lucide-react"
 import type { IndicadoresData, IndicadoresFiltroOption } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
-import { CoverageBanner, EmptyState } from "../indicadores/primitives/dashboard-ui"
+import { EmptyState } from "../indicadores/primitives/dashboard-ui"
 import { formatDateTime, getClosingsCoverage, type DashboardMetric, type DashboardTab, type HeatMetric } from "../indicadores/lib/presentation"
 import { ViewGeral } from "../indicadores/tabs/view-geral"
 import { ViewReceita } from "../indicadores/tabs/view-receita"
@@ -182,8 +182,6 @@ export function IndicadoresView() {
               <RetryButton onClick={() => setRetry((value) => value + 1)} />
             </div>
           )}
-
-          <CoverageBanner data={data} />
 
           <nav className="mb-4 overflow-x-auto border-b border-acr-line overscroll-x-contain" aria-label="Seções dos indicadores">
             <div role="tablist" aria-label="Indicadores" className="flex min-w-max gap-1">
