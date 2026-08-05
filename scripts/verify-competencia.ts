@@ -180,8 +180,22 @@ interface FechamentoRow {
   empreendimento_id: string
   competencia: string
   arquivado: boolean
+  status: string
   analise_completa: unknown
 }
+
+// Mesmo critério de elegibilidade de lib/indicadores-aggregation.ts (não exportado
+// de lá) — só fechamentos nesses status têm analise_completa confiável o bastante
+// para compor o indicador de repasse.
+const ELIGIBLE_STATUSES = new Set([
+  "pendente_revisao",
+  "processado_com_sucesso",
+  "processado_com_alertas",
+  "aprovado",
+  "preparado_egestor",
+  "lancado_egestor",
+  "erro_egestor",
+])
 
 async function resolveEmpreendimentoIds(
   supabase: SupabaseAdmin,
@@ -289,10 +303,11 @@ async function loadFechamentosDoEscopo(
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("fechamentos")
-      .select("empreendimento_id,competencia,arquivado,analise_completa")
+      .select("empreendimento_id,competencia,arquivado,status,analise_completa")
       .in("empreendimento_id", empreendimentoIds)
       .eq("competencia", competencia)
       .eq("arquivado", false)
+      .in("status", [...ELIGIBLE_STATUSES])
       .order("empreendimento_id")
       .range(from, from + PAGE_SIZE - 1)
     if (error) throw error
