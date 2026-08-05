@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   CircleAlert,
   CircleHelp,
-  Database,
   Info,
   ShieldAlert,
 } from "lucide-react"
@@ -73,11 +72,9 @@ export function PanelHeader({
           {help && <MetricHelp {...help} />}
         </div>
         {description && <p className="mt-1 max-w-[70ch] text-sm leading-5 text-acr-muted-2">{description}</p>}
-        {source && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs text-acr-muted-2">
-            <Database aria-hidden="true" className="size-3.5" /> Fonte: {source}
-          </p>
-        )}
+        {/* PROVENIÊNCIA (não renderizada — D7): a prop `source` documenta no código
+            de onde a métrica vem. Consulte-a nos call sites; o usuário final não a vê. */}
+        {void source}
       </div>
       {action}
     </header>
@@ -116,9 +113,8 @@ export function Kpi({
         {value}
       </p>
       <p className="mt-2 min-h-10 text-xs leading-5 text-acr-muted-2">{detail}</p>
-      <p className="mt-2 flex items-center gap-1.5 border-t border-acr-line pt-2 text-[11px] leading-4 text-acr-muted-2">
-        <Database aria-hidden="true" className="size-3" /> {source}
-      </p>
+      {/* PROVENIÊNCIA (não renderizada — D7): prop `source` mantida como documentação. */}
+      {void source}
     </article>
   )
 }
