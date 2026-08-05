@@ -163,7 +163,7 @@ export function buildBackfillRows(
         )
       }
 
-      if (statusEfetivo === "inadimplente") {
+      if (statusEfetivo === "inadimplente" && (raw.aluguel_competencia ?? 0) === 0) {
         const contrato = encontrarContrato(contratosDoImovel, raw.competencia)
         const valorVigenteContrato = contrato
           ? valorVigente(contrato, raw.competencia)

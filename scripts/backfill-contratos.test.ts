@@ -58,6 +58,23 @@ test("aluguel do mes corrente mantem competencia_origem propria mesmo com atraso
   assert.equal(atrasoRecuperado?.competencia_origem, "2026-05-01")
 })
 
+test("mes pago integralmente nao gera lancamento em_aberto mesmo com status inadimplente", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-5", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-5", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 690, aluguel_recebido: 690, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      { imovel_id: "im-5", competencia: "2026-06-01", status_ocupacao: "inadimplente", inquilino_nome: "Fulano", aluguel_competencia: 690, aluguel_recebido: 690, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+    ],
+  )
+  const emAberto = rows.lancamentos.filter((l) => l.situacao === "em_aberto")
+  const recebido = rows.lancamentos.filter(
+    (l) => l.situacao === "recebido" && l.rubrica === "aluguel" && l.competencia_origem === "2026-06-01",
+  )
+  assert.equal(emAberto.length, 0, "não deveria gerar em_aberto quando o mês foi pago integralmente")
+  assert.equal(recebido.length, 1, "o aluguel recebido em junho continua sendo lançado normalmente")
+  assert.equal(recebido[0]?.valor, 690)
+})
+
 test("fim do contrato gravado é o último mês coberto, não o mês seguinte (convenção da constraint do banco)", () => {
   const rows = buildBackfillRows(
     [{ id: "im-3", tipo: "apartamento" }],
