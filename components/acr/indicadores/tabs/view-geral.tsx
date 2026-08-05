@@ -76,9 +76,9 @@ export function ViewGeral({
           source="Histórico mensal por imóvel"
           tone={resumo.ocupacaoCompetencia.desconhecidos > 0 ? "warning" : "default"}
           help={{
-            short: "Percentual ocupado e base efetivamente classificada.",
+            short: "Percentual ocupado e base com situação conhecida.",
             title: "Ocupação da competência",
-            definition: "Proporção de imóveis ocupados entre os imóveis com situação mensal classificada.",
+            definition: "Proporção de imóveis ocupados entre os imóveis com situação mensal conhecida.",
             formula: "ocupados ÷ imóveis com situação conhecida × 100",
             source: "Histórico mensal por imóvel.",
             limitation: "Leia sempre junto com a cobertura; imóveis sem histórico não entram no denominador.",
