@@ -7,6 +7,17 @@ import { normalizePropertyKeyPart } from "../lib/indicadores-domain"
 
 const PAGE_SIZE = 1_000
 
+// Converte o `fim` exclusivo do `deriveContracts` ("primeiro mês não coberto")
+// para o `fim` inclusivo esperado pela constraint de exclusão do banco
+// (`contratos_locacao_sem_sobreposicao`, que soma 1 dia a `fim`). Usar apenas
+// na fronteira de escrita da linha `contratos_locacao` — todo consumo em
+// memória (encontrarContrato etc.) continua usando o `fim` exclusivo original.
+function previousMonth(competencia: string): string {
+  const [year, month] = competencia.split("-").map(Number)
+  const date = new Date(Date.UTC(year, month - 2, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
 export interface BackfillImovel {
   id: string
   tipo: string | null
@@ -123,7 +134,7 @@ export function buildBackfillRows(
         imovel_id: imovelId,
         locatario_nome: contrato.locatarioNome,
         inicio: contrato.inicio,
-        fim: contrato.fim,
+        fim: contrato.fim ? previousMonth(contrato.fim) : null,
         origem: "backfill",
       })
       for (const valor of contrato.valores) {

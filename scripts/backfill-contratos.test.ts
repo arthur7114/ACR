@@ -39,3 +39,18 @@ test("airbnb detectado por inquilino_nome quando tipo é nulo (dados reais não 
   assert.equal(rows.contratos.length, 0)
   assert.equal(rows.lancamentos.length, 0)
 })
+
+test("fim do contrato gravado é o último mês coberto, não o mês seguinte (convenção da constraint do banco)", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-3", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-3", competencia: "2026-01-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 800, aluguel_recebido: 800, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      { imovel_id: "im-3", competencia: "2026-02-01", status_ocupacao: "ocupado", inquilino_nome: "Sicrana", aluguel_competencia: 900, aluguel_recebido: 900, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+    ],
+  )
+  assert.equal(rows.contratos.length, 2)
+  const fulano = rows.contratos.find((c) => c.locatario_nome === "Fulano")
+  const sicrana = rows.contratos.find((c) => c.locatario_nome === "Sicrana")
+  assert.equal(fulano?.fim, "2026-01-01")
+  assert.equal(sicrana?.inicio, "2026-02-01")
+})
