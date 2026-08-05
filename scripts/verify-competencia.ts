@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
-import { normalizePropertyKeyPart, roundMoney } from "../lib/indicadores-domain"
+import { isImovelAirbnb, roundMoney } from "../lib/indicadores-domain"
 
 // Verificador de competência contra gabarito local (Task 1.4).
 //
@@ -146,7 +146,7 @@ interface EmpreendimentoRow {
   nome: string
 }
 
-interface ImovelRow {
+export interface ImovelRow {
   id: string
   tipo: string | null
   inquilino_nome: string | null
@@ -154,20 +154,21 @@ interface ImovelRow {
   empreendimento_id: string
 }
 
-interface ContratoRow {
+export interface ContratoRow {
   id: string
   imovel_id: string
   inicio: string
   fim: string | null
+  ativo: boolean
 }
 
-interface ValorRow {
+export interface ValorRow {
   contrato_id: string
   vigencia_inicio: string
   valor: number | string
 }
 
-interface LancamentoRow {
+export interface LancamentoRow {
   imovel_id: string
   rubrica: string
   valor: number | string
@@ -242,7 +243,7 @@ async function loadContratosDoEscopo(
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("contratos_locacao")
-      .select("id,imovel_id,inicio,fim")
+      .select("id,imovel_id,inicio,fim,ativo")
       .in("imovel_id", imovelIds)
       .order("id")
       .range(from, from + PAGE_SIZE - 1)
@@ -330,23 +331,21 @@ function somaValor(lancamentos: LancamentoRow[]): number {
   return lancamentos.reduce((total, lancamento) => total + toNumber(lancamento.valor), 0)
 }
 
-function isImovelAirbnb(tipo: string | null, inquilinoNome: string | null): boolean {
+// Um contrato está ativo na competência quando a linha não foi desativada
+// (`ativo`), `inicio <= competencia` e, se houver fim, `fim >= competencia`
+// (fim é inclusivo, ver `202608050001_contratos_locacao.sql` / idioma de
+// `scripts/backfill-contratos.ts`).
+export function contratoAtivoNaCompetencia(contrato: ContratoRow, competencia: string): boolean {
   return (
-    normalizePropertyKeyPart(tipo ?? "") === "airbnb" ||
-    normalizePropertyKeyPart(inquilinoNome ?? "") === "airbnb"
+    contrato.ativo &&
+    contrato.inicio <= competencia &&
+    (contrato.fim === null || contrato.fim >= competencia)
   )
-}
-
-// Um contrato está ativo na competência quando `inicio <= competencia` e,
-// se houver fim, `fim >= competencia` (fim é inclusivo, ver
-// `202608050001_contratos_locacao.sql` / idioma de `scripts/backfill-contratos.ts`).
-function contratoAtivoNaCompetencia(contrato: ContratoRow, competencia: string): boolean {
-  return contrato.inicio <= competencia && (contrato.fim === null || contrato.fim >= competencia)
 }
 
 // Valor vigente do contrato na competência: a última vigência com
 // `vigencia_inicio <= competencia`.
-function valorVigenteDoContrato(
+export function valorVigenteDoContrato(
   valores: ValorRow[],
   contratoId: string,
   competencia: string,
@@ -363,22 +362,33 @@ function valorVigenteDoContrato(
 
 // `aluguelContratado`: soma do valor vigente na competência por contrato
 // ativo na competência.
-function calcularAluguelContratado(
+export function calcularAluguelContratado(
+  imoveis: ImovelRow[],
   contratos: ContratoRow[],
   valores: ValorRow[],
   competencia: string,
 ): number {
-  const ativos = contratos.filter((contrato) => contratoAtivoNaCompetencia(contrato, competencia))
-  const total = ativos.reduce(
-    (soma, contrato) => soma + (valorVigenteDoContrato(valores, contrato.id, competencia) ?? 0),
-    0,
-  )
+  const imovelPorId = new Map(imoveis.map((imovel) => [imovel.id, imovel]))
+  const ativos = contratos.filter((contrato) => {
+    if (!contratoAtivoNaCompetencia(contrato, competencia)) return false
+    const imovel = imovelPorId.get(contrato.imovel_id)
+    return Boolean(imovel?.ativo) && !isImovelAirbnb(imovel?.tipo ?? null, imovel?.inquilino_nome ?? null)
+  })
+  const total = ativos.reduce((soma, contrato) => {
+    const valor = valorVigenteDoContrato(valores, contrato.id, competencia)
+    if (valor === null) {
+      console.warn(
+        `Aviso: contrato ${contrato.id} (imóvel ${contrato.imovel_id}) está ativo em ${competencia} mas não tem valor conhecido em contrato_valores — contribuindo R$ 0,00.`,
+      )
+    }
+    return soma + (valor ?? 0)
+  }, 0)
   return roundMoney(total)
 }
 
 // `unidadesVagas`: imóveis ativos, não-Airbnb, do escopo, sem contrato
 // ativo na competência.
-function calcularUnidadesVagas(
+export function calcularUnidadesVagas(
   imoveis: ImovelRow[],
   contratos: ContratoRow[],
   competencia: string,
@@ -398,7 +408,7 @@ function calcularUnidadesVagas(
 
 // `inadimplenciaMes` / `unidadesInadimplentes`: lançamentos `rubrica='aluguel'`,
 // `situacao='em_aberto'`, `competencia_origem = competencia`.
-function filtrarInadimplencia(lancamentos: LancamentoRow[], competencia: string): LancamentoRow[] {
+export function filtrarInadimplencia(lancamentos: LancamentoRow[], competencia: string): LancamentoRow[] {
   return lancamentos.filter(
     (lancamento) =>
       lancamento.rubrica === "aluguel" &&
@@ -409,7 +419,7 @@ function filtrarInadimplencia(lancamentos: LancamentoRow[], competencia: string)
 
 // `aluguelRecebidoCompetencia`: `rubrica='aluguel'`, `situacao='recebido'`,
 // `competencia_origem = competencia_recebimento = competencia`.
-function filtrarAluguelRecebidoCompetencia(
+export function filtrarAluguelRecebidoCompetencia(
   lancamentos: LancamentoRow[],
   competencia: string,
 ): LancamentoRow[] {
@@ -424,7 +434,7 @@ function filtrarAluguelRecebidoCompetencia(
 
 // `recuperacaoAtrasados`: recebido na competência com
 // `competencia_origem < competencia`.
-function filtrarRecuperacaoAtrasados(
+export function filtrarRecuperacaoAtrasados(
   lancamentos: LancamentoRow[],
   competencia: string,
 ): LancamentoRow[] {
@@ -439,7 +449,7 @@ function filtrarRecuperacaoAtrasados(
 
 // `caixaDoMes`: todo lançamento recebido com
 // `competencia_recebimento = competencia` (qualquer rubrica).
-function filtrarCaixaDoMes(lancamentos: LancamentoRow[], competencia: string): LancamentoRow[] {
+export function filtrarCaixaDoMes(lancamentos: LancamentoRow[], competencia: string): LancamentoRow[] {
   return lancamentos.filter(
     (lancamento) =>
       lancamento.situacao === "recebido" && lancamento.competencia_recebimento === competencia,
@@ -491,7 +501,7 @@ async function calcularObtido(
 
   return {
     caixaDoMes: roundMoney(somaValor(filtrarCaixaDoMes(lancamentos, competencia))),
-    aluguelContratado: calcularAluguelContratado(contratos, valores, competencia),
+    aluguelContratado: calcularAluguelContratado(imoveis, contratos, valores, competencia),
     aluguelRecebidoCompetencia: roundMoney(
       somaValor(filtrarAluguelRecebidoCompetencia(lancamentos, competencia)),
     ),
