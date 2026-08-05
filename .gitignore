@@ -22,3 +22,6 @@ node_modules
 supabase/.temp/
 tsconfig.tsbuildinfo
 .DS_Store
+
+# Arquivos de trabalho locais (repo publico - nunca versionar dados do cliente)
+tmp/
