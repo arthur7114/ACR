@@ -71,12 +71,12 @@ function PercentageRow({ point }: { point: MonthlyPoint }) {
   return (
     <>
       <div className="self-center font-semibold text-acr-muted-2">{point.label}</div>
-      <div className="space-y-1" aria-label={`${point.label}: ocupação ${formatPercent(point.ocupacaoPercentual)} dos classificados, cobertura ${formatPercent(point.coberturaPercentual)}`}>
+      <div className="space-y-1" aria-label={`${point.label}: ocupação ${formatPercent(point.ocupacaoPercentual)}, cobertura ${formatPercent(point.coberturaPercentual)}`}>
         <Bar value={point.ocupacaoPercentual} max={100} className="bg-acr-green" />
         <Bar value={point.coberturaPercentual} max={100} className="bg-acr-green-soft ring-1 ring-inset ring-acr-green/30" />
       </div>
       <div className="flex items-center justify-end gap-3 text-right text-[10px] font-semibold text-acr-ink tabular-nums">
-        <span>Ocupação {formatPercent(point.ocupacaoPercentual)} dos classificados</span>
+        <span>Ocupação {formatPercent(point.ocupacaoPercentual)}</span>
         <span>Cobertura {formatPercent(point.coberturaPercentual)}</span>
       </div>
     </>

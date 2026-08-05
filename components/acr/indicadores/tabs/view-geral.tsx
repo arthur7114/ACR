@@ -71,7 +71,7 @@ export function ViewGeral({
         />
         <Kpi
           label="Ocupação da competência"
-          value={`${formatPercent(resumo.ocupacaoCompetencia.percentual)} dos classificados`}
+          value={formatPercent(resumo.ocupacaoCompetencia.percentual)}
           detail={`${formatCount(resumo.ocupacaoCompetencia.numerador)} de ${formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis · cobertura ${formatPercent(resumo.ocupacaoCompetencia.coberturaPercentual)}.`}
           source="Histórico mensal por imóvel"
           tone={resumo.ocupacaoCompetencia.desconhecidos > 0 ? "warning" : "default"}
@@ -79,7 +79,7 @@ export function ViewGeral({
             short: "Percentual ocupado e base efetivamente classificada.",
             title: "Ocupação da competência",
             definition: "Proporção de imóveis ocupados entre os imóveis com situação mensal classificada.",
-            formula: "ocupados ÷ imóveis classificados × 100",
+            formula: "ocupados ÷ imóveis com situação conhecida × 100",
             source: "Histórico mensal por imóvel.",
             limitation: "Leia sempre junto com a cobertura; imóveis sem histórico não entram no denominador.",
           }}
@@ -161,7 +161,7 @@ function OccupancyBlock({ label, occupancy }: { label: string; occupancy: Indica
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-bold text-acr-ink">{label}</h3>
         <span className="text-right text-sm font-bold text-acr-ink tabular-nums">
-          {formatPercent(occupancy.percentual)} dos classificados
+          {formatPercent(occupancy.percentual)}
         </span>
       </div>
       <p className="mt-1 text-xs text-acr-muted-2">
