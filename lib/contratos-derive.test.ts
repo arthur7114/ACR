@@ -58,6 +58,17 @@ test("desconhecido não fecha contrato se o locatário reaparece", () => {
   assert.equal(contratos.length, 1)
 })
 
+test("troca de locatário após gap de desconhecido fecha no mês seguinte à última evidência", () => {
+  const contratos = deriveContracts([
+    mes("2026-01-01", "ocupado", "Fulano", 800),
+    mes("2026-02-01", "desconhecido", null, null),
+    mes("2026-03-01", "ocupado", "Sicrana", 900),
+  ])
+  assert.equal(contratos.length, 2)
+  assert.equal(contratos[0].fim, "2026-02-01")
+  assert.equal(contratos[1].inicio, "2026-03-01")
+})
+
 test("troca de locatário fecha e abre contrato", () => {
   const contratos = deriveContracts([
     mes("2026-01-01", "ocupado", "Fulano", 800),

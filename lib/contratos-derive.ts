@@ -23,6 +23,12 @@ export interface ContratoDerivado {
 
 const STATUS_COM_CONTRATO = new Set(["ocupado", "inadimplente", "em_rescisao"])
 
+function nextMonth(competencia: string): string {
+  const [year, month] = competencia.split("-").map(Number)
+  const date = new Date(Date.UTC(year, month, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
 export function deriveContracts(snapshots: SnapshotMes[]): ContratoDerivado[] {
   const ordered = [...snapshots].sort((a, b) =>
     a.competencia.localeCompare(b.competencia),
@@ -50,7 +56,7 @@ export function deriveContracts(snapshots: SnapshotMes[]): ContratoDerivado[] {
       continue
     }
     if (atual && chave && atual.locatario !== chave) {
-      fechar(snapshot.competencia)
+      fechar(nextMonth(atual.meses[atual.meses.length - 1].competencia))
     }
     if (!atual) {
       atual = {
