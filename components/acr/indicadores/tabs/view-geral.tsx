@@ -139,7 +139,7 @@ export function ViewGeral({
 
       <Panel>
         <PanelHeader
-          title="Retenções e inadimplência"
+          title="Despesas e inadimplência"
           description="Valores preservam a diferença entre zero confirmado e dado ausente."
           source={byProperty ? "Histórico mensal por imóvel; campos não atribuíveis aparecem como —" : "Fechamentos da competência"}
         />
