@@ -367,15 +367,22 @@ function buildSnapshotRow(input: {
   const passageExits = sumKnownMoney(
     propertyLines.map((line) => line.saidas_passagem),
   )
+  const currentVacancyEvidence = hasVacancyEvidence(evidenceText)
   const evidence = {
     tenantName,
     observation,
     rentReceived: currentRent,
     hasTermination:
       input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText),
+    // `delinquencyKeys` vem da seção acumulada de inadimplências do fechamento e pode
+    // descrever dívida de um inquilino que já saiu — não é evidência da competência
+    // corrente. Quando a própria linha do mês mostra vacância explícita (imóvel
+    // desocupado agora), a chave acumulada não deve apagar essa vacância; só a
+    // evidência textual desta própria linha continua tendo prioridade sobre vacância.
     hasDelinquency:
-      input.delinquencyKeys.has(input.propertyKey) || hasDelinquencyEvidence(evidenceText),
-    hasVacancy: hasVacancyEvidence(evidenceText),
+      (input.delinquencyKeys.has(input.propertyKey) && !currentVacancyEvidence) ||
+      hasDelinquencyEvidence(evidenceText),
+    hasVacancy: currentVacancyEvidence,
     isVariableRevenue: (property.revenueModel ?? "fixo") === "variavel",
   }
   const status = classifyOccupancy(evidence)

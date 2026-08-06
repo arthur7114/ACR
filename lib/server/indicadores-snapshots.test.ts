@@ -987,3 +987,179 @@ test("movimento de passagem não vira outros recebimentos no snapshot", () => {
   assert.equal(row.entradas_passagem, 445.95)
   assert.equal(row.saidas_passagem, null)
 })
+
+test("vacancia explicita da competencia atual nao vira inadimplente por divida acumulada antiga", () => {
+  const analysis = {
+    prestacao: {
+      tipo_documento: "prestacao_contas",
+      imobiliaria: "Imobiliária GM",
+      empreendimento: "Grand Messejana I",
+      competencia: "2026-06",
+      plano_extracao: {
+        documento_lido_integralmente: true,
+        secoes_identificadas: ["receitas", "inadimplencias"],
+        estrategia: ["Separar vacância corrente de dívida acumulada."],
+        alertas: [],
+      },
+      receitas_por_imovel: [
+        {
+          apto: "15",
+          inquilino: "",
+          aluguel: 0,
+          desconto: null,
+          aluguel_com_desconto: null,
+          garagem: null,
+          vagas_garagem: null,
+          agua: null,
+          iptu: null,
+          seguro_incendio: null,
+          total: 0,
+          comissao: null,
+          repasse: 0,
+          vencimento: null,
+          observacao: "DESOCUPADO",
+          confianca: 0.95,
+        },
+      ],
+      acordos_rescisoes_recebidos: [],
+      inadimplencias_acumuladas: [
+        {
+          apto: "15",
+          inquilino: "Ex-inquilino",
+          valor: 708.22,
+          condicao: "Em aberto",
+          observacao: "Débito de vigência anterior, inquilino já não ocupa mais a unidade.",
+          confianca: 0.95,
+        },
+      ],
+      resumo_financeiro: {
+        total_linhas_receitas: 0,
+        total_linhas_comissoes: 0,
+        total_linhas_repasse: 0,
+        comissao_administracao: 0,
+        outras_comissoes_despesas: [],
+        total_outras_comissoes_despesas: 0,
+        total_comissao_despesas: 0,
+        recebidos_em_nome_locador: 0,
+        total_a_repassar: 0,
+        confianca: 0.95,
+      },
+      totais: {
+        total_receitas: 0,
+        total_comissoes: 0,
+        total_repassar: 0,
+      },
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.95,
+    },
+  } satisfies Pick<PackageAnalysis, "prestacao">
+
+  const row = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "gmi-15",
+        unit: "15",
+        expectedRent: 677.72,
+        revenueModel: "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária GM",
+        developmentName: "Grand Messejana I",
+      },
+    ],
+    fechamentoId: "gmi-junho",
+    competencia: "2026-06",
+    analysis,
+  }).rows[0]
+
+  assert.equal(row.status_ocupacao, "vago")
+  assert.equal(row.status_mensal_explicito, "vago")
+})
+
+test("inadimplencia acumulada continua valendo quando a unidade ainda esta ocupada", () => {
+  const analysis = {
+    prestacao: {
+      tipo_documento: "prestacao_contas",
+      imobiliaria: "Imobiliária GM",
+      empreendimento: "Grand Messejana I",
+      competencia: "2026-06",
+      plano_extracao: {
+        documento_lido_integralmente: true,
+        secoes_identificadas: ["receitas", "inadimplencias"],
+        estrategia: ["Manter inadimplência quando a unidade segue ocupada."],
+        alertas: [],
+      },
+      receitas_por_imovel: [
+        {
+          apto: "16",
+          inquilino: "Antônia Fabiana",
+          aluguel: 0,
+          desconto: null,
+          aluguel_com_desconto: null,
+          garagem: null,
+          vagas_garagem: null,
+          agua: null,
+          iptu: null,
+          seguro_incendio: null,
+          total: 0,
+          comissao: null,
+          repasse: 0,
+          vencimento: null,
+          observacao: "Aluguel de junho ainda não pago.",
+          confianca: 0.95,
+        },
+      ],
+      acordos_rescisoes_recebidos: [],
+      inadimplencias_acumuladas: [
+        {
+          apto: "16",
+          inquilino: "Antônia Fabiana",
+          valor: 683.81,
+          condicao: "Em aberto",
+          observacao: "Vigência junho 2026.",
+          confianca: 0.95,
+        },
+      ],
+      resumo_financeiro: {
+        total_linhas_receitas: 0,
+        total_linhas_comissoes: 0,
+        total_linhas_repasse: 0,
+        comissao_administracao: 0,
+        outras_comissoes_despesas: [],
+        total_outras_comissoes_despesas: 0,
+        total_comissao_despesas: 0,
+        recebidos_em_nome_locador: 0,
+        total_a_repassar: 0,
+        confianca: 0.95,
+      },
+      totais: {
+        total_receitas: 0,
+        total_comissoes: 0,
+        total_repassar: 0,
+      },
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.95,
+    },
+  } satisfies Pick<PackageAnalysis, "prestacao">
+
+  const row = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "gmi-16",
+        unit: "16",
+        expectedRent: 678.31,
+        revenueModel: "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária GM",
+        developmentName: "Grand Messejana I",
+      },
+    ],
+    fechamentoId: "gmi-junho",
+    competencia: "2026-06",
+    analysis,
+  }).rows[0]
+
+  assert.equal(row.status_ocupacao, "inadimplente")
+  assert.equal(row.status_mensal_explicito, "inadimplente")
+})
