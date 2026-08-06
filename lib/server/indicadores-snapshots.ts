@@ -134,7 +134,7 @@ export function buildIndicadoresSnapshotRows(input: BuildIndicadoresSnapshotRows
   }
   const lineGroups = groupLines(lines, resolveLineKey)
   const terminationKeys = buildTerminationKeys(input.analysis, context)
-  const delinquencyKeys = buildDelinquencyKeys(input.analysis, context)
+  const delinquencyKeys = buildDelinquencyKeys(input.analysis, context, competencia)
   const agreementGroups = groupAgreements(input.analysis, context)
 
   const rows = input.properties
@@ -303,7 +303,7 @@ function buildSnapshotRow(input: {
   competencia: string
   origem: IndicadoresSnapshotOrigin
   terminationKeys: Set<string>
-  delinquencyKeys: Set<string>
+  delinquencyKeys: DelinquencyKeySets
   agreements: NonNullable<SnapshotAnalysis["prestacao"]>["acordos_rescisoes_recebidos"]
 }) {
   const { property, propertyLines } = input
@@ -374,13 +374,13 @@ function buildSnapshotRow(input: {
     rentReceived: currentRent,
     hasTermination:
       input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText),
-    // `delinquencyKeys` vem da seção acumulada de inadimplências do fechamento e pode
-    // descrever dívida de um inquilino que já saiu — não é evidência da competência
-    // corrente. Quando a própria linha do mês mostra vacância explícita (imóvel
-    // desocupado agora), a chave acumulada não deve apagar essa vacância; só a
-    // evidência textual desta própria linha continua tendo prioridade sobre vacância.
+    // Dívida acumulada da PRÓPRIA competência corrente nunca é apagada por vacância —
+    // é exatamente o sinal que classifyOccupancy deve priorizar. Só a dívida de uma
+    // competência ANTERIOR (que pode descrever um inquilino que já saiu) cede à
+    // vacância explícita da linha atual.
     hasDelinquency:
-      (input.delinquencyKeys.has(input.propertyKey) && !currentVacancyEvidence) ||
+      input.delinquencyKeys.currentCompetence.has(input.propertyKey) ||
+      (input.delinquencyKeys.otherCompetence.has(input.propertyKey) && !currentVacancyEvidence) ||
       hasDelinquencyEvidence(evidenceText),
     hasVacancy: currentVacancyEvidence,
     isVariableRevenue: (property.revenueModel ?? "fixo") === "variavel",
@@ -530,15 +530,29 @@ function buildTerminationKeys(
   )
 }
 
+interface DelinquencyKeySets {
+  currentCompetence: Set<string>
+  otherCompetence: Set<string>
+}
+
 function buildDelinquencyKeys(
   analysis: SnapshotAnalysis,
   context: ReturnType<typeof resolvePropertyContext>,
-) {
-  return new Set(
-    (analysis.prestacao?.inadimplencias_acumuladas ?? [])
-      .filter((item) => cleanText(item.apto))
-      .map((item) => buildContextPropertyKey(context, item.apto!)),
-  )
+  competencia: string,
+): DelinquencyKeySets {
+  const currentCompetence = new Set<string>()
+  const otherCompetence = new Set<string>()
+  for (const item of analysis.prestacao?.inadimplencias_acumuladas ?? []) {
+    if (!cleanText(item.apto)) continue
+    const key = buildContextPropertyKey(context, item.apto!)
+    const itemCompetence = normalizeOptionalCompetence(item.competencia_original)
+    if (itemCompetence === competencia) {
+      currentCompetence.add(key)
+    } else {
+      otherCompetence.add(key)
+    }
+  }
+  return { currentCompetence, otherCompetence }
 }
 
 function buildContextPropertyKey(
