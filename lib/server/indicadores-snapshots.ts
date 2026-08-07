@@ -42,6 +42,13 @@ export interface IndicadoresSnapshotRow {
   aluguel_recebido: number | null
   aluguel_competencia?: number | null
   atrasos_recuperados?: number | null
+  /**
+   * Competência de origem do atraso recuperado, quando todos os atrasos do mês
+   * apontam para o mesmo mês anterior. Nulo quando não informada ou quando os
+   * atrasos vêm de meses diferentes — escolher um deles seria arbitrário.
+   * Campo distinto de `competencia_original`, que descreve o ALUGUEL da linha.
+   */
+  atrasos_competencia_origem?: string | null
   outros_recebimentos?: number | null
   entradas_passagem?: number | null
   saidas_passagem?: number | null
@@ -346,6 +353,27 @@ function buildSnapshotRow(input: {
       .map((item) => item.valor),
   )
   const recoveredLate = sumNullableMoney(recoveredFromLines, recoveredFromAgreements)
+  // O mês de origem do atraso já vem na fonte (o acordo traz competencia_original,
+  // e a linha de competência anterior traz a sua). Antes essa informação era
+  // descartada e o atraso nascia sem origem, indistinguível do aluguel do mês.
+  // Só vale quando há uma origem única e anterior: com atrasos de meses
+  // diferentes somados num valor só, apontar um deles seria invenção.
+  const recoveredOrigins = new Set<string>()
+  for (const line of propertyLines) {
+    if (!belongsToEarlierCompetence(line, input.competencia)) continue
+    const origem = normalizeOptionalCompetence(line.competencia_original)
+    if (origem) recoveredOrigins.add(origem)
+  }
+  for (const item of input.agreements) {
+    if (item.tipo !== "atraso") continue
+    const origem = normalizeOptionalCompetence(item.competencia_original)
+    if (origem) recoveredOrigins.add(origem)
+  }
+  const [origemUnica] = [...recoveredOrigins]
+  const recoveredOrigin =
+    recoveredOrigins.size === 1 && origemUnica < normalizeCompetence(input.competencia)
+      ? origemUnica
+      : null
   const otherFromLines = sumKnownMoney(
     propertyLines.map((line) => {
       if (typeof line.outros_recebimentos === "number") return line.outros_recebimentos
@@ -435,6 +463,7 @@ function buildSnapshotRow(input: {
     aluguel_recebido: sumNullableMoney(currentRent, recoveredLate),
     aluguel_competencia: currentRent,
     atrasos_recuperados: recoveredLate,
+    atrasos_competencia_origem: recoveredOrigin,
     outros_recebimentos: otherReceipts,
     entradas_passagem: passageEntries,
     saidas_passagem: passageExits,

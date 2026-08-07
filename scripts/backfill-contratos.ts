@@ -28,6 +28,8 @@ export interface BackfillSnapshotRow {
   atrasos_recuperados: number | null
   outros_recebimentos: number | null
   competencia_original: string | null
+  /** Origem do atraso recuperado; ver migration 202608070002. */
+  atrasos_competencia_origem?: string | null
 }
 
 export interface BackfillContratoRow {
@@ -186,16 +188,18 @@ export function buildBackfillRows(
       }
 
       if ((raw.atrasos_recuperados ?? 0) > 0) {
-        // `competencia_original` do snapshot descreve o ALUGUEL da linha, não o
-        // atraso: quando o atraso vem de um acordo (que não informa mês), o
-        // campo traz a própria competência corrente. Reaproveitá-lo faria o
-        // atraso nascer com origem igual ao recebimento, virando aluguel do mês
-        // e desaparecendo da recuperação de atrasados. Só serve como origem se
-        // for estritamente anterior; do contrário a origem é desconhecida.
+        // A origem do atraso tem campo próprio: `atrasos_competencia_origem`
+        // (vem do acordo ou da linha de competência anterior). `competencia_original`
+        // descreve o ALUGUEL da linha, não o atraso — quando o atraso vem de um
+        // acordo, esse campo traz a própria competência corrente, e reaproveitá-lo
+        // fazia o atraso nascer com origem igual ao recebimento, virando aluguel
+        // do mês e desaparecendo da recuperação de atrasados. Fica como último
+        // recurso, e somente se for estritamente anterior.
         const competenciaOrigem =
-          raw.competencia_original !== null && raw.competencia_original < raw.competencia
+          raw.atrasos_competencia_origem
+          ?? (raw.competencia_original !== null && raw.competencia_original < raw.competencia
             ? raw.competencia_original
-            : null
+            : null)
         lancamentos.push(
           criarLancamento({
             imovelId,
@@ -303,6 +307,7 @@ interface DatabaseSnapshotRow {
   atrasos_recuperados: number | string | null
   outros_recebimentos: number | string | null
   competencia_original: string | null
+  atrasos_competencia_origem: string | null
 }
 
 type SupabaseAdmin = ReturnType<typeof import("../lib/server/supabase")["createSupabaseAdmin"]>
@@ -353,7 +358,7 @@ async function loadSnapshots(supabase: SupabaseAdmin) {
   const raw = await loadAllRows<DatabaseSnapshotRow>(
     supabase,
     "imovel_competencias",
-    "imovel_id,competencia,status_ocupacao,inquilino_nome,aluguel_competencia,aluguel_recebido,atrasos_recuperados,outros_recebimentos,competencia_original",
+    "imovel_id,competencia,status_ocupacao,inquilino_nome,aluguel_competencia,aluguel_recebido,atrasos_recuperados,outros_recebimentos,competencia_original,atrasos_competencia_origem",
     "imovel_id",
   )
   return raw.map((row) => ({
@@ -366,6 +371,7 @@ async function loadSnapshots(supabase: SupabaseAdmin) {
     atrasos_recuperados: toNumberOrNull(row.atrasos_recuperados),
     outros_recebimentos: toNumberOrNull(row.outros_recebimentos),
     competencia_original: row.competencia_original,
+    atrasos_competencia_origem: row.atrasos_competencia_origem,
   }))
 }
 

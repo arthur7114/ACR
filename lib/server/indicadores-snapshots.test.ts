@@ -1277,6 +1277,7 @@ test("divida acumulada da propria competencia nao cede a vacancia da mesma linha
 function prestacaoFixture(input: {
   receita: Record<string, unknown>
   inadimplencias?: Array<Record<string, unknown>>
+  acordos?: Array<Record<string, unknown>>
 }) {
   return {
     prestacao: {
@@ -1311,7 +1312,17 @@ function prestacaoFixture(input: {
           ...input.receita,
         },
       ],
-      acordos_rescisoes_recebidos: [],
+      acordos_rescisoes_recebidos: (input.acordos ?? []).map((item) => ({
+        tipo: "atraso",
+        apto: "10",
+        inquilino: null,
+        valor: 400,
+        competencia_original: null,
+        competencia_recebimento: null,
+        observacao: null,
+        confianca: 0.95,
+        ...item,
+      })),
       inadimplencias_acumuladas: (input.inadimplencias ?? []).map((item) => ({
         apto: "10",
         inquilino: null,
@@ -1429,4 +1440,48 @@ test("inquilino em branco com aluguel recebido continua ocupado", () => {
   )
 
   assert.equal(row.status_ocupacao, "ocupado")
+})
+
+test("atraso vindo de acordo carrega o mes de origem informado no proprio acordo", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      // Espelha o dado real: a linha declara junho (o aluguel do mes) e o acordo
+      // declara maio (o atraso). Os dois campos nao podem se contaminar.
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700, competencia_original: "06/2026" },
+      acordos: [{ tipo: "atraso", valor: 466.93, competencia_original: "05/2026" }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados, 466.93)
+  assert.equal(row.atrasos_competencia_origem, "2026-05-01")
+  assert.equal(row.competencia_original, "2026-06-01")
+})
+
+test("atrasos de meses de origem diferentes deixam a origem indefinida, nunca uma escolha arbitraria", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [
+        { tipo: "atraso", valor: 300, competencia_original: "04/2026" },
+        { tipo: "atraso", valor: 200, competencia_original: "05/2026" },
+      ],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados, 500)
+  assert.equal(row.atrasos_competencia_origem, null)
+})
+
+test("acordo de rescisao nao define origem de atraso", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [{ tipo: "rescisao", valor: 480, competencia_original: "05/2026" }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_competencia_origem, null)
 })

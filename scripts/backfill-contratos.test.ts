@@ -122,3 +122,32 @@ test("atraso com mes de origem anterior preserva a origem informada", () => {
   const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
   assert.equal(atraso?.competencia_origem, "2026-04-01")
 })
+
+test("atraso usa a competencia de origem informada no snapshot", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-11", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-11", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 700, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      // A linha e de junho; o atraso veio de um acordo de maio. Antes o campo da
+      // linha era reaproveitado e a origem do atraso virava junho.
+      { imovel_id: "im-11", competencia: "2026-06-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 1100, atrasos_recuperados: 400, outros_recebimentos: null, competencia_original: "2026-06-01", atrasos_competencia_origem: "2026-05-01" },
+    ],
+  )
+
+  const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
+  assert.equal(atraso?.competencia_origem, "2026-05-01")
+  assert.equal(atraso?.competencia_recebimento, "2026-06-01")
+})
+
+test("sem competencia de origem do atraso a origem continua nula", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-12", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-12", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 700, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      { imovel_id: "im-12", competencia: "2026-06-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 1100, atrasos_recuperados: 400, outros_recebimentos: null, competencia_original: "2026-06-01", atrasos_competencia_origem: null },
+    ],
+  )
+
+  const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
+  assert.equal(atraso?.competencia_origem, null)
+})
