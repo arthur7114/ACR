@@ -6,7 +6,7 @@
 // D24 — vocabulário do motor de conciliação não vaza mais para a tela (termos
 // antigos escritos sem aspas de propósito: o teste de nomenclatura procura a
 // forma citada e um comentário não deve reintroduzi-la):
-//   Entradas/Saídas de passagem     -> Recebido para terceiros / Pago a terceiros
+//   Entradas/Saídas de passagem     -> IPTU recebido / IPTU pago
 //   Diferença não explicada         -> Diferença
 //   Ajustes classificados           -> Ajustes documentados
 //   Valores ainda sem classificação -> Valores sem documento
@@ -33,6 +33,13 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
   const summary = data.resumo
   const comprovantes = data.cobertura.comprovantes
 
+  // ATENÇÃO ao rotular entradas/saídas de passagem: o campo é genérico, mas hoje
+  // só IPTU trafega por ele — cesar-rego-parser.ts mapeia crédito/débito de IPTU
+  // ("IPTU é movimento de passagem") e nenhum outro parser preenche os campos.
+  // Conferido em jun/2026 nas três imobiliárias: a passagem da carteira é a soma
+  // exata do IPTU de Cesar Rego e Plural, e água e seguro correm por despesas.
+  // Se algum parser passar a rotear água, luz ou condomínio para cá, os rótulos
+  // "IPTU recebido"/"IPTU pago" abaixo deixam de dizer a verdade e mudam.
   const bridgeValues = {
     receitasEconomicas: resolveMetricValue(bridge.receitasEconomicas, bridge.receitaTotal),
     entradasPassagem: resolveMetricValue(bridge.entradasPassagem),
@@ -124,19 +131,19 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             help={{
               short: "Como as receitas chegam ao repasse calculado.",
               title: "Das receitas ao repasse",
-              definition: "Sequência que leva das receitas do fechamento ao repasse calculado.",
-              formula: "receitas + recebido para terceiros − comissões − despesas − tarifas − pago a terceiros = repasse",
+              definition: "Sequência que leva das receitas do fechamento ao repasse calculado. O IPTU entra e sai porque a imobiliária cobra do inquilino e paga à prefeitura: o valor passa, não é receita nem despesa.",
+              formula: "receitas + IPTU recebido − comissões − despesas − tarifas − IPTU pago = repasse",
               limitation: "Diferença acima de R$ 0,01 impede confirmar a competência.",
             }}
             action={<BridgeState reconciled={bridge.reconciliada} alert={bridge.alerta} />}
           />
           <div className="px-5 py-2 sm:px-6">
             <FinancialRow label="Receitas do fechamento" value={bridgeValues.receitasEconomicas} operation="=" strong />
-            <FinancialRow label="Recebido para terceiros" value={bridgeValues.entradasPassagem} operation="+" />
+            <FinancialRow label="IPTU recebido" value={bridgeValues.entradasPassagem} operation="+" />
             <FinancialRow label="Comissões" value={bridgeValues.comissoes} operation="−" />
             <FinancialRow label="Despesas" value={bridgeValues.despesas} operation="−" />
             <FinancialRow label="Tarifas" value={bridgeValues.tarifas} operation="−" />
-            <FinancialRow label="Pago a terceiros" value={bridgeValues.saidasPassagem} operation="−" />
+            <FinancialRow label="IPTU pago" value={bridgeValues.saidasPassagem} operation="−" />
             <FinancialRow label="Repasse calculado" value={bridgeValues.repasseCalculado} operation="=" strong result />
             <FinancialRow label="Diferença" value={bridgeValues.diferenca} operation="Δ" danger={bridge.alerta} />
           </div>
