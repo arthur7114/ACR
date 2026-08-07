@@ -218,3 +218,22 @@ test("unidadesVagas conta só imóvel ativo, não-Airbnb, sem contrato vigente",
   ]
   assert.equal(calcularUnidadesVagas(imoveis, contratos, COMPETENCIA), 2)
 })
+
+test("indicador ausente do gabarito e reportado como nao verificavel, nao como falha", () => {
+  const esperado = { aluguelRecebidoCompetencia: 100 } as Partial<Record<string, number>>
+  const obtido = { aluguelRecebidoCompetencia: 100, aluguelContratado: 999 } as Record<string, number>
+
+  const linhas = compararIndicadores(
+    esperado as Parameters<typeof compararIndicadores>[0],
+    obtido as Parameters<typeof compararIndicadores>[1],
+  )
+
+  const verificado = linhas.find((l) => l.indicador === "aluguelRecebidoCompetencia")
+  assert.equal(verificado?.ok, true)
+  assert.equal(verificado?.naoVerificavel, undefined)
+
+  // Sem numero na fonte da verdade nao existe divergencia a declarar.
+  const ausente = linhas.find((l) => l.indicador === "aluguelContratado")
+  assert.equal(ausente?.naoVerificavel, true)
+  assert.equal(ausente?.ok, true)
+})

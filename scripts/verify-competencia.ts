@@ -38,7 +38,8 @@ const UNIT_INDICATORS = new Set<IndicatorKey>(["unidadesInadimplentes", "unidade
 export interface Gabarito {
   competencia: string
   escopoEmpreendimentos: string[]
-  esperado: Record<IndicatorKey, number>
+  /** Só os indicadores que a planilha realmente traz; os demais ficam de fora. */
+  esperado: Partial<Record<IndicatorKey, number>>
 }
 
 export interface ComparisonRow {
@@ -47,6 +48,8 @@ export interface ComparisonRow {
   obtido: number
   diff: number
   ok: boolean
+  /** A planilha não traz este número; não há divergência a declarar. */
+  naoVerificavel?: boolean
 }
 
 /**
@@ -54,13 +57,21 @@ export interface ComparisonRow {
  * banco), aplicando tolerância de R$ 0,02 para campos monetários e
  * igualdade exata para as contagens de unidades.
  */
+// A planilha do cliente é a fonte da verdade. Quando ela não contém um número,
+// o gabarito não deve inventar um: o indicador é reportado como não verificável
+// em vez de acusar divergência contra uma expectativa fabricada. Foi assim que
+// `aluguelContratado` passou meses "falhando" contra um valor que ninguém mediu
+// — ele havia sido derivado de outro indicador do próprio gabarito.
 export function compararIndicadores(
-  esperado: Record<IndicatorKey, number>,
+  esperado: Partial<Record<IndicatorKey, number>>,
   obtido: Record<IndicatorKey, number>,
 ): ComparisonRow[] {
   return INDICATOR_ORDER.map((indicador) => {
     const valorEsperado = esperado[indicador]
     const valorObtido = obtido[indicador]
+    if (valorEsperado === undefined || valorEsperado === null) {
+      return { indicador, esperado: valorObtido, obtido: valorObtido, diff: 0, ok: true, naoVerificavel: true }
+    }
     const diff = roundMoney(valorObtido - valorEsperado)
     const ok = UNIT_INDICATORS.has(indicador)
       ? valorObtido === valorEsperado
@@ -80,7 +91,7 @@ function imprimirTabela(linhas: ComparisonRow[]) {
     formatarValor(linha.indicador, linha.esperado),
     formatarValor(linha.indicador, linha.obtido),
     formatarValor(linha.indicador, linha.diff),
-    linha.ok ? "OK" : "FALHA",
+    linha.naoVerificavel ? "SEM FONTE" : linha.ok ? "OK" : "FALHA",
   ])
   const larguras = colunas.map((titulo, indice) =>
     Math.max(titulo.length, ...celulas.map((linha) => linha[indice].length)),
@@ -101,18 +112,25 @@ interface GabaritoBruto {
   esperado?: unknown
 }
 
-function validarEsperado(valor: unknown): Record<IndicatorKey, number> {
+// Indicador ausente é legítimo: significa que a planilha não traz aquele número.
+// Presente mas não numérico continua sendo erro de gabarito. Pelo menos um
+// indicador tem de existir, senão não há o que verificar.
+function validarEsperado(valor: unknown): Partial<Record<IndicatorKey, number>> {
   if (!valor || typeof valor !== "object") {
     throw new Error("Gabarito sem campo \"esperado\".")
   }
   const bruto = valor as Record<string, unknown>
-  const resultado = {} as Record<IndicatorKey, number>
+  const resultado: Partial<Record<IndicatorKey, number>> = {}
   for (const chave of INDICATOR_ORDER) {
+    if (!(chave in bruto) || bruto[chave] === null) continue
     const numero = bruto[chave]
     if (typeof numero !== "number" || !Number.isFinite(numero)) {
-      throw new Error(`Gabarito não define um número válido para "${chave}".`)
+      throw new Error(`Gabarito define "${chave}" com valor não numérico: ${JSON.stringify(numero)}.`)
     }
     resultado[chave] = numero
+  }
+  if (Object.keys(resultado).length === 0) {
+    throw new Error("Gabarito não define nenhum indicador em \"esperado\".")
   }
   return resultado
 }
@@ -554,12 +572,21 @@ async function main() {
   console.log("")
   imprimirTabela(linhas)
 
-  const falhas = linhas.filter((linha) => !linha.ok)
+  const semFonte = linhas.filter((linha) => linha.naoVerificavel)
+  const verificados = linhas.filter((linha) => !linha.naoVerificavel)
+  const falhas = verificados.filter((linha) => !linha.ok)
+
+  if (semFonte.length > 0) {
+    console.log(
+      `\n${semFonte.length} indicador(es) sem número na planilha, não verificados: ` +
+        semFonte.map((linha) => linha.indicador).join(", "),
+    )
+  }
   if (falhas.length > 0) {
-    console.log(`\n${falhas.length} de ${linhas.length} indicador(es) fora da tolerância.`)
+    console.log(`${falhas.length} de ${verificados.length} indicador(es) verificados fora da tolerância.`)
     process.exitCode = 1
   } else {
-    console.log(`\nTodos os ${linhas.length} indicadores dentro da tolerância.`)
+    console.log(`Todos os ${verificados.length} indicadores verificáveis estão dentro da tolerância.`)
   }
 }
 
