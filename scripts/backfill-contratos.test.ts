@@ -89,3 +89,36 @@ test("fim do contrato gravado é o último mês coberto, não o mês seguinte (c
   assert.equal(fulano?.fim, "2026-01-01")
   assert.equal(sicrana?.inicio, "2026-02-01")
 })
+
+test("atraso sem mes de origem conhecido nao grava a competencia corrente como origem", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-9", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-9", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 700, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      // O aluguel do mes e de junho (competencia_original = 2026-06), mas o
+      // atraso veio de um acordo, que nao informa mes. Reaproveitar o campo da
+      // linha faria o atraso virar aluguel do mes.
+      { imovel_id: "im-9", competencia: "2026-06-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 1100, atrasos_recuperados: 400, outros_recebimentos: null, competencia_original: "2026-06-01" },
+    ],
+  )
+
+  const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
+  assert.ok(atraso, "deveria existir lancamento de atraso")
+  assert.equal(atraso.valor, 400)
+  assert.equal(atraso.competencia_recebimento, "2026-06-01")
+  // Origem desconhecida: nula, nunca igual ao recebimento.
+  assert.equal(atraso.competencia_origem, null)
+})
+
+test("atraso com mes de origem anterior preserva a origem informada", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-10", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-10", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 700, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null },
+      { imovel_id: "im-10", competencia: "2026-06-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 1100, atrasos_recuperados: 400, outros_recebimentos: null, competencia_original: "2026-04-01" },
+    ],
+  )
+
+  const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
+  assert.equal(atraso?.competencia_origem, "2026-04-01")
+})

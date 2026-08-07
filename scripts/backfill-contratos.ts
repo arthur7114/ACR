@@ -55,7 +55,8 @@ export interface BackfillLancamentoRow {
   fechamento_id: null
   rubrica: BackfillRubrica
   valor: number
-  competencia_origem: string
+  /** Nulo = mês de origem anterior não informado; nunca igual ao recebimento. */
+  competencia_origem: string | null
   competencia_recebimento: string | null
   situacao: "recebido" | "em_aberto"
   descricao: string | null
@@ -185,7 +186,16 @@ export function buildBackfillRows(
       }
 
       if ((raw.atrasos_recuperados ?? 0) > 0) {
-        const competenciaOrigem = raw.competencia_original ?? raw.competencia
+        // `competencia_original` do snapshot descreve o ALUGUEL da linha, não o
+        // atraso: quando o atraso vem de um acordo (que não informa mês), o
+        // campo traz a própria competência corrente. Reaproveitá-lo faria o
+        // atraso nascer com origem igual ao recebimento, virando aluguel do mês
+        // e desaparecendo da recuperação de atrasados. Só serve como origem se
+        // for estritamente anterior; do contrário a origem é desconhecida.
+        const competenciaOrigem =
+          raw.competencia_original !== null && raw.competencia_original < raw.competencia
+            ? raw.competencia_original
+            : null
         lancamentos.push(
           criarLancamento({
             imovelId,
@@ -223,13 +233,19 @@ function criarLancamento(input: {
   imovelId: string
   contratos: ContratoComId[]
   rubrica: BackfillRubrica
+  /** Nulo = pertence a mês anterior não informado (atraso vindo de acordo). */
+  competenciaOrigem: string | null
   valor: number
-  competenciaOrigem: string
   competenciaRecebimento: string
   situacao: "recebido"
   descricao?: string
 }): BackfillLancamentoRow {
-  const contrato = encontrarContrato(input.contratos, input.competenciaOrigem)
+  // Sem mês de origem, o contrato vinculado é o vigente quando o dinheiro
+  // entrou — é o único vínculo que os dados sustentam.
+  const contrato = encontrarContrato(
+    input.contratos,
+    input.competenciaOrigem ?? input.competenciaRecebimento,
+  )
   return {
     imovel_id: input.imovelId,
     contrato_id: contrato?.id ?? null,

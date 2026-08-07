@@ -173,7 +173,8 @@ export interface LancamentoRow {
   rubrica: string
   valor: number | string
   situacao: "recebido" | "em_aberto"
-  competencia_origem: string
+  /** Nulo = competência anterior, mês não informado. */
+  competencia_origem: string | null
   competencia_recebimento: string | null
 }
 
@@ -432,8 +433,10 @@ export function filtrarAluguelRecebidoCompetencia(
   )
 }
 
-// `recuperacaoAtrasados`: recebido na competência com
-// `competencia_origem < competencia`.
+// `recuperacaoAtrasados`: aluguel recebido na competência que NÃO pertence a
+// ela — origem anterior conhecida, ou origem nula (atraso vindo de acordo, que
+// não informa o mês). Junto com `filtrarAluguelRecebidoCompetencia`, que exige
+// origem igual, a partição do aluguel recebido no mês fica exaustiva.
 export function filtrarRecuperacaoAtrasados(
   lancamentos: LancamentoRow[],
   competencia: string,
@@ -443,7 +446,7 @@ export function filtrarRecuperacaoAtrasados(
       lancamento.rubrica === "aluguel" &&
       lancamento.situacao === "recebido" &&
       lancamento.competencia_recebimento === competencia &&
-      lancamento.competencia_origem < competencia,
+      (lancamento.competencia_origem === null || lancamento.competencia_origem < competencia),
   )
 }
 
