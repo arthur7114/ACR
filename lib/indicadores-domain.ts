@@ -19,6 +19,10 @@ interface OccupancyEvidence {
   hasTermination: boolean
   hasDelinquency: boolean
   hasVacancy: boolean
+  // Vacância inferida: a prestação listou a unidade, não nomeou inquilino e não
+  // recebeu aluguel. É mais fraca que `hasVacancy` (que vem de texto explícito)
+  // e por isso entra depois dela na classificação e guarda procedência própria.
+  hasBlankTenancy?: boolean
   // Receita variável (Airbnb) é operação de temporada conhecida pelo cadastro.
   // Um mês sem linha na prestação não a torna desconhecida.
   isVariableRevenue?: boolean
@@ -80,6 +84,7 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
   if (evidence.hasVacancy) return "vago"
+  if (evidence.hasBlankTenancy) return "vago"
   // Sem evidência na prestação, a receita variável recorre ao cadastro: é
   // operação ativa, não dado ausente.
   if (evidence.isVariableRevenue) return "ocupado"

@@ -226,7 +226,13 @@ test("imóvel de receita variável sem linha é ocupado pelo cadastro, não desc
   assert.equal(result.rows[0].aluguel_esperado, null)
 })
 
-test("distingue zero ambiguo de vacancia explicita no inquilino ou observacao", () => {
+// Antes este teste fixava o contrário: linha sem inquilino e sem aluguel ficava
+// `desconhecido`, para não inferir vacância de ausência de dado. A decisão foi
+// revista (a imobiliária lista a unidade na prestação sem inquilino e sem
+// aluguel justamente quando ela está vazia), então os três caminhos convergem
+// para `vago` e o que os separa passa a ser a PROCEDÊNCIA. Mês sem linha alguma
+// continua `desconhecido` — coberto pelo teste do imóvel esperado sem linha.
+test("vacancia explicita e linha sem inquilino convergem para vago, com procedencias distintas", () => {
   const analysis = {
     prestacao: {
       tipo_documento: "prestacao_contas",
@@ -349,9 +355,21 @@ test("distingue zero ambiguo de vacancia explicita no inquilino ou observacao", 
     analysis,
   })
 
-  assert.equal(result.rows.find((row) => row.imovel_id === "imovel-101")?.status_ocupacao, "desconhecido")
-  assert.equal(result.rows.find((row) => row.imovel_id === "imovel-102")?.status_ocupacao, "vago")
-  assert.equal(result.rows.find((row) => row.imovel_id === "imovel-103")?.status_ocupacao, "vago")
+  const row101 = result.rows.find((row) => row.imovel_id === "imovel-101")
+  const row102 = result.rows.find((row) => row.imovel_id === "imovel-102")
+  const row103 = result.rows.find((row) => row.imovel_id === "imovel-103")
+
+  // 101: sem inquilino, sem aluguel, sem texto — vacância inferida da linha.
+  assert.equal(row101?.status_ocupacao, "vago")
+  assert.equal(row101?.status_origem, "prestacao_sem_inquilino")
+  assert.equal(row101?.status_mensal_explicito, null)
+
+  // 102 e 103: vacância dita por escrito, no inquilino ou na observação.
+  assert.equal(row102?.status_ocupacao, "vago")
+  assert.equal(row102?.status_origem, "prestacao_vacancia")
+  assert.equal(row102?.status_mensal_explicito, "vago")
+  assert.equal(row103?.status_ocupacao, "vago")
+  assert.equal(row103?.status_origem, "prestacao_vacancia")
 })
 
 test("marca como parcial quando a linha existe sem aluguel esperado", () => {
@@ -1381,4 +1399,34 @@ test("divida de competencia anterior do mesmo inquilino continua valendo quando 
   )
 
   assert.equal(row.status_ocupacao, "inadimplente")
+})
+
+test("linha sem inquilino e sem aluguel vira vago, com procedencia de inferencia", () => {
+  const row = statusFor(
+    prestacaoFixture({ receita: { inquilino: "", aluguel: 0, total: 0 } }),
+    900,
+  )
+
+  assert.equal(row.status_ocupacao, "vago")
+  assert.equal(row.status_origem, "prestacao_sem_inquilino")
+  // Vacancia inferida nao se passa por explicita.
+  assert.equal(row.status_mensal_explicito, null)
+})
+
+test("receita variavel sem inquilino nao vira vago (Airbnb nao tem aluguel fixo)", () => {
+  const row = statusFor(
+    prestacaoFixture({ receita: { inquilino: "", aluguel: 0, total: 0 } }),
+    null,
+  )
+
+  assert.equal(row.status_ocupacao, "ocupado")
+})
+
+test("inquilino em branco com aluguel recebido continua ocupado", () => {
+  const row = statusFor(
+    prestacaoFixture({ receita: { inquilino: "", aluguel: 900, total: 900 } }),
+    900,
+  )
+
+  assert.equal(row.status_ocupacao, "ocupado")
 })

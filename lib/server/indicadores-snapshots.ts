@@ -402,6 +402,15 @@ function buildSnapshotRow(input: {
       (priorDebtIsFromCurrentOccupant && !currentVacancyEvidence && !currentCompetenceSettled) ||
       hasDelinquencyEvidence(evidenceText),
     hasVacancy: currentVacancyEvidence,
+    // A prestação listou a unidade, não nomeou inquilino e não recebeu aluguel
+    // do mês: na prática é vacância. Exige linha presente (mês sem linha segue
+    // desconhecido) e aluguel contratado conhecido, o que já exclui receita
+    // variável, cuja ausência de aluguel fixo não significa unidade vazia.
+    hasBlankTenancy:
+      propertyLines.length > 0
+      && tenantName === null
+      && expectedRent !== null
+      && currentRent === 0,
     isVariableRevenue: revenueModel === "variavel",
   }
   const status = classifyOccupancy(evidence)
@@ -607,7 +616,12 @@ function resolveStatusOrigin(
 ) {
   if (status === "em_rescisao") return "prestacao_rescisao"
   if (status === "inadimplente") return "prestacao_inadimplencia"
-  if (status === "vago") return "prestacao_vacancia"
+  // Vacância por texto explícito e vacância inferida da linha sem inquilino são
+  // procedências diferentes: quem audita precisa saber qual das duas sustentou
+  // o status.
+  if (status === "vago") {
+    return evidence.hasVacancy ? "prestacao_vacancia" : "prestacao_sem_inquilino"
+  }
   if (status === "ocupado") {
     // Ocupada sem linha só acontece pela receita variável do cadastro; a origem
     // precisa revelar que a evidência veio do cadastro, não da prestação.
