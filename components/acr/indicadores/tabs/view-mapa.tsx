@@ -1,23 +1,33 @@
 "use client"
 
-import { useState } from "react"
+// Herda a direção da Visão geral (ver view-geral.tsx): rótulo e valor no corpo,
+// definição só no tooltip.
+//
+// D26 — os três KPIs de inadimplência saíram: viraram parte da Visão geral e
+//   repetidos aqui só somavam peso. Fica o que é exclusivo desta aba, a lista de
+//   quem está em aberto e o histórico mês a mês.
+// D27 — o mapa abre por empreendimento e expande para as unidades; uma linha por
+//   unidade transformava a tela em rolagem interminável. A célula perdeu as
+//   linhas de percentual e de qualidade: a cor já carrega a intensidade, e o
+//   texto repetido em ~700 células era o próprio problema.
+
+import { Fragment, useState } from "react"
+import { ChevronRight } from "lucide-react"
 import type { IndicadoresData, IndicadoresHeatCell } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
 import {
   buildDelinquencySummary,
+  buildHeatGroups,
   describeHeatCellDetail,
+  formatCount,
   formatCurrency,
-  formatHistoryCoverage,
   occupancyLabel,
+  type HeatGroupCell,
   type HeatMetric,
 } from "../lib/presentation"
-import { EmptyState, Kpi, Panel, PanelHeader, StatusChip, ToggleButton } from "../primitives/dashboard-ui"
+import { EmptyState, Metric, Panel, PanelHeader, StatusChip, ToggleButton } from "../primitives/dashboard-ui"
 
 export type { HeatMetric }
-
-function heatRowAnchorId(imovelId: string) {
-  return `heat-row-${imovelId}`
-}
 
 export function ViewMapa({
   data,
@@ -28,32 +38,30 @@ export function ViewMapa({
   heatMetric: HeatMetric
   onHeatMetricChange: (metric: HeatMetric) => void
 }) {
-  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const groups = buildHeatGroups({ meses: data.heat.meses, linhas: data.heat.linhas, metric: heatMetric })
 
-  function focusUnit(imovelId: string) {
-    const target = document.getElementById(heatRowAnchorId(imovelId))
-    if (!target) return
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" })
-    setHighlightedId(imovelId)
-    window.setTimeout(() => setHighlightedId((current) => (current === imovelId ? null : current)), 1600)
+  function toggleGroup(empreendimentoId: string) {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(empreendimentoId)) next.delete(empreendimentoId)
+      else next.add(empreendimentoId)
+      return next
+    })
   }
 
   return (
-    <div className="space-y-4">
-      {heatMetric === "inad" && <DelinquencySummaryPanel data={data} onFocusUnit={focusUnit} />}
+    <div className="space-y-3">
+      {heatMetric === "inad" && <DelinquencyPanel data={data} />}
 
       <Panel className="min-w-0 overflow-hidden">
         <PanelHeader
-          title={heatMetric === "inad" ? "Riscos por imóvel · inadimplência" : "Riscos por imóvel · vacância"}
-          description="Cada linha acompanha uma unidade mês a mês. O estado vem primeiro; percentual e valor completam a leitura."
-          source="Histórico mensal por imóvel e cadastro atual"
+          title="Histórico por empreendimento"
           help={{
-            short: "Acompanha o histórico mensal de cada unidade.",
-            title: "Riscos por imóvel",
-            definition: "Histórico de inadimplência ou vacância para cada imóvel e competência.",
-            source: "Histórico mensal por imóvel; apenas a coluna Hoje vem do cadastro atual.",
-            limitation: "Sem dados no mês não equivale a risco zero.",
+            short: "Intensidade do risco mês a mês, por empreendimento.",
+            title: "Histórico por empreendimento",
+            definition: "Cada célula mostra quantas unidades do empreendimento estavam em risco naquele mês, entre as que tinham dado. Abra o empreendimento para ver unidade por unidade.",
+            limitation: "Mês sem dado não é risco zero: fica fora da conta e aparece em cinza.",
           }}
           action={
             <div className="inline-flex min-h-11 shrink-0 rounded-lg border border-acr-line-2 bg-white p-1" role="group" aria-label="Risco exibido">
@@ -63,69 +71,98 @@ export function ViewMapa({
           }
         />
 
-        {data.heat.linhas.length > 0 ? (
+        {groups.length > 0 ? (
           <>
-            <div className="max-h-[68vh] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green" tabIndex={0} aria-label="Riscos por imóvel com rolagem interna">
-              <table className="min-w-max border-separate border-spacing-0 text-xs">
+            <div
+              className="max-h-[68vh] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green"
+              tabIndex={0}
+              aria-label="Histórico de risco com rolagem interna"
+            >
+              <table className="w-full min-w-max border-separate border-spacing-0 text-xs">
                 <caption className="sr-only">
-                  {heatMetric === "inad" ? "Inadimplência" : "Vacância"} por imóvel e competência, com posição atual em coluna separada.
+                  {heatMetric === "inad" ? "Inadimplência" : "Vacância"} por empreendimento e competência, com a posição atual em coluna separada.
                 </caption>
                 <thead>
                   <tr>
-                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-56 border-b border-r border-acr-line-2 bg-white px-4 py-3 text-left font-semibold text-acr-muted-2">
-                      Imóvel
+                    <th scope="col" className="sticky left-0 top-0 z-30 min-w-64 border-b border-r border-acr-line-2 bg-white px-4 py-3 text-left font-semibold text-acr-muted-2">
+                      Empreendimento
                     </th>
                     {data.heat.meses.map((month) => (
-                      <th key={month.competencia} scope="col" className="sticky top-0 z-20 min-w-28 border-b border-acr-line-2 bg-white px-2 py-3 text-center font-semibold text-acr-muted-2">
+                      <th key={month.competencia} scope="col" className="sticky top-0 z-20 min-w-24 border-b border-acr-line-2 bg-white px-2 py-3 text-center font-semibold text-acr-muted-2">
                         {month.label}
                       </th>
                     ))}
-                    <th scope="col" className="sticky right-0 top-0 z-30 min-w-32 border-b border-l-2 border-acr-green/25 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-green-strong">
+                    <th scope="col" className="sticky right-0 top-0 z-30 min-w-28 border-b border-l-2 border-acr-green/25 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-green-strong">
                       Hoje
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.heat.linhas.map((row) => {
-                    const recordedMonths = row.celulas.filter((cell) => cell.origem !== null).length
-                    const classifiedMonths = row.celulas.filter(
-                      (cell) => cell.statusOcupacao !== null && cell.statusOcupacao !== "desconhecido",
-                    ).length
+                  {groups.map((group) => {
+                    const isOpen = expanded.has(group.empreendimentoId)
                     return (
-                      <tr key={row.imovelId}>
-                        <th
-                          id={heatRowAnchorId(row.imovelId)}
-                          scope="row"
-                          className={cn(
-                            "sticky left-0 z-10 min-w-64 max-w-64 border-b border-r border-acr-line bg-white px-4 py-3 text-left transition-colors motion-reduce:transition-none",
-                            highlightedId === row.imovelId && "bg-acr-green-tint ring-2 ring-inset ring-acr-green",
-                          )}
-                        >
-                          <span className="block truncate font-bold text-acr-ink">{row.unidade}</span>
-                          <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.empreendimentoNome}</span>
-                          <span className="mt-2 block text-[10px] font-semibold leading-4 text-acr-green-strong">
-                            {formatHistoryCoverage(recordedMonths, classifiedMonths, data.heat.meses.length)}
-                          </span>
-                        </th>
-                        {data.heat.meses.map((month) => {
-                          const cell = row.celulas.find((candidate) => candidate.competencia === month.competencia) ?? null
-                          return <HeatCell key={month.competencia} cell={cell} metric={heatMetric} month={month.label} unit={row.unidade} />
-                        })}
-                        <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center">
-                          <StatusChip status={row.hoje} />
-                        </td>
-                      </tr>
+                      <Fragment key={group.empreendimentoId}>
+                        <tr>
+                          <th scope="row" className="sticky left-0 z-10 min-w-64 max-w-64 border-b border-r border-acr-line bg-white p-0 text-left">
+                            <button
+                              type="button"
+                              aria-expanded={isOpen}
+                              onClick={() => toggleGroup(group.empreendimentoId)}
+                              className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green"
+                            >
+                              <ChevronRight
+                                aria-hidden="true"
+                                className={cn("size-4 shrink-0 text-acr-muted-2 transition-transform motion-reduce:transition-none", isOpen && "rotate-90")}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-bold text-acr-ink">{group.empreendimentoNome}</span>
+                                <span className="mt-0.5 block font-normal text-acr-muted-2 tabular-nums">
+                                  {formatCount(group.linhas.length)} {group.linhas.length === 1 ? "unidade" : "unidades"}
+                                </span>
+                              </span>
+                            </button>
+                          </th>
+                          {group.celulas.map((cell) => (
+                            <GroupCell key={cell.competencia} cell={cell} />
+                          ))}
+                          <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-ink tabular-nums">
+                            {group.unidadesEmRiscoHoje > 0 ? formatCount(group.unidadesEmRiscoHoje) : "—"}
+                          </td>
+                        </tr>
+                        {isOpen && group.linhas.map((row) => (
+                          <tr key={`${group.empreendimentoId}-${row.imovelId}`}>
+                            <th scope="row" className="sticky left-0 z-10 min-w-64 max-w-64 border-b border-r border-acr-line bg-acr-page py-2.5 pl-10 pr-4 text-left">
+                              <span className="block truncate font-semibold text-acr-ink">{row.unidade}</span>
+                              {row.inquilinoNome && (
+                                <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.inquilinoNome}</span>
+                              )}
+                            </th>
+                            {data.heat.meses.map((month) => (
+                              <UnitCell
+                                key={month.competencia}
+                                cell={row.celulas.find((candidate) => candidate.competencia === month.competencia) ?? null}
+                                metric={heatMetric}
+                                month={month.label}
+                                unit={row.unidade}
+                              />
+                            ))}
+                            <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-2.5 text-center">
+                              <StatusChip status={row.hoje} />
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
                     )
                   })}
                 </tbody>
               </table>
             </div>
-            <HeatLegend metric={heatMetric} />
+            <HeatLegend />
           </>
         ) : (
           <EmptyState
             title="Sem histórico para o mapa"
-            description="Nenhum histórico mensal foi encontrado para os filtros e a competência selecionados. A posição atual não é usada para inventar meses anteriores."
+            description="Nenhum histórico mensal foi encontrado para os filtros e a competência selecionados."
           />
         )}
       </Panel>
@@ -133,13 +170,7 @@ export function ViewMapa({
   )
 }
 
-function DelinquencySummaryPanel({
-  data,
-  onFocusUnit,
-}: {
-  data: IndicadoresData
-  onFocusUnit: (imovelId: string) => void
-}) {
+function DelinquencyPanel({ data }: { data: IndicadoresData }) {
   const summary = buildDelinquencySummary({
     competenciaAtual: data.meta.competencia,
     meses: data.heat.meses,
@@ -149,78 +180,100 @@ function DelinquencySummaryPanel({
 
   return (
     <Panel className="min-w-0 overflow-hidden">
-      <PanelHeader
-        title="Inadimplência"
-        description="Quanto está em aberto agora, quais unidades e em quais meses."
-        source="Histórico mensal por imóvel e prestações da competência"
-        help={{
-          short: "Inadimplência do mês, acumulada e total em aberto.",
-          title: "Inadimplência",
-          definition: "Inadimplência do mês é o não pago na competência selecionada; acumulada é a dívida de meses anteriores registrada nas prestações. São naturezas diferentes e não se substituem.",
-          source: "Histórico mensal por imóvel (mês) e prestações da competência (acumulada).",
-          limitation: "A lista só traz quem está inadimplente na competência selecionada; quem já quitou não aparece, mesmo com meses inadimplentes no histórico.",
-        }}
-      />
-      <div className="grid gap-px bg-acr-line sm:grid-cols-3">
-        <Kpi
-          label="Inadimplência do mês"
-          value={formatCurrency(summary.mesAtual)}
-          detail="Não pago na competência selecionada."
-          source="Histórico mensal por imóvel"
-          tone="danger"
+      {/* O herói é a contagem, não o total: uma única unidade inadimplente sem
+          valor conhecido zera a soma (por projeto — ver buildDelinquencySummary),
+          e um traço gigante no topo do painel não informa nada. A contagem é
+          sempre conhecida e é o que dispara ação; os valores estão nas linhas, e
+          a inadimplência do mês e a acumulada vivem na Visão geral. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 px-5 py-5 sm:px-6">
+        <Metric
+          label="Unidades em aberto"
+          value={formatCount(summary.unidades.length)}
+          tone={summary.unidades.length > 0 ? "danger" : "default"}
+          help={{
+            short: "Unidades inadimplentes na competência.",
+            title: "Unidades em aberto",
+            definition: "Unidades que estavam inadimplentes na competência selecionada.",
+            limitation: "Quem já quitou não aparece, mesmo com meses inadimplentes no histórico.",
+          }}
         />
-        <Kpi
-          label="Inadimplência acumulada"
-          value={formatCurrency(summary.acumulada)}
-          detail="Dívida de meses anteriores, registrada na prestação."
-          source="Prestações da competência"
-          tone="danger"
-        />
-        <Kpi
-          label="Total em aberto"
-          value={formatCurrency(summary.totalEmAberto)}
-          detail="Mês atual mais acumulada."
-          source="Soma dos dois valores ao lado"
-          tone="danger"
-        />
+        {summary.acumulada !== null && (
+          <Metric
+            label="Acumulada"
+            value={formatCurrency(summary.acumulada)}
+            rank="compact"
+            tone="danger"
+            help={{
+              short: "Dívida de competências anteriores.",
+              title: "Inadimplência acumulada",
+              definition: "Aluguel de meses anteriores que segue sem pagamento.",
+            }}
+          />
+        )}
       </div>
       {summary.unidades.length > 0 ? (
-        <ul className="divide-y divide-acr-line">
+        <ul className="divide-y divide-acr-line border-t border-acr-line">
           {summary.unidades.map((unit) => (
-            <li key={unit.imovelId}>
-              <button
-                type="button"
-                onClick={() => onFocusUnit(unit.imovelId)}
-                className="flex w-full min-w-0 items-center justify-between gap-3 px-4 py-3 text-left transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green sm:px-5"
+            <li key={unit.imovelId} className="flex items-center justify-between gap-4 px-5 py-3 sm:px-6">
+              <div className="min-w-0 flex-1">
+                {/* Empreendimento primeiro: a unidade costuma ser um número cru
+                    ("22"), que sozinho e em negrito lê como quantidade. */}
+                <p className="truncate text-sm font-semibold text-acr-ink">
+                  {unit.empreendimentoNome} · {unit.unidade}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-acr-muted-2">
+                  {unit.meses.map((mes) => mes.label).join(", ")}
+                </p>
+              </div>
+              {/* Vermelho só quando há dinheiro em aberto: unidade classificada
+                  como inadimplente com R$ 0,00 existe na base (resíduo conhecido
+                  de classificação) e pintá-la de alarme mente sobre o risco. */}
+              <span
+                className={cn(
+                  "shrink-0 text-sm font-bold tabular-nums",
+                  (unit.valorEmAberto ?? 0) > 0 ? "text-acr-red" : "text-acr-muted-2",
+                )}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-bold text-acr-ink">{unit.unidade}</span>
-                    <StatusChip status={unit.hoje} />
-                  </div>
-                  <p className="mt-0.5 truncate text-xs text-acr-muted-2">{unit.empreendimentoNome}</p>
-                  <p className="mt-1 text-xs text-acr-muted-2">
-                    Inadimplente em {unit.meses.map((mes) => mes.label).join(", ")}
-                  </p>
-                </div>
-                <span className="shrink-0 text-right text-sm font-bold tabular-nums text-acr-red">
-                  {formatCurrency(unit.valorEmAberto)}
-                </span>
-              </button>
+                {formatCurrency(unit.valorEmAberto)}
+              </span>
             </li>
           ))}
         </ul>
       ) : (
-        <EmptyState
-          title="Nenhuma unidade inadimplente"
-          description="Nenhuma unidade está inadimplente na competência selecionada."
-        />
+        <div className="border-t border-acr-line">
+          <EmptyState title="Nenhuma unidade inadimplente" description="Nenhuma unidade está inadimplente na competência selecionada." />
+        </div>
       )}
     </Panel>
   )
 }
 
-function HeatCell({
+function GroupCell({ cell }: { cell: HeatGroupCell }) {
+  if (cell.unidadesComDado === 0) {
+    return (
+      <td aria-label="sem dado" className="min-w-24 border-b border-white/70 bg-[#f4f6f4] px-2 py-3 text-center align-middle text-acr-muted-2">
+        —
+      </td>
+    )
+  }
+
+  return (
+    <td
+      aria-label={`${formatCount(cell.unidadesEmRisco)} de ${formatCount(cell.unidadesComDado)} unidades em risco${cell.valor === null ? "" : `, ${formatCurrency(cell.valor)}`}`}
+      className={cn("min-w-24 border-b border-white/70 px-2 py-3 text-center align-middle tabular-nums", heatTone(cell.percentual))}
+    >
+      <span className="block text-sm font-bold">
+        {formatCount(cell.unidadesEmRisco)}
+        <span className="font-normal"> / {formatCount(cell.unidadesComDado)}</span>
+      </span>
+      {cell.valor !== null && cell.valor > 0 && (
+        <span className="mt-0.5 block text-[10px] font-semibold">{formatCurrency(cell.valor)}</span>
+      )}
+    </td>
+  )
+}
+
+function UnitCell({
   cell,
   metric,
   month,
@@ -231,52 +284,35 @@ function HeatCell({
   month: string
   unit: string
 }) {
-  const percentage = cell ? (metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual) : null
   const status = cell?.statusOcupacao ?? null
-  const detail = describeHeatCellDetail({ metric, percentage, valor: cell?.valor ?? null })
-  const qualityDescription = cell?.qualidade === "parcial" ? ", dados parciais" : cell?.qualidade === "sem_linha" ? ", vínculo pendente" : ""
-  const accessible = cell === null || status === null
-    ? `${unit}, ${month}: sem dado`
-    : detail.kind === "oculto"
-      ? `${unit}, ${month}: ${occupancyLabel(status)}, sem pendência${qualityDescription}`
-      : `${unit}, ${month}: ${occupancyLabel(status)}, ${detail.percentualLabel ?? "percentual indisponível"}, ${detail.valorLabel}${qualityDescription}`
+
+  if (cell === null || status === null) {
+    return (
+      <td aria-label={`${unit}, ${month}: sem dado`} className="min-w-24 border-b border-white/70 bg-[#f4f6f4] px-2 py-2.5 text-center align-middle text-acr-muted-2">
+        —
+      </td>
+    )
+  }
+
+  const percentage = metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual
+  // describeHeatCellDetail já decide quando um número acrescenta informação
+  // (0% de inadimplência é dupla negativa; vacância é binária). A célula mostra
+  // só a moeda; a frase completa vai para o rótulo acessível.
+  const detail = describeHeatCellDetail({ metric, percentage, valor: cell.valor })
 
   return (
     <td
-      aria-label={accessible}
-      className={cn(
-        "min-w-28 border-b border-white/70 px-2 py-2 text-center align-middle tabular-nums",
-        heatTone(percentage, metric),
-      )}
+      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
+      className={cn("min-w-24 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums", heatTone(percentage))}
     >
-      {status === null ? (
-        <div className="flex min-h-20 flex-col items-center justify-center">
-          <span className="text-sm font-bold text-acr-muted-2">—</span>
-          <span className="mt-1 text-[10px] font-medium text-acr-muted-2">Sem dados no mês</span>
-        </div>
-      ) : (
-        <div className="flex min-h-20 flex-col items-center justify-center">
-          <span className="text-xs font-bold text-acr-ink">{occupancyLabel(status)}</span>
-          {detail.kind === "sem_calculo" && (
-            <span className="mt-1 text-[10px] font-medium">Sem cálculo financeiro</span>
-          )}
-          {detail.kind === "detalhado" && (
-            <>
-              <span className="mt-1 text-[11px] font-semibold">{detail.percentualLabel}</span>
-              <span className="mt-0.5 text-[10px]">{detail.valorLabel}</span>
-            </>
-          )}
-          {cell?.qualidade === "parcial" && <span className="mt-1 text-[9px] font-bold">Dados parciais</span>}
-          {cell?.qualidade === "sem_linha" && <span className="mt-1 text-[9px] font-bold">Vínculo pendente</span>}
-        </div>
-      )}
+      <span className="block font-semibold">{occupancyLabel(status)}</span>
+      {detail.kind === "detalhado" && <span className="mt-0.5 block text-[10px]">{formatCurrency(cell.valor)}</span>}
     </td>
   )
 }
 
-function heatTone(value: number | null, metric: HeatMetric): string {
+function heatTone(value: number | null): string {
   if (value === null) return "bg-[#f4f6f4] text-acr-muted-2"
-  if (metric === "vac") return value >= 100 ? "acr-heat-q5" : "acr-heat-q0"
   if (value <= 1) return "acr-heat-q0"
   if (value <= 10) return "acr-heat-q1"
   if (value <= 25) return "acr-heat-q2"
@@ -285,31 +321,19 @@ function heatTone(value: number | null, metric: HeatMetric): string {
   return "acr-heat-q5"
 }
 
-function HeatLegend({ metric }: { metric: HeatMetric }) {
+function HeatLegend() {
   const ranges = ["0–1%", "1–10%", "10–25%", "25–50%", "50–75%", "75%+"]
+
   return (
-    <div className="border-t border-acr-line px-4 py-4 sm:px-5">
-      <p className="text-xs font-semibold text-acr-ink">Escala de {metric === "inad" ? "inadimplência" : "vacância"}</p>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-acr-muted-2">
-        {metric === "inad" ? ranges.map((range, index) => (
-          <span key={range} className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
-          </span>
-        )) : (
-          <>
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-3 rounded-sm acr-heat-q0" /> 0% · não vago
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="size-3 rounded-sm acr-heat-q5" /> 100% · vago
-            </span>
-          </>
-        )}
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> — sem dado
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-acr-line px-5 py-4 text-[11px] text-acr-muted-2 sm:px-6">
+      {ranges.map((range, index) => (
+        <span key={range} className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
         </span>
-        {metric === "vac" && <span className="font-semibold">Vacância é um estado mensal por imóvel, não uma escala contínua.</span>}
-      </div>
+      ))}
+      <span className="inline-flex items-center gap-1.5">
+        <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> sem dado
+      </span>
     </div>
   )
 }

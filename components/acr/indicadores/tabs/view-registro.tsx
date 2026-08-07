@@ -13,7 +13,7 @@ import {
   qualityLabel,
   resolveMetricValue,
 } from "../lib/presentation"
-import { DataNote, EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
+import { EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
 
 const PAGE_SIZE = 20
 
@@ -58,14 +58,13 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
     <Panel className="min-w-0 overflow-hidden">
       <PanelHeader
         title="Detalhamento por imóvel"
-        description="Uma linha por imóvel e competência, com recebimentos e referências financeiras separados."
         source="Fechamentos da competência e histórico mensal por imóvel"
         help={{
           short: "Abra os valores que formam a competência.",
           title: "Detalhamento por imóvel",
-          definition: "Relaciona contrato, recebimentos, retenções e repasse calculado de cada imóvel.",
+          definition: "Uma linha por imóvel e competência, com aluguel contratado, recebimentos, retenções e repasse calculado.",
           source: "Fechamentos da competência e histórico mensal por imóvel.",
-          limitation: "Evidências bancárias são conciliadas por fechamento e não atribuídas artificialmente a cada imóvel. Receitas sem imóvel vinculado (acordos, atrasos e intermediação) entram no total da competência, mas não aparecem em nenhuma linha desta tabela.",
+          limitation: "Receitas sem imóvel vinculado (acordos, atrasos e intermediação) entram no total da competência, mas não aparecem em nenhuma linha desta tabela.",
         }}
         action={
           <a
@@ -98,7 +97,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
           </span>
         </label>
         <p aria-live="polite" className="text-xs text-acr-muted-2 tabular-nums">
-          {sorted.length} imóvel(is) encontrado(s)
+          {sorted.length === 0 ? "Nenhum imóvel encontrado" : sorted.length === 1 ? "1 imóvel encontrado" : `${sorted.length} imóveis encontrados`}
         </p>
       </div>
 
@@ -123,7 +122,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                   <SortableHeader label="Competência do aluguel" sortKey="competenciaAluguel" sort={sort} onSort={updateSort} />
                   <SortableHeader label="Recebido em" sortKey="competenciaRecebimento" sort={sort} onSort={updateSort} />
                   <SortableHeader label="Vence dia" sortKey="vencimentoDia" sort={sort} onSort={updateSort} />
-                  <th scope="col" className="px-3 py-3 text-left font-semibold">Origem e cobertura</th>
+                  <th scope="col" className="px-3 py-3 text-left font-semibold">Origem</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,11 +160,6 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
           </div>
 
           <Pagination page={safePage} pageCount={pageCount} onPageChange={setPage} />
-          <div className="border-t border-acr-line px-4 py-3 sm:px-5">
-            <DataNote>
-              A soma das “Receitas do fechamento” por imóvel pode ficar abaixo do total da competência: acordos, atrasos e intermediação sem imóvel vinculado compõem o fechamento, mas não entram em nenhuma linha desta tabela.
-            </DataNote>
-          </div>
         </>
       ) : (
         <EmptyState
@@ -272,7 +266,7 @@ function MobileRevenueRow({ row }: { row: IndicadoresPropertyRevenue }) {
         <MobileValue label="Competência do aluguel" value={references.rentCompetence} />
         <MobileValue label="Recebido em" value={references.receiptCompetence} />
         <MobileValue label="Vence dia" value={references.dueDay} />
-        <MobileValue label="Origem e cobertura" value={<QualityCell row={row} />} />
+        <MobileValue label="Origem" value={<QualityCell row={row} />} />
       </div>
     </details>
   )

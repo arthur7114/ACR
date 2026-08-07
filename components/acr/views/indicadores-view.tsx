@@ -156,9 +156,6 @@ export function IndicadoresView() {
               </span>
             )}
           </div>
-          <p className="mt-1 max-w-[70ch] text-sm leading-6 text-acr-muted-2">
-            Valores, conciliação, ocupação e riscos com fonte, cobertura e limitações visíveis em cada competência.
-          </p>
           {data && (
             <p className="mt-1 flex items-center gap-1.5 text-xs text-acr-muted-2">
               <CalendarDays aria-hidden="true" className="size-3.5" /> Atualizado em {formatDateTime(data.meta.atualizadoEm)} · cálculo {data.meta.calculoVersao}
@@ -286,11 +283,14 @@ function FilterSelect({
 function DashboardSkeleton() {
   return (
     <div role="status" aria-label="Carregando indicadores" className="animate-pulse space-y-4 motion-reduce:animate-none">
-      <div className="h-28 rounded-xl bg-[#edf0ed]" />
       <div className="h-12 rounded-lg bg-[#edf0ed]" />
-      <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-5">
-        {Array.from({ length: 5 }, (_, index) => <div key={index} className="h-40 rounded-lg bg-[#edf0ed]" />)}
+      <div className="h-40 rounded-xl bg-[#edf0ed]" />
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="h-32 rounded-xl bg-[#edf0ed]" />
+        <div className="h-52 rounded-xl bg-[#edf0ed]" />
       </div>
+      <div className="h-28 rounded-xl bg-[#edf0ed]" />
+      <div className="h-72 rounded-xl bg-[#edf0ed]" />
       <span className="sr-only">Carregando indicadores…</span>
     </div>
   )

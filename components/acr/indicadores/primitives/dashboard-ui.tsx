@@ -3,6 +3,7 @@
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react"
 import {
   AlertTriangle,
+  CircleCheck,
   CircleHelp,
   Info,
 } from "lucide-react"
@@ -71,41 +72,71 @@ export function PanelHeader({
   )
 }
 
-export function Kpi({
+// Um posto hierárquico por métrica, em vez de cinco cartões de peso idêntico.
+// A escala do número é o que informa a ordem de leitura; a definição vive só
+// no tooltip, nunca como frase sob o valor.
+export function Metric({
   label,
   value,
-  detail,
-  source,
+  rank = "primary",
   tone = "default",
   help,
+  children,
 }: {
   label: string
   value: string
-  detail: string
-  source: string
+  rank?: "hero" | "primary" | "compact"
   tone?: "default" | "warning" | "danger"
   help?: MetricHelpContent
+  children?: ReactNode
 }) {
+  const absent = value === "—"
+
   return (
-    <article
-      className={cn(
-        "min-w-0 border-t-2 bg-white px-4 py-4 sm:px-5",
-        tone === "default" && "border-acr-green",
-        tone === "warning" && "border-acr-amber",
-        tone === "danger" && "border-acr-red",
-      )}
-    >
-      <div className="flex items-center gap-1.5">
-        <p className="text-sm font-medium text-acr-muted-2">{label}</p>
+    <div className="min-w-0">
+      <div className="flex items-center gap-1">
+        <p className={cn("font-medium text-acr-muted-2", rank === "compact" ? "text-xs" : "text-sm")}>{label}</p>
         {help && <MetricHelp {...help} />}
       </div>
-      <p className="mt-3 break-words text-[1.55rem] font-bold leading-tight tracking-[-0.025em] text-acr-ink tabular-nums" title={value}>
+      <p
+        className={cn(
+          "mt-1 break-words font-bold leading-none tracking-[-0.03em] tabular-nums",
+          rank === "hero" && "text-[2.25rem] sm:text-[3rem]",
+          rank === "primary" && "text-[1.75rem] sm:text-[2rem]",
+          rank === "compact" && "text-lg",
+          absent ? "text-acr-muted/60" : tone === "danger" ? "text-acr-red" : tone === "warning" ? "text-acr-amber" : "text-acr-ink",
+        )}
+        title={value}
+      >
         {value}
       </p>
-      <p className="mt-2 min-h-10 text-xs leading-5 text-acr-muted-2">{detail}</p>
-      {/* PROVENIÊNCIA (não renderizada — D7): prop `source` mantida como documentação. */}
-      {void source}
-    </article>
+      {children}
+    </div>
+  )
+}
+
+export function StateChip({
+  label,
+  tone,
+}: {
+  label: string
+  tone: "positive" | "warning" | "danger" | "neutral"
+}) {
+  const Icon = tone === "positive" ? CircleCheck : tone === "neutral" ? Info : AlertTriangle
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
+        tone === "positive" && "bg-acr-green-soft text-acr-green-strong",
+        tone === "warning" && "bg-acr-amber-soft text-[#72500f]",
+        tone === "danger" && "bg-acr-red-soft text-acr-red",
+        tone === "neutral" && "bg-[#edf0ed] text-acr-muted-2",
+      )}
+    >
+      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      {label}
+    </span>
   )
 }
 
@@ -238,15 +269,6 @@ export function EmptyState({ title, description }: { title: string; description:
       <CircleHelp aria-hidden="true" className="size-7 text-acr-muted-2" />
       <h3 className="mt-3 text-sm font-bold text-acr-ink">{title}</h3>
       <p className="mt-1 max-w-[58ch] text-sm leading-5 text-acr-muted-2">{description}</p>
-    </div>
-  )
-}
-
-export function DataNote({ children, warning = false }: { children: ReactNode; warning?: boolean }) {
-  return (
-    <div className={cn("flex items-start gap-2.5 text-xs leading-5", warning ? "text-[#72500f]" : "text-acr-muted-2")}>
-      {warning ? <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" /> : <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-acr-green" />}
-      <p>{children}</p>
     </div>
   )
 }

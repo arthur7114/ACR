@@ -42,6 +42,26 @@ export function formatPercent(value: number | null | undefined): string {
   return value == null ? "—" : `${NUMBER_FORMATTER.format(value)}%`
 }
 
+// Rótulo de eixo: o valor cheio não cabe repetido numa escala vertical, e a
+// grandeza é o que importa ali — o valor exato vive no ponto da série.
+export function formatCompactCurrency(value: number | null | undefined): string {
+  if (value == null) return "—"
+  const abs = Math.abs(value)
+  if (abs >= 1_000_000) return `${NUMBER_FORMATTER.format(value / 1_000_000)} mi`
+  if (abs >= 1_000) return `${NUMBER_FORMATTER.format(value / 1_000)} mil`
+  return NUMBER_FORMATTER.format(value)
+}
+
+export function confidenceLabel(status: ConfidenceStatus): string {
+  const labels: Record<ConfidenceStatus, string> = {
+    confirmado: "Confirmado",
+    em_conferencia: "Em conferência",
+    incompleto: "Incompleto",
+    com_divergencia: "Com divergência",
+  }
+  return labels[status]
+}
+
 export function formatCount(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value)
 }
@@ -152,6 +172,105 @@ function stringValue(value: unknown): string | null {
 function numericDay(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 31 ? parsed : null
+}
+
+export type VerdictTone = "positive" | "warning" | "danger" | "neutral"
+
+export interface ConferenceVerdict {
+  label: string
+  tone: VerdictTone
+}
+
+// O veredito só é honesto entre iguais: compara-se o repasse dos fechamentos que
+// TÊM comprovante contra o que o banco confirmou. Medir o calculado total contra
+// o comprovado transformaria comprovante ausente em divergência — falso alarme
+// numa tela cujo trabalho é dizer se o mês pode ser confiado. Quando ainda falta
+// comprovante, "confere" é verdadeiro mas não é final: fica neutro, nunca verde.
+export function describeConference(input: {
+  comprovado: number | null
+  banco: number | null
+  comprovantes: { presentes: number; ausentes: number; esperados: number }
+  status: ConfidenceStatus
+}): ConferenceVerdict {
+  const { comprovado, banco, comprovantes, status } = input
+
+  if (comprovado !== null && banco !== null) {
+    const delta = Math.abs(comprovado - banco)
+    if (delta > 0.01) return { label: `Difere do banco em ${formatCurrency(delta)}`, tone: "danger" }
+    return { label: "Confere com o banco", tone: comprovantes.ausentes === 0 ? "positive" : "neutral" }
+  }
+  if (status === "confirmado") return { label: confidenceLabel(status), tone: "positive" }
+  if (status === "com_divergencia") return { label: confidenceLabel(status), tone: "danger" }
+  if (status === "incompleto") return { label: confidenceLabel(status), tone: "warning" }
+  return { label: confidenceLabel(status), tone: "neutral" }
+}
+
+export interface HeatGroupCell {
+  competencia: string
+  unidadesEmRisco: number
+  unidadesComDado: number
+  valor: number | null
+  /** Share das unidades com dado que estão em risco; alimenta a cor da célula. */
+  percentual: number | null
+}
+
+export interface HeatGroup {
+  empreendimentoId: string
+  empreendimentoNome: string
+  linhas: IndicadoresHeatRow[]
+  celulas: HeatGroupCell[]
+  unidadesEmRiscoHoje: number
+}
+
+// D27: uma linha por unidade tornava o mapa uma rolagem interminável. O default
+// passa a ser por empreendimento, e a unidade vive dentro dele. O agregado NÃO
+// é média de percentual (média de percentual mente quando as unidades têm
+// aluguéis diferentes): é quantas unidades estão em risco entre as que têm
+// dado, mais a soma do valor. Unidade sem dado no mês não entra no denominador,
+// então mês sem informação nunca vira "0% de risco".
+export function buildHeatGroups(input: {
+  meses: Array<{ competencia: string; label: string }>
+  linhas: IndicadoresHeatRow[]
+  metric: HeatMetric
+}): HeatGroup[] {
+  const riskStatus: OccupancyStatus = input.metric === "inad" ? "inadimplente" : "vago"
+  const groups = new Map<string, IndicadoresHeatRow[]>()
+
+  for (const row of input.linhas) {
+    const existing = groups.get(row.empreendimentoId)
+    if (existing) existing.push(row)
+    else groups.set(row.empreendimentoId, [row])
+  }
+
+  const result: HeatGroup[] = []
+
+  for (const [empreendimentoId, linhas] of groups) {
+    const celulas = input.meses.map((month) => {
+      const cells = linhas
+        .map((row) => row.celulas.find((cell) => cell.competencia === month.competencia) ?? null)
+        .filter((cell): cell is NonNullable<typeof cell> => cell !== null && cell.statusOcupacao !== null)
+      const emRisco = cells.filter((cell) => cell.statusOcupacao === riskStatus)
+      const valores = emRisco.map((cell) => cell.valor)
+
+      return {
+        competencia: month.competencia,
+        unidadesEmRisco: emRisco.length,
+        unidadesComDado: cells.length,
+        valor: valores.length === 0 ? null : sumKnownValues(valores),
+        percentual: cells.length === 0 ? null : (emRisco.length / cells.length) * 100,
+      }
+    })
+
+    result.push({
+      empreendimentoId,
+      empreendimentoNome: linhas[0].empreendimentoNome,
+      linhas: [...linhas].sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR", { numeric: true })),
+      celulas,
+      unidadesEmRiscoHoje: linhas.filter((row) => row.hoje === riskStatus).length,
+    })
+  }
+
+  return result.sort((a, b) => a.empreendimentoNome.localeCompare(b.empreendimentoNome, "pt-BR"))
 }
 
 export function occupancyLabel(status: OccupancyStatus): string {

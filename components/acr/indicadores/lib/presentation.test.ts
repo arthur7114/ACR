@@ -4,6 +4,7 @@ import test from "node:test"
 import type { IndicadoresHeatRow } from "@/lib/indicadores-types"
 import {
   buildDelinquencySummary,
+  buildHeatGroups,
   describeHeatCellDetail,
   formatContractedRent,
   formatCurrency,
@@ -162,6 +163,86 @@ test("mapa de riscos: 0% com diferença residual ainda mostra o valor (não é '
   assert.equal(detail.valorLabel, "R$ 50,00 de diferença")
 })
 
+const JUNHO = [{ competencia: "2026-06-01", label: "Jun/26" }]
+
+function junhoCell(
+  statusOcupacao: IndicadoresHeatRow["celulas"][number]["statusOcupacao"],
+  valor: number | null,
+): IndicadoresHeatRow["celulas"][number] {
+  return {
+    competencia: "2026-06-01",
+    statusOcupacao,
+    valor,
+    inadimplenciaPercentual: null,
+    vacanciaPercentual: null,
+    origem: null,
+    qualidade: null,
+  }
+}
+
+test("mapa por empreendimento: conta unidades em risco entre as que têm dado, não média de percentual", () => {
+  const groups = buildHeatGroups({
+    meses: JUNHO,
+    linhas: [
+      makeRow({ imovelId: "a", unidade: "Apto 1", celulas: [junhoCell("inadimplente", 900)] }),
+      makeRow({ imovelId: "b", unidade: "Apto 2", celulas: [junhoCell("ocupado", 0)] }),
+      // Sem status no mês: fora do denominador, senão mês sem informação viraria
+      // "0% de risco".
+      makeRow({ imovelId: "c", unidade: "Apto 3", celulas: [junhoCell(null, null)] }),
+    ],
+    metric: "inad",
+  })
+
+  assert.equal(groups.length, 1)
+  const cell = groups[0].celulas[0]
+  assert.equal(cell.unidadesEmRisco, 1)
+  assert.equal(cell.unidadesComDado, 2)
+  assert.equal(cell.percentual, 50)
+  assert.equal(cell.valor, 900)
+  assert.equal(groups[0].linhas.length, 3)
+})
+
+test("mapa por empreendimento: mês sem nenhum dado fica indisponível, nunca risco zero", () => {
+  const groups = buildHeatGroups({
+    meses: JUNHO,
+    linhas: [makeRow({ imovelId: "a", celulas: [junhoCell(null, null)] })],
+    metric: "inad",
+  })
+
+  const cell = groups[0].celulas[0]
+  assert.equal(cell.unidadesComDado, 0)
+  assert.equal(cell.percentual, null)
+  assert.equal(cell.valor, null)
+})
+
+test("mapa por empreendimento: vacância usa o próprio status de risco e ordena por nome", () => {
+  const groups = buildHeatGroups({
+    meses: JUNHO,
+    linhas: [
+      makeRow({
+        imovelId: "a",
+        empreendimentoId: "emp-2",
+        empreendimentoNome: "Zona Sul",
+        hoje: "vago",
+        celulas: [junhoCell("vago", null)],
+      }),
+      makeRow({
+        imovelId: "b",
+        empreendimentoId: "emp-1",
+        empreendimentoNome: "Grand A",
+        celulas: [junhoCell("inadimplente", 500)],
+      }),
+    ],
+    metric: "vac",
+  })
+
+  assert.deepEqual(groups.map((group) => group.empreendimentoNome), ["Grand A", "Zona Sul"])
+  // Inadimplente não é risco de vacância.
+  assert.equal(groups[0].celulas[0].unidadesEmRisco, 0)
+  assert.equal(groups[1].celulas[0].unidadesEmRisco, 1)
+  assert.equal(groups[1].unidadesEmRiscoHoje, 1)
+})
+
 test("resume a cobertura histórica de cada unidade sem jargão técnico", () => {
   assert.equal(formatHistoryCoverage(0, 0, 6), "Sem histórico no período")
   assert.equal(formatHistoryCoverage(1, 1, 1), "1 de 1 mês com status")
@@ -252,6 +333,15 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     '"Histórico recomposto"',
     '"Histórico reconstruído"',
     "Reconstr.",
+    // D24 — jargão do motor de conciliação que não pode voltar para a tela.
+    '"Entradas de passagem"',
+    '"Saídas de passagem"',
+    '"Diferença não explicada"',
+    '"Ajustes classificados"',
+    '"Valores ainda sem classificação"',
+    // D25 — rótulos do antigo bloco de repasse.
+    '"Repasse e evidências"',
+    '"Diferença no universo comprovado"',
   ]) {
     assert.equal(source.includes(retiredTerm), false, `termo aposentado encontrado: ${retiredTerm}`)
   }
@@ -260,8 +350,11 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     "Conciliação financeira",
     "Riscos por imóvel",
     "Detalhamento por imóvel",
-    "Repasse confirmado pelo banco",
-    "Diferença não explicada",
+    // D25 — o par comparável e o veredito ficam explícitos; comprovante ausente
+    // nunca deve voltar a ser lido como divergência.
+    "Confirmado pelo banco",
+    "Calculado com comprovante",
+    "Confere com o banco",
   ]) {
     assert.equal(source.includes(requiredTerm), true, `termo obrigatório ausente: ${requiredTerm}`)
   }
@@ -271,6 +364,6 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     false,
     "motivos técnicos de confiança não devem aparecer no banner",
   )
-  assert.equal(source.includes("Sem dados no mês"), true, "o mapa deve explicar células sem histórico")
-  assert.equal(source.includes("formatHistoryCoverage"), true, "o mapa deve resumir a cobertura por unidade")
+  assert.equal(source.includes("sem dado"), true, "ausência de dado precisa ser rotulada, nunca lida como zero")
+  assert.equal(source.includes("buildHeatGroups"), true, "o mapa abre por empreendimento, não uma linha por unidade")
 })
