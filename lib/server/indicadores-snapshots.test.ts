@@ -1253,3 +1253,132 @@ test("divida acumulada da propria competencia nao cede a vacancia da mesma linha
   assert.equal(row.status_ocupacao, "inadimplente")
   assert.equal(row.status_mensal_explicito, "inadimplente")
 })
+
+// Fixture minima de prestacao: os testes abaixo variam so a linha de receita e
+// a lista de inadimplencia, que e onde vive a atribuicao de divida.
+function prestacaoFixture(input: {
+  receita: Record<string, unknown>
+  inadimplencias?: Array<Record<string, unknown>>
+}) {
+  return {
+    prestacao: {
+      tipo_documento: "prestacao_contas",
+      imobiliaria: "Imobiliária X",
+      empreendimento: "Residencial X",
+      competencia: "2026-06",
+      plano_extracao: {
+        documento_lido_integralmente: true,
+        secoes_identificadas: ["receitas", "inadimplencias"],
+        estrategia: ["Atribuir divida ao devedor correto."],
+        alertas: [],
+      },
+      receitas_por_imovel: [
+        {
+          apto: "10",
+          inquilino: null,
+          aluguel: null,
+          desconto: null,
+          aluguel_com_desconto: null,
+          garagem: null,
+          vagas_garagem: null,
+          agua: null,
+          iptu: null,
+          seguro_incendio: null,
+          total: 0,
+          comissao: null,
+          repasse: 0,
+          vencimento: null,
+          observacao: null,
+          confianca: 0.95,
+          ...input.receita,
+        },
+      ],
+      acordos_rescisoes_recebidos: [],
+      inadimplencias_acumuladas: (input.inadimplencias ?? []).map((item) => ({
+        apto: "10",
+        inquilino: null,
+        valor: 500,
+        condicao: "Em aberto",
+        observacao: null,
+        confianca: 0.95,
+        ...item,
+      })),
+      resumo_financeiro: {
+        total_linhas_receitas: 0,
+        total_linhas_comissoes: 0,
+        total_linhas_repasse: 0,
+        comissao_administracao: 0,
+        outras_comissoes_despesas: [],
+        total_outras_comissoes_despesas: 0,
+        total_comissao_despesas: 0,
+        recebidos_em_nome_locador: 0,
+        total_a_repassar: 0,
+        confianca: 0.95,
+      },
+      totais: { total_receitas: 0, total_comissoes: 0, total_repassar: 0 },
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.95,
+    },
+  } as unknown as Pick<PackageAnalysis, "prestacao">
+}
+
+function statusFor(analysis: Pick<PackageAnalysis, "prestacao">, expectedRent: number | null) {
+  return buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "x-10",
+        unit: "10",
+        expectedRent,
+        revenueModel: expectedRent === null ? "variavel" : "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária X",
+        developmentName: "Residencial X",
+      },
+    ],
+    fechamentoId: "x-junho",
+    competencia: "2026-06",
+    analysis,
+  }).rows[0]
+}
+
+test("divida de ex-locatario nao marca o ocupante atual como inadimplente", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino Atual", aluguel: 690, total: 690 },
+      // Devedor diferente do ocupante e sem competencia: e divida de quem saiu.
+      inadimplencias: [{ inquilino: "Ex Locatario", valor: 1235, competencia_original: null }],
+    }),
+    690,
+  )
+
+  assert.equal(row.status_ocupacao, "ocupado")
+})
+
+test("divida de competencia anterior do mesmo inquilino nao marca o mes que foi pago integral", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Mesmo Inquilino", aluguel: 700, total: 700 },
+      inadimplencias: [
+        { inquilino: "Mesmo Inquilino", valor: 500, competencia_original: "05/2026" },
+      ],
+    }),
+    700,
+  )
+
+  assert.equal(row.status_ocupacao, "ocupado")
+})
+
+test("divida de competencia anterior do mesmo inquilino continua valendo quando o mes nao foi pago", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Mesmo Inquilino", aluguel: 0, total: 0 },
+      inadimplencias: [
+        { inquilino: "Mesmo Inquilino", valor: 500, competencia_original: "05/2026" },
+      ],
+    }),
+    700,
+  )
+
+  assert.equal(row.status_ocupacao, "inadimplente")
+})

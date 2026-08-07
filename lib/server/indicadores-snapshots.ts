@@ -368,26 +368,43 @@ function buildSnapshotRow(input: {
     propertyLines.map((line) => line.saidas_passagem),
   )
   const currentVacancyEvidence = hasVacancyEvidence(evidenceText)
+  const revenueModel = property.revenueModel ?? "fixo"
+  const expectedRent = revenueModel === "fixo" ? property.expectedRent : null
+  // Dívida de competência anterior só descreve o ocupante atual se for DELE. A
+  // lista chega chaveada por número de apto, então dívida de ex-locatário caía
+  // sobre quem mora hoje e pagando em dia (P0 confirmado no banco: em jun/2026,
+  // 15 das 26 unidades "inadimplentes" pagaram o mês integral e 4 eram Airbnb).
+  // Devedor não informado mantém o comportamento antigo: sem nome não há como
+  // descartar, e é melhor sinalizar de mais que esconder inadimplência real.
+  const priorDebtors = input.delinquencyKeys.otherCompetence.get(input.propertyKey)
+  const priorDebtIsFromCurrentOccupant =
+    priorDebtors !== undefined
+    && (priorDebtors.has(normalizePropertyKeyPart(tenantName ?? "")) || priorDebtors.has(""))
+  // Mês pago integral encerra a competência: o que sobra é dívida de outros
+  // meses, que o indicador reporta como inadimplência acumulada, não como
+  // status desta competência.
+  const currentCompetenceSettled =
+    expectedRent !== null
+    && expectedRent > 0
+    && currentRent !== null
+    && roundMoney(currentRent - expectedRent) >= -0.01
   const evidence = {
     tenantName,
     observation,
     rentReceived: currentRent,
     hasTermination:
       input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText),
-    // Dívida acumulada da PRÓPRIA competência corrente nunca é apagada por vacância —
-    // é exatamente o sinal que classifyOccupancy deve priorizar. Só a dívida de uma
-    // competência ANTERIOR (que pode descrever um inquilino que já saiu) cede à
-    // vacância explícita da linha atual.
+    // Dívida acumulada da PRÓPRIA competência corrente nunca é apagada — é
+    // exatamente o sinal que classifyOccupancy deve priorizar. A de competência
+    // ANTERIOR cede à vacância explícita, a outro devedor e ao mês já quitado.
     hasDelinquency:
       input.delinquencyKeys.currentCompetence.has(input.propertyKey) ||
-      (input.delinquencyKeys.otherCompetence.has(input.propertyKey) && !currentVacancyEvidence) ||
+      (priorDebtIsFromCurrentOccupant && !currentVacancyEvidence && !currentCompetenceSettled) ||
       hasDelinquencyEvidence(evidenceText),
     hasVacancy: currentVacancyEvidence,
-    isVariableRevenue: (property.revenueModel ?? "fixo") === "variavel",
+    isVariableRevenue: revenueModel === "variavel",
   }
   const status = classifyOccupancy(evidence)
-  const revenueModel = property.revenueModel ?? "fixo"
-  const expectedRent = revenueModel === "fixo" ? property.expectedRent : null
   const quality = resolveQuality(propertyLines.length, expectedRent, currentRent, revenueModel)
   const dayDue = selectStableNumber(propertyLines.map((line) => line.dia_vencimento))
   const statusExplicit =
@@ -532,7 +549,11 @@ function buildTerminationKeys(
 
 interface DelinquencyKeySets {
   currentCompetence: Set<string>
-  otherCompetence: Set<string>
+  // Dívida sem competência (ou de competência anterior) precisa saber DE QUEM é:
+  // a lista vem chaveada só pelo número do apto, então sem o nome do devedor não
+  // há como distinguir o ocupante atual de um ex-locatário que deixou dívida na
+  // mesma unidade. Nome vazio significa devedor não informado.
+  otherCompetence: Map<string, Set<string>>
 }
 
 function buildDelinquencyKeys(
@@ -541,16 +562,18 @@ function buildDelinquencyKeys(
   competencia: string,
 ): DelinquencyKeySets {
   const currentCompetence = new Set<string>()
-  const otherCompetence = new Set<string>()
+  const otherCompetence = new Map<string, Set<string>>()
   for (const item of analysis.prestacao?.inadimplencias_acumuladas ?? []) {
     if (!cleanText(item.apto)) continue
     const key = buildContextPropertyKey(context, item.apto!)
     const itemCompetence = normalizeOptionalCompetence(item.competencia_original)
     if (itemCompetence === competencia) {
       currentCompetence.add(key)
-    } else {
-      otherCompetence.add(key)
+      continue
     }
+    const debtors = otherCompetence.get(key) ?? new Set<string>()
+    debtors.add(normalizePropertyKeyPart(cleanText(item.inquilino) ?? ""))
+    otherCompetence.set(key, debtors)
   }
   return { currentCompetence, otherCompetence }
 }
