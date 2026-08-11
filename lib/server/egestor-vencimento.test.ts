@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { proximoVencimento } from "./egestor.ts"
+import { proximoVencimento, resolveEgestorDates } from "./egestor.ts"
 
 test("vencimento sem comprovante cai no mes seguinte, no dia configurado", () => {
   // Jose Walter: competencia junho, dia 12 -> 12/julho
@@ -22,4 +22,38 @@ test("sem dia configurado retorna null (mantem competencia no chamador)", () => 
   assert.equal(proximoVencimento("2026-06-01", null), null)
   assert.equal(proximoVencimento("2026-06-01", 0), null)
   assert.equal(proximoVencimento("2026-06-01", 32), null)
+})
+
+test("vencimento da prestacao liquida recebimento sem comprovante", () => {
+  assert.deepEqual(
+    resolveEgestorDates({
+      competencia: "2026-07-01",
+      diaVencimentoPadrao: null,
+      repasseDate: null,
+      statementDueDate: "2026-08-10",
+    }),
+    {
+      dtVenc: "2026-08-10",
+      dtCred: "2026-08-10",
+      dtPgto: "2026-08-10",
+      liquidado: true,
+    },
+  )
+})
+
+test("comprovante prevalece no credito e pagamento, sem mudar vencimento documental", () => {
+  assert.deepEqual(
+    resolveEgestorDates({
+      competencia: "2026-07-01",
+      diaVencimentoPadrao: 10,
+      repasseDate: "2026-08-12",
+      statementDueDate: "2026-08-10",
+    }),
+    {
+      dtVenc: "2026-08-10",
+      dtCred: "2026-08-12",
+      dtPgto: "2026-08-12",
+      liquidado: true,
+    },
+  )
 })

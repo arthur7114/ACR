@@ -149,6 +149,9 @@ export type PrestacaoResumoDespesa = z.infer<typeof prestacaoResumoDespesaSchema
 
 export const prestacaoResumoFinanceiroSchema = z
   .object({
+    numero_documento: z.string().nullable().optional(),
+    data_emissao: z.string().nullable().optional(),
+    data_vencimento: z.string().nullable().optional(),
     total_linhas_receitas: z.number().nullable(),
     total_linhas_comissoes: z.number().nullable(),
     total_linhas_repasse: z.number().nullable(),

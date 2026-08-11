@@ -6,6 +6,7 @@ import {
   buildReceitas,
   extractPdfTextLines,
   isCesarRegoConsolidado,
+  parseCesarRegoHeader,
   parseCesarRegoPrestacao,
 } from "./cesar-rego-parser.ts"
 
@@ -39,6 +40,57 @@ test("aluguel de um unico mes gera uma linha com repasse = saldo final", () => {
   assert.equal(receitas[0].comissao, 61.85)
   // caminho comum: repasse = saldo do ultimo lancamento do grupo
   assert.equal(receitas[0].repasse, 1175.2)
+})
+
+test("contrato ALUG sem lancamento vira inadimplencia explicita", () => {
+  const receitas = buildReceitas(
+    [{
+      codigo: "0002521",
+      endereco: "JOAO CORDEIRO,488 APART. B",
+      aluguel: 788.22,
+      ultimoPagamento: "05/2026",
+      situacao: "APTO ALUG",
+    }],
+    [],
+  )
+
+  assert.equal(receitas.length, 1)
+  assert.equal(receitas[0].total, 0)
+  assert.match(receitas[0].observacao ?? "", /INADIMPLENCIA/i)
+  assert.doesNotMatch(receitas[0].observacao ?? "", /\bVAGO\b/i)
+})
+
+test("cabecalho Cesar Rego extrai numero, vencimento e emissao", () => {
+  const result = parseCesarRegoHeader([
+    {
+      text: "Proprietário ACR Número: 41460",
+      cells: [
+        { text: "Número:", x: 428, width: 32 },
+        { text: "41460", x: 541, width: 22 },
+      ],
+    },
+    {
+      text: "Endereço : PONTES VIEIRA 10/08/2026",
+      cells: [{ text: "10/08/2026", x: 522, width: 40 }],
+    },
+    {
+      text: "Vencimento:",
+      cells: [{ text: "Vencimento:", x: 430, width: 47 }],
+    },
+    {
+      text: "Emissão: 10/08/2026",
+      cells: [
+        { text: "Emissão:", x: 429, width: 35 },
+        { text: "10/08/2026", x: 523, width: 40 },
+      ],
+    },
+  ])
+
+  assert.deepEqual(result, {
+    numeroDocumento: "41460",
+    dataVencimento: "2026-08-10",
+    dataEmissao: "2026-08-10",
+  })
 })
 
 test("aluguel de 2 meses (atraso) gera uma linha por competencia, valores atribuidos ao mes certo", () => {

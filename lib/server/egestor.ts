@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-types"
@@ -115,7 +116,16 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
   const diaVencimentoPadrao = await getDiaVencimentoPadrao(supabase, fechamento)
   const drafts = buildDrafts(fechamento, conta)
   const rows = drafts.map((draft) =>
-    buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome, diaVencimentoPadrao),
+    buildLancamentoRow(
+      fechamento,
+      conta,
+      maps,
+      codContato,
+      draft,
+      buildAutomaticOriginKey(draft.tipo, draft.categoria),
+      disponivelNome,
+      diaVencimentoPadrao,
+    ),
   )
   const { data: sentRows, error: sentError } = await supabase
     .from("egestor_lancamentos")
@@ -138,7 +148,7 @@ export async function generateEgestorPreview(supabase: SupabaseClient, fechament
 
   if (rows.length > 0) {
     const { error } = await supabase.from("egestor_lancamentos").upsert(rows, {
-      onConflict: "fechamento_id,tipo,categoria",
+      onConflict: "fechamento_id,origem_chave",
     })
     if (error) throw error
   }
@@ -501,6 +511,7 @@ function buildLancamentoRow(
   maps: Map<string, DbMapeamento>,
   codContato: number | null,
   draft: DraftLancamento,
+  origemChave: string,
   disponivelNome: string | null = null,
   diaVencimentoPadrao: number | null = null,
 ) {
@@ -513,6 +524,7 @@ function buildLancamentoRow(
 
   return {
     fechamento_id: fechamento.id,
+    origem_chave: origemChave,
     tipo: draft.tipo,
     categoria: draft.categoria,
     descricao: payload.descricao,
@@ -543,11 +555,17 @@ function buildPayload(
 ) {
   const analysis = fechamento.analise_completa
   const repasseDate = analysis?.repasse?.data ?? null
+  const statementDueDate = analysis?.prestacao?.resumo_financeiro.data_vencimento ?? null
   const competencia = toDateOnly(fechamento.competencia)
   // Sem comprovante (pagamento feito pela imobiliaria), o vencimento cai no mes
   // seguinte a competencia, no dia configurado na regra comercial. Sem dia
   // configurado, mantem o comportamento historico (competencia).
-  const vencimentoSemComprovante = proximoVencimento(fechamento.competencia, diaVencimentoPadrao) ?? competencia
+  const dates = resolveEgestorDates({
+    competencia: fechamento.competencia,
+    diaVencimentoPadrao,
+    repasseDate,
+    statementDueDate,
+  })
   // Descricao = etiqueta da conta (ex.: MMC) + empreendimento + item, sem
   // competencia (ela ja vai em numDoc/dtComp) e sem acentos (ex.: MARACANAU).
   const prefixo = contaTagPrefix(conta)
@@ -561,7 +579,7 @@ function buildPayload(
     numDoc: `${prefixo}-${formatCompetencia(fechamento.competencia)}-${draft.categoria}`,
     descricao,
     valor: Number(draft.valor.toFixed(2)),
-    dtVenc: repasseDate ?? vencimentoSemComprovante,
+    dtVenc: dates.dtVenc,
     dtComp: competencia,
     codContato,
     codDisponivel,
@@ -570,15 +588,46 @@ function buildPayload(
   }
 
   if (draft.tipo === "recebimento") {
-    payload.dtCred = repasseDate ?? competencia
-    payload.dtPgto = repasseDate ?? ""
-    payload.recebido = Boolean(repasseDate)
+    payload.dtCred = dates.dtCred
+    payload.dtPgto = dates.dtPgto
+    payload.recebido = dates.liquidado
   } else {
-    payload.dtPgto = repasseDate ?? ""
-    payload.pago = Boolean(repasseDate)
+    payload.dtPgto = dates.dtPgto
+    payload.pago = dates.liquidado
   }
 
   return payload
+}
+
+export function resolveEgestorDates(input: {
+  competencia: string
+  diaVencimentoPadrao: number | null
+  repasseDate: string | null
+  statementDueDate: string | null
+}) {
+  const competencia = toDateOnly(input.competencia)
+  const settlementDate = input.repasseDate ?? input.statementDueDate
+  return {
+    dtVenc:
+      input.statementDueDate ??
+      input.repasseDate ??
+      proximoVencimento(input.competencia, input.diaVencimentoPadrao) ??
+      competencia,
+    dtCred: settlementDate ?? competencia,
+    dtPgto: settlementDate ?? "",
+    liquidado: Boolean(settlementDate),
+  }
+}
+
+export function buildAutomaticOriginKey(
+  tipo: EgestorTipoLancamento,
+  categoria: EgestorCategoria,
+) {
+  return `auto:${tipo}:${categoria}`
+}
+
+export function buildManualOriginKey() {
+  return `manual:${randomUUID()}`
 }
 
 function buildTags(fechamento: FechamentoRow, conta: DbConta) {
@@ -864,13 +913,19 @@ export async function addManualEgestorLancamento(
     descricao: input.descricao,
     valor: input.valor,
   }
-  const row = buildLancamentoRow(fechamento, conta, maps, codContato, draft, disponivelNome, diaVencimentoPadrao)
+  const row = buildLancamentoRow(
+    fechamento,
+    conta,
+    maps,
+    codContato,
+    draft,
+    buildManualOriginKey(),
+    disponivelNome,
+    diaVencimentoPadrao,
+  )
 
   const { error } = await supabase.from("egestor_lancamentos").insert({ ...row, origem_manual: true })
   if (error) {
-    if ((error as { code?: string }).code === "23505") {
-      throw new Error("Ja existe um lancamento com esse tipo e categoria neste fechamento.")
-    }
     throw error
   }
   return getLancamentos(supabase, fechamentoId)

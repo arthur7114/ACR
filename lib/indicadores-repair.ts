@@ -8,6 +8,7 @@ import {
   getCesarRegoDevelopmentByName,
 } from "./cesar-rego-properties"
 import { calculatedAdminCommission, commissionBaseComponents } from "./comissao"
+import { ratearIgualmente } from "./despesas-locador"
 
 export const REPAIR_TOLERANCE = 0.01
 
@@ -252,19 +253,28 @@ export function buildCesarMonthRepairs(
     ),
     0,
   )
-  const feeTarget = [...allocations]
+  const feeAllocations = [...allocations]
     .filter((allocation) => allocation.rows.length > 0)
     .sort(
       (left, right) =>
-        sumRows(right.rows, "total") - sumRows(left.rows, "total") ||
+        normalizeText(left.closure.empreendimentoNome).localeCompare(
+          normalizeText(right.closure.empreendimentoNome),
+        ) ||
         left.closure.id.localeCompare(right.closure.id),
-    )[0]?.closure.id
+    )
+  const feeShares = ratearIgualmente(globalFee, feeAllocations.length)
+  const feeByClosure = new Map(
+    feeAllocations.map((allocation, index) => [
+      allocation.closure.id,
+      feeShares[index] ?? 0,
+    ]),
+  )
 
   const repairs = allocations.flatMap((allocation, allocationIndex): CesarClosureRepair[] => {
     if (allocation.rows.length === 0) return []
     const entradasPassagem = sumRows(allocation.rows, "entradas_passagem")
     const saidasPassagem = sumRows(allocation.rows, "saidas_passagem")
-    const tarifas = allocation.closure.id === feeTarget ? Math.max(globalFee, 0) : 0
+    const tarifas = feeByClosure.get(allocation.closure.id) ?? 0
     const repasseLinhas = sumRows(allocation.rows, "repasse")
     const receitasEconomicas = sumRows(allocation.rows, "total")
     const comissoes = sumRows(allocation.rows, "comissao")

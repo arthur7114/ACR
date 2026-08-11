@@ -153,6 +153,13 @@ Estados e acoes relevantes:
 - Fechamentos aprovados podem ser vistos em detalhes.
 - Depois de aprovado, a revisao exibe a previa eGestor com lancamentos consolidados, status de configuracao, acao de envio real controlado, revalidacao de status, retry de anexos pendentes, historico de envios e auditoria de mudanca de status.
 
+### Ajuste registrado — César Rêgo julho e lançamentos manuais eGestor (2026-08-11)
+
+- Ponto alterado: a prévia continua com uma linha automática consolidada por tipo e categoria, mas linhas manuais podem repetir a mesma combinação e sobrevivem a “Gerar prévia”.
+- Por que: um mesmo fechamento pode exigir recebimentos separados no eGestor, como os dois imóveis de Pompílio Gomes.
+- Correções associadas: `SIT=ALUG` sem lançamento é inadimplência explícita; extrato consolidado é escopado antes dos cálculos; TED global é dividida igualmente entre os empreendimentos; `Vencimento` do cabeçalho alimenta as datas do eGestor quando não há comprovante externo.
+- Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

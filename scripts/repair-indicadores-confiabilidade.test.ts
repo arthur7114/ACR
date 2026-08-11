@@ -6,7 +6,7 @@ import {
   attachAnalysisToExistingProperties,
   analysesAreEquivalent,
   auditExistingAnalysis,
-  buildReparoReceitas,
+  buildReparoMovimentacoes,
   parseReliabilityRepairArgs,
 } from "./repair-indicadores-confiabilidade.ts"
 
@@ -15,6 +15,7 @@ test("reparador é dry-run por padrão e valida os filtros", () => {
     mode: "dry-run",
     competence: null,
     fechamentoId: null,
+    cesarOnly: false,
   })
   assert.deepEqual(
     parseReliabilityRepairArgs([
@@ -23,14 +24,20 @@ test("reparador é dry-run por padrão e valida os filtros", () => {
       "2026-06",
       "--fechamento",
       "e94a8c98-8ee1-43ac-b81f-c04e95465496",
+      "--cesar-rego",
     ]),
     {
       mode: "commit",
       competence: "2026-06-01",
       fechamentoId: "e94a8c98-8ee1-43ac-b81f-c04e95465496",
+      cesarOnly: true,
     },
   )
   assert.throws(() => parseReliabilityRepairArgs(["--force"]), /desconhecido/)
+  assert.equal(
+    parseReliabilityRepairArgs(["--competencia", "2026-07"]).competence,
+    "2026-07-01",
+  )
 })
 
 test("auditoria usa passagem e tarifa sem confundir com receita econômica", () => {
@@ -93,7 +100,7 @@ test("segunda execução não propõe nova escrita para análise já corrigida",
   )
 })
 
-test("commit envia apenas receita_aluguel ao RPC, sem as despesas de rateio TED", () => {
+test("commit envia receitas e rateio TED ao RPC atomico", () => {
   const prestacao = {
     receitas_por_imovel: [
       {
@@ -122,16 +129,17 @@ test("commit envia apenas receita_aluguel ao RPC, sem as despesas de rateio TED"
     "pré-condição: buildPrestacaoMovimentacoes deve emitir a despesa de rateio TED",
   )
 
-  const receitas = buildReparoReceitas({
+  const movimentacoes = buildReparoMovimentacoes({
     fechamentoId: "fechamento",
     documentoId: null,
     prestacao,
+    competencia: "2026-07",
   })
-  assert.equal(receitas.length, 1)
-  assert.ok(
-    receitas.every((row) => row.tipo_movimentacao === "receita_aluguel"),
-    "p_receitas do RPC aceita apenas receita_aluguel",
+  assert.deepEqual(
+    movimentacoes.map((row) => row.tipo_movimentacao),
+    ["receita_aluguel", "despesa"],
   )
+  assert.equal(movimentacoes[1].origem_documental, "rateio_ted")
 })
 
 test("reparo histórico persiste o vínculo exato já existente", () => {

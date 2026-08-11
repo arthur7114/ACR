@@ -27,8 +27,11 @@ import {
   parseCesarRegoPrestacao,
 } from "../lib/server/cesar-rego-parser"
 import {
+  buildValidacoesRows,
   buildPrestacaoMovimentacoes,
+  type ResolvedValidation,
 } from "../lib/server/persist-package"
+import { generateEgestorPreview } from "../lib/server/egestor"
 import {
   type ImovelVinculoCadastro,
   vincularReceitasExistentes,
@@ -37,12 +40,13 @@ import { materializeIndicadoresSnapshots } from "../lib/server/indicadores-snaps
 
 const BUCKET = "fechamento-documentos"
 const START_COMPETENCE = "2026-01-01"
-const END_COMPETENCE = "2026-06-01"
+const END_COMPETENCE = "2026-07-01"
 
 export interface ReliabilityRepairOptions {
   mode: "dry-run" | "commit"
   competence: string | null
   fechamentoId: string | null
+  cesarOnly: boolean
 }
 
 interface ClosureRow {
@@ -84,17 +88,19 @@ interface RepairRecord {
   updatedAt: string
   agencyId: string
   developmentId: string
+  closureStatus: string
 }
 
 export function parseReliabilityRepairArgs(argv: string[]): ReliabilityRepairOptions {
   let mode: ReliabilityRepairOptions["mode"] = "dry-run"
   let competence: string | null = null
   let fechamentoId: string | null = null
+  let cesarOnly = false
   const seen = new Set<string>()
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
-    if (!argument || !["--commit", "--competencia", "--fechamento"].includes(argument)) {
+    if (!argument || !["--commit", "--competencia", "--fechamento", "--cesar-rego"].includes(argument)) {
       throw new Error(`Argumento desconhecido: ${argument ?? ""}.`)
     }
     if (seen.has(argument)) throw new Error(`Argumento duplicado: ${argument}.`)
@@ -103,13 +109,17 @@ export function parseReliabilityRepairArgs(argv: string[]): ReliabilityRepairOpt
       mode = "commit"
       continue
     }
+    if (argument === "--cesar-rego") {
+      cesarOnly = true
+      continue
+    }
     const value = argv[++index]
     if (!value || value.startsWith("--")) throw new Error(`Valor ausente para ${argument}.`)
     if (argument === "--competencia") competence = normalizeCompetence(value)
     if (argument === "--fechamento") fechamentoId = parseUuid(value)
   }
 
-  return { mode, competence, fechamentoId }
+  return { mode, competence, fechamentoId, cesarOnly }
 }
 
 export function auditExistingAnalysis(analysis: PackageAnalysis): FinancialReconciliation {
@@ -139,10 +149,16 @@ export function analysesAreEquivalent(
   )
 }
 
-// O RPC aplicar_reparo_indicadores_v2 gerencia apenas as movimentações
-// receita_aluguel (rejeita qualquer outro tipo em p_receitas). As despesas de
-// rateio da TED que buildPrestacaoMovimentacoes também emite ficam a cargo do
-// reprocessamento completo, não deste reparo cirúrgico.
+export function buildReparoMovimentacoes(input: {
+  fechamentoId: string
+  documentoId: string | null
+  prestacao: PrestacaoAnalysis | null
+  competencia: string
+}) {
+  return buildPrestacaoMovimentacoes(input)
+}
+
+// Compatibilidade para reparos cirúrgicos antigos que ainda usam o RPC v2.
 export function buildReparoReceitas(input: {
   fechamentoId: string
   documentoId: string | null
@@ -188,7 +204,10 @@ async function loadClosures(supabase: SupabaseClient, options: ReliabilityRepair
   if (options.fechamentoId) query = query.eq("id", options.fechamentoId)
   const { data, error } = await query
   if (error) throw error
-  return (data ?? []) as unknown as ClosureRow[]
+  const rows = (data ?? []) as unknown as ClosureRow[]
+  return options.cesarOnly
+    ? rows.filter((closure) => isCesar(getAgencyName(closure)))
+    : rows
 }
 
 async function loadDocuments(supabase: SupabaseClient, closureIds: string[]) {
@@ -460,16 +479,30 @@ async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) 
       total_comissoes: analysis.totals.total_comissoes,
       total_repassar: analysis.totals.total_a_repassar,
     }
-    const receitas = buildReparoReceitas({
+    const movimentacoes = buildReparoMovimentacoes({
       fechamentoId: record.fechamentoId,
       documentoId: record.documentId,
       prestacao: analysis.prestacao,
+      competencia: record.competence,
     })
-    const { error } = await supabase.rpc("aplicar_reparo_indicadores_v2", {
+    const resolvedValidations = await loadResolvedValidations(
+      supabase,
+      record.fechamentoId,
+    )
+    const validacoes = buildValidacoesRows({
+      fechamentoId: record.fechamentoId,
+      documents: analysis.documents ?? [],
+      parecer: analysis.parecer,
+      rechecks: analysis.rechecks,
+      guardrails: analysis.guardrails,
+      resolvedValidations,
+    })
+    const { error } = await supabase.rpc("aplicar_reparo_indicadores_v3", {
       p_fechamento_id: record.fechamentoId,
       p_esperado_atualizado_em: record.updatedAt,
       p_fechamento_patch: patch,
-      p_receitas: receitas,
+      p_movimentacoes: movimentacoes,
+      p_validacoes: validacoes,
       p_auditoria: [{
         usuario: "Sistema - reparo de confiabilidade dos indicadores",
         campo_alterado: "reparo_indicadores_v2",
@@ -487,9 +520,47 @@ async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) 
       empreendimentoId: record.developmentId,
       competencia: record.competence,
       analysis,
-      origem: "backfill",
+      // O reparo recompõe o próprio documento do fechamento. Manter a origem
+      // nativa permite atualizar snapshots "processamento", que são protegidos
+      // contra backfills sintéticos pelo trigger do banco.
+      origem: "processamento",
     })
   }
+
+  for (const record of records.filter(
+    (candidate) => candidate.kind === "repaired" || candidate.kind === "unchanged",
+  )) {
+    await regenerateExistingUnsentPreview(supabase, record)
+  }
+}
+
+async function loadResolvedValidations(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+): Promise<ResolvedValidation[]> {
+  const { data, error } = await supabase
+    .from("validacoes")
+    .select("tipo_validacao,status,justificativa,resolvido_por,resolvido_em")
+    .eq("fechamento_id", fechamentoId)
+    .eq("status", "resolvida")
+  if (error) throw error
+  return (data ?? []) as ResolvedValidation[]
+}
+
+async function regenerateExistingUnsentPreview(
+  supabase: SupabaseClient,
+  record: RepairRecord,
+) {
+  if (!["aprovado", "preparado_egestor", "erro_egestor"].includes(record.closureStatus)) {
+    return
+  }
+  const { data, error } = await supabase
+    .from("egestor_lancamentos")
+    .select("id,egestor_codigo")
+    .eq("fechamento_id", record.fechamentoId)
+  if (error) throw error
+  if (!data?.length || data.some((row) => row.egestor_codigo !== null)) return
+  await generateEgestorPreview(supabase, record.fechamentoId)
 }
 
 function buildRepairedRecord(
@@ -548,6 +619,7 @@ function baseRecord(closure: ClosureRow) {
     updatedAt: closure.atualizado_em,
     agencyId: closure.imobiliaria_id,
     developmentId: closure.empreendimento_id,
+    closureStatus: closure.status,
   }
 }
 

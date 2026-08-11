@@ -2,7 +2,13 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { PackageAnalysis, PrestacaoAnalysis } from "@/lib/prestacao-types"
 import { EgestorClient } from "./egestor-client.ts"
-import { buildEgestorDrafts, buildLancamentoUpdate, summarizeAttachmentAttempts } from "./egestor.ts"
+import {
+  buildAutomaticOriginKey,
+  buildEgestorDrafts,
+  buildLancamentoUpdate,
+  buildManualOriginKey,
+  summarizeAttachmentAttempts,
+} from "./egestor.ts"
 
 function createAnalysis(overrides: Partial<PackageAnalysis> = {}): PackageAnalysis {
   return {
@@ -79,6 +85,17 @@ test("usa total recebido bruto mesmo quando nao existe comprovante", () => {
   }))
 
   assert.equal(drafts[0].valor, 1000)
+})
+
+test("chaves de origem mantem automatico idempotente e manuais independentes", () => {
+  assert.equal(
+    buildAutomaticOriginKey("recebimento", "repasse_mensal"),
+    "auto:recebimento:repasse_mensal",
+  )
+  const first = buildManualOriginKey()
+  const second = buildManualOriginKey()
+  assert.match(first, /^manual:[0-9a-f-]{36}$/)
+  assert.notEqual(first, second)
 })
 
 // Prestacao minima: buildEgestorDrafts so le outras_comissoes_despesas da TED.

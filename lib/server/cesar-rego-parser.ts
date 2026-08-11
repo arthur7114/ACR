@@ -23,6 +23,14 @@ interface TextLine {
   text: string
 }
 
+export type CesarHeaderLine = Pick<TextLine, "text" | "cells">
+
+export interface CesarRegoHeader {
+  numeroDocumento: string | null
+  dataVencimento: string | null
+  dataEmissao: string | null
+}
+
 interface Lancamento {
   codigo: string
   descricao: string
@@ -103,6 +111,7 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
   const lancamentos: Lancamento[] = []
   const resumoValores = new Map<string, number>()
   const alertas: string[] = []
+  const header = parseCesarRegoHeader(lines)
 
   let section: "header" | "relacao" | "lancamentos" | "resumo" = "header"
   let currentInquilino = ""
@@ -214,6 +223,9 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
     acordos_rescisoes_recebidos: [],
     inadimplencias_acumuladas: [],
     resumo_financeiro: {
+      numero_documento: header.numeroDocumento,
+      data_emissao: header.dataEmissao,
+      data_vencimento: header.dataVencimento,
       total_linhas_receitas: totalLinhasReceitas,
       total_linhas_comissoes: totalLinhasComissoes,
       total_linhas_repasse: totalLinhasRepasse,
@@ -369,9 +381,13 @@ export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[
 
     if (grupo.length === 0) {
       const ultimoPagamento = imovel?.ultimoPagamento ? ` (ult. pg ${imovel.ultimoPagamento})` : ""
+      const contratoAtivo = /\bALUG\b/.test(normalize(imovel?.situacao ?? ""))
+      const detalhe = contratoAtivo
+        ? `INADIMPLENCIA. Contrato ativo (SIT=ALUG) sem lancamentos no mes${ultimoPagamento}.`
+        : `Sem lancamentos no mes${ultimoPagamento}.`
       return [
         buildReceita(codigo, "", {
-          observacao: joinObservacao(imovel?.endereco, `Sem lancamentos no mes${ultimoPagamento}.`),
+          observacao: joinObservacao(imovel?.endereco, detalhe),
         }),
       ]
     }
@@ -420,6 +436,43 @@ export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[
       return buildReceitaDoGrupo(codigo, inquilino, itens, { competencia: mes, repasse })
     })
   })
+}
+
+export function parseCesarRegoHeader(lines: CesarHeaderLine[]): CesarRegoHeader {
+  const relationIndex = lines.findIndex((line) =>
+    normalize(line.text).includes("RELACAO DE IMOVEIS"),
+  )
+  const headerLines = relationIndex >= 0 ? lines.slice(0, relationIndex) : lines
+  const numberLine = headerLines.find((line) => /NUMERO\s*:/i.test(normalize(line.text)))
+  const numberMatch = numberLine?.text.match(/N[uú]mero\s*:\s*(\d+)/i)
+  const numeroDocumento = numberMatch?.[1] ?? findCellAfterLabel(numberLine, "NUMERO")
+
+  return {
+    numeroDocumento,
+    dataVencimento: findHeaderDate(headerLines, "VENCIMENTO"),
+    dataEmissao: findHeaderDate(headerLines, "EMISSAO"),
+  }
+}
+
+function findCellAfterLabel(line: CesarHeaderLine | undefined, label: string) {
+  if (!line) return null
+  const index = line.cells.findIndex((cell) => normalize(cell.text).startsWith(label))
+  return index >= 0 ? line.cells[index + 1]?.text.trim() || null : null
+}
+
+function findHeaderDate(lines: CesarHeaderLine[], label: string) {
+  const index = lines.findIndex((line) => normalize(line.text).includes(`${label}:`))
+  if (index < 0) return null
+  for (const line of [lines[index], lines[index - 1], lines[index + 1]]) {
+    const date = line?.cells.find((cell) => DATA_RE.test(cell.text) && cell.x >= 480)?.text
+    if (date) return toIsoDate(date)
+  }
+  return null
+}
+
+function toIsoDate(value: string) {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : null
 }
 
 // Monta uma ReceitaPorImovel a partir de um conjunto de lancamentos ja

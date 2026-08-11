@@ -33,7 +33,7 @@ O fechamento aceita novos documentos em qualquer status, exceto `aprovado` e `la
 - Comprovante: repasse, boleto, pix, TED/DOC, valor, datas, partes, codigo/autenticacao e conciliacao.
 - Validacao: alerta ou divergencia com severidade, status, valores esperados/encontrados e justificativa.
 - Mapeamento eGestor: categorias internas para categorias/tags/contas do eGestor.
-- Integracao eGestor V1: fechamento aprovado gera lancamentos consolidados em `egestor_lancamentos`; repasse mensal vira `recebimento`; comissao administrativa e despesas agrupadas viram `pagamentos`; envio real grava codigos eGestor e tentativas em auditoria tecnica.
+- Integracao eGestor V1: fechamento aprovado gera lancamentos automáticos consolidados em `egestor_lancamentos`; repasse mensal vira `recebimento`; comissao administrativa e despesas agrupadas viram `pagamentos`; linhas manuais podem repetir tipo/categoria porque a idempotência usa `origem_chave`; envio real grava codigos eGestor e tentativas em auditoria tecnica.
 - Envio eGestor: `egestor_envios` registra acao, payload, resposta, status e erro de envio, retry de anexo e revalidacao.
 - Auditoria de status: `fechamento_status_eventos` registra status anterior, status novo, usuario, motivo e data/hora para aprovacao e transicoes eGestor.
 - Revalidacao eGestor: lancamento enviado pode gravar `revalidado_em`, `revalidacao_status` e `revalidacao_mensagem`; revalidacao nao cria novo lancamento financeiro.
@@ -78,6 +78,8 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Acordo/rescisao com mesma combinacao normalizada de tipo, inquilino, competencia original e valor ja vista no pacote ou no historico do mesmo par imobiliaria + empreendimento gera alerta bloqueante por possivel pagamento repetido.
 - Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.
 - Lancamento eGestor com `egestor_codigo` salvo e imutavel para reenvio V1; operador pode apenas revalidar status ou reenviar anexos pendentes.
+- No layout César Rêgo, `SIT=ALUG` sem lançamento na competência é inadimplência explícita. A TED global é dividida igualmente entre os empreendimentos do extrato antes do rateio interno por imóvel.
+- Quando a prestação informa `data_vencimento`, ela define `dtVenc` e, na ausência de comprovante externo, também `dtCred`/`dtPgto`; a data real do comprovante prevalece apenas na liquidação.
 - Falha de anexo eGestor nao desfaz recebimento/pagamento criado; o lancamento fica `anexo_pendente` ate retry bem-sucedido.
 - Indicadores incluem apenas fechamentos nao arquivados, com `analise_completa`, nos status `pendente_revisao`, `processado_com_sucesso`, `processado_com_alertas`, `aprovado`, `preparado_egestor`, `lancado_egestor` e `erro_egestor`. Reprocessamento ativo preserva a ultima analise valida e sinaliza "Em atualizacao".
 - A confiança da competência é `confirmado`, `em_conferencia`, `incompleto` ou

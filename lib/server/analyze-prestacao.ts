@@ -160,6 +160,9 @@ const schema = {
         "confianca",
       ],
       properties: {
+        numero_documento: { type: ["string", "null"] },
+        data_emissao: { type: ["string", "null"] },
+        data_vencimento: { type: ["string", "null"] },
         total_linhas_receitas: { type: ["number", "null"] },
         total_linhas_comissoes: { type: ["number", "null"] },
         total_linhas_repasse: { type: ["number", "null"] },

@@ -41,6 +41,7 @@ export type EgestorImobiliariaContato = {
 export type EgestorLancamento = {
   id: string
   fechamento_id: string
+  origem_chave: string
   tipo: EgestorTipoLancamento
   categoria: EgestorCategoria
   descricao: string

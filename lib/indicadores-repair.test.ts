@@ -151,6 +151,10 @@ test("César Rêgo março distribui as linhas sem duplicar o documento consolida
     plan.repairs.find((repair) => repair.id === "joao")?.propertyCodes,
     ["0002520", "0002521"],
   )
+  assert.deepEqual(
+    plan.repairs.map((repair) => repair.reconciliation.tarifas),
+    [5.55, 5.55],
+  )
 
   // A base de comissão do reparo reflete SÓ as linhas do empreendimento
   // (incluindo o IPTU), não o total do documento consolidado. Sem isso, a base
@@ -182,6 +186,7 @@ test("César Rêgo março distribui as linhas sem duplicar o documento consolida
     ["0002520", "0002521"],
   )
   assert.equal(scoped.totals.total_receitas, 1_100)
+  assert.equal(scoped.totals.total_tarifas, 5.55)
 })
 
 function makePackage(

@@ -275,6 +275,7 @@ function isIntermediacaoRow(row: ReceitaPorImovel) {
 function isVacantRow(row: ReceitaPorImovel) {
   if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
   const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
+  if (/inadimpl/.test(text)) return false
   if (/\b(vago|vacancia|vacância|disponivel|disponível)\b/.test(text)) return true
   // Unidade que recebeu aluguel (ou tem total > 0) NAO e vaga, mesmo sem o nome
   // do inquilino na linha — no extrato consolidado (Cesar Rego) o inquilino vem
@@ -1870,7 +1871,7 @@ export function RevisaoView({
               </div>
             </div>
             <p className="mt-2 text-[11px] text-[#6B7F6E]">
-              A prévia só admite uma linha por tipo+categoria. Linhas manuais sobrevivem ao &quot;Gerar prévia&quot;.
+              Linhas manuais podem repetir tipo e categoria e sobrevivem ao &quot;Gerar prévia&quot;.
             </p>
           </div>
         )}
