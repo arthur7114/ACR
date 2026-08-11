@@ -115,7 +115,18 @@ const LIMITE_PROPORCIONAL = 0.8
 function inferirValor(meses: SnapshotMes[]): ContratoDerivado["valores"] {
   // Mês sem aluguel (inadimplente, dado ausente) não é evidência de valor:
   // não abre vigência nova nem interrompe a série.
-  const comValor = meses.filter((mes) => (mes.aluguelCompetencia ?? 0) > 0)
+  let comValor = meses.filter((mes) => (mes.aluguelCompetencia ?? 0) > 0)
+
+  // Inquilino que paga sempre atrasado não tem aluguel em NENHUMA competência:
+  // todo recebimento é atraso de mês anterior. Sem este resgate o contrato
+  // ficaria sem valor e a unidade desapareceria da inadimplência. Só vale como
+  // último recurso, porque o recebido pode embutir garagem e encargos — daí ser
+  // restrito ao caso em que não há aluguel de competência algum.
+  if (comValor.length === 0) {
+    comValor = meses
+      .filter((mes) => (mes.aluguelRecebido ?? 0) > 0)
+      .map((mes) => ({ ...mes, aluguelCompetencia: mes.aluguelRecebido }))
+  }
   if (comValor.length === 0) return []
 
   const ehProporcional = (extremo: SnapshotMes, vizinho: SnapshotMes) =>

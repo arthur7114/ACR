@@ -180,3 +180,33 @@ test("oscilacao pequena no ultimo mes nao e proporcional: o valor mais recente v
   assert.equal(ultimo.valor, 417.66)
   assert.equal(ultimo.vigenciaInicio, "2026-05-01")
 })
+
+test("inquilino que sempre paga atrasado ainda tem valor de contrato", () => {
+  // Caso real: todo mes o recebimento e atraso do mes anterior, entao nenhum mes
+  // tem aluguel da competencia. Sem fallback o contrato ficava sem valor e a
+  // unidade desaparecia da contagem de inadimplencia.
+  const meses: SnapshotMes[] = [
+    { competencia: "2026-04-01", statusOcupacao: "ocupado", inquilinoNome: "Fulano", aluguelCompetencia: null, aluguelRecebido: 424.28 },
+    { competencia: "2026-05-01", statusOcupacao: "ocupado", inquilinoNome: "Fulano", aluguelCompetencia: null, aluguelRecebido: 417.66 },
+    { competencia: "2026-06-01", statusOcupacao: "inadimplente", inquilinoNome: "Fulano", aluguelCompetencia: 0, aluguelRecebido: 466.93 },
+  ]
+
+  const contratos = deriveContracts(meses)
+  // O valor exato nao e determinavel: todo recebimento dessa unidade embute
+  // garagem e encargos, e esta deslocado um mes (o recebido em M e o aluguel de
+  // M-1). O que importa aqui e o contrato NAO ficar sem valor, senao a unidade
+  // sai da contagem de inadimplencia. O numero fiel vive no cadastro.
+  assert.ok(contratos[0].valores.length > 0, "contrato deveria ter valor")
+  assert.ok((contratos[0].valores.at(-1)?.valor ?? 0) > 0)
+})
+
+test("fallback de recebido nao interfere quando ha aluguel da competencia", () => {
+  const contratos = deriveContracts([
+    mes("2026-04-01", "ocupado", "Fulano", 700),
+    mes("2026-05-01", "ocupado", "Fulano", 700),
+  ])
+  assert.deepEqual(
+    contratos[0].valores.map((v) => v.valor),
+    [700],
+  )
+})
