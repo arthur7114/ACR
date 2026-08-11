@@ -4,6 +4,7 @@ import {
   calcularAluguelContratado,
   calcularUnidadesVagas,
   compararIndicadores,
+  listarUnidadesSemLinha,
   contratoAtivoNaCompetencia,
   filtrarAluguelRecebidoCompetencia,
   filtrarCaixaDoMes,
@@ -236,4 +237,34 @@ test("indicador ausente do gabarito e reportado como nao verificavel, nao como f
   const ausente = linhas.find((l) => l.indicador === "aluguelContratado")
   assert.equal(ausente?.naoVerificavel, true)
   assert.equal(ausente?.ok, true)
+})
+
+test("guarda de completude lista unidade sem linha e ignora Airbnb", () => {
+  const imoveis = [
+    { id: "a", tipo: null, inquilino_nome: "Fulano", ativo: true, empreendimento_id: "e1" },
+    { id: "b", tipo: null, inquilino_nome: "AIRBNB", ativo: true, empreendimento_id: "e1" },
+    { id: "c", tipo: "airbnb", inquilino_nome: null, ativo: true, empreendimento_id: "e1" },
+    { id: "d", tipo: null, inquilino_nome: "Sicrana", ativo: true, empreendimento_id: "e1" },
+    { id: "e", tipo: null, inquilino_nome: "Beltrano", ativo: false, empreendimento_id: "e1" },
+  ]
+  const snapshots = [
+    { imovel_id: "a", qualidade: "sem_linha" as const },
+    { imovel_id: "b", qualidade: "sem_linha" as const },
+    { imovel_id: "c", qualidade: "sem_linha" as const },
+    { imovel_id: "d", qualidade: "completo" as const },
+    { imovel_id: "e", qualidade: "sem_linha" as const },
+  ]
+
+  const faltando = listarUnidadesSemLinha(imoveis, snapshots)
+
+  // Airbnb nao vem na prestacao (D2), entao sem_linha e esperado e nao conta.
+  // Imovel inativo tambem nao conta. Sobra so a unidade "a".
+  assert.deepEqual(faltando, ["a"])
+})
+
+test("guarda de completude devolve vazio quando toda unidade ativa tem linha", () => {
+  const imoveis = [{ id: "a", tipo: null, inquilino_nome: "Fulano", ativo: true, empreendimento_id: "e1" }]
+  const snapshots = [{ imovel_id: "a", qualidade: "parcial" as const }]
+
+  assert.deepEqual(listarUnidadesSemLinha(imoveis, snapshots), [])
 })

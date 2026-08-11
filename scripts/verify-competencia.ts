@@ -52,11 +52,37 @@ export interface ComparisonRow {
   naoVerificavel?: boolean
 }
 
-/**
- * Compara os valores esperados (gabarito) com os obtidos (consulta ao
- * banco), aplicando tolerância de R$ 0,02 para campos monetários e
- * igualdade exata para as contagens de unidades.
- */
+export interface SnapshotQualidadeRow {
+  imovel_id: string
+  qualidade: "completo" | "parcial" | "sem_linha"
+}
+
+// Guarda de completude: indicador calculado sobre competência cuja prestação não
+// foi lida por inteiro parece completo e não é. `qualidade = 'sem_linha'` marca o
+// imóvel esperado que ficou sem nenhuma linha, e esse sinal já existia sem ser
+// consultado na verificação.
+//
+// Airbnb sai da conta porque `sem_linha` ali é o comportamento correto: é
+// operado por fora e não vem na prestação (D2). Imóvel inativo também sai. Medido
+// nas planilhas de 2026, o resto se concentra em janeiro a março; abril a junho
+// já vêm completos.
+export function listarUnidadesSemLinha(
+  imoveis: ImovelRow[],
+  snapshots: SnapshotQualidadeRow[],
+): string[] {
+  const elegiveis = new Set(
+    imoveis
+      .filter((imovel) => imovel.ativo && !isImovelAirbnb(imovel.tipo, imovel.inquilino_nome))
+      .map((imovel) => imovel.id),
+  )
+  return snapshots
+    .filter((snapshot) => snapshot.qualidade === "sem_linha" && elegiveis.has(snapshot.imovel_id))
+    .map((snapshot) => snapshot.imovel_id)
+}
+
+// Compara esperado (gabarito) com obtido (banco), com tolerância de R$ 0,02 em
+// campo monetário e igualdade exata em contagem de unidades.
+//
 // A planilha do cliente é a fonte da verdade. Quando ela não contém um número,
 // o gabarito não deve inventar um: o indicador é reportado como não verificável
 // em vez de acusar divergência contra uma expectativa fabricada. Foi assim que
@@ -166,6 +192,7 @@ interface EmpreendimentoRow {
 
 export interface ImovelRow {
   id: string
+  unidade?: string | null
   tipo: string | null
   inquilino_nome: string | null
   ativo: boolean
@@ -220,7 +247,7 @@ const ELIGIBLE_STATUSES = new Set([
 async function resolveEmpreendimentoIds(
   supabase: SupabaseAdmin,
   nomes: string[],
-): Promise<string[]> {
+): Promise<{ ids: string[]; nomePorId: Map<string, string> }> {
   const { data, error } = await supabase.from("empreendimentos").select("id,nome").in("nome", nomes)
   if (error) throw error
   const rows = (data ?? []) as unknown as EmpreendimentoRow[]
@@ -231,7 +258,10 @@ async function resolveEmpreendimentoIds(
       `Empreendimento(s) de "escopoEmpreendimentos" não encontrado(s) em \`empreendimentos.nome\`: ${faltantes.join(", ")}.`,
     )
   }
-  return nomes.map((nome) => idPorNome.get(nome) as string)
+  return {
+    ids: nomes.map((nome) => idPorNome.get(nome) as string),
+    nomePorId: new Map(rows.map((row) => [row.id, row.nome])),
+  }
 }
 
 async function loadImoveisDoEscopo(
@@ -242,7 +272,7 @@ async function loadImoveisDoEscopo(
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("imoveis")
-      .select("id,tipo,inquilino_nome,ativo,empreendimento_id")
+      .select("id,tipo,inquilino_nome,ativo,empreendimento_id,unidade")
       .in("empreendimento_id", empreendimentoIds)
       .order("id")
       .range(from, from + PAGE_SIZE - 1)
@@ -308,6 +338,28 @@ async function loadLancamentosDoEscopo(
       .range(from, from + PAGE_SIZE - 1)
     if (error) throw error
     const page = (data ?? []) as unknown as LancamentoRow[]
+    rows.push(...page)
+    if (page.length < PAGE_SIZE) break
+  }
+  return rows
+}
+
+async function loadSnapshotsQualidade(
+  supabase: SupabaseAdmin,
+  imovelIds: string[],
+  competencia: string,
+): Promise<SnapshotQualidadeRow[]> {
+  const rows: SnapshotQualidadeRow[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("imovel_competencias")
+      .select("imovel_id,qualidade")
+      .in("imovel_id", imovelIds)
+      .eq("competencia", competencia)
+      .order("imovel_id")
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    const page = (data ?? []) as unknown as SnapshotQualidadeRow[]
     rows.push(...page)
     if (page.length < PAGE_SIZE) break
   }
@@ -506,9 +558,10 @@ function calcularRepasse(fechamentos: FechamentoRow[]): number {
 async function calcularObtido(
   supabase: SupabaseAdmin,
   gabarito: Gabarito,
-): Promise<Record<IndicatorKey, number>> {
+): Promise<{ indicadores: Record<IndicatorKey, number>; semLinha: Array<{ empreendimento: string; unidade: string }> }> {
   const competencia = gabarito.competencia
-  const empreendimentoIds = await resolveEmpreendimentoIds(supabase, gabarito.escopoEmpreendimentos)
+  const { ids: empreendimentoIds, nomePorId: nomePorEmpreendimento } =
+    await resolveEmpreendimentoIds(supabase, gabarito.escopoEmpreendimentos)
   const imoveis = await loadImoveisDoEscopo(supabase, empreendimentoIds)
   const imovelIds = imoveis.map((imovel) => imovel.id)
 
@@ -517,10 +570,25 @@ async function calcularObtido(
   const valores = contratoIds.length > 0 ? await loadValoresDoEscopo(supabase, contratoIds) : []
   const lancamentos = imovelIds.length > 0 ? await loadLancamentosDoEscopo(supabase, imovelIds) : []
   const fechamentos = await loadFechamentosDoEscopo(supabase, empreendimentoIds, competencia)
+  const snapshots = imovelIds.length > 0
+    ? await loadSnapshotsQualidade(supabase, imovelIds, competencia)
+    : []
+
+  const idsSemLinha = new Set(listarUnidadesSemLinha(imoveis, snapshots))
+  const semLinha = imoveis
+    .filter((imovel) => idsSemLinha.has(imovel.id))
+    .map((imovel) => ({
+      empreendimento: nomePorEmpreendimento.get(imovel.empreendimento_id) ?? imovel.empreendimento_id,
+      unidade: imovel.unidade ?? imovel.id,
+    }))
+    .sort((a, b) =>
+      a.empreendimento.localeCompare(b.empreendimento, "pt-BR")
+      || a.unidade.localeCompare(b.unidade, "pt-BR", { numeric: true }),
+    )
 
   const inadimplencia = filtrarInadimplencia(lancamentos, competencia)
 
-  return {
+  const indicadores = {
     caixaDoMes: roundMoney(somaValor(filtrarCaixaDoMes(lancamentos, competencia))),
     aluguelContratado: calcularAluguelContratado(imoveis, contratos, valores, competencia),
     aluguelRecebidoCompetencia: roundMoney(
@@ -534,6 +602,8 @@ async function calcularObtido(
     ),
     repasse: calcularRepasse(fechamentos),
   }
+
+  return { indicadores, semLinha }
 }
 
 // --- Execução ----------------------------------------------------------------
@@ -564,12 +634,35 @@ async function main() {
   const { createSupabaseAdmin } = await import("../lib/server/supabase")
   const supabase = createSupabaseAdmin()
 
-  const obtido = await calcularObtido(supabase, gabarito)
+  const { indicadores: obtido, semLinha } = await calcularObtido(supabase, gabarito)
   const linhas = compararIndicadores(gabarito.esperado, obtido)
 
   console.log(`Competência: ${gabarito.competencia}`)
   console.log(`Escopo: ${gabarito.escopoEmpreendimentos.join(", ")}`)
   console.log("")
+
+  // Guarda de completude antes da tabela: número calculado sobre prestação lida
+  // só em parte parece completo e não é. Avisa e segue verificando — o objetivo é
+  // dizer o quanto confiar em cada linha, não esconder a tabela.
+  if (semLinha.length > 0) {
+    const porEmpreendimento = new Map<string, string[]>()
+    for (const item of semLinha) {
+      porEmpreendimento.set(item.empreendimento, [
+        ...(porEmpreendimento.get(item.empreendimento) ?? []),
+        item.unidade,
+      ])
+    }
+    console.log(
+      `ATENÇÃO: ${semLinha.length} imóvel(is) do escopo sem nenhuma linha na prestação desta competência.`,
+    )
+    console.log("Os indicadores por imóvel abaixo estão calculados sobre leitura incompleta:")
+    for (const [empreendimento, unidades] of [...porEmpreendimento].sort()) {
+      console.log(`  ${empreendimento}: ${unidades.join(", ")}`)
+    }
+    console.log("(Airbnb não entra nesta conta: não vem na prestação, por decisão de negócio.)")
+    console.log("")
+  }
+
   imprimirTabela(linhas)
 
   const semFonte = linhas.filter((linha) => linha.naoVerificavel)
