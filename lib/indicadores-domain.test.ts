@@ -354,3 +354,59 @@ test("roundMoney arredonda em centavos sem propagar imprecisao binaria", () => {
   assert.equal(roundMoney(-2.675), -2.68)
   assert.equal(roundMoney(0.1 + 0.2), 0.3)
 })
+
+test("linha com inquilino nomeado e ocupada mesmo sem aluguel do mes (paga atrasado)", () => {
+  // Inquilino que paga sempre o mes anterior: o recebimento do mes e atraso, e o
+  // aluguel da competencia fica ausente. A prestacao nomeia quem mora ali, logo
+  // a unidade nao e desconhecida nem vaga.
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "Inquilino Atual",
+      observation: "VIGÊNCIA DE ABRIL 2026.",
+      rentReceived: null,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
+    }),
+    "ocupado",
+  )
+})
+
+test("inquilino nomeado nao encobre vacancia explicita nem rescisao", () => {
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "VAGO",
+      observation: null,
+      rentReceived: null,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: true,
+    }),
+    "vago",
+  )
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "Inquilino Atual",
+      observation: null,
+      rentReceived: null,
+      hasTermination: true,
+      hasDelinquency: false,
+      hasVacancy: false,
+    }),
+    "em_rescisao",
+  )
+})
+
+test("sem inquilino e sem aluguel continua desconhecido quando nao ha linha", () => {
+  assert.equal(
+    classifyOccupancy({
+      tenantName: null,
+      observation: null,
+      rentReceived: null,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
+    }),
+    "desconhecido",
+  )
+})

@@ -361,7 +361,9 @@ function buildSnapshotRow(input: {
   const recoveredOrigins = new Set<string>()
   for (const line of propertyLines) {
     if (!belongsToEarlierCompetence(line, input.competencia)) continue
-    const origem = normalizeOptionalCompetence(line.competencia_original)
+    // Mesmo resolvedor de `belongsToEarlierCompetence`: a origem pode ter vindo
+    // do texto da observação, e não só do campo estruturado.
+    const origem = resolveLineCompetence(line, input.competencia)
     if (origem) recoveredOrigins.add(origem)
   }
   for (const item of input.agreements) {
@@ -749,13 +751,58 @@ function sumNullableMoney(left: number | null, right: number | null) {
   return roundMoney((left ?? 0) + (right ?? 0))
 }
 
+const MESES_PT = [
+  "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+]
+
+// A prestação diz por escrito de que mês o valor é ("VIGÊNCIA DE ABRIL 2026"),
+// e em parte das linhas o campo estruturado `competencia_original` vem vazio
+// mesmo com o texto presente. Sem ler o texto, esse valor era somado como
+// aluguel do mês corrente e o atraso desaparecia.
+//
+// Deliberadamente conservador: exige a palavra VIGÊNCIA (âncora do significado
+// no domínio; mês solto em outra frase não conta) e exatamente UM mês citado.
+// Texto como "VIGÊNCIA DE MAIO, JUNHO, JULHO E PROPORCIONAL DE AGOSTO DE 2023"
+// cobre quatro meses num valor só — escolher um seria invenção, então devolve
+// null e o comportamento anterior permanece.
+//
+// Procedência: não há coluna própria para "origem inferida do texto" porque ela
+// é recuperável — se `movimentacoes.dados_extraidos->>'competencia_original'`
+// está nulo e o snapshot tem origem, ela veio daqui.
+export function parseVigenciaCompetence(value: string | null | undefined): string | null {
+  const texto = normalizePropertyKeyPart(cleanText(value) ?? "")
+  if (!texto || !texto.includes("vigencia")) return null
+
+  const encontrados = MESES_PT.filter((mes) => new RegExp(`\\b${mes}\\b`).test(texto))
+  if (encontrados.length !== 1) return null
+
+  const mes = encontrados[0]
+  const posicao = texto.indexOf(mes)
+  const ano = texto.slice(posicao).match(/\b(19|20)(\d{2})\b/)
+  if (!ano) return null
+
+  return `${ano[1]}${ano[2]}-${String(MESES_PT.indexOf(mes) + 1).padStart(2, "0")}-01`
+}
+
+// Origem inferida do texto só vale quando é ANTERIOR à competência: um mês igual
+// já é o comportamento padrão, e um mês posterior seria leitura errada. Sem essa
+// trava, a linha não cairia nem em "atual" nem em "anterior" e o valor sumiria
+// das duas contas.
+function resolveLineCompetence(line: ReceitaPorImovel, competence: string) {
+  const declared = normalizeOptionalCompetence(line.competencia_original)
+  if (declared !== null) return declared
+  const inferred = parseVigenciaCompetence(line.observacao)
+  return inferred !== null && inferred < competence ? inferred : null
+}
+
 function belongsToCurrentCompetence(line: ReceitaPorImovel, competence: string) {
-  const original = normalizeOptionalCompetence(line.competencia_original)
+  const original = resolveLineCompetence(line, competence)
   return original === null || original === competence
 }
 
 function belongsToEarlierCompetence(line: ReceitaPorImovel, competence: string) {
-  const original = normalizeOptionalCompetence(line.competencia_original)
+  const original = resolveLineCompetence(line, competence)
   return original !== null && original < competence
 }
 

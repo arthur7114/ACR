@@ -1485,3 +1485,83 @@ test("acordo de rescisao nao define origem de atraso", () => {
 
   assert.equal(row.atrasos_competencia_origem, null)
 })
+
+test("le a competencia de origem declarada na observacao quando o campo vem vazio", () => {
+  // Caso real: linha de maio cujo campo estruturado veio nulo, mas o texto diz
+  // de que mes o valor e. Sem isso o atraso era contado como aluguel do mes.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Inquilino",
+        aluguel: 417.66,
+        total: 417.66,
+        competencia_original: null,
+        observacao: "VIGÊNCIA DE ABRIL 2026. R$ 374,31 ALUGUEL + R$ 15,66 GARAGEM MOTO.",
+      },
+    }),
+    700,
+  )
+
+  // O valor sai do aluguel da competencia e entra como atraso de abril. Sem
+  // linha atribuida ao mes, o aluguel da competencia e ausencia (null), nao zero
+  // confirmado -- convencao do projeto para "nao ha dado".
+  assert.equal(row.aluguel_competencia, null)
+  assert.equal(row.atrasos_recuperados, 417.66)
+  assert.equal(row.atrasos_competencia_origem, "2026-04-01")
+})
+
+test("observacao sem vigencia nao altera a competencia da linha", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Inquilino",
+        aluguel: 700,
+        total: 700,
+        competencia_original: null,
+        observacao: "SEGURO QUITADO. IPTU 2026 QUITADO. GARAGEM PARA MOTO.",
+      },
+    }),
+    700,
+  )
+
+  assert.equal(row.aluguel_competencia, 700)
+  assert.equal(row.atrasos_recuperados, null)
+})
+
+test("campo estruturado tem prioridade sobre o texto da observacao", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Inquilino",
+        aluguel: 700,
+        total: 700,
+        competencia_original: "06/2026",
+        observacao: "VIGÊNCIA DE ABRIL 2026.",
+      },
+    }),
+    700,
+  )
+
+  assert.equal(row.aluguel_competencia, 700)
+  assert.equal(row.atrasos_recuperados, null)
+})
+
+test("observacao que cita varios meses fica ambigua e nao infere origem", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Inquilino",
+        aluguel: 900,
+        total: 900,
+        competencia_original: null,
+        observacao: "VIGÊNCIA DE MAIO, JUNHO, JULHO E PROPORCIONAL DE AGOSTO DE 2023.",
+      },
+    }),
+    700,
+  )
+
+  // Sem saber a qual mes atribuir, o valor segue como aluguel da competencia:
+  // inventar um dos quatro seria pior que manter o comportamento conhecido.
+  assert.equal(row.aluguel_competencia, 900)
+  assert.equal(row.atrasos_competencia_origem, null)
+})

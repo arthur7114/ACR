@@ -85,6 +85,12 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
   if (evidence.hasVacancy) return "vago"
   if (evidence.hasBlankTenancy) return "vago"
+  // Inquilino nomeado na prestação é ocupação: a unidade não está vaga nem é
+  // desconhecida. O aluguel do mês pode estar ausente porque o inquilino paga
+  // atrasado (o recebimento do mês é atraso de competência anterior) — isso
+  // descreve pagamento, não ocupação. Vem depois das checagens de vacância e
+  // rescisão, então "VAGO" escrito no campo do inquilino continua vencendo.
+  if (evidence.tenantName) return "ocupado"
   // Sem evidência na prestação, a receita variável recorre ao cadastro: é
   // operação ativa, não dado ausente.
   if (evidence.isVariableRevenue) return "ocupado"
