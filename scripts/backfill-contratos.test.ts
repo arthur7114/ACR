@@ -151,3 +151,32 @@ test("sem competencia de origem do atraso a origem continua nula", () => {
   const atraso = rows.lancamentos.find((l) => l.descricao === "Atraso recuperado")
   assert.equal(atraso?.competencia_origem, null)
 })
+
+test("em aberto usa o aluguel esperado do cadastro quando ele existe, nao o valor inferido", () => {
+  // Unidade que paga sempre atrasado: o valor inferido do contrato vem do
+  // recebido (com garagem embutida), mas o cadastro tem o aluguel-base correto.
+  // O em-aberto deve refletir o que a unidade DEVERIA pagar, nao o que passou.
+  const rows = buildBackfillRows(
+    [{ id: "im-20", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-20", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: null, aluguel_recebido: 466.93, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null, aluguel_esperado: 374.31 },
+      { imovel_id: "im-20", competencia: "2026-06-01", status_ocupacao: "inadimplente", inquilino_nome: "Fulano", aluguel_competencia: 0, aluguel_recebido: 0, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null, aluguel_esperado: 374.31 },
+    ],
+  )
+
+  const emAberto = rows.lancamentos.find((l) => l.situacao === "em_aberto")
+  assert.equal(emAberto?.valor, 374.31)
+})
+
+test("sem aluguel esperado no cadastro o em aberto recorre ao valor do contrato", () => {
+  const rows = buildBackfillRows(
+    [{ id: "im-21", tipo: "apartamento" }],
+    [
+      { imovel_id: "im-21", competencia: "2026-05-01", status_ocupacao: "ocupado", inquilino_nome: "Fulano", aluguel_competencia: 700, aluguel_recebido: 700, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null, aluguel_esperado: null },
+      { imovel_id: "im-21", competencia: "2026-06-01", status_ocupacao: "inadimplente", inquilino_nome: "Fulano", aluguel_competencia: 0, aluguel_recebido: 0, atrasos_recuperados: null, outros_recebimentos: null, competencia_original: null, aluguel_esperado: null },
+    ],
+  )
+
+  const emAberto = rows.lancamentos.find((l) => l.situacao === "em_aberto")
+  assert.equal(emAberto?.valor, 700)
+})

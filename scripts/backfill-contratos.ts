@@ -30,6 +30,8 @@ export interface BackfillSnapshotRow {
   competencia_original: string | null
   /** Origem do atraso recuperado; ver migration 202608070002. */
   atrasos_competencia_origem?: string | null
+  /** Aluguel contratado conhecido no cadastro (vigencia > imoveis). */
+  aluguel_esperado?: number | null
 }
 
 export interface BackfillContratoRow {
@@ -171,13 +173,22 @@ export function buildBackfillRows(
         const valorVigenteContrato = contrato
           ? valorVigente(contrato, raw.competencia)
           : undefined
-        if (contrato && valorVigenteContrato) {
+        // O aluguel esperado do cadastro tem prioridade sobre o valor inferido do
+        // contrato: descreve quanto a unidade DEVERIA pagar, enquanto o valor
+        // inferido pode vir do recebido (com garagem/encargos embutidos) para
+        // quem paga sempre atrasado e nunca tem aluguel de competencia proprio.
+        // So recorre ao contrato quando o cadastro nao traz o valor.
+        const valorEmAberto =
+          (raw.aluguel_esperado ?? 0) > 0
+            ? (raw.aluguel_esperado as number)
+            : valorVigenteContrato?.valor
+        if (contrato && valorEmAberto) {
           lancamentos.push({
             imovel_id: imovelId,
             contrato_id: contrato.id,
             fechamento_id: null,
             rubrica: "aluguel",
-            valor: valorVigenteContrato.valor,
+            valor: valorEmAberto,
             competencia_origem: raw.competencia,
             competencia_recebimento: null,
             situacao: "em_aberto",
@@ -308,6 +319,7 @@ interface DatabaseSnapshotRow {
   outros_recebimentos: number | string | null
   competencia_original: string | null
   atrasos_competencia_origem: string | null
+  aluguel_esperado: number | string | null
 }
 
 type SupabaseAdmin = ReturnType<typeof import("../lib/server/supabase")["createSupabaseAdmin"]>
@@ -358,7 +370,7 @@ async function loadSnapshots(supabase: SupabaseAdmin) {
   const raw = await loadAllRows<DatabaseSnapshotRow>(
     supabase,
     "imovel_competencias",
-    "imovel_id,competencia,status_ocupacao,inquilino_nome,aluguel_competencia,aluguel_recebido,atrasos_recuperados,outros_recebimentos,competencia_original,atrasos_competencia_origem",
+    "imovel_id,competencia,status_ocupacao,inquilino_nome,aluguel_competencia,aluguel_recebido,atrasos_recuperados,outros_recebimentos,competencia_original,atrasos_competencia_origem,aluguel_esperado",
     "imovel_id",
   )
   return raw.map((row) => ({
@@ -372,6 +384,7 @@ async function loadSnapshots(supabase: SupabaseAdmin) {
     outros_recebimentos: toNumberOrNull(row.outros_recebimentos),
     competencia_original: row.competencia_original,
     atrasos_competencia_origem: row.atrasos_competencia_origem,
+    aluguel_esperado: toNumberOrNull(row.aluguel_esperado),
   }))
 }
 
