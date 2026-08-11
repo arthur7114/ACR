@@ -1030,6 +1030,42 @@ Decisoes: repositório Git inicializado em `ACR`.
 Arquivos/docs impactados: `.agent`, `AGENTS.md`.
 Proxima acao: estruturar docs do PRD e contrato do mock.
 
+### 2026-08-11 - Hardening integral de OCR, fechamento e remessas
+
+Status: done (código e reparo); migrations novas aguardam conexão administrativa.
+
+Job: resolver os defeitos encontrados na auditoria do corpus completo de
+empreendimentos e reparar César Rêgo julho/2026.
+
+Outcome entregue: schema estrito da prestação corrigido; parser Excel lê abas e
+headers dinâmicos, acordos, inadimplência, resumo e falha fechado; repasse
+embutido só é aceito quando explicitamente marcado; classificação abaixo de
+80% fica desconhecida; nomes repetidos são correlacionados por posição; layout
+César detectado não cai na IA após erro. Contexto do browser é substituído pelo
+cadastro do banco, RBAC usa quatro perfis, claim do job é atômico e todos os
+erros Supabase são propagados. Remessas adicionais recebem numeração crescente,
+usam deduplicação SHA-256, unem comprovantes parciais/despesas/reajustes e
+preservam correções manuais. A RPC `persistir_pacote_fechamento_v1` troca análise,
+totais, movimentações, validações e snapshots numa transação otimista.
+
+Reparo: dry-run encontrou João Cordeiro e Galpão Pompílio Gomes sem linhas sem
+vínculo e diferença não explicada zero. Commit via RPC v4 aplicado. Nova
+execução retornou 2 `unchanged` e 0 escritas propostas. João: receitas R$ 1.237,05,
+comissão R$ 61,85, TED R$ 5,55 e repasse R$ 1.169,65. Pompílio: receitas
+econômicas R$ 12.414,16, comissão R$ 510,25, TED R$ 5,55 e repasse R$ 11.898,36.
+O lançamento eGestor 9041 permanece intocado localmente e requer conferência
+manual das três datas em 10/08/2026.
+
+Arquivos/docs impactados: workflow/persistência/parsers/autorização, middleware,
+tela de usuários, migrations `202608110004` a `202608110006`, docs 02/03/04/06/12/13
+e plano executável de hardening.
+
+Implantação: o CLI local não conseguiu vincular o projeto por privilégio da
+conta e a rede não alcança o endpoint PostgreSQL IPv6; aplicar as migrations
+`202608110004_auth_roles.sql`, `202608110005_atomic_processing_claim.sql` e
+`202608110006_atomic_package_persistence.sql` pelo pooler IPv4/dashboard antes
+de publicar a aplicação.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

@@ -8,7 +8,7 @@ import { createResponseWithRetry } from "./openai-responses"
 import { extractPdfTextLines, isCesarRegoConsolidado, parseCesarRegoPrestacao } from "./cesar-rego-parser"
 import { parseExcelPrestacao } from "./excel-parser"
 
-const schema = {
+export const prestacaoJsonSchema = {
   type: "object",
   additionalProperties: false,
   required: [
@@ -148,6 +148,9 @@ const schema = {
       type: "object",
       additionalProperties: false,
       required: [
+        "numero_documento",
+        "data_emissao",
+        "data_vencimento",
         "total_linhas_receitas",
         "total_linhas_comissoes",
         "total_linhas_repasse",
@@ -157,6 +160,7 @@ const schema = {
         "total_comissao_despesas",
         "recebidos_em_nome_locador",
         "total_a_repassar",
+        "repasse_embutido",
         "confianca",
       ],
       properties: {
@@ -184,6 +188,7 @@ const schema = {
         total_comissao_despesas: { type: ["number", "null"] },
         recebidos_em_nome_locador: { type: ["number", "null"] },
         total_a_repassar: { type: ["number", "null"] },
+        repasse_embutido: { type: "boolean" },
         confianca: { type: "number" },
       },
     },
@@ -220,15 +225,18 @@ export async function extractPrestacaoAliveFromPdf(
 
   const isPdf = input.fileName.toLowerCase().endsWith(".pdf") || input.fileType.includes("pdf")
   if (isPdf) {
+    let lines: Awaited<ReturnType<typeof extractPdfTextLines>> | null = null
     try {
       const fileBuffer = Buffer.from(input.fileBase64, "base64")
-      const lines = await extractPdfTextLines(fileBuffer)
-      if (isCesarRegoConsolidado(lines)) {
-        console.log("[CESAR REGO PARSER] Local parsing layout C PDF:", input.fileName)
-        return prestacaoAnalysisSchema.parse(parseCesarRegoPrestacao(lines, competencia))
-      }
+      lines = await extractPdfTextLines(fileBuffer)
     } catch (error) {
-      console.warn("[CESAR REGO PARSER] Deteccao/parse local falhou; usando agente de IA.", error)
+      console.warn("[PDF TEXT] Extracao local indisponivel; usando agente de IA.", error)
+    }
+    if (lines && isCesarRegoConsolidado(lines)) {
+      // Se o layout C foi reconhecido, um erro deterministico nao pode ser
+      // escondido por um fallback probabilistico: o pacote deve parar para revisao.
+      console.log("[CESAR REGO PARSER] Local parsing layout C PDF:", input.fileName)
+      return prestacaoAnalysisSchema.parse(parseCesarRegoPrestacao(lines, competencia))
     }
   }
   if (process.env.NEXT_PUBLIC_MOCK_IA === "true" || process.env.MOCK_IA === "true") {
@@ -274,7 +282,7 @@ export async function extractPrestacaoAliveFromPdf(
         type: "json_schema",
         name: prestacaoAliveAgent.name,
         strict: true,
-        schema,
+            schema: prestacaoJsonSchema,
       },
     },
   } as unknown as Parameters<typeof client.responses.create>[0])

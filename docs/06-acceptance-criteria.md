@@ -16,6 +16,11 @@
 - CA07 parcial: repasse e prestacao sao conciliados quando valor e janela forem compativeis.
 - CA08: divergencia de repasse gera alerta com severidade correta.
 - CA13 parcial: remessa adicional processa documentos novos sem apagar dados anteriores.
+- CA13.1: remessas recebem número crescente; SHA-256 já processado não altera
+  totais; comprovantes parciais distintos são somados e correções manuais
+  sobrevivem à regeneração.
+- CA13.2: totais, análise, movimentações automáticas, validações e snapshots são
+  confirmados na mesma transação sob concorrência otimista.
 
 ## Etapa 3 - Extracao completa e aprovacao
 
@@ -44,6 +49,14 @@
 - CA14.12: o upload valida a assinatura real de PDF/Excel, normaliza MIME ausente ou genérico antes de enviar à IA e identifica em português o nome do arquivo inválido ou corrompido.
 - CA14.13: criar cadastro de imóvel com código canônico César Rêgo (0002520/0002521 → João Cordeiro; 0002526/0002527 → Galpão Pompílio Gomes) no empreendimento errado é bloqueado com HTTP 409 e mensagem acionável orientando corrigir o empreendimento do fechamento em vez de criar outro cadastro; a revisão não oferece criar/vincular unidade já cadastrada nesses códigos.
 - CA14.14: ao resolver uma pendência sem valor a decidir (documento opcional ausente ou alerta informativo — sem valor esperado, encontrado ou diferença), o modal omite os cards de valor e a escolha de valor oficial e oferece apenas "Ignorar pendência" com justificativa obrigatória; a resolução registra auditoria e libera a pendência sem alterar nenhum valor da prestação.
+- CA14.15: confiança de classificação abaixo de 80% produz documento
+  `desconhecido` e bloqueio; nomes de arquivo repetidos não cruzam conteúdo entre
+  posições; layout César detectado nunca usa fallback probabilístico após erro.
+- CA14.16: contexto de fechamento enviado pelo navegador não é fonte de IDs,
+  nomes ou competência; a API reconstrói o escopo pelo UUID persistido.
+- CA14.17: visualizador não muta dados; operador não aprova nem resolve
+  bloqueante; aprovador pode fazê-lo; somente admin gerencia usuários e
+  configuração eGestor.
 
 ## Lista de fechamentos
 

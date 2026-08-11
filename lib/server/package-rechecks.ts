@@ -56,9 +56,7 @@ export function validatePackage(input: PackageValidationInput) {
   // documento. Sinal explicito do parser OU pacote de documento unico que e a
   // propria prestacao (sem comprovante separado). Se houver comprovante de
   // repasse de verdade, ele tem precedencia (a conciliacao bancaria continua).
-  const repasseEmbutido =
-    normalizedPrestacao?.resumo_financeiro.repasse_embutido === true ||
-    (!input.repasse && input.documents.length === 1 && input.documents[0]?.documentType === "prestacao_contas")
+  const repasseEmbutido = normalizedPrestacao?.resumo_financeiro.repasse_embutido === true
   const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse, input.commercialRule ?? null, repasseEmbutido)
   const rechecks = buildRechecks({
     documents: input.documents,

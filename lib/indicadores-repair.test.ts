@@ -187,6 +187,10 @@ test("César Rêgo março distribui as linhas sem duplicar o documento consolida
   )
   assert.equal(scoped.totals.total_receitas, 1_100)
   assert.equal(scoped.totals.total_tarifas, 5.55)
+  assert.equal(scoped.totals.total_repasse_bruto, 1_039.67)
+  assert.equal(scoped.totals.repasse_declarado, 1_034.12)
+  assert.equal(scoped.totals.valor_comprovado, 1_034.12)
+  assert.equal(scoped.totals.diferenca_repasse, 0)
 })
 
 function makePackage(
@@ -220,8 +224,8 @@ function makePackage(
       total_despesas: despesa,
       total_comissao_despesas: comissao + despesa,
       total_a_repassar: repasse,
-      valor_comprovado: null,
-      diferenca_repasse: null,
+      valor_comprovado: repasse,
+      diferenca_repasse: 0,
       taxa_administracao_percent: null,
       taxa_intermediacao_percent: null,
       comissao_administracao_calculada: null,

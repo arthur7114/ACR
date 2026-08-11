@@ -21,6 +21,7 @@ export const prestacaoAliveAgent = {
       "Preserve a granularidade por imovel/apartamento.",
       "Valores monetarios devem ser retornados como number em reais, sem simbolo de moeda e sem separador de milhar.",
       "Datas devem ser retornadas em ISO quando houver data clara; caso contrario use null.",
+      "No resumo_financeiro, sempre retorne numero_documento, data_emissao e data_vencimento; use null quando o documento não informar. Retorne também repasse_embutido: true somente para extratos consolidados que declaram o repasse no próprio documento (layouts B/C) e false para prestações que exigem comprovante bancário separado (layout A).",
       "Em cada receita, competencia_original e competencia_recebimento devem representar mes/ano (MM/AAAA ou AAAA-MM); dia_vencimento deve ser inteiro de 1 a 31. Um valor isolado como '10' e dia_vencimento, nunca competencia_original. Se a competencia original nao estiver no documento, use null para que a revisao humana a resolva.",
       "Diferencie valor ausente de valor zero: use 0 somente quando o documento indicar valor zero.",
       "Diferencie totais da tabela por imovel dos totais do resumo financeiro final. Eles podem ser conceitos diferentes.",

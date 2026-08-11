@@ -10,7 +10,10 @@ Resultado esperado: fechamento criado em `rascunho`, unico por imobiliaria + emp
 
 O usuario envia PDF, XLSX, CSV, PNG, JPG, JPEG ou WEBP. O sistema salva o arquivo original, gera hash e tenta classificar automaticamente.
 
-Confianca menor que 0,70 exige classificacao manual antes de iniciar processamento.
+Confianca menor que 0,80 fica como `desconhecido`, bloqueia o processamento
+financeiro daquele documento e exige classificacao/reenvio consciente antes de
+continuar. O pipeline nunca encaminha silenciosamente uma classificacao incerta
+ao extrator de outro tipo.
 
 ## Processamento inicial
 
@@ -44,6 +47,13 @@ Fluxo:
 7. merge integra novas extracoes sem sobrescrever correcoes manuais;
 8. validacoes rodam sobre o conjunto completo;
 9. usuario recebe notificacao.
+
+Cada lote novo recebe `remessa_numero` crescente. Arquivos já processados no
+mesmo fechamento são identificados por SHA-256 e não voltam a compor os totais;
+comprovantes parciais distintos são somados, despesas/reajustes são unidos sem
+duplicação literal e uma prestação nova substitui a anterior. A troca de totais,
+movimentações, validações e snapshots é atômica e preserva linhas corrigidas
+manualmente.
 
 ## Revisao e correcao
 

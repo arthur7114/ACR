@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { hasRole, parseUserRole } from "@/lib/authz"
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const validOrigins = new Set(["sistema", "documento", "manual"])
@@ -63,13 +65,24 @@ export async function POST(
       )
     }
 
+    const auth = await createSupabaseServerClient()
+    const { data: { user } } = await auth.auth.getUser()
+    const role = parseUserRole(user?.app_metadata?.role)
+    if (validacao.severidade === "bloqueante" && !hasRole(role, "aprovador")) {
+      return NextResponse.json(
+        { error: "Somente aprovador ou administrador pode resolver uma validacao bloqueante." },
+        { status: 403 },
+      )
+    }
+    const actor = user?.email ?? user?.id ?? "Usuario autenticado"
+
     // 2. Update validation row with resolution details
     const { error: updateError } = await supabase
       .from("validacoes")
       .update({
         status,
         justificativa,
-        resolvido_por: "Operador",
+        resolvido_por: actor,
         resolvido_em: new Date().toISOString(),
       })
       .eq("id", id)
@@ -83,7 +96,7 @@ export async function POST(
         fechamento_id: validacao.fechamento_id,
         validacao_id: validacao.id,
         movimentacao_id: validacao.movimentacao_id,
-        usuario: "Operador",
+        usuario: actor,
         campo_alterado: validacao.tipo_validacao,
         valor_anterior: validacao.valor_encontrado !== null ? String(validacao.valor_encontrado) : null,
         valor_novo: officialValue !== null ? String(officialValue) : null,
@@ -105,7 +118,7 @@ export async function POST(
 
     // If no blocking validations remain, transition fechamento status and resolve the technical opinion validation row
     if (!openValidations || openValidations.length === 0) {
-      await supabase
+      const { error: technicalOpinionError } = await supabase
         .from("validacoes")
         .update({
           status: "resolvida",
@@ -115,6 +128,7 @@ export async function POST(
         })
         .eq("fechamento_id", validacao.fechamento_id)
         .eq("tipo_validacao", "parecer_tecnico")
+      if (technicalOpinionError) throw technicalOpinionError
 
       const { error: closeStatusError } = await supabase
         .from("fechamentos")

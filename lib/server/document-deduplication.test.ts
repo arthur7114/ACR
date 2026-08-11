@@ -53,6 +53,9 @@ function createFakeSupabase() {
       limit() {
         return builder
       },
+      order() {
+        return builder
+      },
       async maybeSingle() {
         return {
           data: selectRows(table, filters)[0] ?? null,

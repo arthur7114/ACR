@@ -34,47 +34,27 @@ function eventoLabel(event: ProcessingEvent): string {
   }
 }
 
-// Ha um job de processamento ativo (e nao travado) para este fechamento?
-export async function isProcessingActive(fechamentoId: string): Promise<boolean> {
-  const supabase = createSupabaseAdmin()
-  const { data } = await supabase
-    .from("fechamentos")
-    .select("processamento_status, processamento_atualizado_em")
-    .eq("id", fechamentoId)
-    .maybeSingle()
-
-  if (!data || data.processamento_status !== "processando") return false
-  const updated = data.processamento_atualizado_em ? new Date(data.processamento_atualizado_em).getTime() : 0
-  return updated > 0 && Date.now() - updated < STUCK_AFTER_MS
-}
-
 // Dispara o workflow DESTACADO do request: marca 'processando', e a promise interna
 // segue rodando depois que o handler responde (Node persistente / EasyPanel). Vai
 // gravando o progresso no banco e, ao concluir/falhar, fecha o status e notifica.
 export async function startPackageProcessingInBackground(
   files: File[],
   context: FechamentoContext,
-): Promise<void> {
+): Promise<boolean> {
   const supabase = createSupabaseAdmin()
-  const nowIso = new Date().toISOString()
-
-  await supabase
-    .from("fechamentos")
-    .update({
-      processamento_status: "processando",
-      processamento_progress: 2,
-      processamento_evento: "Iniciando análise",
-      processamento_erro: null,
-      processamento_iniciado_em: nowIso,
-      processamento_atualizado_em: nowIso,
-    })
-    .eq("id", context.id)
+  const { data: claimed, error } = await supabase.rpc("iniciar_processamento_fechamento", {
+    p_fechamento_id: context.id,
+    p_stuck_after_seconds: Math.floor(STUCK_AFTER_MS / 1000),
+  })
+  if (error) throw error
+  if (claimed !== true) return false
 
   // fire-and-forget: NAO await aqui — a conexao do cliente pode cair sem matar o job.
   void runAndTrack(files, context).catch(async (error) => {
     const message = error instanceof Error ? error.message : "Falha desconhecida no processamento."
     await markErro(context, message)
   })
+  return true
 }
 
 async function runAndTrack(files: File[], context: FechamentoContext): Promise<void> {
@@ -84,7 +64,7 @@ async function runAndTrack(files: File[], context: FechamentoContext): Promise<v
     if (event.type === "workflow_completed") {
       // A persistencia (analise_completa + status do fechamento) ja aconteceu dentro
       // do workflow; aqui so fechamos o snapshot de progresso e notificamos.
-      await supabase
+      const { error } = await supabase
         .from("fechamentos")
         .update({
           processamento_status: "concluido",
@@ -94,6 +74,7 @@ async function runAndTrack(files: File[], context: FechamentoContext): Promise<v
           processamento_atualizado_em: new Date().toISOString(),
         })
         .eq("id", context.id)
+      if (error) throw error
       await criarNotificacao(context, "analise_concluida")
       return
     }
@@ -103,7 +84,7 @@ async function runAndTrack(files: File[], context: FechamentoContext): Promise<v
       return
     }
 
-    await supabase
+    const { error } = await supabase
       .from("fechamentos")
       .update({
         processamento_progress: Math.min(99, Math.max(0, Math.round(event.progress ?? 0))),
@@ -111,12 +92,13 @@ async function runAndTrack(files: File[], context: FechamentoContext): Promise<v
         processamento_atualizado_em: new Date().toISOString(),
       })
       .eq("id", context.id)
+    if (error) throw error
   }
 }
 
 async function markErro(context: FechamentoContext, message: string): Promise<void> {
   const supabase = createSupabaseAdmin()
-  await supabase
+  const { error } = await supabase
     .from("fechamentos")
     .update({
       processamento_status: "erro",
@@ -125,6 +107,7 @@ async function markErro(context: FechamentoContext, message: string): Promise<vo
       processamento_atualizado_em: new Date().toISOString(),
     })
     .eq("id", context.id)
+  if (error) throw error
   await criarNotificacao(context, "analise_falhou", message)
 }
 
@@ -141,10 +124,11 @@ async function criarNotificacao(
       ? `${escopo} — pronto para revisão.`
       : `${escopo} — ${detalhe ?? "verifique e reprocesse o pacote."}`
 
-  await supabase.from("notificacoes").insert({
+  const { error } = await supabase.from("notificacoes").insert({
     fechamento_id: context.id,
     tipo,
     titulo,
     corpo,
   })
+  if (error) throw error
 }

@@ -7,6 +7,7 @@ import type {
   ReajusteAnalysis,
   RepasseAnalysis,
 } from "@/lib/prestacao-types"
+import { packageAnalysisSchema } from "@/lib/prestacao-types"
 import type { FechamentoContext } from "@/lib/fechamento-context"
 import {
   classifyDocument,
@@ -17,7 +18,7 @@ import {
 import { extractPrestacaoAliveFromPdf } from "./analyze-prestacao"
 import { validatePackage } from "./package-rechecks"
 import { loadHistoricalAgreementKeys } from "./historical-agreements"
-import { persistPackage, type PackageFileForPersistence } from "./persist-package"
+import { calculateDocumentSha256, persistPackage, type PackageFileForPersistence } from "./persist-package"
 import { getCommercialRuleForValidation } from "./regras-comerciais"
 import { createSupabaseAdmin } from "./supabase"
 
@@ -38,7 +39,12 @@ export async function* runPackageWorkflowWithEvents(
   try {
     yield event("workflow_started", "Processamento real iniciado.", 2)
 
-    const documents = await readAndValidateFiles(files)
+    let documents = await readAndValidateFiles(files)
+    const existingAnalysis = await loadExistingAnalysis(fechamentoContext)
+    documents = await excludeAlreadyProcessedDocuments(documents, fechamentoContext)
+    if (documents.length === 0) {
+      throw new Error("Todos os arquivos desta remessa já foram processados neste fechamento.")
+    }
     const classifications: ClassifiedDocument[] = []
 
     for (const [index, document] of documents.entries()) {
@@ -48,6 +54,7 @@ export async function* runPackageWorkflowWithEvents(
       } catch (error) {
         throw describeDocumentProcessingError(error, document.fileName)
       }
+      classification = enforceClassificationConfidence(classification)
       classifications.push(classification)
       yield event(
         "document_classified",
@@ -75,12 +82,13 @@ export async function* runPackageWorkflowWithEvents(
       imobiliariaId: fechamentoContext?.imobiliariaId,
       empreendimentoId: fechamentoContext?.empreendimentoId,
     })
+    const combined = mergeWithExistingAnalysis(existingAnalysis, extraction, classifications)
     const validation = validatePackage({
-      documents: classifications,
-      prestacao: extraction.prestacao,
-      repasse: extraction.repasse,
-      despesas: extraction.despesas,
-      reajuste: extraction.reajuste,
+      documents: combined.documents,
+      prestacao: combined.prestacao,
+      repasse: combined.repasse,
+      despesas: combined.despesas,
+      reajuste: combined.reajuste,
       commercialRule,
       historicalAgreementKeys,
     })
@@ -88,7 +96,7 @@ export async function* runPackageWorkflowWithEvents(
     yield event("validation_completed", "Validacoes deterministicas concluidas.", 82)
 
     const packageAnalysis: Omit<PackageAnalysis, "fechamentoId" | "storagePath"> = {
-      documents: classifications,
+      documents: combined.documents,
       prestacao: validation.prestacao,
       repasse: validation.repasse,
       despesas: validation.despesas,
@@ -100,12 +108,12 @@ export async function* runPackageWorkflowWithEvents(
     }
 
     const persistence = await persistPackage({
-      files: documents.map((document) => ({
+      files: documents.map((document, index) => ({
         fileName: document.fileName,
         fileType: document.fileType,
         fileSize: document.fileSize,
         fileBuffer: document.fileBuffer,
-        classification: classifications.find((classification) => classification.fileName === document.fileName) ?? {
+        classification: classifications[index] ?? {
           fileName: document.fileName,
           fileType: document.fileType,
           fileSize: document.fileSize,
@@ -152,6 +160,93 @@ export async function* runPackageWorkflowWithEvents(
       progress: 100,
       error: message,
     }
+  }
+}
+
+async function loadExistingAnalysis(context: FechamentoContext | null): Promise<PackageAnalysis | null> {
+  if (!context) return null
+  const { data, error } = await createSupabaseAdmin()
+    .from("fechamentos")
+    .select("analise_completa")
+    .eq("id", context.id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data?.analise_completa) return null
+  const parsed = packageAnalysisSchema.safeParse({
+    ...(data.analise_completa as Record<string, unknown>),
+    fechamentoId: context.id,
+    storagePath: null,
+  })
+  if (!parsed.success) {
+    throw new Error("A análise existente não pôde ser lida com segurança; repare o fechamento antes de adicionar outra remessa.")
+  }
+  const { data: persistedDocuments, error: documentsError } = await createSupabaseAdmin()
+    .from("documentos_fechamento")
+    .select("id,nome_arquivo,tipo_documento,mime_type,tamanho_bytes,arquivo_url,criado_em")
+    .eq("fechamento_id", context.id)
+    .order("criado_em", { ascending: true })
+  if (documentsError) throw documentsError
+
+  const available = [...(persistedDocuments ?? [])]
+  const documents = parsed.data.documents.map((document) => {
+    if (document.documentoId) return document
+    const matchIndex = available.findIndex((row) =>
+      row.nome_arquivo === document.fileName
+      && row.tipo_documento === document.documentType
+      && Number(row.tamanho_bytes) === document.fileSize,
+    )
+    if (matchIndex < 0) {
+      throw new Error(`Documento histórico sem vínculo persistido: ${document.fileName}.`)
+    }
+    const [match] = available.splice(matchIndex, 1)
+    return { ...document, documentoId: match.id, storagePath: match.arquivo_url }
+  })
+  return { ...parsed.data, documents }
+}
+
+async function excludeAlreadyProcessedDocuments(
+  documents: PackageInputDocument[],
+  context: FechamentoContext | null,
+) {
+  const uniqueDocuments = dedupeDocumentsByHash(documents)
+  if (!context || uniqueDocuments.length === 0) return uniqueDocuments
+  const hashes = uniqueDocuments.map((document) => calculateDocumentSha256(document.fileBuffer))
+  const { data, error } = await createSupabaseAdmin()
+    .from("documentos_fechamento")
+    .select("sha256,status_processamento")
+    .eq("fechamento_id", context.id)
+    .in("sha256", hashes)
+  if (error) throw error
+  const existing = new Set(
+    (data ?? [])
+      .filter((row) => row.status_processamento === "processado")
+      .map((row) => row.sha256)
+      .filter(Boolean),
+  )
+  return uniqueDocuments.filter((_, index) => !existing.has(hashes[index]))
+}
+
+export function dedupeDocumentsByHash<T extends { fileBuffer: Buffer }>(documents: T[]): T[] {
+  const seen = new Set<string>()
+  return documents.filter((document) => {
+    const hash = calculateDocumentSha256(document.fileBuffer)
+    if (seen.has(hash)) return false
+    seen.add(hash)
+    return true
+  })
+}
+
+function mergeWithExistingAnalysis(
+  existing: PackageAnalysis | null,
+  extracted: Pick<PackageAnalysis, "prestacao" | "repasse" | "despesas" | "reajuste">,
+  newDocuments: ClassifiedDocument[],
+) {
+  return {
+    documents: [...(existing?.documents ?? []), ...newDocuments],
+    prestacao: extracted.prestacao ?? existing?.prestacao ?? null,
+    repasse: extracted.repasse ? mergeRepasses(existing?.repasse ?? null, extracted.repasse) : existing?.repasse ?? null,
+    despesas: extracted.despesas ? mergeDespesas(existing?.despesas ?? null, extracted.despesas) : existing?.despesas ?? null,
+    reajuste: extracted.reajuste ? mergeReajustes(existing?.reajuste ?? null, extracted.reajuste) : existing?.reajuste ?? null,
   }
 }
 
@@ -262,10 +357,12 @@ async function extractDocuments(
   let repasse: RepasseAnalysis | null = null
   let despesas: DespesasAnalysis | null = null
   let reajuste: ReajusteAnalysis | null = null
-  const extractable = classifications.filter((classification) => classification.documentType !== "desconhecido")
+  const extractable = classifications
+    .map((classification, index) => ({ classification, document: documents[index] }))
+    .filter((pair) => pair.classification.documentType !== "desconhecido")
 
-  for (const [index, classification] of extractable.entries()) {
-    const document = documents.find((item) => item.fileName === classification.fileName)
+  for (const [index, pair] of extractable.entries()) {
+    const { classification, document } = pair
     if (!document) continue
 
     events.push(
@@ -280,7 +377,8 @@ async function extractDocuments(
       ),
     )
 
-    if (classification.documentType === "prestacao_contas" && !prestacao) {
+    if (classification.documentType === "prestacao_contas") {
+      if (prestacao) throw new Error("Envie somente uma prestação de contas por remessa.")
       prestacao = applyFechamentoContextToPrestacao(
         await extractPrestacaoAliveFromPdf(document, competencia),
         competencia,
@@ -288,16 +386,16 @@ async function extractDocuments(
       )
     }
 
-    if (classification.documentType === "comprovante_repasse" && !repasse) {
-      repasse = await extractRepasseFromPdf(document)
+    if (classification.documentType === "comprovante_repasse") {
+      repasse = mergeRepasses(repasse, await extractRepasseFromPdf(document))
     }
 
-    if (classification.documentType === "despesas_comprovantes" && !despesas) {
-      despesas = await extractDespesasFromPdf(document)
+    if (classification.documentType === "despesas_comprovantes") {
+      despesas = mergeDespesas(despesas, await extractDespesasFromPdf(document))
     }
 
-    if (classification.documentType === "relatorio_reajuste" && !reajuste) {
-      reajuste = await extractReajusteFromPdf(document)
+    if (classification.documentType === "relatorio_reajuste") {
+      reajuste = mergeReajustes(reajuste, await extractReajusteFromPdf(document))
     }
 
     events.push(
@@ -314,6 +412,75 @@ async function extractDocuments(
   }
 
   return { prestacao, repasse, despesas, reajuste, events }
+}
+
+export const MIN_CLASSIFICATION_CONFIDENCE = 0.8
+
+export function enforceClassificationConfidence(classification: ClassifiedDocument): ClassifiedDocument {
+  if (classification.documentType === "desconhecido" || classification.confidence >= MIN_CLASSIFICATION_CONFIDENCE) {
+    return classification
+  }
+  return {
+    ...classification,
+    documentType: "desconhecido",
+    reason: `Classificacao abaixo do limiar (${classification.confidence.toFixed(2)} < ${MIN_CLASSIFICATION_CONFIDENCE.toFixed(2)}). ${classification.reason}`,
+  }
+}
+
+export function mergeRepasses(current: RepasseAnalysis | null, next: RepasseAnalysis): RepasseAnalysis {
+  if (!current) return next
+  return {
+    ...next,
+    valor: current.valor === null || next.valor === null ? null : roundMoney(current.valor + next.valor),
+    data: current.data === next.data ? next.data : null,
+    origem_nome: sameOrNull(current.origem_nome, next.origem_nome),
+    destino_nome: sameOrNull(current.destino_nome, next.destino_nome),
+    destino_banco: sameOrNull(current.destino_banco, next.destino_banco),
+    destino_agencia: sameOrNull(current.destino_agencia, next.destino_agencia),
+    destino_conta: sameOrNull(current.destino_conta, next.destino_conta),
+    protocolo: null,
+    campos_ausentes: unique([...current.campos_ausentes, ...next.campos_ausentes]),
+    observacoes: unique([...current.observacoes, ...next.observacoes, "Comprovantes parciais consolidados na remessa."]),
+    confianca_geral: Math.min(current.confianca_geral, next.confianca_geral),
+  }
+}
+
+export function mergeDespesas(current: DespesasAnalysis | null, next: DespesasAnalysis): DespesasAnalysis {
+  if (!current) return next
+  const despesas = dedupeObjects([...current.despesas, ...next.despesas])
+  return {
+    despesas,
+    total_despesas: roundMoney(despesas.reduce((sum, item) => sum + item.valor, 0)),
+    campos_ausentes: unique([...current.campos_ausentes, ...next.campos_ausentes]),
+    observacoes: unique([...current.observacoes, ...next.observacoes]),
+    confianca_geral: Math.min(current.confianca_geral, next.confianca_geral),
+  }
+}
+
+export function mergeReajustes(current: ReajusteAnalysis | null, next: ReajusteAnalysis): ReajusteAnalysis {
+  if (!current) return next
+  return {
+    itens: dedupeObjects([...current.itens, ...next.itens]),
+    campos_ausentes: unique([...current.campos_ausentes, ...next.campos_ausentes]),
+    observacoes: unique([...current.observacoes, ...next.observacoes]),
+    confianca_geral: Math.min(current.confianca_geral, next.confianca_geral),
+  }
+}
+
+function sameOrNull(left: string | null, right: string | null) {
+  return left === right ? right : null
+}
+
+function unique(values: string[]) {
+  return [...new Set(values)]
+}
+
+function dedupeObjects<T>(values: T[]) {
+  return [...new Map(values.map((value) => [JSON.stringify(value), value])).values()]
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
 function applyFechamentoContextToPrestacao(

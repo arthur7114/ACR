@@ -160,6 +160,17 @@ Estados e acoes relevantes:
 - Correções associadas: `SIT=ALUG` sem lançamento é inadimplência explícita; extrato consolidado é escopado antes dos cálculos; TED global é dividida igualmente entre os empreendimentos; `Vencimento` do cabeçalho alimenta as datas do eGestor quando não há comprovante externo.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — hardening do processamento documental (2026-08-11)
+
+- O contrato visual permanece o mesmo; a tela de Configurações acrescenta o
+  perfil ao criar/listar usuários.
+- Classificação abaixo de 80% fica pendente e nunca escolhe extrator por
+  aproximação. Parser César reconhecido falha fechado em vez de cair na IA.
+- Remessas adicionais preservam o conjunto anterior, recebem número crescente,
+  ignoram repetição por SHA-256 e consolidam comprovantes parciais distintos.
+- Processamento concorrente usa claim atômico e a persistência financeira é uma
+  troca transacional, preservando correções manuais.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

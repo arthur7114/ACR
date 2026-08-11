@@ -388,6 +388,10 @@ function applyFinancialDimensions(
   // inteiro (César Rêgo cobre dois empreendimentos no mesmo extrato), deixando
   // aluguel/base maiores que a receita do fechamento. A base inclui o IPTU.
   const commission = commissionBaseComponents(prestacao.receitas_por_imovel)
+  const totalRepasseBruto = sumRows(prestacao.receitas_por_imovel, "repasse")
+  const valorComprovado = analysis.totals.repasse_embutido
+    ? reconciliation.repasseDeclarado
+    : analysis.totals.valor_comprovado
   return {
     ...analysis,
     prestacao: {
@@ -429,6 +433,12 @@ function applyFinancialDimensions(
           reconciliation.entradasPassagem,
       ),
       total_a_repassar: reconciliation.repasseCalculado,
+      total_repasse_bruto: totalRepasseBruto,
+      valor_comprovado: valorComprovado,
+      diferenca_repasse:
+        valorComprovado === null
+          ? null
+          : roundMoney(Math.abs(reconciliation.repasseCalculado - valorComprovado)),
       entradas_passagem: reconciliation.entradasPassagem,
       saidas_passagem: reconciliation.saidasPassagem,
       total_tarifas: reconciliation.tarifas,

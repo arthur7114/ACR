@@ -15,7 +15,7 @@ import type { FechamentoContext } from "@/lib/fechamento-context"
 import { ratearTedPorImovel } from "@/lib/despesas-locador"
 import { scopeCesarRegoAnalysisToDevelopment } from "@/lib/indicadores-repair"
 import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
-import { materializeIndicadoresSnapshots } from "./indicadores-snapshots"
+import { buildIndicadoresSnapshotRows, loadActiveIndicadoresProperties } from "./indicadores-snapshots"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
 import { createSupabaseAdmin } from "./supabase"
 
@@ -75,21 +75,23 @@ export async function persistPackage(input: PersistPackageInput) {
   )
 
   // Fetch existing resolved validations to decide status and preserve them
-  const { data: existingFechamento } = await supabase
+  const { data: existingFechamento, error: existingFechamentoError } = await supabase
     .from("fechamentos")
-    .select("id")
+    .select("id,atualizado_em")
     .eq("imobiliaria_id", imobiliaria.id)
     .eq("empreendimento_id", empreendimento.id)
     .eq("competencia", competencia)
     .maybeSingle()
+  if (existingFechamentoError) throw existingFechamentoError
 
   let resolvedValidations: ResolvedValidation[] = []
   if (existingFechamento) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("validacoes")
       .select("tipo_validacao, status, justificativa, resolvido_por, resolvido_em")
       .eq("fechamento_id", existingFechamento.id)
       .in("status", ["resolvida", "ignorada_com_justificativa"])
+    if (error) throw error
     resolvedValidations = data || []
   }
 
@@ -98,35 +100,17 @@ export async function persistPackage(input: PersistPackageInput) {
     analysis.rechecks.some((c) => c.status === "failed" && !resolvedValidations.some((r) => r.tipo_validacao === c.id)) ||
     analysis.guardrails.some((g) => g.status === "blocked" && !resolvedValidations.some((r) => r.tipo_validacao === g.id))
 
-  const { data: fechamento, error: fechamentoError } = await supabase
-    .from("fechamentos")
-    .upsert(
-      {
+  let fechamento = existingFechamento
+  if (!fechamento) {
+    const created = await supabase.from("fechamentos").insert({
         imobiliaria_id: imobiliaria.id,
         empreendimento_id: empreendimento.id,
         competencia,
-        status: hasUnresolvedBlocking ? "pendente_revisao" : "processado_com_sucesso",
-        total_receitas: analysis.totals.total_receitas,
-        total_despesas: analysis.totals.total_despesas,
-        total_comissoes: analysis.totals.total_comissoes,
-        total_repassar: analysis.totals.total_a_repassar,
-        valor_repassado_comprovante: analysis.totals.valor_comprovado,
-        diferenca_total: analysis.totals.diferenca_repasse,
-        parecer_tecnico: {
-          parecer: analysis.parecer,
-          rechecks: analysis.rechecks,
-          guardrails: analysis.guardrails,
-          documents: analysis.documents,
-          totals: analysis.totals,
-        },
-        analise_completa: analysis,
-      },
-      { onConflict: "imobiliaria_id,empreendimento_id,competencia" },
-    )
-    .select("id")
-    .single()
-
-  if (fechamentoError) throw fechamentoError
+        status: "rascunho",
+      }).select("id,atualizado_em").single()
+    if (created.error) throw created.error
+    fechamento = created.data
+  }
 
   const persistedDocuments = await persistDocuments({
     supabase,
@@ -135,8 +119,10 @@ export async function persistPackage(input: PersistPackageInput) {
   })
 
   const firstStoragePath = persistedDocuments[0]?.storagePath ?? null
+  let newDocumentIndex = 0
   const documents = analysis.documents.map((document) => {
-    const persisted = persistedDocuments.find((item) => item.fileName === document.fileName)
+    if (document.documentoId) return document
+    const persisted = persistedDocuments[newDocumentIndex++]
     return {
       ...document,
       storagePath: persisted?.storagePath ?? null,
@@ -144,22 +130,8 @@ export async function persistPackage(input: PersistPackageInput) {
     }
   })
 
-  // Clear previous movimentacoes and validacoes for this fechamento to avoid duplication on reprocessing
-  const { error: deleteMovError } = await supabase
-    .from("movimentacoes")
-    .delete()
-    .eq("fechamento_id", fechamento.id)
-
-  if (deleteMovError) throw deleteMovError
-
-  const { error: deleteValError } = await supabase
-    .from("validacoes")
-    .delete()
-    .eq("fechamento_id", fechamento.id)
-
-  if (deleteValError) throw deleteValError
-
-  await persistMovimentacoes({
+  analysis = { ...analysis, documents }
+  const generatedMovementRows = buildPackageMovimentacoes({
     fechamentoId: fechamento.id as string,
     competencia,
     documents,
@@ -168,8 +140,15 @@ export async function persistPackage(input: PersistPackageInput) {
     despesas: analysis.despesas,
     reajuste: analysis.reajuste,
   })
+  const { data: manualMovements, error: manualMovementsError } = await supabase
+    .from("movimentacoes")
+    .select("tipo_movimentacao,categoria,descricao,imovel_id,origem_documental")
+    .eq("fechamento_id", fechamento.id)
+    .eq("corrigido_manualmente", true)
+  if (manualMovementsError) throw manualMovementsError
+  const movementRows = preserveManualMovementOverrides(generatedMovementRows, manualMovements ?? [])
 
-  await persistValidacoes({
+  const validationRows = buildValidacoesRows({
     fechamentoId: fechamento.id as string,
     documents,
     parecer: analysis.parecer,
@@ -178,14 +157,50 @@ export async function persistPackage(input: PersistPackageInput) {
     resolvedValidations,
   })
 
-  await materializeIndicadoresSnapshots({
+  const properties = await loadActiveIndicadoresProperties({
     supabase,
-    fechamentoId: fechamento.id as string,
     imobiliariaId: imobiliaria.id as string,
     empreendimentoId: empreendimento.id as string,
     competencia,
+  })
+  const snapshots = buildIndicadoresSnapshotRows({
+    properties,
+    fechamentoId: fechamento.id as string,
+    competencia,
     analysis,
   })
+  if (snapshots.unlinkedLineCount > 0) {
+    throw new Error(`Existem ${snapshots.unlinkedLineCount} linhas sem vínculo inequívoco de imóvel.`)
+  }
+
+  const { error: persistenceError } = await supabase.rpc("persistir_pacote_fechamento_v1", {
+    p_fechamento_id: fechamento.id,
+    p_esperado_atualizado_em: fechamento.atualizado_em,
+    p_fechamento_patch: {
+      status: hasUnresolvedBlocking ? "pendente_revisao" : "processado_com_sucesso",
+      total_receitas: analysis.totals.total_receitas,
+      total_despesas: analysis.totals.total_despesas,
+      total_comissoes: analysis.totals.total_comissoes,
+      total_repassar: analysis.totals.total_a_repassar,
+      valor_repassado_comprovante: analysis.totals.valor_comprovado,
+      diferenca_total: analysis.totals.diferenca_repasse,
+      parecer_tecnico: {
+        parecer: analysis.parecer,
+        rechecks: analysis.rechecks,
+        guardrails: analysis.guardrails,
+        documents,
+        totals: analysis.totals,
+      },
+      analise_completa: analysis,
+    },
+    p_movimentacoes: movementRows,
+    p_snapshots: snapshots.rows,
+    p_validacoes: validationRows,
+    p_documentos_ids: input.files.flatMap((file, index) =>
+      file.classification.documentType === "desconhecido" ? [] : [persistedDocuments[index]?.documentoId].filter(Boolean),
+    ),
+  })
+  if (persistenceError) throw persistenceError
 
   return {
     fechamentoId: fechamento.id as string,
@@ -209,8 +224,18 @@ export async function persistDocuments({
     documentoId: string
   }> = []
 
+  const { data: latestRemessa, error: remessaError } = await supabase
+    .from("documentos_fechamento")
+    .select("remessa_numero")
+    .eq("fechamento_id", fechamentoId)
+    .order("remessa_numero", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (remessaError) throw remessaError
+  const remessaNumero = Number(latestRemessa?.remessa_numero ?? 0) + 1
+
   for (const file of files) {
-    persisted.push(await persistDocument({ supabase, file, fechamentoId }))
+    persisted.push(await persistDocument({ supabase, file, fechamentoId, remessaNumero }))
   }
 
   return persisted
@@ -220,6 +245,7 @@ interface PersistDocumentInput {
   supabase: ReturnType<typeof createSupabaseAdmin>
   file: PackageFileForPersistence
   fechamentoId: string
+  remessaNumero: number
 }
 
 async function persistDocument(input: PersistDocumentInput) {
@@ -243,6 +269,7 @@ async function persistDocument(input: PersistDocumentInput) {
     source.storagePath,
     sha256,
     source.sourceId,
+    input.remessaNumero,
   )
   const { data, error } = await input.supabase
     .from("documentos_fechamento")
@@ -282,6 +309,9 @@ async function persistLegacyDocument(
         input.file,
         input.fechamentoId,
         storagePath,
+        undefined,
+        undefined,
+        input.remessaNumero,
       ),
     )
     .select("id,arquivo_url")
@@ -407,6 +437,7 @@ function buildDocumentRow(
   storagePath: string,
   sha256?: string,
   sourceId?: string,
+  remessaNumero = 1,
 ) {
   return {
     fechamento_id: fechamentoId,
@@ -415,17 +446,14 @@ function buildDocumentRow(
     arquivo_url: storagePath,
     mime_type: file.fileType,
     tamanho_bytes: file.fileSize,
-    status_processamento:
-      file.classification.documentType === "desconhecido"
-        ? "erro"
-        : "processado",
+    status_processamento: file.classification.documentType === "desconhecido" ? "erro" : "aguardando",
     confianca_classificacao: file.classification.confidence,
     parser_versao: "mastra-package-v2",
     erro_processamento:
       file.classification.documentType === "desconhecido"
         ? file.classification.reason
         : null,
-    remessa_numero: 1,
+    remessa_numero: remessaNumero,
     ...(sha256
       ? {
           sha256,
@@ -488,7 +516,7 @@ function isStorageAlreadyExists(error: unknown) {
   )
 }
 
-async function persistMovimentacoes({
+export function buildPackageMovimentacoes({
   fechamentoId,
   competencia,
   documents,
@@ -505,7 +533,6 @@ async function persistMovimentacoes({
   despesas: DespesasAnalysis | null
   reajuste: ReajusteAnalysis | null
 }) {
-  const supabase = createSupabaseAdmin()
   const rows = [
     ...buildPrestacaoMovimentacoes({
       fechamentoId,
@@ -575,10 +602,31 @@ async function persistMovimentacoes({
     })) ?? []),
   ]
 
-  if (rows.length === 0) return
+  return rows
+}
 
-  const { error } = await supabase.from("movimentacoes").insert(rows)
-  if (error) throw error
+type MovementIdentity = {
+  tipo_movimentacao: string
+  categoria?: string | null
+  descricao?: string | null
+  imovel_id?: string | null
+  origem_documental?: string | null
+}
+
+export function preserveManualMovementOverrides<T extends MovementIdentity>(generated: T[], manual: MovementIdentity[]): T[] {
+  const manualKeys = new Set(manual.map(movementIdentity))
+  return generated.filter((row) => !manualKeys.has(movementIdentity(row)))
+}
+
+function movementIdentity(row: {
+  tipo_movimentacao: string
+  categoria?: string | null
+  descricao?: string | null
+  imovel_id?: string | null
+  origem_documental?: string | null
+}) {
+  const descriptionFallback = row.imovel_id ? "" : row.descricao ?? ""
+  return [row.tipo_movimentacao, row.categoria ?? "", row.imovel_id ?? "", row.origem_documental ?? "", descriptionFallback].join("|")
 }
 
 export function buildPrestacaoMovimentacoes({

@@ -494,11 +494,12 @@ function TabButton({ active, icon: Icon, label, onClick }: { active: boolean; ic
   )
 }
 
-type Usuario = { id: string; email: string; criado_em: string; ultimo_acesso: string | null }
+type Usuario = { id: string; email: string; criado_em: string; ultimo_acesso: string | null; role: string }
 
 function UsuariosTab() {
   const [usuarios, setUsuarios] = useState<Usuario[] | "loading" | "error">("loading")
   const [novoEmail, setNovoEmail] = useState("")
+  const [novoPerfil, setNovoPerfil] = useState("operador")
   const [criando, setCriando] = useState(false)
   const [senhaGerada, setSenhaGerada] = useState<{ email: string; senha: string } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -522,7 +523,7 @@ function UsuariosTab() {
     const response = await fetch("/api/admin/usuarios", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: novoEmail }),
+      body: JSON.stringify({ email: novoEmail, role: novoPerfil }),
     })
     const payload = await response.json()
     setCriando(false)
@@ -533,6 +534,23 @@ function UsuariosTab() {
     setSenhaGerada({ email: payload.usuario.email, senha: payload.senha_temporaria })
     setNovoEmail("")
     carregar()
+  }
+
+  async function alterarPerfil(id: string, role: string) {
+    setErro(null)
+    const response = await fetch("/api/admin/usuarios", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, role }),
+    })
+    const payload = await response.json()
+    if (!response.ok || payload.error) {
+      setErro(payload.error ?? "Erro ao alterar perfil.")
+      return
+    }
+    setUsuarios((current) => Array.isArray(current)
+      ? current.map((usuario) => usuario.id === id ? { ...usuario, role } : usuario)
+      : current)
   }
 
   return (
@@ -550,6 +568,19 @@ function UsuariosTab() {
             onChange={(e) => setNovoEmail(e.target.value)}
             className="h-9 rounded-lg border border-[#D5DDD6] px-3 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
           />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-[#3D4F3F]">Perfil</span>
+          <select
+            value={novoPerfil}
+            onChange={(event) => setNovoPerfil(event.target.value)}
+            className="h-9 rounded-lg border border-[#D5DDD6] bg-white px-3 text-[13px] focus:border-[#2D8C3A] focus:outline-none"
+          >
+            <option value="visualizador">Visualizador</option>
+            <option value="operador">Operador</option>
+            <option value="aprovador">Aprovador</option>
+            <option value="admin">Administrador</option>
+          </select>
         </label>
         <button
           type="submit"
@@ -578,6 +609,7 @@ function UsuariosTab() {
               <tr>
                 <th className="px-3 py-2 text-left font-medium">E-mail</th>
                 <th className="px-3 py-2 text-left font-medium">Criado em</th>
+                <th className="px-3 py-2 text-left font-medium">Perfil</th>
                 <th className="px-3 py-2 text-left font-medium">Último acesso</th>
               </tr>
             </thead>
@@ -586,6 +618,19 @@ function UsuariosTab() {
                 <tr key={u.id}>
                   <td className="px-3 py-2 text-[#1A2B1C]">{u.email}</td>
                   <td className="px-3 py-2 text-[#3D4F3F]">{new Date(u.criado_em).toLocaleDateString("pt-BR")}</td>
+                  <td className="px-3 py-2 text-[#3D4F3F]">
+                    <select
+                      aria-label={`Perfil de ${u.email}`}
+                      value={u.role}
+                      onChange={(event) => void alterarPerfil(u.id, event.target.value)}
+                      className="h-8 rounded-md border border-[#D5DDD6] bg-white px-2 text-[12px]"
+                    >
+                      <option value="visualizador">Visualizador</option>
+                      <option value="operador">Operador</option>
+                      <option value="aprovador">Aprovador</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                  </td>
                   <td className="px-3 py-2 text-[#3D4F3F]">
                     {u.ultimo_acesso ? new Date(u.ultimo_acesso).toLocaleDateString("pt-BR") : "Nunca"}
                   </td>

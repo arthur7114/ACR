@@ -49,7 +49,9 @@ Componentes principais:
 - Mock segue como contrato visual/funcional.
 - Navegacao interna usa estado local `currentView`.
 - Ha migracao inicial Supabase para fechamentos, documentos, movimentacoes e validacoes.
-- Ainda nao ha auth/RBAC real.
+- Auth e RBAC estão ativos no middleware e reforçados na resolução bloqueante:
+  `visualizador`, `operador`, `aprovador` e `admin`, com ausência de perfil em
+  modo somente leitura.
 - Ha endpoint Next para upload real de PDF de prestacao, workflow Mastra, chamada OpenAI encapsulada no step de extracao e persistencia em Supabase Storage/banco.
 - A revisao renderiza dados extraidos quando a analise existe, mantendo fallback mockado e exibindo parecer tecnico, rechecks e guardrails.
 - `.env` local foi preenchido pelo usuario e esta ignorado pelo Git.

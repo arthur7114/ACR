@@ -197,6 +197,42 @@ test("documentos opcionais ausentes nao alteram o parecer tecnico operacional", 
   assert.equal(result.parecer.status, "aprovado_tecnico")
 })
 
+test("prestacao Alive isolada nao substitui comprovante bancario", () => {
+  const result = validatePackage({
+    documents: [requiredDocuments[0]],
+    prestacao: createPrestacao(),
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.repasse_embutido, false)
+  assert.equal(result.totals.valor_comprovado, null)
+  assert.equal(result.rechecks.find((item) => item.id === "required_comprovante_repasse")?.status, "failed")
+  assert.equal(result.rechecks.find((item) => item.id === "repasse_conciliation")?.status, "failed")
+  assert.equal(result.parecer.status, "bloqueado")
+})
+
+test("extrato consolidado explicitamente marcado usa o repasse embutido", () => {
+  const prestacao = createPrestacao({
+    resumo_financeiro: {
+      ...createPrestacao().resumo_financeiro,
+      repasse_embutido: true,
+    },
+  })
+  const result = validatePackage({
+    documents: [requiredDocuments[0]],
+    prestacao,
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.repasse_embutido, true)
+  assert.equal(result.totals.valor_comprovado, 2700)
+  assert.equal(result.rechecks.find((item) => item.id === "required_comprovante_repasse")?.status, "passed")
+})
+
 test("totaliza receitas por categoria paga pelo inquilino", () => {
   const prestacao = createPrestacao()
   prestacao.receitas_por_imovel[0].garagem = 50

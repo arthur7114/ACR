@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { validarNovoUsuario, gerarSenhaTemporaria } from "./admin-usuarios.ts"
+import { validarNovoUsuario, validarPerfilUsuario, gerarSenhaTemporaria } from "./admin-usuarios.ts"
 
 test("valida email e usa senha temporaria quando senha nao informada", () => {
   const result = validarNovoUsuario({ email: "novo@acr.com", senha: undefined })
@@ -21,4 +21,9 @@ test("gerarSenhaTemporaria gera senhas diferentes a cada chamada", () => {
   const b = gerarSenhaTemporaria()
   assert.equal(a.length, 12)
   assert.notEqual(a, b)
+})
+
+test("valida perfis permitidos e rejeita valores desconhecidos", () => {
+  assert.equal(validarPerfilUsuario("aprovador"), "aprovador")
+  assert.throws(() => validarPerfilUsuario("superuser"), /perfil/i)
 })

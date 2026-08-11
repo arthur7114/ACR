@@ -52,6 +52,11 @@ Papeis do MVP:
 
 Aprovacao exige papel `aprovador` ou `admin`.
 
+O perfil vive em `auth.users.raw_app_meta_data.role` e é propagado pelo JWT.
+Ausência ou valor inválido cai em `visualizador` (fail-closed). Mutações exigem
+no mínimo `operador`; resolução bloqueante e aprovação exigem `aprovador`; APIs
+de usuários e configuração eGestor exigem `admin`.
+
 ## Regras financeiras
 
 - Competência original é o mês/ano a que cada receita pertence; competência do fechamento/recebimento é o mês em que o dinheiro entrou. Uma não sobrescreve a outra.
@@ -70,6 +75,10 @@ Aprovacao exige papel `aprovador` ou `admin`.
 - Janela padrao de conciliacao: inicio da competencia menos 15 dias ate fim da competencia mais 45 dias.
 - Prestacao ausente gera alerta bloqueante e impede aprovacao.
 - Reprocessamento parcial deve preservar correcoes manuais.
+- O claim de processamento é uma operação condicional única no banco; dois
+  requests concorrentes não podem iniciar jobs para o mesmo fechamento.
+- A persistência derivada troca fechamento, movimentações automáticas,
+  validações e snapshots na mesma transação e sob `atualizado_em` otimista.
 - IA deve retornar JSON validavel e nunca aprovar ou calcular resultado final sem validacao deterministica.
 - Comissao administrativa deve ser validada, quando houver regra comercial ativa, pela taxa do par imobiliaria + empreendimento aplicada sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
 - Na intermediação documentada, `valor` representa o aluguel/base da comissão. IPTU não entra na base percentual, mas compõe o total recebido e o repasse da linha; a revisão deve exibir base, IPTU, total, comissão, percentual e repasse sem conflar esses conceitos.
