@@ -5,7 +5,7 @@
  *   node --import tsx scripts/repair-indicadores-confiabilidade.ts
  *   node --import tsx scripts/repair-indicadores-confiabilidade.ts --competencia 2026-03
  *
- * Escrita exige migration v2 aplicada e opt-in explícito:
+ * Escrita exige a RPC de reparo indicada nas migrations atuais e opt-in explícito:
  *   node --import tsx scripts/repair-indicadores-confiabilidade.ts --commit
  */
 import { createHash } from "node:crypto"
@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { z } from "zod"
 import type { PackageAnalysis, PrestacaoAnalysis } from "../lib/prestacao-types"
 import {
   buildCesarMonthRepairs,
@@ -33,14 +34,26 @@ import {
 } from "../lib/server/persist-package"
 import { generateEgestorPreview } from "../lib/server/egestor"
 import {
+  buildIndicadoresSnapshotRows,
+  loadActiveIndicadoresProperties,
+} from "../lib/server/indicadores-snapshots"
+import {
   type ImovelVinculoCadastro,
   vincularReceitasExistentes,
 } from "../lib/server/fechamento-imoveis"
-import { materializeIndicadoresSnapshots } from "../lib/server/indicadores-snapshots"
 
 const BUCKET = "fechamento-documentos"
 const START_COMPETENCE = "2026-01-01"
 const END_COMPETENCE = "2026-07-01"
+const resolvedValidationsSchema: z.ZodType<ResolvedValidation[]> = z.array(
+  z.object({
+    tipo_validacao: z.string(),
+    status: z.string(),
+    justificativa: z.string().nullable(),
+    resolvido_por: z.string().nullable(),
+    resolvido_em: z.string().nullable(),
+  }),
+)
 
 export interface ReliabilityRepairOptions {
   mode: "dry-run" | "commit"
@@ -149,13 +162,20 @@ export function analysesAreEquivalent(
   )
 }
 
-export function buildReparoMovimentacoes(input: {
-  fechamentoId: string
-  documentoId: string | null
-  prestacao: PrestacaoAnalysis | null
-  competencia: string
-}) {
-  return buildPrestacaoMovimentacoes(input)
+export function assertRepairCommitAllowed(
+  records: Array<Pick<RepairRecord, "kind" | "reconciliation">>,
+) {
+  const blocked = records.filter(
+    (record) =>
+      record.kind === "incomplete" ||
+      record.kind === "divergent" ||
+      (record.kind === "repaired" && !record.reconciliation?.reconciliado),
+  )
+  if (blocked.length > 0) {
+    throw new Error(
+      `Commit bloqueado: ${blocked.length} fechamento(s) incompleto(s) ou com diferença não explicada.`,
+    )
+  }
 }
 
 // Compatibilidade para reparos cirúrgicos antigos que ainda usam o RPC v2.
@@ -263,10 +283,7 @@ async function buildRepairPlan(
       ),
       source.parsed,
     )
-    const canRepairAvailableClosures =
-      plan.repairs.length > 0 &&
-      plan.repairs.every((repair) => repair.reconciliation.reconciliado)
-    if (!plan.sourceReconciled && !canRepairAvailableClosures) {
+    if (!plan.sourceReconciled) {
       const reason =
         `Documento César Rêgo ${competence} não pôde ser integralmente distribuído; ` +
         `unidades sem fechamento: ${plan.missingPropertyCodes.join(", ") || "nenhuma"}; ` +
@@ -459,16 +476,7 @@ async function loadCesarSource(
 }
 
 async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) {
-  const blocked = records.filter(
-    (record) =>
-      record.kind === "divergent" ||
-      (record.kind === "repaired" && !record.reconciliation?.reconciliado),
-  )
-  if (blocked.length > 0) {
-    throw new Error(
-      `Commit bloqueado: ${blocked.length} fechamento(s) com diferença não explicada.`,
-    )
-  }
+  assertRepairCommitAllowed(records)
 
   for (const record of records.filter((candidate) => candidate.kind === "repaired")) {
     const analysis = record.analysisRepaired!
@@ -479,7 +487,7 @@ async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) 
       total_comissoes: analysis.totals.total_comissoes,
       total_repassar: analysis.totals.total_a_repassar,
     }
-    const movimentacoes = buildReparoMovimentacoes({
+    const movimentacoes = buildPrestacaoMovimentacoes({
       fechamentoId: record.fechamentoId,
       documentoId: record.documentId,
       prestacao: analysis.prestacao,
@@ -497,34 +505,40 @@ async function commitRecords(supabase: SupabaseClient, records: RepairRecord[]) 
       guardrails: analysis.guardrails,
       resolvedValidations,
     })
-    const { error } = await supabase.rpc("aplicar_reparo_indicadores_v3", {
+    const properties = await loadActiveIndicadoresProperties({
+      supabase: supabase as never,
+      imobiliariaId: record.agencyId,
+      empreendimentoId: record.developmentId,
+      competencia: record.competence,
+    })
+    const snapshotBuild = buildIndicadoresSnapshotRows({
+      properties,
+      fechamentoId: record.fechamentoId,
+      competencia: record.competence,
+      analysis,
+      origem: "processamento",
+    })
+    if (snapshotBuild.unlinkedLineCount > 0) {
+      throw new Error(
+        `Commit bloqueado: ${snapshotBuild.unlinkedLineCount} linha(s) sem vínculo no snapshot.`,
+      )
+    }
+    const { error } = await supabase.rpc("aplicar_reparo_indicadores_v4", {
       p_fechamento_id: record.fechamentoId,
       p_esperado_atualizado_em: record.updatedAt,
       p_fechamento_patch: patch,
       p_movimentacoes: movimentacoes,
+      p_snapshots: snapshotBuild.rows,
       p_validacoes: validacoes,
       p_auditoria: [{
         usuario: "Sistema - reparo de confiabilidade dos indicadores",
-        campo_alterado: "reparo_indicadores_v2",
+        campo_alterado: "reparo_indicadores_v4",
         valor_anterior: JSON.stringify(record.before),
         valor_novo: JSON.stringify(record.after),
         justificativa: record.reason,
       }],
     })
     if (error) throw error
-
-    await materializeIndicadoresSnapshots({
-      supabase: supabase as never,
-      fechamentoId: record.fechamentoId,
-      imobiliariaId: record.agencyId,
-      empreendimentoId: record.developmentId,
-      competencia: record.competence,
-      analysis,
-      // O reparo recompõe o próprio documento do fechamento. Manter a origem
-      // nativa permite atualizar snapshots "processamento", que são protegidos
-      // contra backfills sintéticos pelo trigger do banco.
-      origem: "processamento",
-    })
   }
 
   for (const record of records.filter(
@@ -544,7 +558,7 @@ async function loadResolvedValidations(
     .eq("fechamento_id", fechamentoId)
     .eq("status", "resolvida")
   if (error) throw error
-  return (data ?? []) as ResolvedValidation[]
+  return resolvedValidationsSchema.parse(data ?? [])
 }
 
 async function regenerateExistingUnsentPreview(

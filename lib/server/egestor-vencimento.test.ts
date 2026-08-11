@@ -27,6 +27,7 @@ test("sem dia configurado retorna null (mantem competencia no chamador)", () => 
 test("vencimento da prestacao liquida recebimento sem comprovante", () => {
   assert.deepEqual(
     resolveEgestorDates({
+      tipo: "recebimento",
       competencia: "2026-07-01",
       diaVencimentoPadrao: null,
       repasseDate: null,
@@ -44,6 +45,7 @@ test("vencimento da prestacao liquida recebimento sem comprovante", () => {
 test("comprovante prevalece no credito e pagamento, sem mudar vencimento documental", () => {
   assert.deepEqual(
     resolveEgestorDates({
+      tipo: "recebimento",
       competencia: "2026-07-01",
       diaVencimentoPadrao: 10,
       repasseDate: "2026-08-12",
@@ -54,6 +56,24 @@ test("comprovante prevalece no credito e pagamento, sem mudar vencimento documen
       dtCred: "2026-08-12",
       dtPgto: "2026-08-12",
       liquidado: true,
+    },
+  )
+})
+
+test("vencimento da prestacao nao liquida pagamentos sem comprovante", () => {
+  assert.deepEqual(
+    resolveEgestorDates({
+      tipo: "pagamento",
+      competencia: "2026-07-01",
+      diaVencimentoPadrao: 10,
+      repasseDate: null,
+      statementDueDate: "2026-08-10",
+    }),
+    {
+      dtVenc: "2026-08-10",
+      dtCred: "2026-07-01",
+      dtPgto: "",
+      liquidado: false,
     },
   )
 })

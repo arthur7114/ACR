@@ -5,10 +5,28 @@ import { buildPrestacaoMovimentacoes } from "../lib/server/persist-package.ts"
 import {
   attachAnalysisToExistingProperties,
   analysesAreEquivalent,
+  assertRepairCommitAllowed,
   auditExistingAnalysis,
-  buildReparoMovimentacoes,
   parseReliabilityRepairArgs,
 } from "./repair-indicadores-confiabilidade.ts"
+
+test("commit bloqueia qualquer fechamento incompleto", () => {
+  assert.throws(
+    () =>
+      assertRepairCommitAllowed([
+        { kind: "incomplete", reconciliation: null },
+      ]),
+    /incompleto/,
+  )
+  assert.doesNotThrow(() =>
+    assertRepairCommitAllowed([
+      {
+        kind: "repaired",
+        reconciliation: { reconciliado: true } as never,
+      },
+    ]),
+  )
+})
 
 test("reparador é dry-run por padrão e valida os filtros", () => {
   assert.deepEqual(parseReliabilityRepairArgs([]), {
@@ -129,7 +147,7 @@ test("commit envia receitas e rateio TED ao RPC atomico", () => {
     "pré-condição: buildPrestacaoMovimentacoes deve emitir a despesa de rateio TED",
   )
 
-  const movimentacoes = buildReparoMovimentacoes({
+  const movimentacoes = buildPrestacaoMovimentacoes({
     fechamentoId: "fechamento",
     documentoId: null,
     prestacao,

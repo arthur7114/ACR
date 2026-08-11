@@ -561,6 +561,7 @@ function buildPayload(
   // seguinte a competencia, no dia configurado na regra comercial. Sem dia
   // configurado, mantem o comportamento historico (competencia).
   const dates = resolveEgestorDates({
+    tipo: draft.tipo,
     competencia: fechamento.competencia,
     diaVencimentoPadrao,
     repasseDate,
@@ -600,16 +601,18 @@ function buildPayload(
 }
 
 export function resolveEgestorDates(input: {
+  tipo: EgestorTipoLancamento
   competencia: string
   diaVencimentoPadrao: number | null
   repasseDate: string | null
   statementDueDate: string | null
 }) {
   const competencia = toDateOnly(input.competencia)
-  const settlementDate = input.repasseDate ?? input.statementDueDate
+  const statementDueDate = input.tipo === "recebimento" ? input.statementDueDate : null
+  const settlementDate = input.repasseDate ?? statementDueDate
   return {
     dtVenc:
-      input.statementDueDate ??
+      statementDueDate ??
       input.repasseDate ??
       proximoVencimento(input.competencia, input.diaVencimentoPadrao) ??
       competencia,
