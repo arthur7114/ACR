@@ -40,6 +40,14 @@ export interface Gabarito {
   escopoEmpreendimentos: string[]
   /** Só os indicadores que a planilha realmente traz; os demais ficam de fora. */
   esperado: Partial<Record<IndicatorKey, number>>
+  /**
+   * Folga por indicador, quando o default de R$ 0,02 não cabe. Uso legítimo:
+   * agregado somado sobre muitas linhas comparado contra subtotais também
+   * arredondados na fonte — o resíduo de arredondamento cresce com a contagem de
+   * linhas e não indica erro de dado. Cada folga aqui deve vir com nota
+   * justificando o valor; não é lugar para afrouxar divergência real.
+   */
+  tolerancias?: Partial<Record<IndicatorKey, number>>
 }
 
 export interface ComparisonRow {
@@ -91,6 +99,7 @@ export function listarUnidadesSemLinha(
 export function compararIndicadores(
   esperado: Partial<Record<IndicatorKey, number>>,
   obtido: Record<IndicatorKey, number>,
+  tolerancias: Partial<Record<IndicatorKey, number>> = {},
 ): ComparisonRow[] {
   return INDICATOR_ORDER.map((indicador) => {
     const valorEsperado = esperado[indicador]
@@ -99,9 +108,13 @@ export function compararIndicadores(
       return { indicador, esperado: valorObtido, obtido: valorObtido, diff: 0, ok: true, naoVerificavel: true }
     }
     const diff = roundMoney(valorObtido - valorEsperado)
+    // Contagem de unidades é exata; folga só faz sentido para valor monetário.
+    const tolerancia = UNIT_INDICATORS.has(indicador)
+      ? 0
+      : tolerancias[indicador] ?? MONEY_TOLERANCE
     const ok = UNIT_INDICATORS.has(indicador)
       ? valorObtido === valorEsperado
-      : Math.abs(diff) <= MONEY_TOLERANCE
+      : Math.abs(diff) <= tolerancia
     return { indicador, esperado: valorEsperado, obtido: valorObtido, diff, ok }
   })
 }
@@ -136,6 +149,7 @@ interface GabaritoBruto {
   competencia?: unknown
   escopoEmpreendimentos?: unknown
   esperado?: unknown
+  tolerancias?: unknown
 }
 
 // Indicador ausente é legítimo: significa que a planilha não traz aquele número.
@@ -161,6 +175,29 @@ function validarEsperado(valor: unknown): Partial<Record<IndicatorKey, number>> 
   return resultado
 }
 
+// Tolerancia por indicador e opcional. Quando presente, cada valor tem de ser
+// numero finito positivo (folga negativa nao faz sentido). Chave fora de
+// INDICATOR_ORDER e erro de gabarito, nao ignorada em silencio.
+function validarTolerancias(valor: unknown): Partial<Record<IndicatorKey, number>> {
+  if (valor === undefined || valor === null) return {}
+  if (typeof valor !== "object") {
+    throw new Error("Gabarito com \"tolerancias\" que nao e objeto.")
+  }
+  const bruto = valor as Record<string, unknown>
+  const resultado: Partial<Record<IndicatorKey, number>> = {}
+  for (const chave of Object.keys(bruto)) {
+    if (!(INDICATOR_ORDER as readonly string[]).includes(chave)) {
+      throw new Error(`Gabarito com tolerancia para indicador desconhecido: "${chave}".`)
+    }
+    const numero = bruto[chave]
+    if (typeof numero !== "number" || !Number.isFinite(numero) || numero < 0) {
+      throw new Error(`Gabarito com tolerancia invalida para "${chave}": ${JSON.stringify(numero)}.`)
+    }
+    resultado[chave as IndicatorKey] = numero
+  }
+  return resultado
+}
+
 export function lerGabarito(caminho: string): Gabarito {
   const conteudo = readFileSync(caminho, "utf8")
   const bruto = JSON.parse(conteudo) as GabaritoBruto
@@ -178,6 +215,7 @@ export function lerGabarito(caminho: string): Gabarito {
     competencia: bruto.competencia,
     escopoEmpreendimentos: bruto.escopoEmpreendimentos as string[],
     esperado: validarEsperado(bruto.esperado),
+    tolerancias: validarTolerancias(bruto.tolerancias),
   }
 }
 
@@ -635,7 +673,7 @@ async function main() {
   const supabase = createSupabaseAdmin()
 
   const { indicadores: obtido, semLinha } = await calcularObtido(supabase, gabarito)
-  const linhas = compararIndicadores(gabarito.esperado, obtido)
+  const linhas = compararIndicadores(gabarito.esperado, obtido, gabarito.tolerancias)
 
   console.log(`Competência: ${gabarito.competencia}`)
   console.log(`Escopo: ${gabarito.escopoEmpreendimentos.join(", ")}`)

@@ -268,3 +268,21 @@ test("guarda de completude devolve vazio quando toda unidade ativa tem linha", (
 
   assert.deepEqual(listarUnidadesSemLinha(imoveis, snapshots), [])
 })
+
+test("tolerancia por indicador do gabarito tem prioridade sobre o default", () => {
+  const esperado = { caixaDoMes: 66985.54, aluguelRecebidoCompetencia: 100 } as Parameters<typeof compararIndicadores>[0]
+  const obtido = { caixaDoMes: 66985.49, aluguelRecebidoCompetencia: 100 } as Parameters<typeof compararIndicadores>[1]
+
+  // Sem tolerancia declarada, o resíduo de 0.05 falha contra o default de 0.02.
+  const semTol = compararIndicadores(esperado, obtido)
+  assert.equal(semTol.find((l) => l.indicador === "caixaDoMes")?.ok, false)
+
+  // Declarada, a folga cobre o resíduo de arredondamento.
+  const comTol = compararIndicadores(esperado, obtido, { caixaDoMes: 0.1 })
+  assert.equal(comTol.find((l) => l.indicador === "caixaDoMes")?.ok, true)
+
+  // A tolerancia de um indicador nao vaza para os outros.
+  const obtido2 = { caixaDoMes: 66985.49, aluguelRecebidoCompetencia: 100.05 } as Parameters<typeof compararIndicadores>[1]
+  const comTol2 = compararIndicadores(esperado, obtido2, { caixaDoMes: 0.1 })
+  assert.equal(comTol2.find((l) => l.indicador === "aluguelRecebidoCompetencia")?.ok, false)
+})
