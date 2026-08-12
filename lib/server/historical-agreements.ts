@@ -1,9 +1,9 @@
 import type { AcordoRescisaoRecebido } from "@/lib/prestacao-types"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { buildAgreementPaymentKey } from "./package-rechecks"
-import { createSupabaseAdmin } from "./supabase"
 
 export async function loadHistoricalAgreementKeys(
-  supabase: ReturnType<typeof createSupabaseAdmin>,
+  supabase: SupabaseClient,
   context: { id?: string | null; imobiliariaId?: string | null; empreendimentoId?: string | null },
 ) {
   if (!context.imobiliariaId || !context.empreendimentoId) return []

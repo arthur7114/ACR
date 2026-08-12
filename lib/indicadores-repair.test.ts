@@ -14,6 +14,7 @@ import {
   extractPdfTextLines,
   parseCesarRegoPrestacao,
 } from "./server/cesar-rego-parser.ts"
+import { refreshPackageValidation } from "./server/package-rechecks.ts"
 import { commissionBaseComponents } from "./comissao.ts"
 
 test("ponte v2 exige diferença não explicada de no máximo um centavo", () => {
@@ -191,6 +192,142 @@ test("César Rêgo março distribui as linhas sem duplicar o documento consolida
   assert.equal(scoped.totals.repasse_declarado, 1_034.12)
   assert.equal(scoped.totals.valor_comprovado, 1_034.12)
   assert.equal(scoped.totals.diferenca_repasse, 0)
+
+  const refreshed = refreshPackageValidation(scoped)
+  const commissionCheck = refreshed.rechecks.find(
+    (check) => check.id === "total_linhas_comissoes",
+  )
+  const transferCheck = refreshed.rechecks.find(
+    (check) => check.id === "total_linhas_repasse",
+  )
+  assert.equal(commissionCheck?.status, "passed")
+  assert.equal(
+    commissionCheck?.actual,
+    scoped.prestacao?.resumo_financeiro.total_linhas_comissoes,
+  )
+  assert.equal(transferCheck?.status, "passed")
+  assert.equal(
+    transferCheck?.actual,
+    scoped.prestacao?.resumo_financeiro.total_linhas_repasse,
+  )
+  assert.equal(refreshed.totals.total_tarifas, 5.55)
+})
+
+test("César Rêgo julho preserva os valores exatos e elimina totais consolidados dos rechecks", () => {
+  const parsed = makePrestacao("Documento consolidado", "2026-07", [
+    makeRow({
+      apto: "0002520",
+      aluguel: 1_237.05,
+      total: 1_237.05,
+      comissao: 61.85,
+      repasse: 1_175.2,
+    }),
+    makeRow({
+      apto: "0002521",
+      inquilino: "CONTRATO ATIVO",
+      total: 0,
+      comissao: null,
+      repasse: null,
+      observacao: "INADIMPLENCIA",
+    }),
+    makeRow({
+      apto: "0002526",
+      aluguel: 6_896.75,
+      iptu: 193.02,
+      total: 6_896.75,
+      comissao: 283.59,
+      repasse: 6_613.16,
+      entradas_passagem: 193.02,
+      saidas_passagem: 193.02,
+    }),
+    makeRow({
+      apto: "0002527",
+      aluguel: 5_517.41,
+      iptu: 149.02,
+      total: 5_517.41,
+      comissao: 226.66,
+      repasse: 5_290.75,
+      entradas_passagem: 149.02,
+      saidas_passagem: 149.02,
+    }),
+  ])
+  parsed.imobiliaria = "Cesar Rego Imoveis"
+  parsed.resumo_financeiro = {
+    ...parsed.resumo_financeiro,
+    total_linhas_receitas: 13_651.21,
+    total_linhas_comissoes: 572.1,
+    total_linhas_repasse: 13_079.11,
+    comissao_administracao: 572.1,
+    outras_comissoes_despesas: [
+      { descricao: "TED", valor: 11.1, confianca: 1 },
+    ],
+    total_outras_comissoes_despesas: 11.1,
+    total_comissao_despesas: 583.2,
+    recebidos_em_nome_locador: 13_651.21,
+    total_a_repassar: 13_068.01,
+    repasse_embutido: true,
+  }
+
+  const plan = buildCesarMonthRepairs(
+    [
+      {
+        id: "joao-julho",
+        empreendimentoNome: "João Cordeiro",
+        analysis: makePackage(parsed),
+      },
+      {
+        id: "pompilio-julho",
+        empreendimentoNome: "Galpão Pompílio Gomes",
+        analysis: makePackage(parsed),
+      },
+    ],
+    parsed,
+  )
+  const joao = plan.repairs.find((repair) => repair.id === "joao-julho")!
+  const pompilio = plan.repairs.find((repair) => repair.id === "pompilio-julho")!
+  const joaoValidated = refreshPackageValidation(joao.analysisRepaired, {
+    commercialRule: {
+      taxa_administracao_percent: 5,
+      taxa_intermediacao_percent: 0,
+    },
+  })
+  const pompilioValidated = refreshPackageValidation(pompilio.analysisRepaired, {
+    commercialRule: {
+      taxa_administracao_percent: 4,
+      taxa_intermediacao_percent: 0,
+    },
+  })
+
+  assert.deepEqual(
+    [
+      joaoValidated.totals.total_comissoes,
+      joaoValidated.totals.total_tarifas,
+      joaoValidated.totals.total_a_repassar,
+    ],
+    [61.85, 5.55, 1_169.65],
+  )
+  assert.deepEqual(
+    [
+      pompilioValidated.totals.total_comissoes,
+      pompilioValidated.totals.total_tarifas,
+      pompilioValidated.totals.total_a_repassar,
+    ],
+    [510.25, 5.55, 11_898.36],
+  )
+  for (const analysis of [joaoValidated, pompilioValidated]) {
+    const values = analysis.rechecks.flatMap((check) => [
+      check.expected,
+      check.actual,
+    ])
+    assert.ok(!values.includes(572.1))
+    assert.ok(!values.includes(13_079.11))
+  }
+  assert.equal(
+    pompilioValidated.rechecks.find(
+      (check) => check.id === "comissao_administracao_regra",
+    )?.status,
+    "passed",
+  )
 })
 
 function makePackage(

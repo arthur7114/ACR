@@ -41,6 +41,9 @@ import {
   type ImovelVinculoCadastro,
   vincularReceitasExistentes,
 } from "../lib/server/fechamento-imoveis"
+import { loadHistoricalAgreementKeys } from "../lib/server/historical-agreements"
+import { refreshPackageValidation } from "../lib/server/package-rechecks"
+import { getCommercialRuleForValidation } from "../lib/server/regras-comerciais"
 
 const BUCKET = "fechamento-documentos"
 const START_COMPETENCE = "2026-01-01"
@@ -299,9 +302,14 @@ async function buildRepairPlan(
     for (const repair of plan.repairs) {
       const closure = monthClosures.find((candidate) => candidate.id === repair.id)!
       handled.add(closure.id)
-      const analysisRepaired = attachAnalysisToExistingProperties(
+      const scopedAnalysis = attachAnalysisToExistingProperties(
         repair.analysisRepaired,
         propertiesByClosure.get(closure.id) ?? [],
+      )
+      const analysisRepaired = await refreshClosureValidation(
+        supabase,
+        closure,
+        scopedAnalysis,
       )
       const unlinkedCodes =
         analysisRepaired.prestacao?.receitas_por_imovel
@@ -352,7 +360,11 @@ async function buildRepairPlan(
     const competence = normalizeCompetence(closure.competencia)
 
     if (agency.includes("alive") && development.includes("grand messejana ii") && competence === "2026-03-01") {
-      const repaired = repairGmIiMarchAnalysis(analysis)
+      const repaired = await refreshClosureValidation(
+        supabase,
+        closure,
+        repairGmIiMarchAnalysis(analysis),
+      )
       const reconciliation = auditExistingAnalysis(repaired)
       records.push(
         buildRepairedRecord(
@@ -368,10 +380,15 @@ async function buildRepairPlan(
 
     if (agency.includes("plural") && ["2026-05-01", "2026-06-01"].includes(competence)) {
       const repaired = repairPluralPassThroughAnalysis(analysis, competence)
+      const analysisRepaired = await refreshClosureValidation(
+        supabase,
+        closure,
+        repaired.analysisRepaired,
+      )
       records.push(
         buildRepairedRecord(
           closure,
-          repaired.analysisRepaired,
+          analysisRepaired,
           repaired.reconciliation,
           `Plural ${competence.slice(0, 7)}: IPTU classificado como movimento de passagem.`,
           documentByClosure.get(closure.id)?.id ?? null,
@@ -380,19 +397,17 @@ async function buildRepairPlan(
       continue
     }
 
-    const reconciliation = auditExistingAnalysis(analysis)
-    records.push({
-      ...baseRecord(closure),
-      kind: reconciliation.reconciliado ? "unchanged" : "divergent",
-      reason: reconciliation.reconciliado
-        ? "Fechamento já reconciliado pela ponte v2; nenhuma alteração proposta."
-        : `Diferença não explicada de ${reconciliation.diferencaNaoExplicada.toFixed(2)}; commit bloqueado.`,
-      before: financialSnapshot(analysis),
-      after: null,
-      reconciliation,
-      analysisRepaired: null,
-      documentId: documentByClosure.get(closure.id)?.id ?? null,
-    })
+    const refreshed = await refreshClosureValidation(supabase, closure, analysis)
+    const reconciliation = auditExistingAnalysis(refreshed)
+    records.push(
+      buildRepairedRecord(
+        closure,
+        refreshed,
+        reconciliation,
+        "Validações determinísticas regeneradas com as regras operacionais atuais.",
+        documentByClosure.get(closure.id)?.id ?? null,
+      ),
+    )
   }
 
   return records.sort(
@@ -401,6 +416,28 @@ async function buildRepairPlan(
       left.agencyName.localeCompare(right.agencyName) ||
       left.developmentName.localeCompare(right.developmentName),
   )
+}
+
+async function refreshClosureValidation(
+  supabase: SupabaseClient,
+  closure: ClosureRow,
+  analysis: PackageAnalysis,
+) {
+  const [commercialRule, historicalAgreementKeys] = await Promise.all([
+    getCommercialRuleForValidation(
+      closure.imobiliaria_id,
+      closure.empreendimento_id,
+    ),
+    loadHistoricalAgreementKeys(supabase, {
+      id: closure.id,
+      imobiliariaId: closure.imobiliaria_id,
+      empreendimentoId: closure.empreendimento_id,
+    }),
+  ])
+  return refreshPackageValidation(analysis, {
+    commercialRule,
+    historicalAgreementKeys,
+  })
 }
 
 async function loadPropertiesByClosure(
@@ -556,7 +593,7 @@ async function loadResolvedValidations(
     .from("validacoes")
     .select("tipo_validacao,status,justificativa,resolvido_por,resolvido_em")
     .eq("fechamento_id", fechamentoId)
-    .eq("status", "resolvida")
+    .in("status", ["resolvida", "ignorada_com_justificativa"])
   if (error) throw error
   return resolvedValidationsSchema.parse(data ?? [])
 }
@@ -651,6 +688,11 @@ function financialSnapshot(analysis: PackageAnalysis | null) {
       analysis.totals.repasse_declarado ?? analysis.totals.total_a_repassar,
     baseComissao: analysis.totals.base_comissao_administracao,
     comissaoCalculada: analysis.totals.comissao_administracao_calculada,
+    validacoes: {
+      parecer: analysis.parecer,
+      rechecks: analysis.rechecks,
+      guardrails: analysis.guardrails,
+    },
   }
 }
 

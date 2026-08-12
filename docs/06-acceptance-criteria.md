@@ -113,3 +113,4 @@
 - CA23: a prévia mantém uma linha automática consolidada por tipo/categoria, permite múltiplas linhas manuais iguais e preserva essas linhas ao regenerar; cada automático usa chave estável e cada manual usa chave própria.
 - CA24: no César Rêgo, `SIT=ALUG` sem lançamento conta como inadimplente, o escopo por empreendimento precede todos os cálculos e a TED global é dividida igualmente entre os empreendimentos com conservação exata dos centavos.
 - CA25: `data_vencimento` da prestação define `dtVenc`; sem comprovante externo também define `dtCred`, `dtPgto` e o recebimento liquidado. Lançamento já enviado permanece imutável no reparo local.
+- CA26: documentos opcionais ausentes e despesas confirmadas em R$ 0,00 não geram pendência operacional; no César Rêgo, comissão, repasse, guardrails e parecer são recalculados depois do escopo por empreendimento, e linha sem recebimento valida comissão/repasse nulos como zero.

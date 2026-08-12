@@ -17,6 +17,9 @@ import { scopeCesarRegoAnalysisToDevelopment } from "@/lib/indicadores-repair"
 import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { buildIndicadoresSnapshotRows, loadActiveIndicadoresProperties } from "./indicadores-snapshots"
 import { attachExistingImovelLinks } from "./fechamento-imoveis"
+import { loadHistoricalAgreementKeys } from "./historical-agreements"
+import { refreshPackageValidation } from "./package-rechecks"
+import { getCommercialRuleForValidation } from "./regras-comerciais"
 import { createSupabaseAdmin } from "./supabase"
 
 const BUCKET = "fechamento-documentos"
@@ -83,6 +86,22 @@ export async function persistPackage(input: PersistPackageInput) {
     .eq("competencia", competencia)
     .maybeSingle()
   if (existingFechamentoError) throw existingFechamentoError
+
+  const [commercialRule, historicalAgreementKeys] = await Promise.all([
+    getCommercialRuleForValidation(
+      imobiliaria.id as string,
+      empreendimento.id as string,
+    ),
+    loadHistoricalAgreementKeys(supabase, {
+      id: existingFechamento?.id as string | undefined,
+      imobiliariaId: imobiliaria.id as string,
+      empreendimentoId: empreendimento.id as string,
+    }),
+  ])
+  analysis = refreshPackageValidation(analysis as PackageAnalysis, {
+    commercialRule,
+    historicalAgreementKeys,
+  })
 
   let resolvedValidations: ResolvedValidation[] = []
   if (existingFechamento) {

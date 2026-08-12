@@ -11,9 +11,9 @@ function check(partial: Partial<PrestacaoRecheck> & Pick<PrestacaoRecheck, "id" 
   } as PrestacaoRecheck
 }
 
-// Cenario real GM II junho: 6 warnings, sendo 2 scores de confianca (nao contam)
-// e 4 objetivos. Dois deles (optional_*) e total_despesas NAO estavam na antiga
-// lista branca isActionableWarning e sumiam da abinha, embora contados no topo.
+// Cenário legado: documentos opcionais e despesas zeradas chegaram a ser
+// persistidos como warnings. Eles permanecem auditáveis no banco, mas não são
+// trabalho operacional e não devem poluir a revisão.
 const GMII_JUNHO: PrestacaoRecheck[] = [
   check({ id: "despesas_confidence", status: "warning" }),
   check({ id: "reajuste_confidence", status: "warning" }),
@@ -25,20 +25,21 @@ const GMII_JUNHO: PrestacaoRecheck[] = [
   check({ id: "rows_present", status: "passed" }),
 ]
 
-test("contagem de alertas == alertas listados (os 4 objetivos, sem os _confidence)", () => {
+test("contagem de alertas == alertas listados, sem opcionais e despesa zerada", () => {
   const summary = getValidationSummary(GMII_JUNHO)
   const { warning } = derivePendencias(GMII_JUNHO)
 
-  assert.equal(summary.warnings, 4)
-  assert.equal(warning.length, 4)
+  assert.equal(summary.warnings, 1)
+  assert.equal(warning.length, 1)
   assert.equal(summary.warnings, warning.length)
 })
 
-test("os warnings antes escondidos agora aparecem na lista", () => {
+test("warnings legados sem ação não aparecem na lista", () => {
   const ids = derivePendencias(GMII_JUNHO).warning.map((c) => c.id)
-  assert.ok(ids.includes("optional_despesas_comprovantes"))
-  assert.ok(ids.includes("optional_relatorio_reajuste"))
-  assert.ok(ids.includes("total_despesas"))
+  assert.ok(!ids.includes("optional_despesas_comprovantes"))
+  assert.ok(!ids.includes("optional_relatorio_reajuste"))
+  assert.ok(!ids.includes("total_despesas"))
+  assert.deepEqual(ids, ["total_linhas_receitas"])
 })
 
 test("scores de confianca nunca entram na contagem nem na lista", () => {
@@ -60,6 +61,6 @@ test("invariante contagem==lista vale para bloqueios e alertas em qualquer entra
   assert.equal(summary.blocked, failed.length)
   assert.equal(summary.warnings, warning.length)
   assert.equal(summary.blocked, 2) // confidence failed nao conta
-  assert.equal(summary.warnings, 1) // o resolvido saiu dos alertas
+  assert.equal(summary.warnings, 0) // despesa zerada e resolvido não são operacionais
   assert.equal(resolved.length, 1)
 })

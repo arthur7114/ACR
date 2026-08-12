@@ -73,6 +73,8 @@ Correção de competência e vínculo é atômica: análise, movimentação, val
 
 Resolver pendencia exige uma validacao persistida; quando a linha ainda nao existe no banco, a interface deve orientar atualizar/reprocessar em vez de chamar a resolucao com id vazio.
 
+Documentos opcionais ausentes não entram na fila de pendências. Quando nenhuma despesa é identificada, R$ 0,00 passa silenciosamente; registros legados equivalentes permanecem na auditoria, mas não aparecem na lista operacional.
+
 ## Aprovacao e eGestor
 
 Aprovacao exige:
@@ -85,7 +87,7 @@ Aprovacao exige:
 
 Depois de aprovado, o sistema gera previa de lancamentos para o eGestor. A V1 usa lancamento automático consolidado por fechamento: repasse mensal como recebimento, comissao/despesas como pagamentos separados. O operador pode acrescentar várias linhas manuais com o mesmo tipo/categoria; elas permanecem ao regenerar a prévia. O envio real so ocorre por acao explicita do operador e fica bloqueado quando ha pendencia, configuracao incompleta ou lancamento ja enviado.
 
-No layout César Rêgo, a geração usa somente as linhas do empreendimento do fechamento. A TED global é dividida igualmente entre os empreendimentos. O vencimento informado no cabeçalho alimenta as datas do recebimento quando não existe comprovante externo.
+No layout César Rêgo, a geração usa somente as linhas do empreendimento do fechamento. A TED global é dividida igualmente entre os empreendimentos. As validações determinísticas são regeneradas após o recorte, antes da persistência. O vencimento informado no cabeçalho alimenta as datas do recebimento quando não existe comprovante externo.
 
 Depois do envio, a revisao permite revalidar os codigos ja gravados no eGestor sem reenviar financeiro. Quando anexos falham, o operador pode reenviar apenas anexos pendentes; falha nesse retry mantem o lancamento financeiro preservado e atualiza a mensagem operacional.
 

@@ -2,6 +2,7 @@ import type {
   AcordoRescisaoRecebido,
   ClassifiedDocument,
   DespesasAnalysis,
+  PackageAnalysis,
   PackageTotals,
   PrestacaoAnalysis,
   PrestacaoGuardrail,
@@ -41,6 +42,7 @@ export interface PackageValidationInput {
   reajuste: ReajusteAnalysis | null
   commercialRule?: CommercialRuleForValidation | null
   historicalAgreementKeys?: string[]
+  authoritativeTotals?: PackageTotals
 }
 
 export function validatePackage(input: PackageValidationInput) {
@@ -57,7 +59,13 @@ export function validatePackage(input: PackageValidationInput) {
   // propria prestacao (sem comprovante separado). Se houver comprovante de
   // repasse de verdade, ele tem precedencia (a conciliacao bancaria continua).
   const repasseEmbutido = normalizedPrestacao?.resumo_financeiro.repasse_embutido === true
-  const totals = calculateTotals(normalizedPrestacao, normalizedDespesas, normalizedRepasse, input.commercialRule ?? null, repasseEmbutido)
+  const totals = input.authoritativeTotals ?? calculateTotals(
+    normalizedPrestacao,
+    normalizedDespesas,
+    normalizedRepasse,
+    input.commercialRule ?? null,
+    repasseEmbutido,
+  )
   const rechecks = buildRechecks({
     documents: input.documents,
     prestacao: normalizedPrestacao,
@@ -81,6 +89,46 @@ export function validatePackage(input: PackageValidationInput) {
     rechecks,
     guardrails,
     parecer,
+  }
+}
+
+export function refreshPackageValidation(
+  analysis: PackageAnalysis,
+  options: Pick<PackageValidationInput, "commercialRule" | "historicalAgreementKeys"> = {},
+): PackageAnalysis {
+  const input = {
+    documents: analysis.documents,
+    prestacao: analysis.prestacao,
+    repasse: analysis.repasse,
+    despesas: analysis.despesas,
+    reajuste: analysis.reajuste,
+    commercialRule: options.commercialRule,
+    historicalAgreementKeys: options.historicalAgreementKeys,
+  }
+  const calculated = validatePackage(input)
+  const authoritativeTotals: PackageTotals = {
+    ...calculated.totals,
+    ...analysis.totals,
+    taxa_administracao_percent: calculated.totals.taxa_administracao_percent,
+    taxa_intermediacao_percent: calculated.totals.taxa_intermediacao_percent,
+    comissao_administracao_calculada:
+      calculated.totals.comissao_administracao_calculada,
+    base_comissao_administracao:
+      calculated.totals.base_comissao_administracao,
+    comissao_realizada_percent: calculated.totals.comissao_realizada_percent,
+  }
+  const validation = validatePackage({ ...input, authoritativeTotals })
+
+  return {
+    ...analysis,
+    prestacao: validation.prestacao,
+    repasse: validation.repasse,
+    despesas: validation.despesas,
+    reajuste: validation.reajuste,
+    totals: validation.totals,
+    parecer: validation.parecer,
+    rechecks: validation.rechecks,
+    guardrails: validation.guardrails,
   }
 }
 
@@ -373,14 +421,14 @@ function buildRechecks({
       "Total das comissoes por linha",
       "Comissao",
       prestacao?.resumo_financeiro.total_linhas_comissoes ?? null,
-      prestacao?.receitas_por_imovel.map((row) => row.comissao) ?? [],
+      prestacao?.receitas_por_imovel.map((row) => zeroWhenNoReceipt(row.total, row.comissao)) ?? [],
     ),
     compareColumnTotal(
       "total_linhas_repasse",
       "Total dos repasses por linha",
       "Repasse",
       prestacao?.resumo_financeiro.total_linhas_repasse ?? null,
-      prestacao?.receitas_por_imovel.map((row) => row.repasse) ?? [],
+      prestacao?.receitas_por_imovel.map((row) => zeroWhenNoReceipt(row.total, row.repasse)) ?? [],
     ),
     compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
     checkAgreementCompetencies(prestacao),
@@ -591,8 +639,8 @@ function checkOptionalDocument(documents: ClassifiedDocument[], documentType: st
   return {
     id: `optional_${documentType}`,
     label,
-    status: found ? "passed" : "warning",
-    message: found ? `${label} presente no pacote.` : `${label} nao enviado no pacote.`,
+    status: "passed",
+    message: found ? `${label} presente no pacote.` : `${label} opcional e nao enviado no pacote.`,
   }
 }
 
@@ -676,8 +724,22 @@ function compareColumnTotal(
   return compareTotal(id, label, columnLabel, extracted, sum(values.map((value) => value ?? 0)))
 }
 
-function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: number): PrestacaoRecheck {
+function compareDespesasTotal(
+  despesas: DespesasAnalysis | null,
+  calculated: number,
+): PrestacaoRecheck {
   if (!despesas) {
+    if (calculated === 0) {
+      return {
+        id: "total_despesas",
+        label: "Total de despesas",
+        status: "passed",
+        message: "Nenhuma despesa identificada no pacote.",
+        expected: calculated,
+        actual: calculated,
+        difference: 0,
+      }
+    }
     return {
       id: "total_despesas",
       label: "Total de despesas",
@@ -690,6 +752,10 @@ function compareDespesasTotal(despesas: DespesasAnalysis | null, calculated: num
   }
 
   return compareTotal("total_despesas", "Total de despesas", "Despesas", despesas.total_despesas, calculated)
+}
+
+function zeroWhenNoReceipt(total: number, value: number | null) {
+  return total === 0 && value === null ? 0 : value
 }
 
 function compareAdminCommissionRule(

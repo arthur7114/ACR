@@ -147,7 +147,7 @@ Estados e acoes relevantes:
 - Processamento mostra progresso por etapa.
 - Revisao mostra bloqueio de aprovacao quando ha divergencia bloqueante.
 - Revisao nao usa percentual de confianca como indicador operacional principal; qualidade de leitura fica restrita a documentos/linhas extraidas.
-- Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria. Quando a pendencia nao tem valor a decidir (documento opcional ausente ou alerta informativo), o modal omite os valores e a escolha e oferece apenas "Ignorar pendencia" com justificativa, sem alterar nenhum valor da prestacao.
+- Resolucao de pendencia abre modal claro com valores comparados, escolha do valor oficial e justificativa obrigatoria para auditoria. Alertas informativos sem valor a decidir omitem os valores e oferecem apenas "Ignorar pendencia" com justificativa. Documento opcional ausente e despesas confirmadas em R$ 0,00 não geram pendência operacional.
 - Leitura do documento e documentos processados ficam no fim da revisao, em secoes colapsaveis fechadas por padrao, para nao deslocar o resumo financeiro operacional.
 - Possivel pagamento repetido de acordo/rescisao e pendencia bloqueante ate resolucao ou justificativa.
 - Fechamentos aprovados podem ser vistos em detalhes.
@@ -170,6 +170,13 @@ Estados e acoes relevantes:
   ignoram repetição por SHA-256 e consolidam comprovantes parciais distintos.
 - Processamento concorrente usa claim atômico e a persistência financeira é uma
   troca transacional, preservando correções manuais.
+
+### Ajuste registrado — pendências acionáveis e rechecks escopados (2026-08-12)
+
+- Ponto alterado: documentos opcionais ausentes e despesas confirmadas em R$ 0,00 deixam de aparecer como pendências; registros legados equivalentes continuam auditáveis, mas ficam fora da contagem e da lista operacional.
+- Por que: esses itens não exigem decisão do operador e eram ignorados em todos os fechamentos.
+- Correção associada: no César Rêgo, os rechecks passam a ser regenerados depois do recorte por empreendimento, impedindo que comissão e repasse de João Cordeiro apareçam no fechamento de Pompílio Gomes.
+- Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
 ## Dados e nomenclatura de exemplo
 

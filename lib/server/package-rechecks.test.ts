@@ -192,9 +192,74 @@ test("documentos opcionais ausentes nao alteram o parecer tecnico operacional", 
     reajuste: null,
   })
 
-  assert.equal(result.rechecks.find((item) => item.id === "optional_relatorio_reajuste")?.status, "warning")
-  assert.equal(result.rechecks.find((item) => item.id === "optional_despesas_comprovantes")?.status, "warning")
+  assert.equal(result.rechecks.find((item) => item.id === "optional_relatorio_reajuste")?.status, "passed")
+  assert.equal(result.rechecks.find((item) => item.id === "optional_despesas_comprovantes")?.status, "passed")
   assert.equal(result.parecer.status, "aprovado_tecnico")
+})
+
+test("ausencia de documento de despesas passa silenciosamente quando o total e zero", () => {
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      resumo_financeiro: {
+        ...base.resumo_financeiro,
+        total_comissao_despesas: 30,
+        total_a_repassar: 2970,
+      },
+    }),
+    repasse: createRepasse(2970),
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.total_despesas, 0)
+  assert.equal(result.rechecks.find((item) => item.id === "total_despesas")?.status, "passed")
+})
+
+test("repasse embutido nao esconde despesa sem documento quando o valor e positivo", () => {
+  const base = createPrestacao()
+  const result = validatePackage({
+    documents: [requiredDocuments[0]],
+    prestacao: createPrestacao({
+      resumo_financeiro: {
+        ...base.resumo_financeiro,
+        repasse_embutido: true,
+      },
+    }),
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.total_despesas, 270)
+  assert.equal(result.rechecks.find((item) => item.id === "total_despesas")?.status, "warning")
+})
+
+test("linha sem recebimento considera comissao e repasse nulos como zero", () => {
+  const prestacao = createPrestacao()
+  prestacao.receitas_por_imovel.push({
+    ...prestacao.receitas_por_imovel[0],
+    apto: "303",
+    inquilino: "Inadimplente",
+    aluguel: null,
+    aluguel_com_desconto: null,
+    total: 0,
+    comissao: null,
+    repasse: null,
+    observacao: "INADIMPLENCIA",
+  })
+
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao,
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.rechecks.find((item) => item.id === "total_linhas_comissoes")?.status, "passed")
+  assert.equal(result.rechecks.find((item) => item.id === "total_linhas_repasse")?.status, "passed")
 })
 
 test("prestacao Alive isolada nao substitui comprovante bancario", () => {

@@ -5,7 +5,18 @@ import type { PrestacaoRecheck } from "@/lib/prestacao-types"
 // tem que usar a MESMA peneira, senao o topo diz "N alertas" e a abinha mostra
 // menos (bug relatado no GM II junho).
 export function isObjectiveValidation(check: PrestacaoRecheck): boolean {
-  return !check.id.endsWith("_confidence")
+  if (check.id.endsWith("_confidence") || check.id.startsWith("optional_")) {
+    return false
+  }
+  if (
+    check.id === "total_despesas" &&
+    (check.expected === 0 || check.expected === null || check.expected === undefined) &&
+    (check.actual === null || check.actual === undefined) &&
+    (check.difference === null || check.difference === undefined)
+  ) {
+    return false
+  }
+  return true
 }
 
 export function isResolvedCheck(check: PrestacaoRecheck): boolean {

@@ -80,6 +80,7 @@ de usuários e configuração eGestor exigem `admin`.
 - A persistência derivada troca fechamento, movimentações automáticas,
   validações e snapshots na mesma transação e sob `atualizado_em` otimista.
 - IA deve retornar JSON validavel e nunca aprovar ou calcular resultado final sem validacao deterministica.
+- Documento opcional ausente não é pendência operacional. Sem documento de despesas e sem valor de despesa identificado, o total R$ 0,00 é uma validação aprovada; alerta só existe quando há valor ou evidência que exige conferência.
 - Comissao administrativa deve ser validada, quando houver regra comercial ativa, pela taxa do par imobiliaria + empreendimento aplicada sobre o total pago pelo inquilino: aluguel com desconto quando existir, senao aluguel, somado a garagem, agua, IPTU e seguro incendio.
 - Na intermediação documentada, `valor` representa o aluguel/base da comissão. IPTU não entra na base percentual, mas compõe o total recebido e o repasse da linha; a revisão deve exibir base, IPTU, total, comissão, percentual e repasse sem conflar esses conceitos.
 - Taxa de intermediacao cadastrada permanece apenas como regra comercial; o lançamento documentado é a fonte operacional da comissão efetivamente retida.
@@ -87,7 +88,7 @@ de usuários e configuração eGestor exigem `admin`.
 - Acordo/rescisao com mesma combinacao normalizada de tipo, inquilino, competencia original e valor ja vista no pacote ou no historico do mesmo par imobiliaria + empreendimento gera alerta bloqueante por possivel pagamento repetido.
 - Acordo/rescisao recebido no mes com competencia original diferente da competencia do fechamento gera alerta operacional para revisao.
 - Lancamento eGestor com `egestor_codigo` salvo e imutavel para reenvio V1; operador pode apenas revalidar status ou reenviar anexos pendentes.
-- No layout César Rêgo, `SIT=ALUG` sem lançamento na competência é inadimplência explícita. A TED global é dividida igualmente entre os empreendimentos do extrato antes do rateio interno por imóvel.
+- No layout César Rêgo, `SIT=ALUG` sem lançamento na competência é inadimplência explícita. A TED global é dividida igualmente entre os empreendimentos do extrato antes do rateio interno por imóvel. Totais, rechecks, guardrails e parecer são recalculados somente depois desse recorte; linha sem recebimento usa comissão e repasse iguais a zero na validação das colunas.
 - Quando a prestação informa `data_vencimento`, ela define `dtVenc` e, na ausência de comprovante externo, também `dtCred`/`dtPgto`; a data real do comprovante prevalece apenas na liquidação.
 - Falha de anexo eGestor nao desfaz recebimento/pagamento criado; o lancamento fica `anexo_pendente` ate retry bem-sucedido.
 - Indicadores incluem apenas fechamentos nao arquivados, com `analise_completa`, nos status `pendente_revisao`, `processado_com_sucesso`, `processado_com_alertas`, `aprovado`, `preparado_egestor`, `lancado_egestor` e `erro_egestor`. Reprocessamento ativo preserva a ultima analise valida e sinaliza "Em atualizacao".

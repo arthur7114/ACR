@@ -6,6 +6,8 @@ Status atual: Etapas 1, 2 e 3 concluídas. A revisão v2 de confiabilidade de `/
 
 O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha numerada de execução, o mock em `acr-fechamentos-app` como contrato e o fluxo real de análise da prestação Alive / GM II com Mastra, guardrails e rechecks deterministicos, agora com suporte a Mock Mode offline, Excel parser e conciliação de conflitos.
 
+Em 2026-08-12, o dry-run de julho regenerou validações para os três fechamentos da competência: João Cordeiro, Galpão Pompílio Gomes e Galpão José Walter. Os três reconciliaram sem diferença; os valores financeiros permaneceram inalterados e somente os rechecks/pareceres atuais foram propostos.
+
 ## Proxima acao recomendada
 
 Com autorização explícita do usuário, corrigir o cadastro de três unidades do
@@ -68,6 +70,7 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Divergencias contra o mock exigem explicacao previa e atualizacao de docs.
 - Extrato César Rêgo consolidado divide a tarifa global igualmente entre os empreendimentos antes do rateio interno por imóvel; `SIT=ALUG` sem lançamento é inadimplência explícita.
 - A prévia eGestor mantém automáticos consolidados, mas aceita manuais repetidos por meio de `origem_chave`; lançamentos já enviados não são alterados pelo reparo.
+- Documentos opcionais ausentes e despesas confirmadas em zero não são pendências operacionais. Rechecks César Rêgo são gerados somente depois do recorte por empreendimento; valores consolidados nunca podem aparecer na revisão individual.
 - Roadmap deve ser atualizado ao fim de cada ciclo.
 - Primeiro documento real do fluxo e a prestacao Alive / GM II, nao o comprovante de repasse.
 - Mastra passa a orquestrar o fluxo de prestacao Alive / GM II; OpenAI fica encapsulada em um step de extracao.
@@ -1068,6 +1071,36 @@ e remotos coincidem; `iniciar_processamento_fechamento` e
 `persistir_pacote_fechamento_v1` têm EXECUTE apenas para `service_role`; o
 bootstrap resultou em um usuário `admin` e um `operador`; João Cordeiro e
 Pompílio Gomes preservaram os totais reparados e diferença zero.
+
+### 2026-08-12 - Pendências acionáveis e validação pós-escopo
+
+Status: done.
+
+Job: retirar avisos opcionais sem ação, recalcular os rechecks depois de separar
+empreendimentos César Rêgo e reprocessar julho/2026.
+
+Outcome entregue no código: documentos opcionais ausentes passam sem alerta;
+despesa zero sem documento passa silenciosamente; linha sem recebimento trata
+comissão/repasse nulos como zero; persistência e reparador regeneram rechecks,
+guardrails e parecer com regra comercial e histórico do empreendimento.
+
+Dry-run remoto: 3 fechamentos encontrados, 3 reparos propostos, 0 incompletos e
+0 divergentes. Pompílio preserva comissão R$ 510,25 e repasse R$ 11.898,36;
+João preserva comissão R$ 61,85 e repasse R$ 1.169,65; José Walter preserva
+comissão R$ 267,88 e repasse R$ 3.080,64.
+
+Arquivos/docs impactados: `lib/server/package-rechecks.ts`,
+`lib/server/persist-package.ts`, `lib/revisao-pendencias.ts`,
+`scripts/repair-indicadores-confiabilidade.ts`, testes e docs 02/03/04/06/12.
+
+Próxima ação: concluir os gates, publicar na `main`, aplicar o reparo remoto e
+confirmar idempotência, permissões e ausência dos alertas consolidados.
+
+Validação local: suíte completa, lint, typecheck, build, checklist, validador de
+API, validador de schema e revisão independente por padrões + especificação
+passaram. A revisão encontrou e o ciclo corrigiu preservação de pendências
+ignoradas, auditoria de rechecks antes/depois e consistência dos totais usados
+na validação. Não há migration nova porque o schema não mudou.
 
 ## Como atualizar este doc
 
