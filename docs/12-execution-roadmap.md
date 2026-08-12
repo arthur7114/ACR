@@ -1093,8 +1093,15 @@ Arquivos/docs impactados: `lib/server/package-rechecks.ts`,
 `lib/server/persist-package.ts`, `lib/revisao-pendencias.ts`,
 `scripts/repair-indicadores-confiabilidade.ts`, testes e docs 02/03/04/06/12.
 
-Próxima ação: concluir os gates, publicar na `main`, aplicar o reparo remoto e
-confirmar idempotência, permissões e ausência dos alertas consolidados.
+Rollout concluído: commit `e36b793` publicado na `main`; reparo remoto aplicado
+nos três fechamentos de julho. A regra comercial de João Cordeiro foi cadastrada
+com 5% de administração, 50% de intermediação e vencimento no dia 10, fazendo
+R$ 61,85 reconciliar sobre a base de R$ 1.237,05. A conta
+`participacoesmmc@gmail.com` foi promovida de `operador` para `aprovador`.
+Verificação final: zero pendência operacional aberta, zero valor consolidado
+vazando entre empreendimentos, três pareceres `aprovado_tecnico` e novo dry-run
+com 3 `unchanged`, 0 incompletos e 0 divergentes. Nenhum lançamento enviado ao
+eGestor foi alterado.
 
 Validação local: suíte completa, lint, typecheck, build, checklist, validador de
 API, validador de schema e revisão independente por padrões + especificação
