@@ -1032,7 +1032,7 @@ Proxima acao: estruturar docs do PRD e contrato do mock.
 
 ### 2026-08-11 - Hardening integral de OCR, fechamento e remessas
 
-Status: done (código e reparo); migrations novas aguardam conexão administrativa.
+Status: done.
 
 Job: resolver os defeitos encontrados na auditoria do corpus completo de
 empreendimentos e reparar César Rêgo julho/2026.
@@ -1060,11 +1060,14 @@ Arquivos/docs impactados: workflow/persistência/parsers/autorização, middlewa
 tela de usuários, migrations `202608110004` a `202608110006`, docs 02/03/04/06/12/13
 e plano executável de hardening.
 
-Implantação: o CLI local não conseguiu vincular o projeto por privilégio da
-conta e a rede não alcança o endpoint PostgreSQL IPv6; aplicar as migrations
-`202608110004_auth_roles.sql`, `202608110005_atomic_processing_claim.sql` e
-`202608110006_atomic_package_persistence.sql` pelo pooler IPv4/dashboard antes
-de publicar a aplicação.
+Implantação concluída em 2026-08-12 pelo pooler IPv4 de sessão do projeto. O
+histórico remoto foi alinhado com as migrations pendentes `202607240001`,
+`202607280003`, `202607280004`, `202608050001`, `202608070001`, `202608070002`
+e `202608110004` a `202608110006`. Validação pós-migration: todos os IDs locais
+e remotos coincidem; `iniciar_processamento_fechamento` e
+`persistir_pacote_fechamento_v1` têm EXECUTE apenas para `service_role`; o
+bootstrap resultou em um usuário `admin` e um `operador`; João Cordeiro e
+Pompílio Gomes preservaram os totais reparados e diferença zero.
 
 ## Como atualizar este doc
 
