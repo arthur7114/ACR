@@ -8,6 +8,8 @@ O repositório contém o harness `.agent`, o PRD completo em `docs/`, a trilha n
 
 Em 2026-08-12, o dry-run de julho regenerou validações para os três fechamentos da competência: João Cordeiro, Galpão Pompílio Gomes e Galpão José Walter. Os três reconciliaram sem diferença; os valores financeiros permaneceram inalterados e somente os rechecks/pareceres atuais foram propostos.
 
+Ainda em 2026-08-12, as vigências contratuais de julho do Galpão Pompílio Gomes foram corrigidas com base na prestação César Rêgo 41460: R$ 6.896,75 para o imóvel 0002526 e R$ 5.517,41 para o 0002527. O histórico anterior foi preservado até junho, a mudança recebeu auditoria e vínculo ao PDF-fonte, e os dois snapshots de julho foram recalculados. O indicador passou de R$ 12.032,74 para R$ 12.414,16, igual ao aluguel recebido da competência; o repasse permaneceu R$ 11.898,36.
+
 ## Proxima acao recomendada
 
 Com autorização explícita do usuário, corrigir o cadastro de três unidades do
@@ -1108,6 +1110,37 @@ API, validador de schema e revisão independente por padrões + especificação
 passaram. A revisão encontrou e o ciclo corrigiu preservação de pendências
 ignoradas, auditoria de rechecks antes/depois e consistência dos totais usados
 na validação. Não há migration nova porque o schema não mudou.
+
+### 2026-08-12 - Vigências contratuais de Pompílio em julho
+
+Status: done.
+
+Job: corrigir o indicador `Aluguel contratado`, que ainda usava os valores
+migrados R$ 6.684,85 e R$ 5.347,89 apesar de a prestação 41460 documentar os
+aluguéis de julho em R$ 6.896,75 e R$ 5.517,41.
+
+Outcome entregue: a migration `202608120001` encerrou as vigências anteriores
+em junho e criou novas vigências a partir de 01/07/2026, vinculadas ao
+PDF-fonte. Duas linhas de auditoria registram os valores anteriores e novos.
+Nenhum total do fechamento ou lançamento eGestor foi alterado.
+
+Validação: `supabase db push --dry-run` propôs somente a migration nova; o push
+remoto concluiu. O backfill de julho encontrou 2 atualizações, cobertura 2/2 e
+nenhum imóvel sem vínculo. Depois do commit, o dry-run retornou 0 atualizações
+e 2 skips; o verificador confirmou checksums, unicidade, cobertura e
+reconciliação. A API de domínio passou a retornar aluguel contratado e recebido
+de R$ 12.414,16, com repasse preservado em R$ 11.898,36. O plano documenta o
+rollback transacional; a migration também valida, na reexecução, o histórico
+anterior, o vínculo ao PDF-fonte e as duas linhas de auditoria. Um dump lógico
+do `public` foi restaurado em PostgreSQL descartável: primeira execução,
+reexecução idempotente e falha fechada após adulterar o vínculo da fonte
+passaram, com total contratado de R$ 12.414,16.
+
+Arquivos/docs impactados: migration `202608120001`, plano executável da
+correção e este roadmap.
+
+Próxima ação: conferir o card no ambiente publicado após o próximo deploy; não
+há reparo financeiro nem reenvio ao eGestor pendente por esta correção.
 
 ## Como atualizar este doc
 
