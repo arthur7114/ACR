@@ -12,6 +12,14 @@ Ainda em 2026-08-12, as vigências contratuais de julho do Galpão Pompílio Gom
 
 Em 2026-08-13, a identidade contratual Plural foi corrigida: `GA0002/2` passa a resolver para o cadastro canônico `GA0002` na sincronização, no vínculo do fechamento, nos snapshots e na cobertura dos indicadores. O fechamento José Walter de julho foi reparado atomicamente e auditado sem alterar os totais nem o lançamento eGestor; a API passou a retornar aluguel recebido de R$ 3.348,52, comissão de R$ 267,88, repasse de R$ 3.080,64, ocupação de 100% e zero linha sem vínculo. A segunda execução do reparador retornou `unchanged`.
 
+Ainda em 2026-08-13, o mesmo vínculo histórico foi reparado em junho: a linha
+`GA0002/2`, que ainda apontava para o UUID do cadastro duplicado removido, foi
+religada ao `GA0002` ativo. O snapshot agora registra aluguel recebido de
+R$ 3.200,00, 1 imóvel ocupado e ocupação/cobertura de 100%; comissão de
+R$ 256,00 e repasse de R$ 3.389,95 foram preservados, com diferença financeira
+zero. O reparador também sincroniza o marcador de repasse embutido no resumo da
+prestação para não reabrir indevidamente o alerta de comprovante.
+
 ## Proxima acao recomendada
 
 Com autorização explícita do usuário, corrigir o cadastro de três unidades do
@@ -1174,6 +1182,35 @@ Arquivos/docs impactados: `lib/codigo-imovel.ts`,
 
 Próxima ação: executar smoke no ambiente implantado após o deploy; nenhuma
 migration de schema é necessária.
+
+### 2026-08-13 - Ocupação histórica de José Walter em junho
+
+Status: done.
+
+Job: corrigir junho/2026, que aparecia com 0% de ocupação apesar da linha de
+aluguel recebida no fechamento Plural.
+
+Causa: o fechamento anterior à normalização canônica ainda apontava
+`GA0002/2` para o UUID do cadastro duplicado já removido. A movimentação perdeu
+o vínculo por integridade referencial e o snapshot do `GA0002` foi materializado
+como `sem_linha`/`desconhecido`.
+
+Outcome entregue: o reparador Plural passou a vincular as linhas ao cadastro
+ativo antes de reconstruir as dimensões financeiras e a propagar o marcador de
+repasse embutido para a validação. O reparo remoto atômico religou análise,
+movimentação e snapshot ao imóvel `GA0002`, preservando os totais e a auditoria.
+
+Validação: dry-run encontrou 1 reparo reconciliado e nenhuma divergência; após
+o commit, a API retornou aluguel contratado/recebido de R$ 3.200,00, comissão
+R$ 256,00, repasse R$ 3.389,95, 1 ocupado, ocupação/cobertura 100% e zero linha
+sem vínculo. A segunda execução retornou 1 `unchanged`. Não houve migration nem
+alteração de lançamento eGestor.
+
+Arquivos/docs impactados: `lib/indicadores-repair.ts`,
+`scripts/repair-indicadores-confiabilidade.ts`, testes e este roadmap.
+
+Próxima ação: publicar a proteção no host da aplicação e executar smoke da série
+mensal; o banco usado pelo cliente já está corrigido.
 
 ## Como atualizar este doc
 

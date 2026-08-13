@@ -203,6 +203,17 @@ export function attachAnalysisToExistingProperties(
   }
 }
 
+export function preparePluralRepairAnalysis(
+  analysis: PackageAnalysis,
+  properties: ImovelVinculoCadastro[],
+  competence: string,
+) {
+  return repairPluralPassThroughAnalysis(
+    attachAnalysisToExistingProperties(analysis, properties),
+    competence,
+  )
+}
+
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson)
   if (value === null || typeof value !== "object") return value
@@ -379,7 +390,11 @@ async function buildRepairPlan(
     }
 
     if (agency.includes("plural") && ["2026-05-01", "2026-06-01"].includes(competence)) {
-      const repaired = repairPluralPassThroughAnalysis(analysis, competence)
+      const repaired = preparePluralRepairAnalysis(
+        analysis,
+        propertiesByClosure.get(closure.id) ?? [],
+        competence,
+      )
       const analysisRepaired = await refreshClosureValidation(
         supabase,
         closure,

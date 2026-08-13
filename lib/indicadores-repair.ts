@@ -412,6 +412,7 @@ function applyFinancialDimensions(
         ),
         recebidos_em_nome_locador: reconciliation.receitasEconomicas,
         total_a_repassar: reconciliation.repasseDeclarado,
+        repasse_embutido: analysis.totals.repasse_embutido === true,
       },
       totais: {
         ...prestacao.totais,

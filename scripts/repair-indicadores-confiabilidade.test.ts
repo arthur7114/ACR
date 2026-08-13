@@ -8,6 +8,7 @@ import {
   assertRepairCommitAllowed,
   auditExistingAnalysis,
   parseReliabilityRepairArgs,
+  preparePluralRepairAnalysis,
 } from "./repair-indicadores-confiabilidade.ts"
 
 test("commit bloqueia qualquer fechamento incompleto", () => {
@@ -215,4 +216,52 @@ test("reparo histórico substitui vínculo removido de GA0002/2 pelo cadastro GA
   ])
 
   assert.equal(linked.prestacao?.receitas_por_imovel[0]?.imovel_id, "imovel-ga0002")
+})
+
+test("reparo Plural vincula o cadastro ativo antes de reconstruir junho", () => {
+  const analysis = {
+    totals: {
+      total_receitas: 3_200,
+      total_comissoes: 256,
+      total_despesas: 0,
+      total_a_repassar: 3_389.95,
+      repasse_embutido: true,
+    },
+    prestacao: {
+      receitas_por_imovel: [
+        {
+          apto: "GA0002/2",
+          imovel_id: "imovel-duplicado-removido",
+          inquilino: "",
+          aluguel: 3_200,
+          iptu: 445.95,
+          total: 3_200,
+          comissao: 256,
+          repasse: 3_389.95,
+        },
+      ],
+    },
+  } as unknown as PackageAnalysis
+
+  const repaired = preparePluralRepairAnalysis(
+    analysis,
+    [{
+      id: "imovel-ga0002",
+      codigo_imobiliaria: "GA0002",
+      unidade: "GA0002",
+      inquilino_nome: "Galpão José Walter",
+      status: "ocupado",
+      valor_aluguel_esperado: 3_200,
+    }],
+    "2026-06",
+  )
+
+  assert.equal(
+    repaired.analysisRepaired.prestacao?.receitas_por_imovel[0]?.imovel_id,
+    "imovel-ga0002",
+  )
+  assert.equal(
+    repaired.analysisRepaired.prestacao?.resumo_financeiro.repasse_embutido,
+    true,
+  )
 })
