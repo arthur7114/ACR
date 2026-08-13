@@ -11,6 +11,7 @@ import {
   formatHistoryCoverage,
   formatPortfolioContractedRent,
   formatReference,
+  filterMonthlySeriesPeriod,
   getFinancialReferences,
 } from "./presentation.ts"
 
@@ -19,6 +20,26 @@ const MESES = [
   { competencia: "2026-05-01", label: "Mai/26" },
   { competencia: "2026-06-01", label: "Jun/26" },
 ]
+
+test("filtra a evolução mensal por atalhos e intervalo personalizado inclusivo", () => {
+  const series = Array.from({ length: 14 }, (_, index) => ({
+    competencia: `${2025 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`,
+  }))
+
+  assert.deepEqual(
+    filterMonthlySeriesPeriod(series, "3").map((point) => point.competencia),
+    ["2025-12-01", "2026-01-01", "2026-02-01"],
+  )
+  assert.equal(filterMonthlySeriesPeriod(series, "6").length, 6)
+  assert.equal(filterMonthlySeriesPeriod(series, "12").length, 12)
+  assert.deepEqual(
+    filterMonthlySeriesPeriod(series, "custom", {
+      start: "2025-03-01",
+      end: "2025-05-01",
+    }).map((point) => point.competencia),
+    ["2025-03-01", "2025-04-01", "2025-05-01"],
+  )
+})
 
 function makeRow(overrides: Partial<IndicadoresHeatRow> & { imovelId: string }): IndicadoresHeatRow {
   return {

@@ -14,11 +14,13 @@
 // (D22 — 18 barras com rótulo repetido era o problema).
 // AUSÊNCIA: "—" recua em cor, nunca se confunde com zero confirmado.
 
+import { useEffect, useState } from "react"
 import type { IndicadoresData, IndicadoresOccupancy } from "@/lib/indicadores-types"
 import { MonthlySeries } from "../charts/monthly-series"
 import { SegmentedBar, type BarSegment } from "../charts/segmented-bar"
 import {
   confidenceLabel,
+  filterMonthlySeriesPeriod,
   formatCount,
   formatCurrency,
   formatPercent,
@@ -27,6 +29,7 @@ import {
   resolveMetricValue,
   sumKnownValues,
   type DashboardMetric,
+  type MonthlySeriesPeriod,
 } from "../lib/presentation"
 import {
   EmptyState,
@@ -35,6 +38,7 @@ import {
   Panel,
   PanelHeader,
   StateChip,
+  ToggleButton,
 } from "../primitives/dashboard-ui"
 
 const OCCUPANCY_FILLS: Array<{ key: keyof IndicadoresOccupancy; label: string; fill: string }> = [
@@ -56,6 +60,10 @@ export function ViewGeral({
   onMetricChange: (metric: DashboardMetric) => void
 }) {
   const { resumo, ponteFinanceira: bridge, realizacaoAluguel: realizacao } = data
+  const [seriesPeriod, setSeriesPeriod] = useState<MonthlySeriesPeriod>("12")
+  const [customRange, setCustomRange] = useState<SeriesRange>(() => initialSeriesRange(data.serieMensal))
+  const resolvedRange = resolveSeriesRange(data.serieMensal, customRange)
+  const visibleSeries = filterMonthlySeriesPeriod(data.serieMensal, seriesPeriod, resolvedRange)
   const resultado = resolveMetricValue(resumo.repasseCalculado, resumo.repasseApurado)
   const comprovantes = data.cobertura.comprovantes
   const conference = describeConference(
@@ -71,6 +79,29 @@ export function ViewGeral({
   )
   const despesas = resolveMetricValue(bridge.despesas, resumo.despesasRetidas)
   const tarifas = resolveMetricValue(bridge.tarifas, resumo.tarifas)
+
+  useEffect(() => {
+    function syncSeriesPeriodFromHistory() {
+      const next = readSeriesPeriodUrl(data.serieMensal)
+      setSeriesPeriod(next.period)
+      setCustomRange(next.range)
+    }
+
+    syncSeriesPeriodFromHistory()
+    window.addEventListener("popstate", syncSeriesPeriodFromHistory)
+    return () => window.removeEventListener("popstate", syncSeriesPeriodFromHistory)
+  }, [data.serieMensal])
+
+  function changeSeriesPeriod(period: MonthlySeriesPeriod) {
+    setSeriesPeriod(period)
+    if (period === "custom") setCustomRange(resolvedRange)
+    writeSeriesPeriodUrl(period, resolvedRange)
+  }
+
+  function changeCustomRange(range: SeriesRange) {
+    setCustomRange(range)
+    writeSeriesPeriodUrl("custom", range)
+  }
 
   const composition: BarSegment[] = [
     { key: "resultado", label: "Resultado", value: resultado, fill: "bg-acr-green", display: formatCurrency(resultado) },
@@ -233,7 +264,12 @@ export function ViewGeral({
       <Panel className="min-w-0 overflow-hidden">
         <PanelHeader
           title="Evolução mensal"
-          action={<MetricToggle value={metric} onChange={onMetricChange} />}
+          action={(
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+              <SeriesPeriodToggle value={seriesPeriod} onChange={changeSeriesPeriod} />
+              <MetricToggle value={metric} onChange={onMetricChange} />
+            </div>
+          )}
           help={metric === "valor" ? {
             short: "Cada mês conta na competência de origem do aluguel.",
             title: "Evolução mensal",
@@ -245,14 +281,167 @@ export function ViewGeral({
             definition: "Ocupação e cobertura do histórico mensal em cada competência.",
           }}
         />
-        {data.serieMensal.length > 0 ? (
-          <MonthlySeries series={data.serieMensal} metric={metric} selectedCompetencia={data.meta.competencia} />
+        {seriesPeriod === "custom" && data.serieMensal.length > 0 && (
+          <CustomSeriesRange
+            series={data.serieMensal}
+            range={resolvedRange}
+            visibleMonths={visibleSeries.length}
+            onStartChange={(start) => changeCustomRange({
+              start,
+              end: start > resolvedRange.end ? start : resolvedRange.end,
+            })}
+            onEndChange={(end) => changeCustomRange({
+              start: end < resolvedRange.start ? end : resolvedRange.start,
+              end,
+            })}
+          />
+        )}
+        {visibleSeries.length > 0 ? (
+          <MonthlySeries series={visibleSeries} metric={metric} selectedCompetencia={data.meta.competencia} />
         ) : (
-          <EmptyState title="Sem série histórica" description="A série aparece quando houver competências até o mês selecionado." />
+          <EmptyState title="Sem série no período" description="Escolha um intervalo que contenha competências processadas." />
         )}
       </Panel>
     </div>
   )
+}
+
+type MonthlyPoint = IndicadoresData["serieMensal"][number]
+type SeriesRange = { start: string; end: string }
+
+function SeriesPeriodToggle({
+  value,
+  onChange,
+}: {
+  value: MonthlySeriesPeriod
+  onChange: (value: MonthlySeriesPeriod) => void
+}) {
+  const options: Array<{ value: MonthlySeriesPeriod; label: string }> = [
+    { value: "3", label: "3 meses" },
+    { value: "6", label: "6 meses" },
+    { value: "12", label: "12 meses" },
+    { value: "custom", label: "Período" },
+  ]
+
+  return (
+    <div
+      className="flex min-h-11 max-w-full overflow-x-auto rounded-lg border border-acr-line-2 bg-white p-1 overscroll-x-contain"
+      role="group"
+      aria-label="Período da evolução mensal"
+    >
+      {options.map((option) => (
+        <ToggleButton
+          key={option.value}
+          selected={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </ToggleButton>
+      ))}
+    </div>
+  )
+}
+
+function CustomSeriesRange({
+  series,
+  range,
+  visibleMonths,
+  onStartChange,
+  onEndChange,
+}: {
+  series: MonthlyPoint[]
+  range: SeriesRange
+  visibleMonths: number
+  onStartChange: (value: string) => void
+  onEndChange: (value: string) => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-acr-line bg-[#fafbfa] px-4 py-3 sm:flex-row sm:items-end sm:px-5">
+      <SeriesMonthSelect label="De" value={range.start} series={series} onChange={onStartChange} />
+      <SeriesMonthSelect label="Até" value={range.end} series={series} onChange={onEndChange} />
+      <p className="pb-3 text-xs font-medium text-acr-muted-2 tabular-nums" aria-live="polite">
+        {visibleMonths} {visibleMonths === 1 ? "mês exibido" : "meses exibidos"}
+      </p>
+    </div>
+  )
+}
+
+function SeriesMonthSelect({
+  label,
+  value,
+  series,
+  onChange,
+}: {
+  label: string
+  value: string
+  series: MonthlyPoint[]
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="min-w-0 sm:w-44">
+      <span className="mb-1 block text-[11px] font-semibold text-acr-muted-2">{label}</span>
+      <select
+        name={label === "De" ? "serieInicio" : "serieFim"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-11 w-full rounded-lg border border-acr-line-2 bg-white px-3 text-sm font-medium text-acr-ink outline-none focus:border-acr-green focus:ring-2 focus:ring-acr-green/15"
+      >
+        {series.map((point) => (
+          <option key={point.competencia} value={point.competencia}>{point.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function initialSeriesRange(series: MonthlyPoint[]): SeriesRange {
+  return {
+    start: series.at(0)?.competencia ?? "",
+    end: series.at(-1)?.competencia ?? "",
+  }
+}
+
+function resolveSeriesRange(series: MonthlyPoint[], range: SeriesRange): SeriesRange {
+  const available = new Set(series.map((point) => point.competencia))
+  const fallback = initialSeriesRange(series)
+  const start = available.has(range.start) ? range.start : fallback.start
+  const end = available.has(range.end) ? range.end : fallback.end
+  return start <= end ? { start, end } : fallback
+}
+
+function readSeriesPeriodUrl(series: MonthlyPoint[]): {
+  period: MonthlySeriesPeriod
+  range: SeriesRange
+} {
+  const fallback = initialSeriesRange(series)
+  if (typeof window === "undefined") return { period: "12", range: fallback }
+  const params = new URLSearchParams(window.location.search)
+  const rawPeriod = params.get("seriePeriodo")
+  const period = isMonthlySeriesPeriod(rawPeriod) ? rawPeriod : "12"
+  return {
+    period,
+    range: resolveSeriesRange(series, {
+      start: params.get("serieInicio") ?? fallback.start,
+      end: params.get("serieFim") ?? fallback.end,
+    }),
+  }
+}
+
+function writeSeriesPeriodUrl(period: MonthlySeriesPeriod, range: SeriesRange) {
+  const url = new URL(window.location.href)
+  url.searchParams.set("seriePeriodo", period)
+  if (period === "custom") {
+    url.searchParams.set("serieInicio", range.start)
+    url.searchParams.set("serieFim", range.end)
+  } else {
+    url.searchParams.delete("serieInicio")
+    url.searchParams.delete("serieFim")
+  }
+  window.history.replaceState(window.history.state, "", url)
+}
+
+function isMonthlySeriesPeriod(value: string | null): value is MonthlySeriesPeriod {
+  return value === "3" || value === "6" || value === "12" || value === "custom"
 }
 
 function OccupancyDistribution({ label, occupancy }: { label: string; occupancy: IndicadoresOccupancy }) {

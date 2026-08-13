@@ -1212,6 +1212,32 @@ Arquivos/docs impactados: `lib/indicadores-repair.ts`,
 Próxima ação: publicar a proteção no host da aplicação e executar smoke da série
 mensal; o banco usado pelo cliente já está corrigido.
 
+### 2026-08-13 - Período filtrável na evolução mensal
+
+Status: done.
+
+Job: permitir que o operador escolha quanto histórico comparar na Evolução
+mensal dos Indicadores, sem alterar a competência usada pelos demais números.
+
+Outcome entregue: a série abre nas últimas 12 competências disponíveis e
+oferece atalhos de 3, 6 e 12 meses, além de intervalo personalizado inclusivo
+com seletores De/Até. A escolha persiste nos parâmetros `seriePeriodo`,
+`serieInicio` e `serieFim` da URL; os KPIs do topo permanecem ligados à
+competência selecionada. Períodos longos preservam a legibilidade com rolagem
+interna do gráfico, sem overflow horizontal da página.
+
+Validação: teste unitário cobre os quatro modos e os limites inclusivos. Smoke
+autenticado confirmou seleção, recarga pela URL e intervalo personalizado em
+desktop e 390 px; no mobile, a largura do documento permaneceu igual à viewport
+e não houve erro ou alerta no console. Suíte completa com 420 testes, lint,
+typecheck, build de produção e checklist 6/6 passaram.
+
+Arquivos/docs impactados: apresentação e gráfico da Visão geral, testes e docs
+02/06/12. Não há migration nem alteração de dados financeiros.
+
+Próxima ação: confirmar o deploy da `main` no host da aplicação e repetir o
+smoke com uma URL compartilhada de período personalizado.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

@@ -3,6 +3,7 @@ import type { IndicadoresData, IndicadoresHeatRow } from "@/lib/indicadores-type
 export type DashboardMetric = "valor" | "percentual"
 export type HeatMetric = "inad" | "vac"
 export type DashboardTab = "geral" | "receita" | "mapa" | "imoveis"
+export type MonthlySeriesPeriod = "3" | "6" | "12" | "custom"
 export type ConfidenceStatus = "confirmado" | "em_conferencia" | "incompleto" | "com_divergencia"
 
 export type OccupancySummary = IndicadoresData["resumo"]["ocupacaoCompetencia"]
@@ -18,6 +19,18 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("pt-BR", {
 const NUMBER_FORMATTER = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,
 })
+
+export function filterMonthlySeriesPeriod<T extends { competencia: string }>(
+  series: T[],
+  period: MonthlySeriesPeriod,
+  customRange?: { start: string; end: string },
+): T[] {
+  if (period !== "custom") return series.slice(-Number(period))
+  if (!customRange) return series
+  return series.filter(
+    (point) => point.competencia >= customRange.start && point.competencia <= customRange.end,
+  )
+}
 
 export function formatCurrency(value: number | null | undefined): string {
   return value == null ? "—" : CURRENCY_FORMATTER.format(value)

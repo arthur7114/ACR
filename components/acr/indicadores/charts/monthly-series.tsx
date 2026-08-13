@@ -28,9 +28,9 @@ const PERCENT_SERIES: Series[] = [
 const WIDTH = 760
 const HEIGHT = 232
 const PAD = { top: 14, right: 16, bottom: 28, left: 56 }
-const PLOT_W = WIDTH - PAD.left - PAD.right
 const PLOT_H = HEIGHT - PAD.top - PAD.bottom
 const GRID_STEPS = 4
+const MONTH_WIDTH = 72
 
 export function MonthlySeries({
   series,
@@ -42,20 +42,22 @@ export function MonthlySeries({
   selectedCompetencia: string
 }) {
   const definitions = metric === "percentual" ? PERCENT_SERIES : VALUE_SERIES
-  const selectedIndex = Math.max(0, series.findIndex((point) => point.competencia === selectedCompetencia))
+  const selectedIndex = resolveSelectedIndex(series, selectedCompetencia)
   const [hovered, setHovered] = useState<number | null>(null)
   const active = hovered ?? selectedIndex
 
   if (series.length === 0) return null
 
+  const width = Math.max(WIDTH, PAD.left + PAD.right + Math.max(1, series.length - 1) * MONTH_WIDTH)
+  const plotWidth = width - PAD.left - PAD.right
   const maxValue = metric === "percentual"
     ? 100
     : niceCeiling(Math.max(1, ...series.flatMap((point) => definitions.map((item) => item.read(point) ?? 0))))
 
   const x = (index: number) =>
-    series.length === 1 ? PAD.left + PLOT_W / 2 : PAD.left + (index * PLOT_W) / (series.length - 1)
+    series.length === 1 ? PAD.left + plotWidth / 2 : PAD.left + (index * plotWidth) / (series.length - 1)
   const y = (value: number) => PAD.top + (1 - value / maxValue) * PLOT_H
-  const band = series.length === 1 ? PLOT_W : PLOT_W / (series.length - 1)
+  const band = series.length === 1 ? plotWidth : plotWidth / (series.length - 1)
 
   const activePoint = series[active]
 
@@ -76,8 +78,9 @@ export function MonthlySeries({
           ilegíveis, então a caixa rola em vez de encolher o texto. */}
       <div className="mt-3 overflow-x-auto overscroll-x-contain">
       <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${HEIGHT}`}
         className="block h-auto w-full min-w-[600px]"
+        style={{ minWidth: Math.max(600, width) }}
         role="img"
         aria-label={`Série mensal por competência, ${series.length} ${series.length === 1 ? "mês" : "meses"}`}
       >
@@ -88,7 +91,7 @@ export function MonthlySeries({
             <g key={step}>
               <line
                 x1={PAD.left}
-                x2={WIDTH - PAD.right}
+                x2={width - PAD.right}
                 y1={lineY}
                 y2={lineY}
                 stroke="var(--acr-line)"
@@ -169,23 +172,25 @@ export function MonthlySeries({
       </svg>
       </div>
 
-      <table className="sr-only">
-        <caption>Série mensal por competência</caption>
-        <thead>
-          <tr>
-            <th scope="col">Competência</th>
-            {definitions.map((item) => <th key={item.key} scope="col">{item.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {series.map((point) => (
-            <tr key={point.competencia}>
-              <th scope="row">{point.label}</th>
-              {definitions.map((item) => <td key={item.key}>{item.format(item.read(point))}</td>)}
+      <div className="sr-only">
+        <table>
+          <caption>Série mensal por competência</caption>
+          <thead>
+            <tr>
+              <th scope="col">Competência</th>
+              {definitions.map((item) => <th key={item.key} scope="col">{item.label}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {series.map((point) => (
+              <tr key={point.competencia}>
+                <th scope="row">{point.label}</th>
+                {definitions.map((item) => <td key={item.key}>{item.format(item.read(point))}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -216,4 +221,9 @@ function niceCeiling(value: number): number {
   const steps = [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10]
   const found = steps.find((step) => step * magnitude >= value)
   return (found ?? 10) * magnitude
+}
+
+function resolveSelectedIndex(series: MonthlyPoint[], selectedCompetencia: string) {
+  const selected = series.findIndex((point) => point.competencia === selectedCompetencia)
+  return selected >= 0 ? selected : Math.max(0, series.length - 1)
 }
