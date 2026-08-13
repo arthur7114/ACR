@@ -1036,6 +1036,7 @@ function buildHeatCell(
   if (!snapshot) {
     return {
       competencia,
+      inquilinoNome: null,
       statusOcupacao: null,
       valor: null,
       inadimplenciaPercentual: null,
@@ -1064,6 +1065,7 @@ function buildHeatCell(
 
   return {
     competencia,
+    inquilinoNome: snapshot.inquilinoNome ?? null,
     statusOcupacao: presentOccupancyStatus(
       snapshot.statusOcupacao,
       snapshot.modeloReceita === "variavel",

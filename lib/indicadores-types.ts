@@ -206,6 +206,7 @@ export interface IndicadoresAttentionItem {
 
 export interface IndicadoresHeatCell {
   competencia: string
+  inquilinoNome: string | null
   statusOcupacao: OccupancyStatus | null
   valor: number | null
   inadimplenciaPercentual: number | null

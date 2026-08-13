@@ -1238,6 +1238,36 @@ Arquivos/docs impactados: apresentação e gráfico da Visão geral, testes e do
 Próxima ação: confirmar o deploy da `main` no host da aplicação e repetir o
 smoke com uma URL compartilhada de período personalizado.
 
+### 2026-08-13 - Inquilino por competência no mapa de riscos
+
+Status: done.
+
+Job: identificar quem ocupava cada unidade em cada mês do histórico de riscos,
+sem confundir o inquilino atual com o histórico.
+
+Outcome entregue: cada célula mensal da unidade mostra o nome persistido no
+snapshot da própria competência. Nome ausente aparece como “Inquilino não
+informado”; o sistema não usa o cadastro atual como fallback. Em empreendimento
+com uma única unidade, o nome também aparece na linha agregada recolhida. Nomes
+longos são truncados na grade e permanecem completos no título e na descrição
+acessível.
+
+Dados conferidos: José Walter possui nomes históricos em janeiro a maio, mas os
+documentos Plural registraram a descrição/endereço do contrato nesse campo; em
+junho e julho a fonte não trouxe nome e os snapshots estão nulos. A interface
+expõe essa ausência sem inventar um locatário.
+
+Validação: regressão de domínio garante o nome por competência e proíbe fallback
+do inquilino atual; testes de apresentação verificam a presença do dado e do
+estado “Inquilino não informado”. Suíte completa com 421 testes, lint,
+typecheck, build e checklist 6/6 passaram. Smoke autenticado confirmou a linha
+recolhida e expandida em desktop, ausência de overflow em 390 px e console sem
+alertas. Não há migration nem escrita financeira.
+
+Próxima ação: confirmar o nome civil/empresarial do locatário de José Walter se
+o cliente quiser corrigir a fonte histórica, pois ele não consta nos extratos
+Plural analisados.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

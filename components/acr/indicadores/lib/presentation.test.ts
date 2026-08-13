@@ -50,6 +50,7 @@ function makeRow(overrides: Partial<IndicadoresHeatRow> & { imovelId: string }):
     hoje: "ocupado",
     celulas: MESES.map((mes) => ({
       competencia: mes.competencia,
+      inquilinoNome: null,
       statusOcupacao: null,
       valor: null,
       inadimplenciaPercentual: null,
@@ -66,27 +67,27 @@ test("resume inadimplência do mês, acumulada e total, listando só quem está 
     imovelId: "apto-7",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", statusOcupacao: "inadimplente", valor: 700, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: 810.44, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 700, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 810.44, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
     ],
   })
   const quitouNoPassado = makeRow({
     imovelId: "apto-3",
     hoje: "ocupado",
     celulas: [
-      { competencia: "2026-04-01", statusOcupacao: "inadimplente", valor: 300, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 300, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
     ],
   })
   const inadimplenteAgoraSoAgora = makeRow({
     imovelId: "apto-9",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: 200, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 200, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
     ],
   })
 
@@ -120,9 +121,9 @@ test("mês atual fica indisponível (não zero) quando falta o valor esperado de
     imovelId: "apto-12",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
-      { competencia: "2026-05-01", statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
-      { competencia: "2026-06-01", statusOcupacao: "inadimplente", valor: null, inadimplenciaPercentual: null, vacanciaPercentual: 0, origem: "processamento", qualidade: "parcial" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: null, inadimplenciaPercentual: null, vacanciaPercentual: 0, origem: "processamento", qualidade: "parcial" },
     ],
   })
 
@@ -192,6 +193,7 @@ function junhoCell(
 ): IndicadoresHeatRow["celulas"][number] {
   return {
     competencia: "2026-06-01",
+    inquilinoNome: null,
     statusOcupacao,
     valor,
     inadimplenciaPercentual: null,
@@ -387,4 +389,6 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
   )
   assert.equal(source.includes("sem dado"), true, "ausência de dado precisa ser rotulada, nunca lida como zero")
   assert.equal(source.includes("buildHeatGroups"), true, "o mapa abre por empreendimento, não uma linha por unidade")
+  assert.equal(source.includes("cell.inquilinoNome"), true, "cada competência precisa exibir seu próprio inquilino")
+  assert.equal(source.includes("Inquilino não informado"), true, "nome ausente não pode usar o cadastro atual como fallback")
 })

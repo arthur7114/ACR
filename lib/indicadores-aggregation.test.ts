@@ -85,6 +85,7 @@ interface SnapshotFixture {
   competencia: string
   statusOcupacao: "ocupado" | "inadimplente" | "vago" | "em_rescisao" | "desconhecido"
   statusOrigem: string
+  inquilinoNome?: string | null
   aluguelEsperado: number | null
   aluguelRecebido: number | null
   receitaTotal: number | null
@@ -864,6 +865,23 @@ test("não usa o inquilino atual como fallback para a competência histórica", 
 
   assert.equal(result.rankingAtencao[0].inquilinoNome, null)
   assert.equal(result.receitasPorImovel[0].inquilinoNome, null)
+  assert.equal(result.heat.linhas[0].celulas[0].inquilinoNome, null)
+})
+
+test("preserva o inquilino de cada competência nas células do histórico", () => {
+  const result = aggregateIndicadores(makeInput({
+    competencia: "2026-06-01",
+    imoveisAtivos: [makeProperty({ inquilinoNome: "Inquilino de hoje" })],
+    snapshots: [
+      makeSnapshot({ competencia: "2026-05-01", inquilinoNome: "Maria em maio" }),
+      makeSnapshot({ competencia: "2026-06-01", inquilinoNome: "João em junho" }),
+    ],
+  }))
+
+  assert.deepEqual(
+    result.heat.linhas[0].celulas.map((cell) => cell.inquilinoNome),
+    ["Maria em maio", "João em junho"],
+  )
 })
 
 test("filtro por imóvel recalcula dados atribuíveis e anula campos do fechamento", () => {

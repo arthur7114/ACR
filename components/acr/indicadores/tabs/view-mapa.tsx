@@ -9,7 +9,8 @@
 // D27 — o mapa abre por empreendimento e expande para as unidades; uma linha por
 //   unidade transformava a tela em rolagem interminável. A célula perdeu as
 //   linhas de percentual e de qualidade: a cor já carrega a intensidade, e o
-//   texto repetido em ~700 células era o próprio problema.
+//   percentual e de qualidade: a cor já carrega a intensidade. O inquilino
+//   histórico permanece porque identifica quem ocupava a unidade em cada mês.
 
 import { Fragment, useState } from "react"
 import { ChevronRight } from "lucide-react"
@@ -123,7 +124,13 @@ export function ViewMapa({
                             </button>
                           </th>
                           {group.celulas.map((cell) => (
-                            <GroupCell key={cell.competencia} cell={cell} />
+                            <GroupCell
+                              key={cell.competencia}
+                              cell={cell}
+                              tenantName={group.linhas.length === 1
+                                ? group.linhas[0].celulas.find((candidate) => candidate.competencia === cell.competencia)?.inquilinoNome ?? null
+                                : undefined}
+                            />
                           ))}
                           <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-ink tabular-nums">
                             {group.unidadesEmRiscoHoje > 0 ? formatCount(group.unidadesEmRiscoHoje) : "—"}
@@ -248,10 +255,16 @@ function DelinquencyPanel({ data }: { data: IndicadoresData }) {
   )
 }
 
-function GroupCell({ cell }: { cell: HeatGroupCell }) {
+function GroupCell({
+  cell,
+  tenantName,
+}: {
+  cell: HeatGroupCell
+  tenantName?: string | null
+}) {
   if (cell.unidadesComDado === 0) {
     return (
-      <td aria-label="sem dado" className="min-w-24 border-b border-white/70 bg-[#f4f6f4] px-2 py-3 text-center align-middle text-acr-muted-2">
+      <td aria-label="sem dado" className="min-w-32 max-w-32 border-b border-white/70 bg-[#f4f6f4] px-2 py-3 text-center align-middle text-acr-muted-2">
         —
       </td>
     )
@@ -259,8 +272,8 @@ function GroupCell({ cell }: { cell: HeatGroupCell }) {
 
   return (
     <td
-      aria-label={`${formatCount(cell.unidadesEmRisco)} de ${formatCount(cell.unidadesComDado)} unidades em risco${cell.valor === null ? "" : `, ${formatCurrency(cell.valor)}`}`}
-      className={cn("min-w-24 border-b border-white/70 px-2 py-3 text-center align-middle tabular-nums", heatTone(cell.percentual))}
+      aria-label={`${formatCount(cell.unidadesEmRisco)} de ${formatCount(cell.unidadesComDado)} unidades em risco${tenantName === undefined ? "" : `, ${tenantAriaLabel(tenantName)}`}${cell.valor === null ? "" : `, ${formatCurrency(cell.valor)}`}`}
+      className={cn("min-w-32 max-w-32 border-b border-white/70 px-2 py-3 text-center align-middle tabular-nums", heatTone(cell.percentual))}
     >
       <span className="block text-sm font-bold">
         {formatCount(cell.unidadesEmRisco)}
@@ -269,6 +282,7 @@ function GroupCell({ cell }: { cell: HeatGroupCell }) {
       {cell.valor !== null && cell.valor > 0 && (
         <span className="mt-0.5 block text-[10px] font-semibold">{formatCurrency(cell.valor)}</span>
       )}
+      {tenantName !== undefined && <TenantName name={tenantName} />}
     </td>
   )
 }
@@ -288,7 +302,7 @@ function UnitCell({
 
   if (cell === null || status === null) {
     return (
-      <td aria-label={`${unit}, ${month}: sem dado`} className="min-w-24 border-b border-white/70 bg-[#f4f6f4] px-2 py-2.5 text-center align-middle text-acr-muted-2">
+      <td aria-label={`${unit}, ${month}: sem dado`} className="min-w-32 max-w-32 border-b border-white/70 bg-[#f4f6f4] px-2 py-2.5 text-center align-middle text-acr-muted-2">
         —
       </td>
     )
@@ -302,13 +316,27 @@ function UnitCell({
 
   return (
     <td
-      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
-      className={cn("min-w-24 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums", heatTone(percentage))}
+      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}, ${tenantAriaLabel(cell.inquilinoNome)}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
+      className={cn("min-w-32 max-w-32 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums", heatTone(percentage))}
     >
       <span className="block font-semibold">{occupancyLabel(status)}</span>
+      <TenantName name={cell.inquilinoNome} />
       {detail.kind === "detalhado" && <span className="mt-0.5 block text-[10px]">{formatCurrency(cell.valor)}</span>}
     </td>
   )
+}
+
+function TenantName({ name }: { name: string | null }) {
+  const label = name?.trim() || "Inquilino não informado"
+  return (
+    <span className="mt-0.5 block truncate text-[10px] font-normal leading-tight" title={name?.trim() || undefined}>
+      {label}
+    </span>
+  )
+}
+
+function tenantAriaLabel(name: string | null) {
+  return name?.trim() ? `inquilino ${name.trim()}` : "inquilino não informado"
 }
 
 function heatTone(value: number | null): string {
