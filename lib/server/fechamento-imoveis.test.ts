@@ -56,3 +56,29 @@ test("persiste automaticamente somente correspondencia exata e univoca", () => {
   assert.equal(linked?.receitas_por_imovel[1].imovel_id, undefined)
   assert.equal(linked?.receitas_por_imovel[2].imovel_id, "imovel-102")
 })
+
+test("vincula revisão contratual GA ao cadastro canônico", () => {
+  const plural = {
+    ...prestacao,
+    receitas_por_imovel: [
+      {
+        ...prestacao.receitas_por_imovel[0],
+        apto: "GA0002/2",
+        imovel_id: undefined,
+      },
+    ],
+  } as PrestacaoAnalysis
+
+  const linked = vincularReceitasExistentes(plural, [
+    {
+      id: "imovel-ga0002",
+      codigo_imobiliaria: "GA0002",
+      unidade: "GA0002",
+      inquilino_nome: "Galpão José Walter",
+      status: "ocupado",
+      valor_aluguel_esperado: 3_200,
+    },
+  ])
+
+  assert.equal(linked?.receitas_por_imovel[0].imovel_id, "imovel-ga0002")
+})

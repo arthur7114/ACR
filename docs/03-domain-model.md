@@ -67,6 +67,7 @@ de usuários e configuração eGestor exigem `admin`.
   como entrada e/ou saída de passagem; assim o caixa reconcilia sem inflar
   desempenho.
 - Receita só está vinculada quando a linha e a movimentação apontam para um `imovel_id` ativo do mesmo par imobiliária + empreendimento; código/unidade equivalente serve apenas como sugestão.
+- No layout Plural, o sufixo numérico contratual de códigos `GA` (`GA0002/2`) não cria outra identidade cadastral: ele resolve para o código canônico sem o sufixo (`GA0002`). A equivalência é restrita a esse formato; barras em outros códigos de unidade permanecem significativas.
 - Correções de competência ou vínculo atualizam fechamento, movimentação, validações, cadastro quando aplicável e auditoria na mesma transação.
 - Divergencia de repasse:
   - ate R$ 0,10: baixa;

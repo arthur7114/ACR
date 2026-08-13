@@ -57,6 +57,7 @@
 - CA14.17: visualizador não muta dados; operador não aprova nem resolve
   bloqueante; aprovador pode fazê-lo; somente admin gerencia usuários e
   configuração eGestor.
+- CA14.18: no layout Plural, `GA0002/2` e `GA0002` identificam o mesmo imóvel. Sincronização, vínculo de receitas, reparo histórico e snapshots usam `GA0002`; códigos com barra fora do padrão contratual `GA<número>/<revisão>` continuam distintos.
 
 ## Lista de fechamentos
 

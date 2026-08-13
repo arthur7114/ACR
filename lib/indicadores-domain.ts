@@ -1,3 +1,5 @@
+import { normalizeCodigoImovel } from "./codigo-imovel"
+
 export type OccupancyStatus =
   | "ocupado"
   | "alugado_app"
@@ -68,9 +70,11 @@ export function isImovelAirbnb(
 }
 
 export function buildPropertyKey(input: PropertyKeyInput) {
-  return [input.realEstateAgency, input.development, input.unit]
-    .map(normalizePropertyKeyPart)
-    .join("::")
+  return [
+    normalizePropertyKeyPart(input.realEstateAgency),
+    normalizePropertyKeyPart(input.development),
+    normalizeCodigoImovel(input.unit),
+  ].join("::")
 }
 
 export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus {

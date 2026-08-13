@@ -1,5 +1,9 @@
 import { createSupabaseAdmin } from "./supabase"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+import {
+  canonicalizarCodigoImovel,
+  normalizeCodigoImovel,
+} from "@/lib/codigo-imovel"
 
 export interface SyncImoveisQuery {
   empreendimentoId?: string | null
@@ -46,8 +50,10 @@ interface AcumuladoUnidade {
 // Popula/atualiza o cadastro de imoveis a partir das prestacoes ja processadas.
 // Para cada (imobiliaria, empreendimento, unidade) usa a competencia MAIS RECENTE
 // como verdade do estado atual (inquilino, status, aluguel esperado).
-export async function syncImoveisFromFechamentos(query: SyncImoveisQuery = {}): Promise<SyncImoveisResult> {
-  const supabase = createSupabaseAdmin()
+export async function syncImoveisFromFechamentos(
+  query: SyncImoveisQuery = {},
+  supabase: ReturnType<typeof createSupabaseAdmin> = createSupabaseAdmin(),
+): Promise<SyncImoveisResult> {
 
   let fechQuery = supabase
     .from("fechamentos")
@@ -74,13 +80,13 @@ export async function syncImoveisFromFechamentos(query: SyncImoveisQuery = {}): 
     const rescindidasNoMes = new Set(
       (prestacao.acordos_rescisoes_recebidos ?? [])
         .filter((a) => a.tipo === "rescisao")
-        .map((a) => (a.apto ?? "").trim())
+        .map((a) => normalizeCodigoImovel(a.apto))
         .filter(Boolean),
     )
     for (const row of prestacao.receitas_por_imovel ?? []) {
-      const unidade = (row.apto ?? "").trim()
+      const unidade = canonicalizarCodigoImovel(row.apto)
       if (!unidade) continue
-      const key = `${f.imobiliaria_id}|${f.empreendimento_id}|${unidade}`
+      const key = buildSyncKey(f.imobiliaria_id, f.empreendimento_id, unidade)
       porUnidade.set(key, {
         imobiliariaId: f.imobiliaria_id,
         empreendimentoId: f.empreendimento_id,
@@ -89,7 +95,7 @@ export async function syncImoveisFromFechamentos(query: SyncImoveisQuery = {}): 
         inquilino: row.inquilino?.trim() || null,
         aluguel: typeof row.aluguel === "number" ? row.aluguel : null,
         status: statusDaLinha(row),
-        emRescisao: rescindidasNoMes.has(unidade),
+        emRescisao: rescindidasNoMes.has(normalizeCodigoImovel(unidade)),
       })
     }
   }
@@ -105,14 +111,14 @@ export async function syncImoveisFromFechamentos(query: SyncImoveisQuery = {}): 
     .in("empreendimento_id", empIds)
   const existentes = new Map(
     ((existentesRaw ?? []) as Array<{ id: string; imobiliaria_id: string; empreendimento_id: string; unidade: string }>).map(
-      (e) => [`${e.imobiliaria_id}|${e.empreendimento_id}|${e.unidade}`, e.id],
+      (e) => [buildSyncKey(e.imobiliaria_id, e.empreendimento_id, e.unidade), e.id],
     ),
   )
 
   let criados = 0
   let atualizados = 0
   for (const u of porUnidade.values()) {
-    const key = `${u.imobiliariaId}|${u.empreendimentoId}|${u.unidade}`
+    const key = buildSyncKey(u.imobiliariaId, u.empreendimentoId, u.unidade)
     const status = u.emRescisao ? "em_rescisao" : u.status
     const existenteId = existentes.get(key)
     if (existenteId) {
@@ -143,4 +149,8 @@ export async function syncImoveisFromFechamentos(query: SyncImoveisQuery = {}): 
   }
 
   return { criados, atualizados, totalUnidades: porUnidade.size }
+}
+
+function buildSyncKey(imobiliariaId: string, empreendimentoId: string, unidade: string) {
+  return `${imobiliariaId}|${empreendimentoId}|${normalizeCodigoImovel(unidade)}`
 }

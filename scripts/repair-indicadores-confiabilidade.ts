@@ -397,7 +397,11 @@ async function buildRepairPlan(
       continue
     }
 
-    const refreshed = await refreshClosureValidation(supabase, closure, analysis)
+    const linkedAnalysis = attachAnalysisToExistingProperties(
+      analysis,
+      propertiesByClosure.get(closure.id) ?? [],
+    )
+    const refreshed = await refreshClosureValidation(supabase, closure, linkedAnalysis)
     const reconciliation = auditExistingAnalysis(refreshed)
     records.push(
       buildRepairedRecord(

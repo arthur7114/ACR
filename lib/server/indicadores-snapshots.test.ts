@@ -938,7 +938,7 @@ test("movimento de passagem não vira outros recebimentos no snapshot", () => {
       },
       receitas_por_imovel: [
         {
-          apto: "GA0002",
+          apto: "GA0002/2",
           inquilino: "",
           aluguel: 3_200,
           desconto: null,
@@ -1001,6 +1001,8 @@ test("movimento de passagem não vira outros recebimentos no snapshot", () => {
     analysis,
   }).rows[0]
 
+  assert.equal(row.qualidade, "completo")
+  assert.equal(row.aluguel_competencia, 3_200)
   assert.equal(row.outros_recebimentos, 0)
   assert.equal(row.entradas_passagem, 445.95)
   assert.equal(row.saidas_passagem, null)

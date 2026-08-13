@@ -14,6 +14,7 @@ import {
   roundMoney,
   type OccupancyStatus,
 } from "@/lib/indicadores-domain"
+import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
 import {
   IndicadoresQueryValidationError,
   type IndicadoresQuery,
@@ -595,7 +596,7 @@ function findUnlinkedLines(
   for (const property of properties) {
     const key = pairKey(property)
     const units = unitsByPair.get(key) ?? new Set<string>()
-    units.add(normalizePropertyKeyPart(property.unidade))
+    units.add(normalizeCodigoImovel(property.unidade))
     unitsByPair.set(key, units)
   }
 
@@ -603,7 +604,7 @@ function findUnlinkedLines(
     const units = unitsByPair.get(pairKey(closing)) ?? new Set<string>()
     const lines = closing.analiseCompleta?.prestacao?.receitas_por_imovel ?? []
     const unlinkedLines = lines.filter(
-      (line) => !units.has(normalizePropertyKeyPart(line.apto)),
+      (line) => !units.has(normalizeCodigoImovel(line.apto)),
     )
     return {
       fechamentoId: closing.id,

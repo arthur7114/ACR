@@ -187,3 +187,32 @@ test("reparo histórico persiste o vínculo exato já existente", () => {
 
   assert.equal(linked.prestacao?.receitas_por_imovel[0]?.imovel_id, "imovel-2520")
 })
+
+test("reparo histórico substitui vínculo removido de GA0002/2 pelo cadastro GA0002", () => {
+  const analysis = {
+    prestacao: {
+      receitas_por_imovel: [
+        {
+          apto: "GA0002/2",
+          imovel_id: "imovel-duplicado-removido",
+          inquilino: "",
+          aluguel: 3_348.52,
+          total: 3_348.52,
+        },
+      ],
+    },
+  } as unknown as PackageAnalysis
+
+  const linked = attachAnalysisToExistingProperties(analysis, [
+    {
+      id: "imovel-ga0002",
+      codigo_imobiliaria: "GA0002",
+      unidade: "GA0002",
+      inquilino_nome: "Galpão José Walter",
+      status: "ocupado",
+      valor_aluguel_esperado: 3_200,
+    },
+  ])
+
+  assert.equal(linked.prestacao?.receitas_por_imovel[0]?.imovel_id, "imovel-ga0002")
+})

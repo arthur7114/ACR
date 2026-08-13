@@ -6,11 +6,15 @@
 // case com o cadastro salvo sem os zeros ("2520"). Nao alterar
 // normalizeCadastroKey para isso: ela normaliza tambem nomes, onde
 // stripping de zeros seria incorreto.
+export function canonicalizarCodigoImovel(value: string | null | undefined): string {
+  const codigo = (value ?? "").trim()
+  return /^GA\d+\/\d+$/i.test(codigo) ? codigo.replace(/\/\d+$/, "") : codigo
+}
+
 export function normalizeCodigoImovel(value: string | null | undefined): string {
-  const base = (value ?? "")
+  const base = canonicalizarCodigoImovel(value)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
-    .trim()
     .toLowerCase()
     .replace(/\s+/g, " ")
   // "0002520" -> "2520"; "apto 007" -> "apto 7"; "100" e "2520" ficam iguais.

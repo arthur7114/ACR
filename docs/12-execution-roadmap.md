@@ -10,6 +10,8 @@ Em 2026-08-12, o dry-run de julho regenerou validações para os três fechament
 
 Ainda em 2026-08-12, as vigências contratuais de julho do Galpão Pompílio Gomes foram corrigidas com base na prestação César Rêgo 41460: R$ 6.896,75 para o imóvel 0002526 e R$ 5.517,41 para o 0002527. O histórico anterior foi preservado até junho, a mudança recebeu auditoria e vínculo ao PDF-fonte, e os dois snapshots de julho foram recalculados. O indicador passou de R$ 12.032,74 para R$ 12.414,16, igual ao aluguel recebido da competência; o repasse permaneceu R$ 11.898,36.
 
+Em 2026-08-13, a identidade contratual Plural foi corrigida: `GA0002/2` passa a resolver para o cadastro canônico `GA0002` na sincronização, no vínculo do fechamento, nos snapshots e na cobertura dos indicadores. O fechamento José Walter de julho foi reparado atomicamente e auditado sem alterar os totais nem o lançamento eGestor; a API passou a retornar aluguel recebido de R$ 3.348,52, comissão de R$ 267,88, repasse de R$ 3.080,64, ocupação de 100% e zero linha sem vínculo. A segunda execução do reparador retornou `unchanged`.
+
 ## Proxima acao recomendada
 
 Com autorização explícita do usuário, corrigir o cadastro de três unidades do
@@ -1141,6 +1143,37 @@ correção e este roadmap.
 
 Próxima ação: conferir o card no ambiente publicado após o próximo deploy; não
 há reparo financeiro nem reenvio ao eGestor pendente por esta correção.
+
+### 2026-08-13 - Identidade canônica Plural e José Walter julho
+
+Status: done.
+
+Job: impedir que o código contratual `GA0002/2` recrie um segundo imóvel e
+restaurar o aluguel recebido de José Walter em julho/2026.
+
+Outcome entregue: códigos `GA<número>/<revisão>` resolvem para o código
+canônico sem o sufixo em sincronização, vínculo, snapshots e cobertura. Outros
+formatos com barra permanecem distintos. O reparador histórico também volta a
+vincular análises genéricas ao cadastro ativo antes de comparar idempotência.
+
+Reparo remoto: dry-run restrito encontrou 1 reparo, 0 incompletos e 0
+divergentes; commit atômico aplicado com auditoria. A API retornou aluguel
+recebido R$ 3.348,52, comissão R$ 267,88, repasse R$ 3.080,64, ocupação 100%,
+zero linha sem vínculo e somente o cadastro `GA0002`. Nova execução retornou 1
+`unchanged`. O lançamento eGestor já enviado não foi alterado.
+
+Validação: regressões direcionadas passaram; suíte completa, lint, typecheck,
+build, validador de API e checklist 6/6 passaram. O verificador auxiliar de
+type coverage reportou simultaneamente zero `any` em 1.115 arquivos e cobertura
+0%, inconsistência conhecida do próprio script sem impacto no gate oficial.
+
+Arquivos/docs impactados: `lib/codigo-imovel.ts`,
+`lib/indicadores-domain.ts`, `lib/server/fechamento-imoveis.ts`,
+`lib/server/indicadores.ts`, `lib/server/sync-imoveis.ts`,
+`scripts/repair-indicadores-confiabilidade.ts`, testes e docs 02/03/06/12.
+
+Próxima ação: executar smoke no ambiente implantado após o deploy; nenhuma
+migration de schema é necessária.
 
 ## Como atualizar este doc
 
