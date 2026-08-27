@@ -14,10 +14,12 @@ test("LOCMAIS: rescisão usa o total líquido recebido, não o principal bruto",
     acordos_rescisoes_recebidos: [
       {
         tipo: "rescisao",
+        inquilino: "EX-LOCATÁRIO",
         valor: 1890,
         total_recebido: 1663.56,
         comissao: 116.45,
         repasse: 1547.11,
+        confianca: 0.9,
       },
     ],
   } as never)

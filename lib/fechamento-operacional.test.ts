@@ -86,11 +86,11 @@ test("GM II maio: discrimina comissao regular e de acordos sem alterar o total",
 test("separa acordos, rescisoes e inadimplencia paga no breakdown da receita", () => {
   const prestacao = {
     acordos_rescisoes_recebidos: [
-      { tipo: "acordo", valor: 300 },
-      { tipo: "rescisao", valor: 935.98 },
-      { tipo: "atraso", valor: 707.37 },
-      { tipo: "outro", valor: 50 },
-      { tipo: "intermediacao", valor: 900 },
+      { tipo: "acordo", inquilino: "A", valor: 300, confianca: 0.9 },
+      { tipo: "rescisao", inquilino: "B", valor: 935.98, confianca: 0.9 },
+      { tipo: "atraso", inquilino: "C", valor: 707.37, confianca: 0.9 },
+      { tipo: "outro", inquilino: "D", valor: 50, confianca: 0.9 },
+      { tipo: "intermediacao", inquilino: "E", valor: 900, confianca: 0.9 },
     ],
   } as PrestacaoAnalysis
 
@@ -101,6 +101,39 @@ test("separa acordos, rescisoes e inadimplencia paga no breakdown da receita", (
     outros: 50,
     total: 1993.35,
   })
+})
+
+test("breakdown usa o total recebido resolvido, nao o principal bruto", () => {
+  const prestacao = {
+    acordos_rescisoes_recebidos: [
+      {
+        tipo: "rescisao",
+        inquilino: "EX-LOCATÁRIO",
+        valor: 1890,
+        total_recebido: 1663.56,
+        comissao: 116.45,
+        repasse: 1547.11,
+        confianca: 0.9,
+      },
+    ],
+  } as PrestacaoAnalysis
+
+  assert.equal(calcularResumoReceitasAdicionais(prestacao).rescisoes, 1663.56)
+})
+
+test("item pendente (sem vinculo ou confianca) fica fora do breakdown confirmado", () => {
+  const prestacao = {
+    acordos_rescisoes_recebidos: [
+      { tipo: "acordo", inquilino: "A", valor: 300, confianca: 0.9 },
+      { tipo: "acordo", apto: null, inquilino: null, valor: 999, confianca: 0.9 },
+      { tipo: "rescisao", inquilino: "B", valor: 100, confianca: 0.4 },
+    ],
+  } as PrestacaoAnalysis
+
+  const resumo = calcularResumoReceitasAdicionais(prestacao)
+  assert.equal(resumo.acordos, 300)
+  assert.equal(resumo.rescisoes, 0)
+  assert.equal(resumo.total, 300)
 })
 
 test("desdobra despesas em categorias auditaveis e preserva descricao, referencia e valor", () => {

@@ -126,20 +126,22 @@ export function resolverRecebimento(item: RecebimentoExtraordinario): ResolucaoF
 }
 
 export function normalizarItemLegado(item: AcordoRescisaoRecebido): RecebimentoExtraordinario {
+  // Coerções `?? null` deliberadas: análises persistidas antes dos campos
+  // novos podem trazer undefined, e undefined não pode escapar dos guards.
   const base: BaseRecebimento = {
     imovelId: null,
-    apto: item.apto,
-    inquilino: item.inquilino,
-    competenciaOrigem: item.competencia_original,
-    competenciaRecebimento: item.competencia_recebimento,
+    apto: item.apto ?? null,
+    inquilino: item.inquilino ?? null,
+    competenciaOrigem: item.competencia_original ?? null,
+    competenciaRecebimento: item.competencia_recebimento ?? null,
     totalRecebidoInformado: item.total_recebido ?? null,
     comissaoInformada: item.comissao ?? null,
     repasseInformado: item.repasse ?? null,
     evidencia: {
       documentoId: null,
       secao: null,
-      linhaOuTrecho: item.observacao,
-      confianca: item.confianca,
+      linhaOuTrecho: item.observacao ?? null,
+      confianca: item.confianca ?? 0,
     },
   }
 

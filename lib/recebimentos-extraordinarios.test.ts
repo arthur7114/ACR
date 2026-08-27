@@ -225,6 +225,15 @@ test("resolvedor legado resolve rescisão LOCMAIS ponta a ponta", () => {
   assert.equal(r.repasse, 1547.11)
 })
 
+test("adaptador legado trata campos ausentes como nulos e confiança ausente como zero", () => {
+  const r = resolverRecebimentoLegado({
+    tipo: "rescisao",
+    valor: 1890,
+    total_recebido: 1663.56,
+  } as never)
+  assert.equal(r.status, "pendente")
+})
+
 test("tipo outro usa o valor informado como total recebido", () => {
   const r = resolverRecebimento({
     tipo: "outro",

@@ -1,4 +1,5 @@
 import type { Despesa, PrestacaoAnalysis, PrestacaoResumoDespesa } from "./prestacao-types"
+import { resolverRecebimentoLegado } from "./recebimentos-extraordinarios"
 
 export type CategoriaDespesaFechamento =
   | "energia"
@@ -91,7 +92,8 @@ export function calcularResumoComissaoFechamento(prestacao: PrestacaoAnalysis | 
   const acordos = roundMoney(
     (prestacao?.acordos_rescisoes_recebidos ?? [])
       .filter((item) => item.tipo !== "intermediacao")
-      .reduce((total, item) => total + (item.comissao ?? 0), 0),
+      .map(resolverRecebimentoLegado)
+      .reduce((total, r) => total + (r.status === "resolvido" ? r.comissao : 0), 0),
   )
   const total = roundMoney(prestacao?.resumo_financeiro.comissao_administracao ?? regular + acordos)
   return { regular, acordos: Math.max(roundMoney(total - regular), 0), total }
@@ -109,10 +111,15 @@ export function calcularResumoReceitasAdicionais(
 
   for (const item of prestacao?.acordos_rescisoes_recebidos ?? []) {
     if (item.tipo === "intermediacao") continue
-    if (item.tipo === "acordo") resumo.acordos += item.valor
-    else if (item.tipo === "rescisao") resumo.rescisoes += item.valor
-    else if (item.tipo === "atraso") resumo.inadimplenciasPagas += item.valor
-    else resumo.outros += item.valor
+    const resolucao = resolverRecebimentoLegado(item)
+    // Item pendente não produz efeito financeiro (CA27.2); ele aparece no
+    // painel de pendências, nunca em total confirmado.
+    if (resolucao.status !== "resolvido") continue
+    const recebido = resolucao.totalRecebido
+    if (item.tipo === "acordo") resumo.acordos += recebido
+    else if (item.tipo === "rescisao") resumo.rescisoes += recebido
+    else if (item.tipo === "atraso") resumo.inadimplenciasPagas += recebido
+    else resumo.outros += recebido
   }
 
   const normalized = {
