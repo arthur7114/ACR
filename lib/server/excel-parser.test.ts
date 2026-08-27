@@ -62,3 +62,56 @@ test("falha fechado quando a aba nao contem prestacao financeira", () => {
     /layout.*prestação/i,
   )
 })
+
+test("intermediacao preserva aluguel e garagem e calcula percentual sobre a base comissionavel", () => {
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["GRAND CASTELÃO I"],
+    ["VIGÊNCIA JULHO 2026"],
+    ["NOME", "APTO", "ALUGUEL", "GARAGEM", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO"],
+    ["LOCATÁRIO", "101", 700, 0, 700, 49, 651, ""],
+    ["TOTAL", null, 700, 0, 700, 49, 651],
+    ["INTERMEDIAÇÃO DE JUNHO DE 2026 RECEBIDA EM JULHO"],
+    ["NOME", "APTO", "ALUGUEL", "GARAGEM", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO"],
+    ["NOVO LOCATÁRIO", "204", 650, 25, 726.44, 405, 321.44, "IPTU (7/12)"],
+    ["TOTAL", null, 650, 25, 726.44, 405, 321.44],
+    [null, null, null, null, null, null, null, "TOTAL COMISSÃO + DESPESAS", 454],
+    [null, null, null, null, null, null, null, "SUBTOTAL RECEBIDOS EM NOME DO LOCADOR", 1426.44],
+    [null, null, null, null, null, null, null, "TOTAL A REPASSAR", 972.44],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "JUL 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-07")
+  const item = result.acordos_rescisoes_recebidos[0]
+
+  assert.equal(item?.aluguel, 650)
+  assert.equal(item?.garagem, 25)
+  assert.equal(item?.percentual, 60)
+  assert.equal(item?.competencia_original, "2026-06")
+  assert.equal(item?.competencia_recebimento, "2026-07")
+})
+
+test("cabecalho de secao sem mes de origem nao inventa competencia original", () => {
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["GRAND MARACANAÚ"],
+    ["VIGÊNCIA JULHO 2026"],
+    ["NOME", "APTO", "ALUGUEL", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO"],
+    ["LOCATÁRIO", "101", 700, 700, 49, 651, ""],
+    ["TOTAL", null, 700, 700, 49, 651],
+    ["ACORDOS E RESCISÕES RECEBIDAS EM JULHO"],
+    ["NOME", "APTO", "PRINCIPAL", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO"],
+    ["DEVEDOR", "204", 414.86, 466.93, 32.69, 434.24, "acordo"],
+    ["TOTAL", null, 414.86, 466.93, 32.69, 434.24],
+    [null, null, null, null, null, null, "TOTAL COMISSÃO + DESPESAS", 81.69],
+    [null, null, null, null, null, null, "SUBTOTAL RECEBIDOS EM NOME DO LOCADOR", 1166.93],
+    [null, null, null, null, null, null, "TOTAL A REPASSAR", 1085.24],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "JUL 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-07")
+  const item = result.acordos_rescisoes_recebidos[0]
+
+  assert.equal(item?.competencia_original, null)
+  assert.equal(item?.tipo, "acordo")
+})

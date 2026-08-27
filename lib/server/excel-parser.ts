@@ -169,33 +169,46 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
   if (sectionIndex < 0) return []
   const table = locateTable(rows, sectionIndex)
   if (!table) return []
+  // Cabeçalhos como "INTERMEDIAÇÃO DE JUNHO DE 2026 RECEBIDA EM JULHO" carregam
+  // a competência de origem da seção inteira; linhas que não a repetem herdam.
+  const competenciaSecao = parseSectionOriginCompetence(rows[sectionIndex])
   return table.rows.flatMap((row) => {
     const inquilino = textAt(row, table.columns.nome)
     const apto = nullableText(row, table.columns.unidade)
     const observacao = nullableText(row, table.columns.observacao)
     const totalRecebido = moneyAt(row, table.columns.total)
-    const principal = moneyAt(row, table.columns.principal) ?? moneyAt(row, table.columns.aluguel)
+    const aluguel = moneyAt(row, table.columns.aluguel)
+    const garagem = moneyAt(row, table.columns.garagem)
+    const principal = moneyAt(row, table.columns.principal) ?? aluguel
     if (!inquilino && !apto) return []
     if ((totalRecebido ?? principal ?? 0) === 0) return []
     const tipo = inferReceivedType(`${marker} ${observacao ?? ""}`)
     const comissao = moneyAt(row, table.columns.comissao)
-    const base = principal ?? totalRecebido ?? 0
+    const base = roundMoney((principal ?? totalRecebido ?? 0) + (garagem ?? 0))
     return [{
       tipo,
       apto,
       inquilino: inquilino || null,
-      valor: base,
+      valor: principal ?? totalRecebido ?? 0,
+      aluguel,
+      garagem,
       iptu: moneyAt(row, table.columns.iptu),
       total_recebido: totalRecebido,
       repasse: moneyAt(row, table.columns.repasse),
       comissao,
       percentual: comissao !== null && base > 0 ? roundMoney((comissao / base) * 100) : null,
-      competencia_original: parseCompetenceFromText(observacao),
+      competencia_original: parseCompetenceFromText(observacao) ?? competenciaSecao,
       competencia_recebimento: competencia,
       observacao,
       confianca: 1,
     } satisfies AcordoRescisaoRecebido]
   })
+}
+
+function parseSectionOriginCompetence(sectionRow: Row) {
+  const text = normalizeRow(sectionRow)
+  const beforeRecebida = text.split("RECEBID")[0]
+  return parseCompetenceFromText(beforeRecebida)
 }
 
 function parseInadimplencias(rows: Row[]) {
