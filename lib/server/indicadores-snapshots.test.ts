@@ -1685,3 +1685,14 @@ test("receita variavel nao tem cobranca esperada", () => {
   )
   assert.equal(row.cobranca_esperada, null)
 })
+
+test("garagem recebida da competencia e persistida separada do aluguel", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 414.86, garagem: 52.07, total: 466.93 },
+    }),
+    414.86,
+  )
+
+  assert.equal(row.garagem_recebida, 52.07)
+})

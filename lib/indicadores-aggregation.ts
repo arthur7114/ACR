@@ -1,5 +1,5 @@
 import { competenciaMesToDatabase } from "./competencia-fechamento"
-import { roundMoney, type OccupancyStatus } from "./indicadores-domain"
+import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
 import type {
   IndicadoresAttentionItem,
@@ -43,6 +43,10 @@ export interface IndicadoresPairInput {
   imobiliariaNome?: string
   empreendimentoId: string
   empreendimentoNome?: string
+  // Aliases do cadastro canônico (empreendimentos.aliases). Usados para
+  // detectar duplicidade semântica: dois fechamentos elegíveis cujos
+  // empreendimentos resolvem para a mesma entidade real falham fechado.
+  empreendimentoAliases?: string[]
 }
 
 export interface IndicadoresRuleInput extends IndicadoresPairInput {
@@ -143,6 +147,7 @@ export interface IndicadoresSnapshotInput {
   aluguelEsperado: number | null
   cobrancaEsperada?: number | null
   eventos?: string[] | null
+  garagemRecebida?: number | null
   aluguelRecebido: number | null
   receitaTotal: number | null
   desconto: number | null
@@ -203,7 +208,13 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
   const currentClosings = scope.closings.filter(
     (closing) => closing.competencia === input.competencia,
   )
-  const eligibleClosings = currentClosings.filter(isEligibleClosing)
+  // P1.2 (fail-closed): dois fechamentos elegíveis na competência cujos
+  // empreendimentos resolvem para a mesma entidade canônica (nome/alias) não
+  // podem ser somados — todos os envolvidos saem da agregação e a duplicidade
+  // aparece nominalmente na cobertura.
+  const { closings: eligibleClosings, duplicidades } = failClosedSemanticDuplicates(
+    currentClosings.filter(isEligibleClosing),
+  )
   const eligibleIds = new Set(eligibleClosings.map((closing) => closing.id))
   const expectedPropertyIds = new Set(expectedProperties.map((property) => property.id))
   const currentSnapshots = scope.snapshots.filter(
@@ -219,6 +230,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     currentClosings,
     eligibleClosings,
     currentSnapshots,
+    duplicidades,
   )
   const contractedRent = contractedRentAtCompetence(
     input,
@@ -348,6 +360,47 @@ function applyScope(input: IndicadoresAggregationInput): AggregationScope {
   }
 }
 
+interface DuplicidadeSemantica {
+  imobiliariaId: string
+  rotulos: string[]
+}
+
+// Duas linhas de empreendimento representam a mesma entidade real quando o
+// nome normalizado de uma é igual ao nome ou consta nos aliases da outra.
+function mesmaEntidadeCanonica(a: IndicadoresClosingInput, b: IndicadoresClosingInput) {
+  if (a.imobiliariaId !== b.imobiliariaId || a.empreendimentoId === b.empreendimentoId) return false
+  const chaves = (closing: IndicadoresClosingInput) =>
+    new Set(
+      [closing.empreendimentoNome, ...(closing.empreendimentoAliases ?? [])]
+        .filter((value): value is string => Boolean(value))
+        .map(normalizePropertyKeyPart),
+    )
+  const chavesA = chaves(a)
+  return [...chaves(b)].some((chave) => chavesA.has(chave))
+}
+
+function failClosedSemanticDuplicates(closings: IndicadoresClosingInput[]) {
+  const conflitantes = new Set<string>()
+  const duplicidades: DuplicidadeSemantica[] = []
+  for (let i = 0; i < closings.length; i += 1) {
+    for (let j = i + 1; j < closings.length; j += 1) {
+      if (!mesmaEntidadeCanonica(closings[i], closings[j])) continue
+      conflitantes.add(closings[i].id)
+      conflitantes.add(closings[j].id)
+      duplicidades.push({
+        imobiliariaId: closings[i].imobiliariaId,
+        rotulos: [
+          `${closings[i].empreendimentoNome ?? closings[i].empreendimentoId} × ${closings[j].empreendimentoNome ?? closings[j].empreendimentoId}`,
+        ],
+      })
+    }
+  }
+  return {
+    closings: closings.filter((closing) => !conflitantes.has(closing.id)),
+    duplicidades,
+  }
+}
+
 function buildCoverage(
   input: IndicadoresAggregationInput,
   scope: AggregationScope,
@@ -355,6 +408,7 @@ function buildCoverage(
   currentClosings: IndicadoresClosingInput[],
   eligibleClosings: IndicadoresClosingInput[],
   currentSnapshots: IndicadoresSnapshotInput[],
+  duplicidades: DuplicidadeSemantica[] = [],
 ): IndicadoresCoverage {
   // A carteira histórica é a fonte de verdade da cobertura. Regras comerciais
   // definem operação, não comprovam que havia imóvel sob gestão na competência.
@@ -396,6 +450,15 @@ function buildCoverage(
   const unlinkedLines = eligibleUnlinkedLines
     .reduce((total, item) => total + item.quantidade, 0)
   const gaps: IndicadoresCoverage["lacunas"] = []
+  if (duplicidades.length > 0) {
+    gaps.push({
+      codigo: "duplicidade_semantica",
+      quantidade: duplicidades.length,
+      mensagem:
+        "Fechamentos elegíveis resolvem para o mesmo empreendimento canônico e foram excluídos da soma até mesclar ou arquivar a duplicata.",
+      detalhes: duplicidades.flatMap((duplicidade) => duplicidade.rotulos),
+    })
+  }
   const pairByKey = new Map(
     [...scope.rules, ...scope.properties, ...currentClosings].map((item) => [pairKey(item), item]),
   )
@@ -715,6 +778,20 @@ function buildRentRealization(
     "vago",
     (snapshot) => snapshot.cobrancaEsperada ?? snapshot.aluguelEsperado,
   )
+  // P0.4: gap de inadimplência por componentes, apenas quando as bases são
+  // compatíveis — cobrança esperada exige saber o que foi recebido de garagem
+  // (ou nada ter sido recebido). Bases incompatíveis caem no gap por aluguel,
+  // nunca numa mistura.
+  const inadimplenciaFinanceira = sumForStatus(snapshots, "inadimplente", (snapshot) => {
+    const recebido = currentRent(snapshot) ?? 0
+    const cobranca = snapshot.cobrancaEsperada ?? null
+    if (cobranca !== null && recebido === 0) return roundMoney(cobranca)
+    if (cobranca !== null && typeof snapshot.garagemRecebida === "number") {
+      return Math.max(0, roundMoney(cobranca - recebido - snapshot.garagemRecebida))
+    }
+    if (snapshot.aluguelEsperado === null) return null
+    return Math.max(0, roundMoney(snapshot.aluguelEsperado - recebido))
+  })
   const delinquency =
     contracted === null
       ? null
@@ -760,6 +837,7 @@ function buildRentRealization(
     contratado: contracted,
     vacancia: vacancy,
     vacanciaFinanceira,
+    inadimplenciaFinanceira,
     inadimplenciaMes: delinquency,
     descontos: discounts,
     ajustesClassificados: classifiedAdjustments,

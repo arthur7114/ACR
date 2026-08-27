@@ -12,6 +12,7 @@ interface PairFixture {
   imobiliariaNome?: string
   empreendimentoId: string
   empreendimentoNome?: string
+  empreendimentoAliases?: string[]
 }
 
 interface RuleFixture extends PairFixture {
@@ -94,6 +95,7 @@ interface SnapshotFixture {
   inquilinoNome?: string | null
   aluguelEsperado: number | null
   cobrancaEsperada?: number | null
+  garagemRecebida?: number | null
   aluguelRecebido: number | null
   receitaTotal: number | null
   desconto: number | null
@@ -542,6 +544,7 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     vacancia: 500,
     vacanciaFinanceira: 500,
     inadimplenciaMes: 500,
+    inadimplenciaFinanceira: 500,
     descontos: 50,
     ajustesClassificados: 0,
     valoresSemClassificacao: -50,
@@ -1531,4 +1534,59 @@ test("vacancia financeira usa a cobranca esperada e reconcilia com todas as vaga
   assert.equal(result.realizacaoAluguel.vacanciaFinanceira, 866.93)
   // A vacância da realização permanece na base do aluguel (equação do contratado).
   assert.equal(result.realizacaoAluguel.vacancia, 814.86)
+})
+
+test("fechamentos elegiveis que resolvem para a mesma entidade canonica falham fechado", () => {
+  const closings = [
+    makeClosing({ id: "f1", empreendimentoNome: "Grand Castelão I" }),
+    makeClosing({
+      id: "f2",
+      empreendimentoId: "empreendimento-b",
+      empreendimentoNome: "Grand Castelao I Etapa Única",
+      empreendimentoAliases: ["Grand Castelão I"],
+    }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings }))
+
+  const gap = result.cobertura.lacunas.find((lacuna) => lacuna.codigo === "duplicidade_semantica")
+  assert.equal(gap?.quantidade, 1)
+  assert.match(gap?.detalhes.join(" ") ?? "", /Grand Castelão I/)
+  // Nenhum dos dois soma: falhar fechado em vez de duplicar valores.
+  assert.equal(result.cobertura.fechamentos.processados, 0)
+})
+
+test("empreendimentos distintos sem colisao de nome ou alias nao geram duplicidade", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [
+      makeClosing({ id: "f1", empreendimentoNome: "Grand Castelão I" }),
+      makeClosing({ id: "f2", empreendimentoId: "empreendimento-b", empreendimentoNome: "Grand Messejana II" }),
+    ],
+  }))
+
+  assert.equal(result.cobertura.lacunas.some((lacuna) => lacuna.codigo === "duplicidade_semantica"), false)
+})
+
+test("inadimplencia financeira usa cobranca esperada quando as bases sao compativeis", () => {
+  const snapshots = [
+    // Nada recebido: o gap é a cobrança esperada inteira.
+    makeSnapshot({ imovelId: "imovel-a", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelEsperado: 414.86, cobrancaEsperada: 466.93, aluguelRecebido: 0, aluguelRecebidoCompetencia: 0, receitaTotal: 0, desconto: 0, comissaoAdministracao: 0, repasseApurado: 0 }),
+    // Recebimento parcial com garagem recebida conhecida: cobrança − aluguel − garagem.
+    makeSnapshot({ imovelId: "imovel-b", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelEsperado: 400, cobrancaEsperada: 450, garagemRecebida: 50, aluguelRecebido: 200, aluguelRecebidoCompetencia: 200, receitaTotal: 250, desconto: 0, comissaoAdministracao: 0, repasseApurado: 0 }),
+    // Recebimento parcial SEM garagem recebida persistida: bases incompatíveis,
+    // cai no gap por aluguel (não inventa componente).
+    makeSnapshot({ imovelId: "imovel-c", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelEsperado: 300, cobrancaEsperada: 330, aluguelRecebido: 100, aluguelRecebidoCompetencia: 100, receitaTotal: 100, desconto: 0, comissaoAdministracao: 0, repasseApurado: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [
+      makeProperty({ id: "imovel-a", unidade: "204" }),
+      makeProperty({ id: "imovel-b", unidade: "205" }),
+      makeProperty({ id: "imovel-c", unidade: "206" }),
+    ],
+    snapshots,
+  }))
+
+  // 466.93 + (450 − 200 − 50) + (300 − 100) = 866.93
+  assert.equal(result.realizacaoAluguel.inadimplenciaFinanceira, 866.93)
 })

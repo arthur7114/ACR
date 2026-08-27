@@ -25,6 +25,7 @@ export interface IndicadoresCoverageGap {
     | "comprovante_ausente"
     | "linha_nao_vinculada"
     | "nao_atribuivel_ao_imovel"
+    | "duplicidade_semantica"
   quantidade: number
   mensagem: string
   detalhes: string[]
@@ -166,6 +167,13 @@ export interface IndicadoresRentRealization {
    * permanece na base do aluguel para reconciliar com `contratado`.
    */
   vacanciaFinanceira: number | null
+  /**
+   * P0.4: gap de inadimplência por componentes (cobrança esperada × recebido
+   * correspondente) quando as bases são compatíveis; caso contrário, gap por
+   * aluguel. Difere de `inadimplenciaMes`, que permanece na base do aluguel
+   * para reconciliar com `contratado`.
+   */
+  inadimplenciaFinanceira: number | null
   inadimplenciaMes: number | null
   descontos: number | null
   ajustesClassificados: number | null

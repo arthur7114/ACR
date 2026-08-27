@@ -24,12 +24,17 @@ export function ehInadimplenteDoMes(row: {
   return obs.includes("INADIMPL")
 }
 
-// Escolhe a receita_total do snapshot pago mais recente. "Pago" = recebeu
-// aluguel (aluguel_recebido > 0) e nao esta marcado inadimplente.
+// Valor "perdido" no mes inadimplente. Precedencia (CA-IND22/P0.4): a cobranca
+// esperada da competencia (aluguel + garagem da vigencia) e deterministica e
+// auditavel — quando existe, ela e o valor. Sem ela, mantem o proxy anterior:
+// receita_total do snapshot pago mais recente ("pago" = recebeu aluguel e nao
+// esta marcado inadimplente); por ultimo, o aluguel esperado.
 export function receitaEsperadaInadimplente(
   snapshots: SnapshotReceita[],
   aluguelEsperado: number | null,
+  cobrancaEsperada: number | null = null,
 ): number {
+  if (cobrancaEsperada !== null) return Number(cobrancaEsperada.toFixed(2))
   const pagos = snapshots
     .filter((s) => (s.aluguel_recebido ?? 0) > 0 && s.status_ocupacao !== "inadimplente")
     .filter((s) => (s.receita_total ?? 0) > 0)

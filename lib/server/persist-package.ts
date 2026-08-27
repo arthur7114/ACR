@@ -373,6 +373,12 @@ async function findOrCreateDocumentSource(
 ) {
   const existing = await findDocumentSource(input, sha256)
   if (!existing.schemaAvailable || existing.source) {
+    // P0.5: a dedup só pode reusar a fonte se o objeto ainda existir no
+    // Storage. Como o buffer atual tem o MESMO sha256, um objeto ausente é
+    // restaurado com upload idêntico — recuperação, nunca substituição.
+    if (existing.source) {
+      await ensureDocumentUploaded(input, existing.source.arquivo_url)
+    }
     return {
       schemaAvailable: existing.schemaAvailable,
       sourceId: existing.source?.id ?? "",

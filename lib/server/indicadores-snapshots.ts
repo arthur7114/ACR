@@ -48,6 +48,7 @@ export interface IndicadoresSnapshotRow {
   aluguel_esperado: number | null
   cobranca_esperada?: number | null
   eventos?: EventoOcupacao[]
+  garagem_recebida?: number | null
   aluguel_esperado_origem: "cadastro" | "vigencia" | null
   aluguel_recebido: number | null
   aluguel_competencia?: number | null
@@ -355,6 +356,13 @@ function buildSnapshotRow(input: {
       belongsToCurrentCompetence(line, input.competencia),
     ),
   )
+  // Garagem recebida separada do aluguel: sem ela persistida, o gap de
+  // inadimplência não pode usar a cobrança esperada (bases incompatíveis).
+  const garagemRecebida = sumKnownMoney(
+    propertyLines
+      .filter((line) => belongsToCurrentCompetence(line, input.competencia))
+      .map((line) => line.garagem),
+  )
   const recoveredFromLines = sumLineRent(
     propertyLines.filter((line) =>
       belongsToEarlierCompetence(line, input.competencia),
@@ -488,6 +496,7 @@ function buildSnapshotRow(input: {
           : ("cadastro" as const),
     aluguel_recebido: sumNullableMoney(currentRent, recoveredLate),
     aluguel_competencia: currentRent,
+    garagem_recebida: garagemRecebida,
     atrasos_recuperados: recoveredLate,
     atrasos_competencia_origem: recoveredOrigin,
     outros_recebimentos: otherReceipts,

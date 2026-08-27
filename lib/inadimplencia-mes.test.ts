@@ -35,3 +35,15 @@ test("ignora o proprio mes inadimplente (zerado) ao escolher o valor", () => {
 test("sem historico e sem aluguel esperado -> zero", () => {
   assert.equal(receitaEsperadaInadimplente([], null), 0)
 })
+
+test("cobranca esperada tem precedencia sobre o proxy de receita paga", async () => {
+  const { receitaEsperadaInadimplente } = await import("./inadimplencia-mes.ts")
+  const snapshots = [
+    { competencia: "2026-06-01", receita_total: 810.44, aluguel_recebido: 700, status_ocupacao: "ocupado" },
+  ]
+  // Com cobrança esperada auditável (aluguel + garagem da vigência), o valor
+  // do mês inadimplente é ela — não a receita encargo-inclusiva do mês pago.
+  assert.equal(receitaEsperadaInadimplente(snapshots, 414.86, 466.93), 466.93)
+  // Sem cobrança esperada, mantém o comportamento anterior (proxy do último pago).
+  assert.equal(receitaEsperadaInadimplente(snapshots, 414.86, null), 810.44)
+})

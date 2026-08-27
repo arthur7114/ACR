@@ -27,12 +27,14 @@ const relationSchema = z
   .union([
     z.object({
       nome: z.string(),
+      aliases: z.array(z.string()).optional(),
       egestor_conta_id: z.string().nullable().optional(),
       ativo: z.boolean().optional(),
     }),
     z.array(
       z.object({
         nome: z.string(),
+        aliases: z.array(z.string()).optional(),
         egestor_conta_id: z.string().nullable().optional(),
         ativo: z.boolean().optional(),
       }),
@@ -104,6 +106,7 @@ const snapshotRowsSchema = z.array(
     aluguel_esperado: databaseMoneySchema,
     cobranca_esperada: databaseMoneySchema.optional(),
     eventos: z.array(z.string()).nullable().optional(),
+    garagem_recebida: databaseMoneySchema.optional(),
     aluguel_recebido: databaseMoneySchema,
     aluguel_competencia: databaseMoneySchema.optional(),
     atrasos_recuperados: databaseMoneySchema.optional(),
@@ -305,7 +308,7 @@ async function loadBaseRows(
       .select(
         `id, imobiliaria_id, empreendimento_id, competencia, status, arquivado,
          processamento_status, analise_completa, atualizado_em,
-         imobiliarias ( nome ), empreendimentos ( nome, egestor_conta_id )`,
+         imobiliarias ( nome ), empreendimentos ( nome, aliases, egestor_conta_id )`,
       )
       .eq("arquivado", false)
       .order("competencia", { ascending: true }),
@@ -350,7 +353,7 @@ async function loadSnapshotRows(
       .select(
         `imovel_id, fechamento_id, competencia, status_ocupacao, status_origem,
          inquilino_nome, aluguel_esperado, cobranca_esperada, eventos,
-         aluguel_recebido, aluguel_competencia,
+         garagem_recebida, aluguel_recebido, aluguel_competencia,
          atrasos_recuperados, outros_recebimentos, entradas_passagem, saidas_passagem,
          receita_total, desconto, comissao_administracao, repasse_apurado,
          vencimento_referencia, competencia_original, competencia_recebimento,
@@ -465,6 +468,7 @@ function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): Indicador
     aluguelEsperado: nullableMoney(row.aluguel_esperado),
     cobrancaEsperada: nullableOptionalMoney(row.cobranca_esperada),
     eventos: row.eventos ?? null,
+    garagemRecebida: nullableOptionalMoney(row.garagem_recebida),
     aluguelRecebido: nullableMoney(row.aluguel_recebido),
     aluguelRecebidoCompetencia: nullableOptionalMoney(row.aluguel_competencia),
     atrasosRecuperados: nullableOptionalMoney(row.atrasos_recuperados),
@@ -524,6 +528,7 @@ function mapPair(
     imobiliariaNome: agency?.nome ?? row.imobiliaria_id,
     empreendimentoId: row.empreendimento_id,
     empreendimentoNome: development?.nome ?? row.empreendimento_id,
+    empreendimentoAliases: development?.aliases ?? [],
   }
 }
 

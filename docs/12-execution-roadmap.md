@@ -1357,6 +1357,34 @@ Restante do sub-plano C: cobertura bloqueante na agregação (hoje o
 persistência, e fail-closed de duplicata por alias na leitura. Depois: gap de
 inadimplência por componentes e reparo de julho (D) sob aprovação do dry-run.
 
+## 2026-08-27 — Duplicata por alias, gap por componentes e dedup restaurável (C + sobras do B)
+
+Duplicidade semântica (P1.2): dois fechamentos elegíveis na mesma competência
+cujos empreendimentos resolvem para a mesma entidade canônica (nome normalizado
+ou alias de `empreendimentos.aliases`) agora falham fechado — ambos saem da
+agregação e a lacuna `duplicidade_semantica` aparece nominalmente na cobertura.
+O par ausente nominal (P0.5) já existia (`par_ausente` em `lacunas`) e foi
+verificado, não recriado.
+
+Gap por componentes (P0.4): snapshots passam a persistir `garagem_recebida`
+separada do aluguel (migration `202608270003` aplicada e verificada; RPC
+atômica atualizada). A métrica nova `inadimplenciaFinanceira` usa a cobrança
+esperada apenas quando as bases são compatíveis (nada recebido, ou garagem
+recebida conhecida); caso contrário cai no gap por aluguel — nunca mistura
+bases. `receitaEsperadaInadimplente` dá precedência à cobrança esperada
+auditável sobre o proxy encargo-inclusivo do último mês pago (corrigida a
+inconsistência acidental de `lib/inadimplencia-mes.ts`).
+
+Dedup restaurável (P0.5): quando a persistência deduplica por SHA-256, o
+objeto da fonte é garantido no Storage — se sumiu, o upload idêntico (mesmo
+hash, `upsert:false`) o restaura; nunca substitui conteúdo diferente.
+
+Validação: suíte 468/468, canários 5/5, lint, typecheck e build verdes.
+Pendências do plano: UI de P1.3 (exibir vacância/inadimplência financeiras,
+eventos e fórmulas nas telas), cobertura bloqueante na confirmação, e o reparo
+de julho (D) sob aprovação operacional do dry-run — LOCMAIS ainda exige
+reupload do original e Terreno Castelão o documento de julho.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
