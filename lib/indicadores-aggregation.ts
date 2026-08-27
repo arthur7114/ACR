@@ -1,5 +1,6 @@
 import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { roundMoney, type OccupancyStatus } from "./indicadores-domain"
+import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
 import type {
   IndicadoresAttentionItem,
   IndicadoresCoverage,
@@ -104,7 +105,17 @@ export interface IndicadoresAnalysisInput {
       tipo: "intermediacao" | "acordo" | "rescisao" | "atraso" | "outro"
       comissao: number | null
       apto?: string | null
+      inquilino?: string | null
       valor?: number | null
+      aluguel?: number | null
+      garagem?: number | null
+      ajuste?: number | null
+      iptu?: number | null
+      total_recebido?: number | null
+      repasse?: number | null
+      percentual?: number | null
+      observacao?: string | null
+      confianca?: number
       competencia_original?: string | null
       competencia_recebimento?: string | null
     }> | null
@@ -804,12 +815,16 @@ function buildCompetenciaReallocations(
     }
     // Acordos nao carregam imovel_id; no filtro por imovel ficam de fora.
     if (imovelId) continue
-    for (const item of closing.analiseCompleta?.prestacao?.acordos_rescisoes_recebidos ?? []) {
+    for (const { item, financeiro } of resolverRecebimentosLegados(
+      closing.analiseCompleta?.prestacao?.acordos_rescisoes_recebidos ?? [],
+    )) {
       if (item.tipo !== "atraso") continue
       const original = competenciaMesToDatabase(item.competencia_original)
       if (!original || original === current) continue
       if (!eligibleMonths.has(original)) continue
-      const valor = item.valor ?? 0
+      // CA27: a realocação move o que foi efetivamente recebido, nunca o
+      // principal bruto; item pendente não realoca nada.
+      const valor = financeiro.totalRecebido
       if (valor === 0) continue
       const from = entry(current)
       from.receitaOut = roundMoney(from.receitaOut + valor)
@@ -1361,10 +1376,14 @@ function sumBrokerageCommission(analyses: IndicadoresAnalysisInput[]) {
     (analysis) => analysis.prestacao?.acordos_rescisoes_recebidos ?? null,
   )
   if (sections.some((section) => section === null)) return null
+  // CA27: só intermediações resolvidas pelo módulo canônico têm efeito
+  // financeiro; item pendente (ex.: intermediação fantasma de despesa) fica
+  // fora da comissão de intermediação em vez de contaminá-la.
   const values = sections.flatMap((section) =>
-    section!.filter((item) => item.tipo === "intermediacao").map((item) => item.comissao),
+    resolverRecebimentosLegados(section!)
+      .filter(({ item }) => item.tipo === "intermediacao")
+      .map(({ financeiro }) => financeiro.comissao),
   )
-  if (values.some((value) => value === null)) return null
   return values.length === 0 ? 0 : sumKnown(values)
 }
 

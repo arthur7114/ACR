@@ -125,9 +125,15 @@ export function resolverRecebimento(item: RecebimentoExtraordinario): ResolucaoF
   }
 }
 
-export function normalizarItemLegado(item: AcordoRescisaoRecebido): RecebimentoExtraordinario {
-  // Coerções `?? null` deliberadas: análises persistidas antes dos campos
-  // novos podem trazer undefined, e undefined não pode escapar dos guards.
+// Consumidores de análises persistidas (agregação, snapshots) declaram tipos
+// estruturais mais estreitos que o schema; o adaptador aceita qualquer
+// subconjunto e coage ausência para null/zero — nada escapa dos guards.
+export type RecebimentoLegado = { tipo: AcordoRescisaoRecebido["tipo"] } & Partial<
+  Omit<AcordoRescisaoRecebido, "tipo">
+>
+
+export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtraordinario {
+  const valorLegado = item.valor ?? 0
   const base: BaseRecebimento = {
     imovelId: null,
     apto: item.apto ?? null,
@@ -150,7 +156,7 @@ export function normalizarItemLegado(item: AcordoRescisaoRecebido): RecebimentoE
       ...base,
       tipo: "intermediacao",
       componentes: {
-        aluguel: item.aluguel ?? (item.valor !== 0 ? item.valor : null),
+        aluguel: item.aluguel ?? (valorLegado !== 0 ? valorLegado : null),
         garagem: item.garagem ?? null,
         iptu: item.iptu ?? null,
         seguro: null,
@@ -160,19 +166,39 @@ export function normalizarItemLegado(item: AcordoRescisaoRecebido): RecebimentoE
     }
   }
   if (item.tipo === "outro") {
-    return { ...base, tipo: "outro", valorInformado: item.valor !== 0 ? item.valor : null }
+    return { ...base, tipo: "outro", valorInformado: valorLegado !== 0 ? valorLegado : null }
   }
   return {
     ...base,
     tipo: item.tipo,
-    principal: item.valor !== 0 ? item.valor : null,
+    principal: valorLegado !== 0 ? valorLegado : null,
     ajuste: item.ajuste ?? null,
     componentes: { garagem: item.garagem ?? null, encargos: item.iptu ?? null },
   }
 }
 
-export function resolverRecebimentoLegado(item: AcordoRescisaoRecebido): ResolucaoFinanceira {
+export function resolverRecebimentoLegado(item: RecebimentoLegado): ResolucaoFinanceira {
   return resolverRecebimento(normalizarItemLegado(item))
+}
+
+export type FinanceiroResolvido = Extract<ResolucaoFinanceira, { status: "resolvido" }>
+
+export interface RecebimentoResolvido<T extends RecebimentoLegado> {
+  item: T
+  financeiro: FinanceiroResolvido
+}
+
+// Resolve uma lista legada e devolve só os itens elegíveis, cada um pareado
+// com sua resolução. Itens pendentes ficam de fora de qualquer soma (CA27.2).
+export function resolverRecebimentosLegados<T extends RecebimentoLegado>(
+  itens: T[],
+): Array<RecebimentoResolvido<T>> {
+  const resolvidos: Array<RecebimentoResolvido<T>> = []
+  for (const item of itens) {
+    const resolucao = resolverRecebimentoLegado(item)
+    if (resolucao.status === "resolvido") resolvidos.push({ item, financeiro: resolucao })
+  }
+  return resolvidos
 }
 
 function resolverBase(item: RecebimentoExtraordinario): number | null {

@@ -1567,3 +1567,57 @@ test("observacao que cita varios meses fica ambigua e nao infere origem", () => 
   assert.equal(row.aluguel_competencia, 900)
   assert.equal(row.atrasos_competencia_origem, null)
 })
+
+test("atraso recuperado usa o total recebido resolvido, nao o principal bruto", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [
+        {
+          tipo: "atraso",
+          valor: 414.86,
+          garagem: 52.07,
+          total_recebido: 466.93,
+          comissao: 32.69,
+          repasse: 434.24,
+          competencia_original: "05/2026",
+        },
+      ],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados, 466.93)
+})
+
+test("rescisao em outros recebimentos usa o total recebido resolvido", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [
+        {
+          tipo: "rescisao",
+          valor: 1890,
+          total_recebido: 1663.56,
+          comissao: 116.45,
+          repasse: 1547.11,
+        },
+      ],
+    }),
+    700,
+  )
+
+  assert.equal(row.outros_recebimentos, 1663.56)
+})
+
+test("recebimento pendente nao entra nos valores do snapshot", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [{ tipo: "atraso", valor: 999, confianca: 0.4, competencia_original: "05/2026" }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados, null)
+})

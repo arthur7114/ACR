@@ -196,7 +196,7 @@ function makeAnalysis(overrides: {
         },
       ],
       acordos_rescisoes_recebidos: overrides.intermediacoes ?? [
-        { tipo: "intermediacao", comissao: 50 },
+        { tipo: "intermediacao", inquilino: "Novo Locatario", valor: 250, comissao: 50, confianca: 0.9 },
       ],
       inadimplencias_acumuladas: overrides.inadimplencias ?? [],
       outras_comissoes_despesas: overrides.outrasDespesas,
@@ -997,7 +997,7 @@ test("atraso pago em maio move receita para marco sem inventar aluguel recebido"
           { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
         ],
         intermediacoes: [
-          { tipo: "atraso", comissao: 127.73, apto: "101", valor: 1_717.36, competencia_original: "03/2026" },
+          { tipo: "atraso", comissao: 127.73, apto: "101", valor: 1_717.36, competencia_original: "03/2026", confianca: 0.95 },
         ],
       }),
     }),
@@ -1045,7 +1045,7 @@ test("atraso com competencia original fora da janela nao inventa mes na serie", 
           { apto: "101", inquilino: "Ricardo", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
         ],
         intermediacoes: [
-          { tipo: "atraso", comissao: 0, apto: "101", valor: 776.97, competencia_original: "04/2025" },
+          { tipo: "atraso", comissao: 0, apto: "101", valor: 776.97, competencia_original: "04/2025", confianca: 0.95 },
         ],
       }),
     }),
@@ -1084,7 +1084,7 @@ test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () 
           { apto: "102", inquilino: "Joao", aluguel: 800, aluguel_com_desconto: 800, desconto: 0, total: 800, imovel_id: "imovel-b", competencia_original: "2026-03" },
         ],
         intermediacoes: [
-          { tipo: "atraso", comissao: 10, apto: "103", valor: 300, competencia_original: "2026-03" },
+          { tipo: "atraso", comissao: 10, apto: "103", valor: 300, competencia_original: "2026-03", confianca: 0.95 },
         ],
       }),
     }),
@@ -1275,7 +1275,7 @@ test("ponte v2 separa movimentos de passagem e tarifas", () => {
           repasse_declarado: 840,
           valor_comprovado: 840,
         },
-        intermediacoes: [{ tipo: "intermediacao", comissao: 20 }],
+        intermediacoes: [{ tipo: "intermediacao", inquilino: "Novo Locatario", valor: 100, comissao: 20, confianca: 0.9 }],
       }),
     })],
   }))
@@ -1301,7 +1301,7 @@ test("separa tarifa derivada apenas nos fechamentos legados que a incluíam em d
           repasse_declarado: 840,
           valor_comprovado: 840,
         },
-        intermediacoes: [{ tipo: "intermediacao", comissao: 20 }],
+        intermediacoes: [{ tipo: "intermediacao", inquilino: "Novo Locatario", valor: 100, comissao: 20, confianca: 0.9 }],
         outrasDespesas: [{ descricao: "Tarifa TED", valor: 10 }],
       }),
     })],
@@ -1422,4 +1422,83 @@ test("receita fixa ocupada permanece ocupado, não vira alugado por app", () => 
 
   assert.equal(result.resumo.ocupacaoCompetencia.ocupados, 1)
   assert.equal(result.resumo.ocupacaoCompetencia.alugadosApp, 0)
+})
+
+test("realocacao de atraso usa o total recebido resolvido, nao o principal bruto", () => {
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 0 },
+        receitas: [
+          { apto: "101", inquilino: "Devedor", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
+        ],
+        intermediacoes: [],
+      }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 466.93 },
+        receitas: [
+          { apto: "101", inquilino: "Devedor", aluguel: null, aluguel_com_desconto: null, desconto: null, total: 0 },
+        ],
+        intermediacoes: [
+          {
+            tipo: "atraso",
+            apto: "101",
+            inquilino: "Devedor",
+            valor: 414.86,
+            garagem: 52.07,
+            total_recebido: 466.93,
+            comissao: 32.69,
+            repasse: 434.24,
+            competencia_original: "03/2026",
+            confianca: 0.95,
+          },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "fechamento-marco", competencia: "2026-03-01", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelRecebido: 0, receitaTotal: 0 }),
+    makeSnapshot({ fechamentoId: "fechamento-maio", competencia: "2026-05-01", statusOcupacao: "inadimplente", statusOrigem: "inadimplencia_explicita", aluguelRecebido: 0, receitaTotal: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings, snapshots }))
+
+  const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
+  assert.equal(marco.competenciaAjusteReceita, 466.93)
+})
+
+test("atraso pendente (baixa confianca) nao realoca receita entre meses", () => {
+  const closings = [
+    makeClosing({
+      id: "fechamento-marco",
+      competencia: "2026-03-01",
+      analiseCompleta: makeAnalysis({ totals: { total_receitas: 0 }, receitas: [], intermediacoes: [] }),
+    }),
+    makeClosing({
+      id: "fechamento-maio",
+      competencia: "2026-05-01",
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 100 },
+        receitas: [],
+        intermediacoes: [
+          { tipo: "atraso", apto: "101", inquilino: "Devedor", valor: 999, competencia_original: "03/2026", confianca: 0.4 },
+        ],
+      }),
+    }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "fechamento-marco", competencia: "2026-03-01", aluguelRecebido: 0, receitaTotal: 0 }),
+    makeSnapshot({ fechamentoId: "fechamento-maio", competencia: "2026-05-01", aluguelRecebido: 0, receitaTotal: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: closings, snapshots }))
+
+  const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
+  assert.equal(marco.competenciaAjusteReceita, 0)
 })

@@ -5,6 +5,7 @@ import {
   normalizarItemLegado,
   resolverRecebimento,
   resolverRecebimentoLegado,
+  resolverRecebimentosLegados,
   type RecebimentoExtraordinario,
 } from "./recebimentos-extraordinarios"
 
@@ -232,6 +233,16 @@ test("adaptador legado trata campos ausentes como nulos e confiança ausente com
     total_recebido: 1663.56,
   } as never)
   assert.equal(r.status, "pendente")
+})
+
+test("resolverRecebimentosLegados devolve apenas os itens resolvidos, pareados com o financeiro", () => {
+  const resolvidos = resolverRecebimentosLegados([
+    { tipo: "atraso", apto: "204", valor: 414.86, garagem: 52.07, total_recebido: 466.93, confianca: 0.95 },
+    { tipo: "atraso", valor: 999, confianca: 0.4 },
+  ])
+  assert.equal(resolvidos.length, 1)
+  assert.equal(resolvidos[0]?.item.apto, "204")
+  assert.equal(resolvidos[0]?.financeiro.totalRecebido, 466.93)
 })
 
 test("tipo outro usa o valor informado como total recebido", () => {

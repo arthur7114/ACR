@@ -9,6 +9,7 @@ import {
   type OccupancyStatus,
 } from "@/lib/indicadores-domain"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { IndicadoresRevenueModel } from "@/lib/indicadores-types"
 import type { createSupabaseAdmin } from "./supabase"
 
@@ -347,10 +348,13 @@ function buildSnapshotRow(input: {
       belongsToEarlierCompetence(line, input.competencia),
     ),
   )
+  // CA27: valores de acordos/rescisões/atrasos vêm do resolvedor canônico
+  // (total recebido, nunca o principal bruto); item pendente não soma.
+  const agreementsResolvidos = resolverRecebimentosLegados(input.agreements)
   const recoveredFromAgreements = sumKnownMoney(
-    input.agreements
-      .filter((item) => item.tipo === "atraso")
-      .map((item) => item.valor),
+    agreementsResolvidos
+      .filter(({ item }) => item.tipo === "atraso")
+      .map(({ financeiro }) => financeiro.totalRecebido),
   )
   const recoveredLate = sumNullableMoney(recoveredFromLines, recoveredFromAgreements)
   // O mês de origem do atraso já vem na fonte (o acordo traz competencia_original,
@@ -366,7 +370,7 @@ function buildSnapshotRow(input: {
     const origem = resolveLineCompetence(line, input.competencia)
     if (origem) recoveredOrigins.add(origem)
   }
-  for (const item of input.agreements) {
+  for (const { item } of agreementsResolvidos) {
     if (item.tipo !== "atraso") continue
     const origem = normalizeOptionalCompetence(item.competencia_original)
     if (origem) recoveredOrigins.add(origem)
@@ -386,9 +390,9 @@ function buildSnapshotRow(input: {
     }),
   )
   const otherFromAgreements = sumKnownMoney(
-    input.agreements
-      .filter((item) => item.tipo !== "atraso")
-      .map((item) => item.valor),
+    agreementsResolvidos
+      .filter(({ item }) => item.tipo !== "atraso")
+      .map(({ financeiro }) => financeiro.totalRecebido),
   )
   const otherReceipts = sumNullableMoney(otherFromLines, otherFromAgreements)
   const passageEntries = sumKnownMoney(
