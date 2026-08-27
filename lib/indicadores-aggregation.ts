@@ -1334,18 +1334,22 @@ function summarizeTransferEvidence(closings: IndicadoresClosingInput[]) {
 }
 
 function summarizeProofCoverage(closings: IndicadoresClosingInput[]) {
+  const hasProof = (closing: IndicadoresClosingInput) =>
+    closing.analiseCompleta !== null &&
+    !closing.analiseCompleta.totals.repasse_embutido &&
+    closing.analiseCompleta.totals.valor_comprovado !== null
   const expected = closings.length
-  const present = closings.filter(
-    (closing) =>
-      closing.analiseCompleta !== null &&
-      !closing.analiseCompleta.totals.repasse_embutido &&
-      closing.analiseCompleta.totals.valor_comprovado !== null,
-  ).length
+  const present = closings.filter(hasProof).length
   return {
     esperados: expected,
     presentes: present,
     ausentes: Math.max(0, expected - present),
     percentual: percentage(present, expected),
+    // CA-IND24: o selo explica nominalmente QUAIS fechamentos estão sem
+    // comprovante, em vez de um contador genérico.
+    detalhesAusentes: closings
+      .filter((closing) => !hasProof(closing))
+      .map(formatPairLabel),
   }
 }
 
@@ -1623,7 +1627,12 @@ function buildConfidenceStatus(
     coverage.comprovantes.presentes === coverage.comprovantes.esperados
   if (!allApproved) reasons.push("A competência ainda não foi integralmente aprovada.")
   if (!allProofsPresent) {
-    reasons.push("Nem todos os repasses possuem comprovante bancário externo.")
+    const nominal = coverage.comprovantes.detalhesAusentes
+    reasons.push(
+      nominal.length > 0
+        ? `Nem todos os repasses possuem comprovante bancário externo: ${nominal.join("; ")}.`
+        : "Nem todos os repasses possuem comprovante bancário externo.",
+    )
   }
   if (!allApproved || !allProofsPresent) {
     return { status: "em_conferencia" as const, reasons }

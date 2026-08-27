@@ -1590,3 +1590,21 @@ test("inadimplencia financeira usa cobranca esperada quando as bases sao compati
   // 466.93 + (450 − 200 − 50) + (300 − 100) = 866.93
   assert.equal(result.realizacaoAluguel.inadimplenciaFinanceira, 866.93)
 })
+
+test("cobertura de comprovantes aponta nominalmente os fechamentos sem comprovante", () => {
+  const semComprovante = makeClosing({
+    id: "f2",
+    ...makePair("b"),
+    empreendimentoNome: "Grand Messejana II",
+    imobiliariaNome: "Alive",
+    analiseCompleta: makeAnalysis({ totals: { valor_comprovado: null } }),
+  })
+
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [makeRule(), makeRule(makePair("b"))],
+    fechamentos: [makeClosing(), semComprovante],
+  }))
+
+  assert.equal(result.cobertura.comprovantes.ausentes, 1)
+  assert.match(result.cobertura.comprovantes.detalhesAusentes.join(" "), /Grand Messejana II/)
+})

@@ -392,3 +392,21 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
   assert.equal(source.includes("cell.inquilinoNome"), true, "cada competência precisa exibir seu próprio inquilino")
   assert.equal(source.includes("Inquilino não informado"), true, "nome ausente não pode usar o cadastro atual como fallback")
 })
+
+test("rotulo do Hoje declara posicao cadastral e a data de sincronizacao", async () => {
+  const { formatHojeSincronizado } = await import("./presentation.ts")
+  const label = formatHojeSincronizado("2026-08-27T14:32:00.000Z")
+  assert.match(label, /Hoje/)
+  assert.match(label, /cadastro/i)
+  assert.match(label, /sincronizado/i)
+  assert.match(label, /2026/)
+})
+
+test("nota de cobranca esperada aparece apenas quando difere da base do aluguel", async () => {
+  const { notaCobrancaEsperada } = await import("./presentation.ts")
+  assert.match(notaCobrancaEsperada(466.93, 414.86) ?? "", /garagem/i)
+  assert.match(notaCobrancaEsperada(466.93, 414.86) ?? "", /466,93/)
+  assert.equal(notaCobrancaEsperada(500, 500), null)
+  assert.equal(notaCobrancaEsperada(null, 414.86), null)
+  assert.equal(notaCobrancaEsperada(466.93, null), null)
+})

@@ -22,6 +22,7 @@ import {
   formatCurrency,
   formatPortfolioContractedRent,
   getConfidenceStatus,
+  notaCobrancaEsperada,
   resolveMetricValue,
   sumKnownValues,
 } from "../lib/presentation"
@@ -85,6 +86,11 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             {comprovantes.esperados > 0 && (
               <p className="text-xs text-acr-muted-2 tabular-nums">
                 {formatCount(comprovantes.presentes)} de {formatCount(comprovantes.esperados)} comprovantes
+              </p>
+            )}
+            {(comprovantes.detalhesAusentes ?? []).length > 0 && (
+              <p className="max-w-[280px] text-right text-[11px] leading-snug text-acr-muted-2">
+                Sem comprovante: {(comprovantes.detalhesAusentes ?? []).join("; ")}
               </p>
             )}
           </div>
@@ -169,8 +175,18 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
               operation="="
               strong
             />
-            <FinancialRow label="Vacância" value={realization.vacancia} operation="−" />
-            <FinancialRow label="Inadimplência do mês" value={realization.inadimplenciaMes} operation="−" />
+            <FinancialRow
+              label="Vacância"
+              value={realization.vacancia}
+              operation="−"
+              note={notaCobrancaEsperada(realization.vacanciaFinanceira, realization.vacancia)}
+            />
+            <FinancialRow
+              label="Inadimplência do mês"
+              value={realization.inadimplenciaMes}
+              operation="−"
+              note={notaCobrancaEsperada(realization.inadimplenciaFinanceira, realization.inadimplenciaMes)}
+            />
             <FinancialRow label="Descontos documentados" value={realization.descontos} operation="−" />
             <FinancialRow label="Ajustes documentados" value={resolveMetricValue(realization.ajustesClassificados)} operation="±" />
             <FinancialRow label="Recebido da competência" value={resolveMetricValue(realization.recebidoCompetencia, realization.recebido)} operation="=" strong result />
@@ -269,6 +285,7 @@ function FinancialRow({
   strong = false,
   result = false,
   danger = false,
+  note = null,
 }: {
   label: string
   value: number | null
@@ -277,13 +294,17 @@ function FinancialRow({
   strong?: boolean
   result?: boolean
   danger?: boolean
+  note?: string | null
 }) {
   const display = formattedValue ?? formatCurrency(value)
 
   return (
     <div className={`grid grid-cols-[1.25rem_1fr_auto] items-center gap-3 py-2.5 ${result ? "border-t-2 border-acr-line-2" : "border-b border-acr-line last:border-0"}`}>
       <span aria-hidden="true" className="text-center text-sm font-bold text-acr-muted">{operation}</span>
-      <span className={`text-sm ${strong ? "font-bold text-acr-ink" : "text-acr-muted-2"}`}>{label}</span>
+      <span className={`text-sm ${strong ? "font-bold text-acr-ink" : "text-acr-muted-2"}`}>
+        {label}
+        {note && <span className="mt-0.5 block text-[11px] leading-snug text-acr-muted-2 tabular-nums">{note}</span>}
+      </span>
       <span
         className={`text-sm font-bold tabular-nums ${
           display === "—" ? "text-acr-muted/60" : danger ? "text-acr-red" : "text-acr-ink"

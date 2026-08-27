@@ -96,6 +96,8 @@ export interface IndicadoresCoverage {
     presentes: number
     ausentes: number
     percentual: number | null
+    /** CA-IND24: fechamentos sem comprovante, nominalmente. */
+    detalhesAusentes: string[]
   }
   linhasNaoVinculadas: number
   lacunas: IndicadoresCoverageGap[]

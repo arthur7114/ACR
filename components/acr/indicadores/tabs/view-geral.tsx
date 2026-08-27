@@ -23,6 +23,7 @@ import {
   filterMonthlySeriesPeriod,
   formatCount,
   formatCurrency,
+  formatHojeSincronizado,
   formatPercent,
   formatPortfolioContractedRent,
   getConfidenceStatus,
@@ -199,7 +200,7 @@ export function ViewGeral({
           </Metric>
           <div className="mt-5 space-y-4">
             <OccupancyDistribution label={data.meta.competenciaLabel} occupancy={resumo.ocupacaoCompetencia} />
-            <OccupancyDistribution label="Hoje" occupancy={resumo.ocupacaoHoje} />
+            <OccupancyDistribution label={formatHojeSincronizado(data.meta.atualizadoEm)} occupancy={resumo.ocupacaoHoje} />
           </div>
         </Panel>
       </div>

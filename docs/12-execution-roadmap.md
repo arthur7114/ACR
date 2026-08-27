@@ -1385,6 +1385,23 @@ eventos e fórmulas nas telas), cobertura bloqueante na confirmação, e o repar
 de julho (D) sob aprovação operacional do dry-run — LOCMAIS ainda exige
 reupload do original e Terreno Castelão o documento de julho.
 
+## 2026-08-27 — Explicabilidade dos indicadores (P1.3, primeira leva)
+
+CA-IND21: o card "Hoje" declara-se posição do cadastro e exibe a data/hora da
+última sincronização (`formatHojeSincronizado`). CA-IND24: o selo de
+comprovante aponta nominalmente quais fechamentos estão sem comprovante
+(`cobertura.comprovantes.detalhesAusentes`, exibido na aba Receita e no motivo
+de confiança). CA-IND23/P0.4: as linhas de Vacância e Inadimplência do mês
+mostram, quando as bases divergem, a nota "Pela cobrança esperada (aluguel +
+garagem): R$ X" — a equação do contratado permanece na base do aluguel.
+
+Validação: suíte 471/471, lint, typecheck e build verdes; login local sobe sem
+erros de console. O smoke visual autenticado do dashboard fica com o operador
+(o agente não insere credenciais). Pendências: exibir eventos de
+rescisão/pagamento atrasado no histórico por imóvel e no mapa de riscos
+(depende de reprocessamento/reparo para haver dado), cobertura bloqueante na
+confirmação, e o reparo de julho (D) sob aprovação do dry-run.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

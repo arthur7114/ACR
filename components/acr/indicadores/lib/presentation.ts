@@ -101,6 +101,27 @@ export function formatDateTime(value: string | null): string {
   }).format(date)
 }
 
+// CA-IND21: "Hoje" é posição cadastral, não a competência selecionada. O
+// rótulo declara a natureza e a data/hora da última sincronização.
+export function formatHojeSincronizado(atualizadoEm: string | null): string {
+  const quando = formatDateTime(atualizadoEm)
+  return quando === "—"
+    ? "Hoje — posição do cadastro"
+    : `Hoje — cadastro sincronizado em ${quando}`
+}
+
+// CA-IND23/P0.4: nota exibida junto das linhas de vacância/inadimplência
+// quando a cobrança esperada (aluguel + garagem contratada) difere da base do
+// aluguel usada na equação. Nunca aparece quando as bases coincidem.
+export function notaCobrancaEsperada(
+  financeira: number | null | undefined,
+  base: number | null | undefined,
+): string | null {
+  if (typeof financeira !== "number" || typeof base !== "number") return null
+  if (Math.abs(financeira - base) <= 0.01) return null
+  return `Pela cobrança esperada (aluguel + garagem): ${formatCurrency(financeira)}`
+}
+
 export function formatReference(value: string | null): string {
   if (!value) return "—"
   const isoMonth = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(value)
