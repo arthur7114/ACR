@@ -13,6 +13,7 @@ import type {
 import { competenciaMesToDatabase } from "@/lib/competencia-fechamento"
 import type { FechamentoContext } from "@/lib/fechamento-context"
 import { ratearTedPorImovel } from "@/lib/despesas-locador"
+import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import { scopeCesarRegoAnalysisToDevelopment } from "@/lib/indicadores-repair"
 import { matchesEmpreendimento, normalizeCadastroKey } from "./cadastros"
 import { buildIndicadoresSnapshotRows, loadActiveIndicadoresProperties } from "./indicadores-snapshots"
@@ -559,20 +560,22 @@ export function buildPackageMovimentacoes({
       prestacao,
       competencia,
     }),
-    ...(prestacao?.acordos_rescisoes_recebidos.map((item) => ({
+    // CA27: a movimentação registra o que foi efetivamente recebido (resolvedor
+    // canônico), nunca o principal bruto; item pendente não gera movimentação.
+    ...resolverRecebimentosLegados(prestacao?.acordos_rescisoes_recebidos ?? []).map(({ item, financeiro }) => ({
       fechamento_id: fechamentoId,
       documento_id: getDocumentoId(documents, "prestacao_contas"),
       tipo_movimentacao: "acordo_rescisao_recebido",
       categoria: item.tipo,
       descricao: [item.apto, item.inquilino, item.observacao].filter(Boolean).join(" - ") || "Acordo/rescisao recebido",
-      valor: item.valor,
+      valor: financeiro.totalRecebido,
       sinal: "positivo",
       data_competencia: competenciaMesToDatabase(item.competencia_original) ?? competencia,
       origem_documental: "prestacao_acordos_rescisoes",
       confianca_extracao: item.confianca,
       status_validacao: "pendente",
       dados_extraidos: item,
-    })) ?? []),
+    })),
     ...(despesas?.despesas.map((despesa) => ({
       fechamento_id: fechamentoId,
       documento_id: getDocumentoId(documents, "despesas_comprovantes"),

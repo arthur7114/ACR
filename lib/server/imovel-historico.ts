@@ -1,5 +1,6 @@
 import { createSupabaseAdmin } from "./supabase"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
+import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
 import type { PackageAnalysis, ReceitaPorImovel, AcordoRescisaoRecebido } from "@/lib/prestacao-types"
 import type {
   EventoImovel,
@@ -107,18 +108,7 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
 
     for (const item of prestacao.acordos_rescisoes_recebidos ?? []) {
       if (aptoKey(item.apto) !== alvo) continue
-      eventos.push({
-        competencia: f.competencia,
-        competenciaLabel,
-        tipo: acordoTipoToEvento(item.tipo),
-        inquilino: item.inquilino || null,
-        aluguel: null,
-        total: numOrNull(item.valor),
-        comissao: numOrNull(item.comissao),
-        repasse: typeof item.valor === "number" ? num(item.valor) - num(item.comissao) : null,
-        vencimento: null,
-        observacao: item.observacao ?? null,
-      })
+      eventos.push(acordoParaEvento(item, f.competencia, competenciaLabel))
     }
   }
 
@@ -165,6 +155,29 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     resumo,
     inquilinos,
     eventos,
+  }
+}
+
+// CA27: o evento do histórico expõe os valores resolvidos pelo módulo
+// canônico; item pendente mostra o bruto sem inventar comissão/repasse.
+export function acordoParaEvento(
+  item: AcordoRescisaoRecebido,
+  competencia: string,
+  competenciaLabel: string,
+): EventoImovel {
+  const resolucao = resolverRecebimentoLegado(item)
+  const financeiro = resolucao.status === "resolvido" ? resolucao : null
+  return {
+    competencia,
+    competenciaLabel,
+    tipo: acordoTipoToEvento(item.tipo),
+    inquilino: item.inquilino || null,
+    aluguel: null,
+    total: financeiro ? financeiro.totalRecebido : numOrNull(item.valor),
+    comissao: financeiro ? financeiro.comissao : numOrNull(item.comissao),
+    repasse: financeiro ? financeiro.repasse : null,
+    vencimento: null,
+    observacao: item.observacao ?? null,
   }
 }
 

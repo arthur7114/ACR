@@ -89,3 +89,37 @@ test("TED itemizada gera uma despesa por imovel, somando a TED e sem alterar rec
   assert.equal(ted[0].imovel_id, "im-1")
   assert.equal(ted[0].data_competencia, "2026-05-01")
 })
+
+test("movimentacao de acordo persiste o total recebido resolvido, nao o principal", async () => {
+  const { buildPackageMovimentacoes } = await import("./persist-package.ts")
+  const rows = buildPackageMovimentacoes({
+    fechamentoId: "fechamento-1",
+    competencia: "2026-07-01",
+    documents: [],
+    prestacao: {
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "rescisao",
+          apto: null,
+          inquilino: "EX-LOCATÁRIO",
+          valor: 1890,
+          total_recebido: 1663.56,
+          comissao: 116.45,
+          repasse: 1547.11,
+          competencia_original: null,
+          competencia_recebimento: "2026-07",
+          observacao: null,
+          confianca: 0.9,
+        },
+      ],
+      receitas_por_imovel: [],
+      resumo_financeiro: { outras_comissoes_despesas: [] },
+    } as never,
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  const acordo = rows.find((row) => row.tipo_movimentacao === "acordo_rescisao_recebido")
+  assert.equal(acordo?.valor, 1663.56)
+})

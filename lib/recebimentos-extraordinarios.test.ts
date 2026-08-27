@@ -235,6 +235,45 @@ test("adaptador legado trata campos ausentes como nulos e confiança ausente com
   assert.equal(r.status, "pendente")
 })
 
+test("intermediação legada com valores apenas na observação usa o fallback marcado", () => {
+  // Análises antigas carregavam total/IPTU/repasse só no texto da observação
+  // (comportamento absorvido de lib/intermediacao.ts). Estruturado tem precedência.
+  const r = resolverRecebimentoLegado({
+    tipo: "intermediacao",
+    apto: "204",
+    inquilino: "LOCATÁRIO",
+    valor: 650,
+    competencia_original: "2026-06",
+    competencia_recebimento: "2026-07",
+    observacao: "Total recebido R$ 726,44; IPTU R$ 76,44; repasse R$ 321,44.",
+    confianca: 0.95,
+  })
+  assert.equal(r.status, "resolvido")
+  if (r.status !== "resolvido") return
+  assert.equal(r.totalRecebido, 726.44)
+  assert.equal(r.repasse, 321.44)
+})
+
+test("valores estruturados têm precedência sobre a observação legada", () => {
+  const r = resolverRecebimentoLegado({
+    tipo: "intermediacao",
+    apto: "204",
+    inquilino: "LOCATÁRIO",
+    valor: 650,
+    total_recebido: 700,
+    repasse: 650,
+    comissao: 50,
+    competencia_original: null,
+    competencia_recebimento: "2026-07",
+    observacao: "Total recebido R$ 726,44; repasse R$ 321,44.",
+    confianca: 0.95,
+  })
+  assert.equal(r.status, "resolvido")
+  if (r.status !== "resolvido") return
+  assert.equal(r.totalRecebido, 700)
+  assert.equal(r.repasse, 650)
+})
+
 test("resolverRecebimentosLegados devolve apenas os itens resolvidos, pareados com o financeiro", () => {
   const resolvidos = resolverRecebimentosLegados([
     { tipo: "atraso", apto: "204", valor: 414.86, garagem: 52.07, total_recebido: 466.93, confianca: 0.95 },

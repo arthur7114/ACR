@@ -44,7 +44,13 @@ interface PrestacaoFixture {
     tipo: "intermediacao" | "acordo" | "rescisao" | "atraso" | "outro"
     comissao: number | null
     apto?: string | null
+    inquilino?: string | null
     valor?: number | null
+    garagem?: number | null
+    ajuste?: number | null
+    total_recebido?: number | null
+    repasse?: number | null
+    confianca?: number
     competencia_original?: string | null
   }>
   inadimplencias_acumuladas: Array<{ valor: number }>
@@ -1487,7 +1493,7 @@ test("atraso pendente (baixa confianca) nao realoca receita entre meses", () => 
         totals: { total_receitas: 100 },
         receitas: [],
         intermediacoes: [
-          { tipo: "atraso", apto: "101", inquilino: "Devedor", valor: 999, competencia_original: "03/2026", confianca: 0.4 },
+          { tipo: "atraso", apto: "101", inquilino: "Devedor", valor: 999, comissao: null, competencia_original: "03/2026", confianca: 0.4 },
         ],
       }),
     }),

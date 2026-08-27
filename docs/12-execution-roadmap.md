@@ -1268,6 +1268,47 @@ Próxima ação: confirmar o nome civil/empresarial do locatário de José Walte
 o cliente quiser corrigir a fonte histórica, pois ele não consta nos extratos
 Plural analisados.
 
+## 2026-08-27 — Recebimentos extraordinários canônicos (sub-plano A do plano v2)
+
+Ciclo executado a partir do feedback de agosto (7 vídeos, 28 imagens, conversa
+ACR | YRM), seguindo `docs/superpowers/plans/2026-08-27-recebimentos-canonicos-v2.md`.
+
+Contrato: CA14.2 revisado (base de intermediação = componentes comissionáveis,
+aluguel + garagem; valores explícitos preservados e validados pela equação
+`recebido − comissão = repasse` ± R$ 0,01); CA27–CA27.3 e CA-IND21–24 criados;
+valores-canário de julho congelados em `docs/06-acceptance-criteria.md` e
+versionados em `tests/canary/` (`pnpm test:canary`, alvo separado da suíte).
+Mock contract e domain model alinhados; seção Prisma obsoleta do AGENTS.md
+substituída pela validação Supabase real.
+
+Implementação: novo seam `lib/recebimentos-extraordinarios.ts` — único
+resolvedor financeiro de acordos, rescisões, atrasos e intermediações, com
+união discriminada por tipo, fail-closed explícito (`pendente` por vínculo
+ausente, confiança < 0,7 ou valor inexistente) e fallback legado de observação
+absorvido de `lib/intermediacao.ts` (módulo removido). Sete fórmulas paralelas
+eliminadas: revisão (linha e totais), resumo de receitas adicionais, comissão
+de acordos, agregação (realocação de atraso e comissão de intermediação),
+snapshots (atrasos recuperados e outros recebimentos), movimentações
+persistidas e histórico por imóvel — todas consomem a resolução canônica.
+Parser lê a coluna GARAGEM nas seções de recebidos e herda a competência de
+origem do cabeçalho da seção (CA27.3); prompt e schema do agente instruem a
+base por componentes e a decomposição principal/ajuste/recebido/comissão/
+repasse. `validatePackage` particiona itens inelegíveis antes da normalização
+e emite o recheck `recebimentos_sem_evidencia`. A revisão exibe a decomposição
+com badge de pendência; teste de contrato congela a allowlist de consumidores
+do campo bruto.
+
+Validação: canários 5/5 (Grand Castelão 675/60%/321,44; GM II 750/60%/369,13;
+LOCMAIS 1.663,56/116,45/1.547,11; competência herdada; GMI fantasma excluído
+com totais intactos); suíte completa 453/453; lint, typecheck, build e
+checklist 6/6 verdes. Sem migration SQL (shape novo vive no JSONB
+`analise_completa` com adaptador legado) e sem escrita no Supabase.
+
+Próxima ação: sub-plano B (estado × evento + cobrança esperada, com migrations
+aditivas e backfill em dry-run) e sub-plano C (gates bloqueantes de fonte/
+cobertura + aliases). O reparo de julho (sub-plano D) permanece bloqueado até
+aprovação operacional explícita, com dry-run antes de qualquer escrita.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

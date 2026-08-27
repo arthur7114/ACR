@@ -128,9 +128,9 @@ export function resolverRecebimento(item: RecebimentoExtraordinario): ResolucaoF
 // Consumidores de análises persistidas (agregação, snapshots) declaram tipos
 // estruturais mais estreitos que o schema; o adaptador aceita qualquer
 // subconjunto e coage ausência para null/zero — nada escapa dos guards.
-export type RecebimentoLegado = { tipo: AcordoRescisaoRecebido["tipo"] } & Partial<
-  Omit<AcordoRescisaoRecebido, "tipo">
->
+export type RecebimentoLegado = { tipo: AcordoRescisaoRecebido["tipo"] } & {
+  [K in keyof Omit<AcordoRescisaoRecebido, "tipo">]?: AcordoRescisaoRecebido[K] | null
+}
 
 export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtraordinario {
   const valorLegado = item.valor ?? 0
@@ -152,13 +152,19 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
   }
 
   if (item.tipo === "intermediacao") {
+    // Fallback legado (absorvido de lib/intermediacao.ts): análises antigas
+    // traziam total/IPTU/repasse apenas no texto da observação. Campos
+    // estruturados sempre têm precedência.
+    const observacao = item.observacao ?? ""
     return {
       ...base,
       tipo: "intermediacao",
+      totalRecebidoInformado: base.totalRecebidoInformado ?? parseTaggedMoney(observacao, "total"),
+      repasseInformado: base.repasseInformado ?? parseTaggedMoney(observacao, "repasse"),
       componentes: {
         aluguel: item.aluguel ?? (valorLegado !== 0 ? valorLegado : null),
         garagem: item.garagem ?? null,
-        iptu: item.iptu ?? null,
+        iptu: item.iptu ?? parseTaggedMoney(observacao, "iptu"),
         seguro: null,
         outrosEncargos: null,
       },
@@ -247,6 +253,13 @@ function validarEquacao(totalRecebido: number, comissao: number, repasse: number
   const repasseCalculado = roundMoney(totalRecebido - comissao)
   if (Math.abs(repasseCalculado - repasse) <= TOLERANCIA_EQUACAO) return []
   return [{ campo: "repasse", informado: repasse, calculado: repasseCalculado }]
+}
+
+function parseTaggedMoney(text: string, label: string): number | null {
+  const match = new RegExp(`${label}[^.;]{0,40}?R\\$\\s*([\\d.]+(?:,\\d{1,2})?)`, "i").exec(text)
+  if (!match) return null
+  const value = Number(match[1].replace(/\./g, "").replace(",", "."))
+  return Number.isFinite(value) ? value : null
 }
 
 function pendente(motivo: MotivoPendencia, descricao: string): ResolucaoFinanceira {

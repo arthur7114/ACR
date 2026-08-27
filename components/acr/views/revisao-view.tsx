@@ -24,7 +24,10 @@ import {
   Trash2,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
-import { calcularIntermediacao } from "@/lib/intermediacao"
+import {
+  resolverRecebimentoLegado,
+  resolverRecebimentosLegados,
+} from "@/lib/recebimentos-extraordinarios"
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
 import {
@@ -760,19 +763,25 @@ export function RevisaoView({
   // Aptos quitados via acordo/rescisao do PROPRIO mes nao contam como inadimplentes;
   // acordos de competencia anterior (ex.: pagou abril, devendo maio) NAO removem a inadimplencia.
   const acordoAptos = new Set(acordosRescisoesRecebidos.map((item) => aptoKey(item.apto)).filter(Boolean))
-  // #3: comissao retida nos acordos/rescisoes do mes soma-se a comissao de administracao.
-  const acordosComissao = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.comissao ?? 0), 0)
+  // CA27: valores financeiros de acordos/rescisões vêm do resolvedor canônico;
+  // item pendente aparece na tabela, mas não soma em nenhum total confirmado.
+  const acordosResolvidos = resolverRecebimentosLegados(acordosRescisoesRecebidos)
+  const acordosComissao = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.comissao, 0)
   const resumoComissao = calcularResumoComissaoFechamento(prestacao)
   const receitasAdicionais = calcularResumoReceitasAdicionais(prestacao)
-  // Totais para o rodape da tabela de acordos (espelha o TOTAL impresso no documento).
-  const acordosValorTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
-  const acordosRepasseTotal = acordosValorTotal - acordosComissao
+  // Totais para o rodape da tabela de acordos: principal bruto (espelha o TOTAL
+  // impresso), recebido, comissão e repasse resolvidos como grandezas distintas.
+  const acordosPrincipalTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
+  const acordosTemAjuste = acordosRescisoesRecebidos.some((item) => typeof item.ajuste === "number")
+  const acordosAjusteTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.ajuste ?? 0), 0)
+  const acordosRecebidoTotal = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.totalRecebido, 0)
+  const acordosRepasseTotal = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.repasse, 0)
   // Total da intermediacao (taxa retida) e seu percentual, quando houver.
-  const intermediacaoValor = intermediacoes.reduce((sum, item) => sum + (item.comissao ?? item.valor ?? 0), 0)
+  const intermediacoesResolvidas = resolverRecebimentosLegados(intermediacoes)
+  const intermediacaoValor = intermediacoesResolvidas.reduce((sum, { financeiro }) => sum + financeiro.comissao, 0)
   const intermediacaoPercent = (() => {
-    for (const item of intermediacoes) {
-      const p = calcularIntermediacao(item).percentual
-      if (p !== null) return p
+    for (const { financeiro } of intermediacoesResolvidas) {
+      if (financeiro.percentualRealizado !== null) return financeiro.percentualRealizado
     }
     return null
   })()
@@ -1348,8 +1357,8 @@ export function RevisaoView({
                   {[
                     { label: "Apto" },
                     { label: "Inquilino" },
-                    { label: "Aluguel/base", title: "Aluguel usado como base da comissão de intermediação" },
-                    { label: "IPTU" },
+                    { label: "Base comissionável", title: "Componentes comissionáveis da linha: aluguel + garagem (CA14.2)" },
+                    { label: "Encargos", title: "IPTU, água, seguro e outros encargos — compõem o total e o repasse, não a base" },
                     { label: "Total recebido" },
                     { label: "Comissão interm.", title: "Comissão de intermediação" },
                     { label: "%" },
@@ -1365,17 +1374,35 @@ export function RevisaoView({
               </thead>
               <tbody>
                 {intermediacoes.map((item, index) => {
-                  const financeiro = calcularIntermediacao(item)
+                  const resolucao = resolverRecebimentoLegado(item)
+                  if (resolucao.status !== "resolvido") {
+                    return (
+                      <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 bg-[#FFFBEB]">
+                        <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
+                        <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
+                        <td className="px-4 py-3" colSpan={6}>
+                          <span className="inline-flex items-center rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]" title={resolucao.pendencia.descricao}>
+                            Pendente — sem efeito financeiro
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
+                        <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
+                      </tr>
+                    )
+                  }
+                  const encargos = resolucao.baseComissionavel === null
+                    ? null
+                    : Math.round((resolucao.totalRecebido - resolucao.baseComissionavel) * 100) / 100
                   return (
                     <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#F0FDFA]">
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.baseAluguel)}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.iptu)}</td>
-                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(financeiro.totalRecebido)}</td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-[#0F766E]">{formatBRL(financeiro.comissao)}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(financeiro.percentual)}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(financeiro.repasse)}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{resolucao.baseComissionavel !== null ? formatBRL(resolucao.baseComissionavel) : "-"}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{encargos !== null ? formatBRL(encargos) : "-"}</td>
+                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(resolucao.totalRecebido)}</td>
+                      <td className="px-4 py-3 tabular-nums font-semibold text-[#0F766E]">{formatBRL(resolucao.comissao)}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(resolucao.percentualRealizado)}</td>
+                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(resolucao.repasse)}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
                       <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
                     </tr>
@@ -1543,22 +1570,37 @@ export function RevisaoView({
             <span className="text-[13px] text-[#6B7F6E]">{pluralize(acordosRescisoesRecebidos.length, "item", "itens")}</span>
           </div>
           <div className="max-h-[360px] overflow-auto">
-            <table className="w-full min-w-[1080px] text-sm">
+            <table className="w-full min-w-[1240px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
-                  {["Tipo", "Apto", "Inquilino", "Competência original", "Valor", "Comissão", "Repasse", "Recebido em", "Obs"].map((header) => (
-                    <th key={header} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${["Valor", "Comissão", "Repasse"].includes(header) ? "text-right" : "text-left"}`}>
-                      {header}
+                  {[
+                    { label: "Tipo" },
+                    { label: "Apto" },
+                    { label: "Inquilino" },
+                    { label: "Competência original" },
+                    { label: "Principal", title: "Valor bruto impresso no documento" },
+                    { label: "Ajuste", title: "Desconto (−) ou crédito (+) aplicado sobre o principal" },
+                    { label: "Recebido", title: "Total efetivamente recebido — é o que soma nos totais" },
+                    { label: "Comissão" },
+                    { label: "Repasse" },
+                    { label: "Recebido em" },
+                    { label: "Obs" },
+                  ].map(({ label, title }) => (
+                    <th key={label} title={title} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${["Principal", "Ajuste", "Recebido", "Comissão", "Repasse"].includes(label) ? "text-right" : "text-left"}`}>
+                      {label}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {acordosRescisoesRecebidos.map((item, index) => {
-                  const temComissao = typeof item.comissao === "number"
-                  const repasse = temComissao ? item.valor - (item.comissao ?? 0) : null
+                  // CA27/CA27.1: principal, ajuste, recebido, comissão e repasse são
+                  // grandezas distintas resolvidas pelo módulo canônico — nenhuma
+                  // fórmula financeira local neste componente.
+                  const resolucao = resolverRecebimentoLegado(item)
+                  const pendente = resolucao.status !== "resolvido"
                   return (
-                    <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#EFF7F1]">
+                    <tr key={`${item.tipo}-${item.inquilino}-${item.valor}-${index}`} className={`border-b border-[#EEF1EE] last:border-0 ${pendente ? "bg-[#FFFBEB]" : "hover:bg-[#EFF7F1]"}`}>
                       <td className="px-4 py-3 font-medium text-[#1A2B1C]">{labelTipoAcordo(item.tipo)}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">
                         {empreendimentoId && item.apto?.trim() ? (
@@ -1571,9 +1613,21 @@ export function RevisaoView({
                       </td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(item.valor)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{temComissao ? formatBRL(item.comissao ?? 0) : "-"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]">{repasse !== null ? formatBRL(repasse) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatBRL(item.valor)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.ajuste === "number" ? formatBRL(item.ajuste) : "-"}</td>
+                      {pendente ? (
+                        <td className="px-4 py-3 text-right" colSpan={3}>
+                          <span className="inline-flex items-center rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]" title={resolucao.status === "pendente" ? resolucao.pendencia.descricao : undefined}>
+                            Pendente — sem efeito financeiro
+                          </span>
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#1A2B1C]">{formatBRL(resolucao.totalRecebido)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{resolucao.comissao > 0 ? formatBRL(resolucao.comissao) : "-"}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]">{formatBRL(resolucao.repasse)}</td>
+                        </>
+                      )}
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? competencia}</td>
                       <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
                     </tr>
@@ -1583,9 +1637,11 @@ export function RevisaoView({
               <tfoot className="sticky bottom-0 z-10">
                 <tr className="border-t border-[#EEF1EE] bg-[#F8FAF8] font-semibold text-[#1A2B1C]">
                   <td className="px-4 py-3" colSpan={4}>Total</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosValorTotal)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosPrincipalTotal)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{acordosTemAjuste ? formatBRL(acordosAjusteTotal) : "-"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosRecebidoTotal)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{acordosComissao > 0 ? formatBRL(acordosComissao) : "-"}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{acordosComissao > 0 ? formatBRL(acordosRepasseTotal) : "-"}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosRepasseTotal)}</td>
                   <td className="px-4 py-3" colSpan={2} />
                 </tr>
               </tfoot>
