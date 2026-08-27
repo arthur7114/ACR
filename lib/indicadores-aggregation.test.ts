@@ -93,6 +93,7 @@ interface SnapshotFixture {
   statusOrigem: string
   inquilinoNome?: string | null
   aluguelEsperado: number | null
+  cobrancaEsperada?: number | null
   aluguelRecebido: number | null
   receitaTotal: number | null
   desconto: number | null
@@ -539,6 +540,7 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
   assert.deepEqual(result.realizacaoAluguel, {
     contratado: 2_100,
     vacancia: 500,
+    vacanciaFinanceira: 500,
     inadimplenciaMes: 500,
     descontos: 50,
     ajustesClassificados: 0,
@@ -1507,4 +1509,26 @@ test("atraso pendente (baixa confianca) nao realoca receita entre meses", () => 
 
   const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
   assert.equal(marco.competenciaAjusteReceita, 0)
+})
+
+test("vacancia financeira usa a cobranca esperada e reconcilia com todas as vagas", () => {
+  const snapshots = [
+    makeSnapshot({ imovelId: "imovel-a", statusOcupacao: "vago", statusOrigem: "prestacao_sem_inquilino", aluguelEsperado: 414.86, cobrancaEsperada: 466.93, aluguelRecebido: 0, receitaTotal: 0, desconto: 0, comissaoAdministracao: 0, repasseApurado: 0 }),
+    makeSnapshot({ imovelId: "imovel-b", statusOcupacao: "vago", statusOrigem: "prestacao_sem_inquilino", aluguelEsperado: 400, aluguelRecebido: 0, receitaTotal: 0, desconto: 0, comissaoAdministracao: 0, repasseApurado: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [
+      makeProperty({ id: "imovel-a", unidade: "201", statusAtual: "vago" }),
+      makeProperty({ id: "imovel-b", unidade: "214", statusAtual: "vago" }),
+    ],
+    fechamentos: [makeClosing()],
+    snapshots,
+  }))
+
+  // CA-IND23: cada vaga com vigência aplicável contribui com sua cobrança
+  // esperada; sem garagem contratada, a cobrança é o próprio aluguel.
+  assert.equal(result.realizacaoAluguel.vacanciaFinanceira, 866.93)
+  // A vacância da realização permanece na base do aluguel (equação do contratado).
+  assert.equal(result.realizacaoAluguel.vacancia, 814.86)
 })

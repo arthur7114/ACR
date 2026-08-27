@@ -4,8 +4,10 @@ import {
   aggregateSnapshotLines,
   buildPropertyKey,
   classifyOccupancy,
+  classifyOccupancyEventos,
   normalizePropertyKeyPart,
   roundMoney,
+  type EventoOcupacao,
   type OccupancyStatus,
 } from "@/lib/indicadores-domain"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
@@ -13,7 +15,9 @@ import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { IndicadoresRevenueModel } from "@/lib/indicadores-types"
 import type { createSupabaseAdmin } from "./supabase"
 
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "indicadores-confiabilidade-v2"
+// v3: estado final × eventos (rescisão deixa de ser status), cobrança esperada
+// por componentes e valores de acordos via resolvedor canônico (plano v2, sub-plano B).
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -25,6 +29,9 @@ export interface IndicadoresSnapshotProperty {
   id: string
   unit: string
   expectedRent: number | null
+  // Garagem contratada da vigência (CA-IND23). Nunca inferida do cadastro
+  // atual: null significa "sem evidência", e a cobrança esperada fica só no aluguel.
+  garagemContratada?: number | null
   revenueModel?: IndicadoresRevenueModel
   expectedRentSource?: string | null
   realEstateAgencyName: string | null
@@ -39,6 +46,8 @@ export interface IndicadoresSnapshotRow {
   status_origem: string
   inquilino_nome: string | null
   aluguel_esperado: number | null
+  cobranca_esperada?: number | null
+  eventos?: EventoOcupacao[]
   aluguel_esperado_origem: "cadastro" | "vigencia" | null
   aluguel_recebido: number | null
   aluguel_competencia?: number | null
@@ -116,6 +125,7 @@ const snapshotVigencyRowSchema = z.object({
   imovel_id: z.string(),
   modelo_receita: z.enum(["fixo", "variavel", "nao_aplicavel"]),
   aluguel_contratado: z.union([z.number(), z.string(), z.null()]),
+  garagem_contratada: z.union([z.number(), z.string(), z.null()]).optional(),
   fonte: z.string(),
 })
 
@@ -225,6 +235,8 @@ export async function loadActiveIndicadoresProperties(input: {
               vigency?.aluguel_contratado ?? property.valor_aluguel_esperado,
             )
           : null,
+      garagemContratada:
+        revenueModel === "fixo" ? toNullableMoney(vigency?.garagem_contratada ?? null) : null,
       revenueModel,
       expectedRentSource: vigency ? "vigencia" : "cadastro",
       realEstateAgencyName: getRelationName(property.imobiliarias),
@@ -256,7 +268,7 @@ async function loadSnapshotVigencies(
 ) {
   const { data, error } = await input.supabase
     .from("imovel_vigencias")
-    .select("imovel_id, modelo_receita, aluguel_contratado, fonte")
+    .select("imovel_id, modelo_receita, aluguel_contratado, garagem_contratada, fonte")
     .eq("imobiliaria_id", input.imobiliariaId)
     .eq("empreendimento_id", input.empreendimentoId)
     .eq("ativo", true)
@@ -436,6 +448,7 @@ function buildSnapshotRow(input: {
       (priorDebtIsFromCurrentOccupant && !currentVacancyEvidence && !currentCompetenceSettled) ||
       hasDelinquencyEvidence(evidenceText),
     hasVacancy: currentVacancyEvidence,
+    hasLatePayment: recoveredLate !== null && recoveredLate > 0,
     // A prestação listou a unidade, não nomeou inquilino e não recebeu aluguel
     // do mês: na prática é vacância. Exige linha presente (mês sem linha segue
     // desconhecido) e aluguel contratado conhecido, o que já exclui receita
@@ -448,6 +461,11 @@ function buildSnapshotRow(input: {
     isVariableRevenue: revenueModel === "variavel",
   }
   const status = classifyOccupancy(evidence)
+  const eventos = classifyOccupancyEventos(evidence)
+  // CA-IND23: cobrança esperada por componentes com vigência/evidência —
+  // aluguel contratado + garagem contratada quando existir; nunca inferida.
+  const cobrancaEsperada =
+    expectedRent === null ? null : roundMoney(expectedRent + (property.garagemContratada ?? 0))
   const quality = resolveQuality(propertyLines.length, expectedRent, currentRent, revenueModel)
   const dayDue = selectStableNumber(propertyLines.map((line) => line.dia_vencimento))
   const statusExplicit =
@@ -460,6 +478,8 @@ function buildSnapshotRow(input: {
     status_origem: resolveStatusOrigin(status, evidence, propertyLines.length),
     inquilino_nome: tenantName,
     aluguel_esperado: expectedRent,
+    cobranca_esperada: cobrancaEsperada,
+    eventos,
     aluguel_esperado_origem:
       expectedRent === null
         ? null

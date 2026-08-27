@@ -160,6 +160,12 @@ export interface IndicadoresFinancialBridge {
 export interface IndicadoresRentRealization {
   contratado: number | null
   vacancia: number | null
+  /**
+   * CA-IND23: valor monetário da vacância pela cobrança esperada (aluguel +
+   * garagem contratada quando houver vigência). Difere de `vacancia`, que
+   * permanece na base do aluguel para reconciliar com `contratado`.
+   */
+  vacanciaFinanceira: number | null
   inadimplenciaMes: number | null
   descontos: number | null
   ajustesClassificados: number | null

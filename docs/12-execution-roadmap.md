@@ -1309,6 +1309,40 @@ aditivas e backfill em dry-run) e sub-plano C (gates bloqueantes de fonte/
 cobertura + aliases). O reparo de julho (sub-plano D) permanece bloqueado até
 aprovação operacional explícita, com dry-run antes de qualquer escrita.
 
+## 2026-08-27 — Estado × evento e cobrança esperada (sub-plano B, núcleo)
+
+Contrato: `status_ocupacao` passa a descrever apenas o estado no fim da
+competência (`ocupado | inadimplente | vago | desconhecido`); rescisão e
+pagamento atrasado viram eventos independentes (`imovel_competencias.eventos`).
+`em_rescisao` permanece legível nos snapshots históricos e o classificador não
+o emite mais; rescisão sem aluguel do mês recebido termina a competência como
+vago (canário GM Maracanaú 214). Cobrança esperada por componentes
+(`aluguel_contratado + garagem_contratada` da vigência, CA-IND23) persiste em
+`cobranca_esperada`; a métrica nova `vacanciaFinanceira` soma a cobrança
+esperada de todas as vagas, enquanto a vacância da equação de realização
+permanece na base do aluguel para reconciliar com o contratado (bases nunca
+misturadas). Versão de cálculo `recebimentos-canonicos-v3`.
+
+Migrations aplicadas no Supabase com as credenciais fornecidas pelo usuário:
+`202608270001` (colunas aditivas `eventos`, `cobranca_esperada`,
+`garagem_contratada` — verificadas no information_schema) e `202608270002`
+(RPC `persistir_pacote_fechamento_v1` atualizada para gravar os campos novos;
+chamadores antigos continuam válidos). Nenhuma linha existente foi alterada;
+o leitor de snapshots tem fallback para o select legado. `garagem_contratada`
+está nula em todas as vigências até haver evidência documental por unidade —
+o valor 52,07 do apto 204 entra no reparo controlado (sub-plano D).
+
+Validação: suíte 461/461, canários 5/5, lint, typecheck e build verdes.
+O gap de inadimplência por componentes (cobrança esperada × recebido
+correspondente) ficou explicitamente para o próximo ciclo: exigiria persistir a
+garagem recebida por unidade para não comparar bases incompatíveis — a mesma
+classe de erro que este plano corrige. Backfill histórico de eventos/estado
+permanece no fluxo de reparo (sub-plano D), nunca implícito.
+
+Próxima ação: sub-plano C (gates bloqueantes de fonte/cobertura + aliases),
+gap por componentes com garagem recebida persistida, e reparo de julho (D)
+mediante aprovação operacional do dry-run.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

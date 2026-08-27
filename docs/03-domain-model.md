@@ -110,7 +110,8 @@ de usuários e configuração eGestor exigem `admin`.
 - Realização do aluguel: `contratado - vacância - inadimplência - descontos +
   ajustes classificados = recebido da competência`; somando atrasos
   recuperados obtém-se o aluguel recebido no mês.
-- Status mensal do imovel e um de `ocupado`, `inadimplente`, `vago`, `em_rescisao` ou `desconhecido`. Zero sem evidencia suficiente e `desconhecido`, nunca vacancia.
+- Status mensal do imovel descreve o estado NO FIM da competencia: `ocupado`, `inadimplente`, `vago` ou `desconhecido`. Eventos independentes (`rescisao`, `entrada`, `saida`, `pagamento_atrasado`) descrevem o que aconteceu no mes e vivem em campo proprio. `em_rescisao` permanece legivel apenas em snapshots historicos anteriores a `recebimentos-canonicos-v3`; o classificador nao o emite mais. Rescisao sem aluguel do mes recebido termina a competencia como `vago` (com evento de rescisao); com aluguel recebido, `ocupado`. Zero sem evidencia suficiente e `desconhecido`, nunca vacancia.
+- Cobranca esperada da competencia = aluguel contratado + garagem contratada da vigencia (CA-IND23), nunca inferida do cadastro atual. O valor monetario de vacancia usa a cobranca esperada de todas as unidades vagas; a vacancia da equacao de realizacao permanece na base do aluguel para reconciliar com o contratado.
 - Taxa de ocupacao mensal usa ocupado + inadimplente + em rescisao no numerador e adiciona vago no denominador; desconhecidos ficam fora do denominador e reduzem a cobertura.
 - `null` significa dado ausente; `0` significa zero confirmado;
   `nao_aplicavel` significa conceito incompatível com o modelo de receita.

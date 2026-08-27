@@ -6,6 +6,7 @@ import {
   calculateOccupancy,
   calculateRentRealization,
   classifyOccupancy,
+  classifyOccupancyEventos,
   normalizePropertyKeyPart,
   reconcileFinancialBridge,
   roundMoney,
@@ -30,7 +31,7 @@ test("buildPropertyKey distingue a mesma unidade em empreendimentos diferentes",
   assert.notEqual(grandMessejana, grandCastelao)
 })
 
-test("classifyOccupancy prioriza rescisao sobre todos os demais sinais", () => {
+test("rescisao e evento, nao estado: inadimplencia explicita prevalece como estado final", () => {
   assert.equal(
     classifyOccupancy({
       tenantName: "Airbnb",
@@ -40,7 +41,47 @@ test("classifyOccupancy prioriza rescisao sobre todos os demais sinais", () => {
       hasDelinquency: true,
       hasVacancy: true,
     }),
-    "em_rescisao",
+    "inadimplente",
+  )
+})
+
+test("rescisao com aluguel do mes recebido mantem ocupado como estado final", () => {
+  assert.equal(
+    classifyOccupancy({
+      tenantName: "Inquilino",
+      observation: null,
+      rentReceived: 700,
+      hasTermination: true,
+      hasDelinquency: false,
+      hasVacancy: false,
+    }),
+    "ocupado",
+  )
+})
+
+test("classifyOccupancyEventos registra rescisao e pagamento atrasado como eventos", () => {
+  assert.deepEqual(
+    classifyOccupancyEventos({
+      tenantName: null,
+      observation: null,
+      rentReceived: null,
+      hasTermination: true,
+      hasDelinquency: false,
+      hasVacancy: true,
+      hasLatePayment: true,
+    }),
+    ["rescisao", "pagamento_atrasado"],
+  )
+  assert.deepEqual(
+    classifyOccupancyEventos({
+      tenantName: "Inquilino",
+      observation: null,
+      rentReceived: 700,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
+    }),
+    [],
   )
 })
 
@@ -384,6 +425,8 @@ test("inquilino nomeado nao encobre vacancia explicita nem rescisao", () => {
     }),
     "vago",
   )
+  // GM Maracanaú apto 214 (canário): rescisão sem aluguel do mês recebido é
+  // unidade desocupada no fim da competência — vago + evento de rescisão.
   assert.equal(
     classifyOccupancy({
       tenantName: "Inquilino Atual",
@@ -393,7 +436,7 @@ test("inquilino nomeado nao encobre vacancia explicita nem rescisao", () => {
       hasDelinquency: false,
       hasVacancy: false,
     }),
-    "em_rescisao",
+    "vago",
   )
 })
 

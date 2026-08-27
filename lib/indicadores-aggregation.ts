@@ -141,6 +141,8 @@ export interface IndicadoresSnapshotInput {
   statusOrigem: string
   inquilinoNome?: string | null
   aluguelEsperado: number | null
+  cobrancaEsperada?: number | null
+  eventos?: string[] | null
   aluguelRecebido: number | null
   receitaTotal: number | null
   desconto: number | null
@@ -706,6 +708,13 @@ function buildRentRealization(
     contracted === null
       ? null
       : sumForStatus(snapshots, "vago", (snapshot) => snapshot.aluguelEsperado)
+  // CA-IND23: toda unidade vaga com vigência aplicável contribui com sua
+  // cobrança esperada; snapshots antigos sem a coluna caem no aluguel esperado.
+  const vacanciaFinanceira = sumForStatus(
+    snapshots,
+    "vago",
+    (snapshot) => snapshot.cobrancaEsperada ?? snapshot.aluguelEsperado,
+  )
   const delinquency =
     contracted === null
       ? null
@@ -750,6 +759,7 @@ function buildRentRealization(
   return {
     contratado: contracted,
     vacancia: vacancy,
+    vacanciaFinanceira,
     inadimplenciaMes: delinquency,
     descontos: discounts,
     ajustesClassificados: classifiedAdjustments,

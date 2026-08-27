@@ -1621,3 +1621,67 @@ test("recebimento pendente nao entra nos valores do snapshot", () => {
 
   assert.equal(row.atrasos_recuperados, null)
 })
+
+test("rescisao vira evento e o estado final da competencia e vago", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "", aluguel: 0, total: 0 },
+      acordos: [{ tipo: "rescisao", valor: 500, total_recebido: 500, comissao: 35, confianca: 0.95 }],
+    }),
+    900,
+  )
+
+  assert.equal(row.status_ocupacao, "vago")
+  assert.deepEqual(row.eventos, ["rescisao"])
+})
+
+test("atraso recuperado registra o evento pagamento_atrasado sem mudar o estado", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [{ tipo: "atraso", valor: 466.93, competencia_original: "05/2026", confianca: 0.95 }],
+    }),
+    700,
+  )
+
+  assert.equal(row.status_ocupacao, "ocupado")
+  assert.deepEqual(row.eventos, ["pagamento_atrasado"])
+})
+
+test("cobranca esperada soma aluguel e garagem contratados da vigencia", () => {
+  const { rows } = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "x-204",
+        unit: "10",
+        expectedRent: 414.86,
+        garagemContratada: 52.07,
+        revenueModel: "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária X",
+        developmentName: "Residencial X",
+      },
+    ],
+    fechamentoId: "x-julho",
+    competencia: "2026-07",
+    analysis: prestacaoFixture({ receita: { inquilino: "Inquilino", aluguel: 414.86, total: 466.93 } }),
+  })
+
+  assert.equal(rows[0]?.cobranca_esperada, 466.93)
+})
+
+test("cobranca esperada sem garagem contratada e o proprio aluguel, nunca inferida", () => {
+  const row = statusFor(
+    prestacaoFixture({ receita: { inquilino: "Inquilino", aluguel: 700, total: 700 } }),
+    700,
+  )
+  assert.equal(row.cobranca_esperada, 700)
+})
+
+test("receita variavel nao tem cobranca esperada", () => {
+  const row = statusFor(
+    prestacaoFixture({ receita: { inquilino: "AIRBNB", aluguel: 0, total: 0 } }),
+    null,
+  )
+  assert.equal(row.cobranca_esperada, null)
+})

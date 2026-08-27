@@ -14,6 +14,12 @@ interface PropertyKeyInput {
   unit: string
 }
 
+// Eventos independentes do estado no fim da competência (CA27/P0.3): rescisão
+// e pagamento atrasado descrevem o que ACONTECEU no mês; o status descreve como
+// a unidade TERMINOU o mês. `em_rescisao` permanece no tipo apenas para leitura
+// de snapshots históricos — o classificador não o emite mais.
+export type EventoOcupacao = "rescisao" | "entrada" | "saida" | "pagamento_atrasado"
+
 interface OccupancyEvidence {
   tenantName: string | null
   observation: string | null
@@ -21,6 +27,8 @@ interface OccupancyEvidence {
   hasTermination: boolean
   hasDelinquency: boolean
   hasVacancy: boolean
+  // Recebimento de atraso de competência anterior no mês (evento, não estado).
+  hasLatePayment?: boolean
   // Vacância inferida: a prestação listou a unidade, não nomeou inquilino e não
   // recebeu aluguel. É mais fraca que `hasVacancy` (que vem de texto explícito)
   // e por isso entra depois dela na classificação e guarda procedência própria.
@@ -78,7 +86,6 @@ export function buildPropertyKey(input: PropertyKeyInput) {
 }
 
 export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus {
-  if (evidence.hasTermination) return "em_rescisao"
   // A inadimplência explícita descreve a competência corrente. Um valor positivo
   // pode ser recuperação de mês anterior e, por isso, não pode apagá-la.
   if (evidence.hasDelinquency) return "inadimplente"
@@ -87,6 +94,9 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
     [evidence.tenantName, evidence.observation].filter(Boolean).join(" "),
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
+  // Rescisão sem aluguel do mês recebido: a unidade terminou a competência
+  // desocupada (canário GM Maracanaú 214). A rescisão em si vira evento.
+  if (evidence.hasTermination) return "vago"
   if (evidence.hasVacancy) return "vago"
   if (evidence.hasBlankTenancy) return "vago"
   // Inquilino nomeado na prestação é ocupação: a unidade não está vaga nem é
@@ -99,6 +109,13 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   // operação ativa, não dado ausente.
   if (evidence.isVariableRevenue) return "ocupado"
   return "desconhecido"
+}
+
+export function classifyOccupancyEventos(evidence: OccupancyEvidence): EventoOcupacao[] {
+  const eventos: EventoOcupacao[] = []
+  if (evidence.hasTermination) eventos.push("rescisao")
+  if (evidence.hasLatePayment) eventos.push("pagamento_atrasado")
+  return eventos
 }
 
 export function aggregateSnapshotLines(lines: SnapshotLineAmounts[]) {

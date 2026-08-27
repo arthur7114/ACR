@@ -102,6 +102,8 @@ const snapshotRowsSchema = z.array(
     status_origem: z.string(),
     inquilino_nome: z.string().nullable(),
     aluguel_esperado: databaseMoneySchema,
+    cobranca_esperada: databaseMoneySchema.optional(),
+    eventos: z.array(z.string()).nullable().optional(),
     aluguel_recebido: databaseMoneySchema,
     aluguel_competencia: databaseMoneySchema.optional(),
     atrasos_recuperados: databaseMoneySchema.optional(),
@@ -347,7 +349,8 @@ async function loadSnapshotRows(
       .from("imovel_competencias")
       .select(
         `imovel_id, fechamento_id, competencia, status_ocupacao, status_origem,
-         inquilino_nome, aluguel_esperado, aluguel_recebido, aluguel_competencia,
+         inquilino_nome, aluguel_esperado, cobranca_esperada, eventos,
+         aluguel_recebido, aluguel_competencia,
          atrasos_recuperados, outros_recebimentos, entradas_passagem, saidas_passagem,
          receita_total, desconto, comissao_administracao, repasse_apurado,
          vencimento_referencia, competencia_original, competencia_recebimento,
@@ -460,6 +463,8 @@ function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): Indicador
     statusOrigem: row.status_origem,
     inquilinoNome: row.inquilino_nome,
     aluguelEsperado: nullableMoney(row.aluguel_esperado),
+    cobrancaEsperada: nullableOptionalMoney(row.cobranca_esperada),
+    eventos: row.eventos ?? null,
     aluguelRecebido: nullableMoney(row.aluguel_recebido),
     aluguelRecebidoCompetencia: nullableOptionalMoney(row.aluguel_competencia),
     atrasosRecuperados: nullableOptionalMoney(row.atrasos_recuperados),
