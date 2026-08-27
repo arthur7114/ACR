@@ -13,6 +13,7 @@ import type {
 } from "@/lib/prestacao-types"
 import type { CommercialRuleForValidation } from "./regras-comerciais"
 import { reconciliarResumoDespesas } from "@/lib/despesas-locador"
+import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
 import { resolveReceitaCompetencias } from "@/lib/competencia-fechamento"
 import { commissionBaseComponents, calculatedAdminCommission as computeAdminCommission } from "@/lib/comissao"
 import { ensureReceitaLineIds } from "./fechamento-corrections"
@@ -50,7 +51,15 @@ export function validatePackage(input: PackageValidationInput) {
   // (linha zerada, marcada INADIMPLENCIA) para contar como inadimplente do mes.
   // Apenas a secao dedicada de dividas acumuladas vai para inadimplencias_acumuladas
   // (responsabilidade da extracao). Por isso nao movemos mais linhas aqui.
-  const normalizedPrestacao = input.prestacao ? normalizePrestacao(input.prestacao) : null
+  // CA27.2 (fail-closed): recebimento sem vínculo, sem valor próprio ou com
+  // confiança insuficiente sai da lista financeira e vira pendência de revisão.
+  // O filtro roda ANTES da normalização, porque a reconciliação de despesas lê
+  // a lista de intermediações e não pode absorver item pendente.
+  const recebimentos = partitionRecebimentosElegiveis(input.prestacao)
+  const prestacaoElegivel = input.prestacao
+    ? { ...input.prestacao, acordos_rescisoes_recebidos: recebimentos.elegiveis }
+    : null
+  const normalizedPrestacao = prestacaoElegivel ? normalizePrestacao(prestacaoElegivel) : null
   const normalizedDespesas = input.despesas ? normalizeDespesas(input.despesas) : null
   const normalizedRepasse = input.repasse ? normalizeRepasse(input.repasse) : null
   const normalizedReajuste = input.reajuste ? normalizeReajuste(input.reajuste) : null
@@ -76,6 +85,7 @@ export function validatePackage(input: PackageValidationInput) {
     historicalAgreementKeys: input.historicalAgreementKeys ?? [],
     totals,
     repasseEmbutido,
+    recebimentosPendentes: recebimentos.pendentes,
   })
   const guardrails = buildGuardrails(input.documents, rechecks)
   const parecer = buildTechnicalOpinion(rechecks, guardrails)
@@ -256,6 +266,46 @@ function appendObservacao(atual: string | null, extra: string): string {
   return base.length > 0 ? `${base} | ${extra}` : extra
 }
 
+interface RecebimentoPendente {
+  item: AcordoRescisaoRecebido
+  descricao: string
+}
+
+// CA27.2: a elegibilidade financeira de um recebimento extraordinário é do
+// módulo canônico. Item pendente sai da lista (nenhum efeito financeiro) e é
+// devolvido para virar recheck de revisão.
+function partitionRecebimentosElegiveis(prestacao: PrestacaoAnalysis | null): {
+  elegiveis: AcordoRescisaoRecebido[]
+  pendentes: RecebimentoPendente[]
+} {
+  const elegiveis: AcordoRescisaoRecebido[] = []
+  const pendentes: RecebimentoPendente[] = []
+  for (const item of prestacao?.acordos_rescisoes_recebidos ?? []) {
+    const resolucao = resolverRecebimentoLegado(item)
+    if (resolucao.status === "resolvido") elegiveis.push(item)
+    else pendentes.push({ item, descricao: resolucao.pendencia.descricao })
+  }
+  return { elegiveis, pendentes }
+}
+
+function checkRecebimentosPendentes(pendentes: RecebimentoPendente[]): PrestacaoRecheck {
+  return {
+    id: "recebimentos_sem_evidencia",
+    label: "Recebimentos extraordinarios sem evidencia suficiente",
+    status: pendentes.length > 0 ? "warning" : "passed",
+    message:
+      pendentes.length > 0
+        ? pendentes
+            .map(({ item, descricao }) => {
+              const identificacao = item.apto ?? item.inquilino ?? "sem identificacao"
+              return `${item.tipo} (${identificacao}, R$ ${item.valor.toFixed(2)}): ${descricao}`
+            })
+            .join(" | ")
+        : "Todos os recebimentos extraordinarios possuem vinculo, valor e confianca suficientes.",
+    actual: pendentes.length,
+  }
+}
+
 // Guarda deterministica: a IA as vezes "inventa" uma intermediacao copiando o
 // valor de uma despesa de utilidade (CAGECE, ENEL, agua...) que aparece em
 // OUTRAS COMISSOES E DESPESAS. Esses fantasmas vem sem apto e sem inquilino e
@@ -407,8 +457,15 @@ function buildRechecks({
   historicalAgreementKeys,
   totals,
   repasseEmbutido,
-}: PackageValidationInput & { totals: PackageTotals; historicalAgreementKeys: string[]; repasseEmbutido: boolean }) {
+  recebimentosPendentes,
+}: PackageValidationInput & {
+  totals: PackageTotals
+  historicalAgreementKeys: string[]
+  repasseEmbutido: boolean
+  recebimentosPendentes: RecebimentoPendente[]
+}) {
   const checks: PrestacaoRecheck[] = [
+    checkRecebimentosPendentes(recebimentosPendentes),
     checkRequiredDocument(documents, "prestacao_contas", "Prestacao de contas"),
     checkRequiredComprovante(documents, repasseEmbutido),
     checkOptionalDocument(documents, "relatorio_reajuste", "Relatorio de locacao/reajuste"),

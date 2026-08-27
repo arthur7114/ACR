@@ -740,3 +740,64 @@ test("nao bloqueia aprovacao quando aluguel recebido esta sem competencia origin
   assert.equal(result.rechecks.some((item) => item.id === "receitas_competencias"), false)
   assert.notEqual(result.parecer.status, "bloqueado")
 })
+
+test("recebimento sem vinculo ou confianca vira pendencia e sai dos totais (CA27.2)", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "intermediacao",
+          apto: null,
+          inquilino: null,
+          valor: 255.9,
+          comissao: 127.95,
+          percentual: 50,
+          competencia_original: "2026-02",
+          competencia_recebimento: "2026-03",
+          observacao: "Base inferida pelo OCR; linha de imovel nao identificada.",
+          confianca: 0.55,
+        },
+      ],
+    }),
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.prestacao?.acordos_rescisoes_recebidos.length, 0)
+  const check = result.rechecks.find((item) => item.id === "recebimentos_sem_evidencia")
+  assert.equal(check?.status, "warning")
+  assert.match(check?.message ?? "", /intermediacao/i)
+})
+
+test("recebimento com evidencia suficiente permanece e o recheck passa", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "204",
+          inquilino: "DEVEDOR",
+          valor: 414.86,
+          garagem: 52.07,
+          total_recebido: 466.93,
+          comissao: 32.69,
+          repasse: 434.24,
+          competencia_original: null,
+          competencia_recebimento: "2026-03",
+          observacao: null,
+          confianca: 0.95,
+        },
+      ],
+    }),
+    repasse: null,
+    despesas: null,
+    reajuste: null,
+  })
+
+  assert.equal(result.prestacao?.acordos_rescisoes_recebidos.length, 1)
+  const check = result.rechecks.find((item) => item.id === "recebimentos_sem_evidencia")
+  assert.equal(check?.status, "passed")
+})

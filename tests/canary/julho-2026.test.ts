@@ -73,18 +73,18 @@ test("Grand Messejana I: intermediação sem unidade e com baixa confiança não
     ],
     inadimplencias_acumuladas: [],
     resumo_financeiro: {
-      total_linhas_receitas: 0,
+      total_linhas_receitas: 1000,
       total_linhas_comissoes: 0,
-      total_linhas_repasse: 0,
+      total_linhas_repasse: 859.6,
       comissao_administracao: 0,
       outras_comissoes_despesas: [{ descricao: "SEGURO APTO 01", valor: 140.4, confianca: 0.85 }],
       total_outras_comissoes_despesas: 140.4,
       total_comissao_despesas: 140.4,
-      recebidos_em_nome_locador: 0,
-      total_a_repassar: 0,
+      recebidos_em_nome_locador: 1000,
+      total_a_repassar: 859.6,
       confianca: 0.9,
     },
-    totais: { total_receitas: 0, total_comissoes: 0, total_repassar: 0 },
+    totais: { total_receitas: 1000, total_comissoes: 0, total_repassar: 859.6 },
     campos_ausentes: [],
     observacoes: [],
     confianca_geral: 0.9,
@@ -100,4 +100,6 @@ test("Grand Messejana I: intermediação sem unidade e com baixa confiança não
 
   assert.equal(result.prestacao?.acordos_rescisoes_recebidos.length, 0)
   assert.equal(result.totals.total_comissao_despesas, 140.4)
+  const pendencia = result.rechecks.find((item) => item.id === "recebimentos_sem_evidencia")
+  assert.equal(pendencia?.status, "warning")
 })
