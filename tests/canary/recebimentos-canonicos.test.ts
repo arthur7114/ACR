@@ -31,3 +31,33 @@ test("Grand Castelão: intermediação usa aluguel + garagem como base comission
   assert.equal(resolucao.repasse, 321.44)
   assert.equal(resolucao.reconciliado, true)
 })
+
+// Canário Grand Messejana II — julho/2026 (feedback de agosto, pasta de evidências).
+// Comissão 450,00 a 60% força base comissionável 750,00; o encargo (69,13) compõe o
+// total e o repasse sem alterar a base. Decomposição fina aluguel×garagem aguarda o
+// fixture do documento; a base agregada é aritmética forçada.
+test("Grand Messejana II: intermediação de junho recebida em julho a 60%", () => {
+  const resolucao = resolverRecebimento({
+    tipo: "intermediacao",
+    imovelId: null,
+    apto: null,
+    inquilino: "NOVO LOCATÁRIO GM II",
+    competenciaOrigem: "2026-06",
+    competenciaRecebimento: "2026-07",
+    componentes: { aluguel: 750, garagem: null, iptu: 69.13, seguro: null, outrosEncargos: null },
+    percentualInformado: null,
+    totalRecebidoInformado: null,
+    comissaoInformada: 450,
+    repasseInformado: 369.13,
+    evidencia: { documentoId: null, secao: "INTERMEDIAÇÃO DE JUNHO DE 2026 RECEBIDA EM JULHO", linhaOuTrecho: null, confianca: 0.95 },
+  })
+
+  assert.equal(resolucao.status, "resolvido")
+  if (resolucao.status !== "resolvido") return
+  assert.equal(resolucao.baseComissionavel, 750)
+  assert.equal(resolucao.percentualRealizado, 60)
+  assert.equal(resolucao.comissao, 450)
+  assert.equal(resolucao.totalRecebido, 819.13)
+  assert.equal(resolucao.repasse, 369.13)
+  assert.equal(resolucao.reconciliado, true)
+})

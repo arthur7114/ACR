@@ -126,7 +126,9 @@
 
 Oráculo versionado em `tests/canary/` (`pnpm test:canary` — permitido vermelho até o
 sub-plano correspondente concluir; `pnpm test` permanece verde e bloqueante).
-Fonte: PDFs de julho no Drive + vídeos do feedback de agosto. Aritmética conferida.
+Fonte: PDFs de julho + 7 vídeos transcritos + 28 imagens do feedback de agosto
+(pasta de evidências no Drive da cliente; link registrado fora do repositório).
+Aritmética conferida.
 
 | Fechamento | Valor esperado |
 |---|---|
@@ -136,8 +138,16 @@ Fonte: PDFs de julho no Drive + vídeos do feedback de agosto. Aritmética confe
 | Grand Maracanaú — ocupação julho | 2 vagas (aptos 201 e 214); 214 também com evento de rescisão |
 | Grand Maracanaú — cobrança esperada apto 204 | 414,86 + 52,07 = 466,93 (aluguel + garagem), com fórmula visível |
 | Grand Castelão I — intermediação | base 675,00 (650 + 25); 60%; comissão 405,00; origem 06/2026; recebido 07/2026; total 726,44; repasse 321,44 |
+| Grand Messejana II — intermediação | comissão 450,00; 60% (base 750,00); origem 06/2026; recebido 07/2026; repasse 369,13 |
+| Grand Maracanaú — vacância financeira | aptos 201 e 214 participam da quantidade e do valor; o valor não permanece 400,00 quando a vigência do 214 é aplicável |
+| José Walter — cadastro/histórico | um único imóvel canônico GA0002; junho ocupado; julho recebido 3.348,52 preservado |
+| João Cordeiro — histórico | março com ocupação 100%; dívida do Flat B preservada por competência (2 meses relatados) |
 | LOCMAIS — rescisão | principal 1.890,00; ajuste −226,44; recebido 1.663,56; comissão 116,45; repasse 1.547,11 |
 | Grand Messejana I | intermediação 0; ENEL 127,95 permanece despesa; seguro apto 01 140,40 permanece despesa |
 | Plural | aluguel 3.348,52; administração 267,88; repasse 3.080,64 |
 | César Rêgo | separação João Cordeiro/Pompílio preservada; total líquido conciliado 13.068,01 |
 | Terreno Castelão | desconhecido/incompleto até o documento de julho ser disponibilizado (nunca zero) |
+- CA-IND21: o card "Hoje" é posição cadastral separada da competência selecionada, exibe a data/hora da última sincronização e nunca é uma cópia dos valores do mês selecionado.
+- CA-IND22: a inadimplência acumulada é calculada por competência e locatário; dívida histórica não é zerada pela ausência de linha do devedor no mês corrente (ex.: dívida do Flat B do João Cordeiro preservada por competência, inclusive os 2 meses relatados).
+- CA-IND23: o valor monetário de vacância reconcilia com todas as unidades classificadas como vagas na competência — cada vaga com vigência aplicável contribui com sua cobrança esperada, e nenhuma unidade entra na contagem de vagas sem entrar no valor (ex.: Grand Maracanaú julho, aptos 201 e 214; o valor não pode permanecer somente 400,00 quando a vigência do 214 é aplicável).
+- CA-IND24: o selo de comprovante incompleto explica nominalmente quais comprovantes faltam e em quais fechamentos, em vez de um selo genérico.

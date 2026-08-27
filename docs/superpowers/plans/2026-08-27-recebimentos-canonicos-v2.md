@@ -1,6 +1,8 @@
 # Plano revisado (v2) — Correção estrutural do ACR: recebimentos extraordinários canônicos
 
-> Revisão do plano de 2026-08-27 produzido a partir do feedback de agosto (vídeos + conversa ACR | YRM).
+> Revisão do plano de 2026-08-27 produzido a partir do feedback de agosto (7 vídeos transcritos,
+> 28 imagens inspecionadas e conversa ACR | YRM; pasta de evidências no Drive da cliente,
+> link registrado fora do repositório).
 > Esta v2 corrige erros factuais verificados contra o código, fecha lacunas de especificação do modelo
 > canônico e divide o escopo em quatro sub-planos independentemente entregáveis.
 > Cada sub-plano deve ganhar seu próprio plano de implementação bite-sized (TDD) no início da execução —
@@ -237,7 +239,12 @@ migrations de `imovel_competencias`.
 - `cobranca_esperada` por componentes (aluguel + garagem + aplicáveis), com vigência/evidência;
   gap de inadimplência calculado contra ela. Corrigir também `inadimplencia-mes.ts:29-39`, que
   hoje diverge da agregação por usar `receita_total` encargo-inclusiva por acidente.
-- Dívida acumulada vira dimensão própria (coluna/estrutura no snapshot), fora do status.
+- Vacância financeira reconciliada com a contagem: toda unidade classificada como vaga com
+  vigência aplicável contribui com sua cobrança esperada no valor monetário de vacância
+  (CA-IND23; Grand Maracanaú julho não pode contar 2 vagas e valorar só 400,00).
+- Dívida acumulada vira dimensão própria (coluna/estrutura no snapshot), fora do status,
+  calculada por competência e locatário — ausência de linha do devedor no mês corrente não
+  zera dívida histórica (CA-IND22; Flat B do João Cordeiro).
 - Migrations aditivas + backfill em dry-run com relatório; `desconhecido` ≠ zero.
 
 Aceite (canários B): Grand Maracanaú julho = 2 vagas (201, 214), 214 com evento de rescisão;
@@ -271,8 +278,14 @@ GMI, nomes, série de 12 meses, definição de aluguel médio), com um acréscim
 comunicável caso a cliente rejeite algum valor durante o aceite (restaurar snapshot anterior do
 par afetado, registrar exceção no roadmap, manter demais pares aprovados).
 
-P1.1 (despesas itemizadas com proveniência), P1.3 (explicar indicadores) e P2 (observabilidade)
-permanecem como na v1, executados após A–D ou intercalados quando não conflitarem.
+P1.1 (despesas itemizadas com proveniência) e P2 (observabilidade) permanecem como na v1.
+P1.3 (explicar indicadores), revisado no feedback de agosto, passa a cobrir: "Hoje" como posição
+cadastral separada com data/hora da última sincronização, nunca cópia do mês selecionado
+(CA-IND21); selo de comprovante incompleto explicado nominalmente (CA-IND24); numerador,
+denominador, fonte e confiança visíveis; definição contratual de "aluguel médio" (contratado ×
+recebido); e três regressões a preservar com teste — seletor de período 3/6/12/personalizado
+(CA-IND19), nomes por snapshot sem fallback ao cadastro atual (CA-IND20) e canonicalização
+`GA0002/2` → `GA0002` (CA14.18). Executados após A–D ou intercalados quando não conflitarem.
 
 ## Fase 0 revista — congelar o oráculo sem quebrar o portão verde
 
@@ -299,6 +312,10 @@ A v1 mandava "manter os novos testes vermelhos até o início da implementação
 | Grand Maracanaú — total acordos | recebido 1.187,84; comissão 83,15; repasse 1.104,69 |
 | Grand Maracanaú — ocupação | 2 vagas: aptos 201 e 214; 214 com evento de rescisão |
 | Grand Castelão I — intermediação | base 675,00 (650 + 25); 60%; comissão 405,00; origem 06/2026; recebido 07/2026; total 726,44; repasse 321,44 |
+| Grand Messejana II — intermediação | comissão 450,00; 60% (base 750,00); origem 06/2026; recebido 07/2026; repasse 369,13 |
+| Grand Maracanaú — vacância financeira | aptos 201 e 214 participam da quantidade e do valor; o valor não permanece 400,00 quando a vigência do 214 é aplicável |
+| José Walter — cadastro/histórico | um único imóvel canônico GA0002; junho ocupado; julho recebido 3.348,52 preservado (regressão) |
+| João Cordeiro — histórico | março com ocupação 100%; dívida do Flat B preservada por competência (2 meses relatados) |
 | LOCMAIS — rescisão | principal 1.890,00; ajuste −226,44; recebido 1.663,56; comissão 116,45; repasse 1.547,11 |
 | Grand Messejana I | intermediação 0; ENEL 127,95 (despesa); seguro apto 01 140,40 (despesa) |
 | Plural | aluguel 3.348,52; administração 267,88; repasse 3.080,64 |
