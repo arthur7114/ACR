@@ -91,8 +91,14 @@ export const acordoRescisaoRecebidoSchema = z
     apto: z.string().nullable(),
     inquilino: z.string().nullable(),
     valor: z.number(),
-    // Encargos e totais estruturados da intermediação. Opcionais para manter
-    // compatibilidade com análises persistidas antes destes campos.
+    // Componentes monetários da linha (CA14.2 revisado / CA27). Opcionais para
+    // manter compatibilidade com análises persistidas antes destes campos.
+    // Em intermediação, aluguel e garagem formam a base comissionável; nos
+    // demais tipos, `valor` segue como principal bruto e `ajuste` carrega
+    // desconto (negativo) ou crédito (positivo).
+    aluguel: z.number().nullable().optional(),
+    garagem: z.number().nullable().optional(),
+    ajuste: z.number().nullable().optional(),
     iptu: z.number().nullable().optional(),
     total_recebido: z.number().nullable().optional(),
     repasse: z.number().nullable().optional(),
