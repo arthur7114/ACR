@@ -39,3 +39,28 @@ test("permite movimentação legada quando a competência original não foi extr
   assert.equal(countMovementInconsistencies([legacyRow], []), 1)
   assert.equal(countMovementInconsistencies([legacyRow], [{ ...legacyMovement, imovel_id: null }]), 1)
 })
+
+test("documento com objeto ausente no storage e apontado nominalmente", async () => {
+  const { resolverDocumentosIndisponiveis } = await import("./fechamento-approval-gates.ts")
+  const documentos = [
+    { id: "d1", tipo_documento: "prestacao_contas", nome_arquivo: "prestacao-julho.pdf", arquivo_url: "alive/prestacao-julho.pdf" },
+    { id: "d2", tipo_documento: "comprovante_repasse", nome_arquivo: "comprovante-julho.pdf", arquivo_url: "alive/comprovante-julho.pdf" },
+  ]
+  const existencia = new Map([
+    ["alive/prestacao-julho.pdf", true],
+    ["alive/comprovante-julho.pdf", false],
+  ])
+
+  const indisponiveis = resolverDocumentosIndisponiveis(documentos, existencia)
+  assert.deepEqual(indisponiveis.map((d) => d.nome_arquivo), ["comprovante-julho.pdf"])
+})
+
+test("documento registrado sem arquivo_url conta como indisponivel (fail-closed)", async () => {
+  const { resolverDocumentosIndisponiveis } = await import("./fechamento-approval-gates.ts")
+  const documentos = [
+    { id: "d1", tipo_documento: "prestacao_contas", nome_arquivo: "prestacao.pdf", arquivo_url: null },
+  ]
+
+  const indisponiveis = resolverDocumentosIndisponiveis(documentos, new Map())
+  assert.equal(indisponiveis.length, 1)
+})

@@ -4,11 +4,64 @@ import { loadFechamentoVinculosImoveis } from "./fechamento-imoveis"
 import { resolveReceitaMovement } from "./fechamento-corrections"
 import { createSupabaseAdmin } from "./supabase"
 
+const STORAGE_BUCKET = "fechamento-documentos"
+
+export interface DocumentoFonteParaGate {
+  id: string
+  tipo_documento: string | null
+  nome_arquivo: string | null
+  arquivo_url: string | null
+}
+
+// P0.5 (fail-closed): o registro do documento não basta — o objeto precisa
+// existir no Storage. Sem arquivo_url ou sem objeto, o documento está
+// indisponível e a aprovação bloqueia apontando nominalmente o arquivo.
+export function resolverDocumentosIndisponiveis(
+  documentos: DocumentoFonteParaGate[],
+  existencia: Map<string, boolean>,
+): DocumentoFonteParaGate[] {
+  return documentos.filter(
+    (documento) => !documento.arquivo_url || existencia.get(documento.arquivo_url) !== true,
+  )
+}
+
+async function assertDocumentosFonteDisponiveis(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  fechamentoId: string,
+) {
+  const { data, error } = await supabase
+    .from("documentos_fechamento")
+    .select("id,tipo_documento,nome_arquivo,arquivo_url")
+    .eq("fechamento_id", fechamentoId)
+  if (error) throw error
+  const documentos = (data ?? []) as DocumentoFonteParaGate[]
+
+  const existencia = new Map<string, boolean>()
+  for (const documento of documentos) {
+    if (!documento.arquivo_url) continue
+    const assinada = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(documento.arquivo_url, 60)
+    existencia.set(documento.arquivo_url, !assinada.error && Boolean(assinada.data?.signedUrl))
+  }
+
+  const indisponiveis = resolverDocumentosIndisponiveis(documentos, existencia)
+  if (indisponiveis.length > 0) {
+    const nomes = indisponiveis
+      .map((documento) => documento.nome_arquivo ?? documento.arquivo_url ?? documento.id)
+      .join(", ")
+    throw new Error(
+      `Documento indisponível no armazenamento: ${nomes}. Recupere ou reenvie o original antes de aprovar.`,
+    )
+  }
+}
+
 export async function assertFechamentoOperationalReady(
   supabase: ReturnType<typeof createSupabaseAdmin>,
   fechamentoId: string,
 ) {
   const fechamento = await loadFechamento(supabase, fechamentoId)
+  await assertDocumentosFonteDisponiveis(supabase, fechamentoId)
   await assertMovements(supabase, fechamentoId, fechamento.analise)
   const vinculos = await loadFechamentoVinculosImoveis(supabase, {
     imobiliaria_id: fechamento.imobiliariaId,
