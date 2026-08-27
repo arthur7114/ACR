@@ -178,6 +178,14 @@ Estados e acoes relevantes:
 - Correção associada: no César Rêgo, os rechecks passam a ser regenerados depois do recorte por empreendimento, impedindo que comissão e repasse de João Cordeiro apareçam no fechamento de Pompílio Gomes.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — base comissionável da intermediação e recebimentos canônicos (2026-08-27)
+
+- Ponto alterado: a base percentual da intermediação deixa de ser somente o aluguel e passa a ser a soma dos componentes comissionáveis da linha (aluguel + garagem, quando presentes). IPTU, água, seguro e demais encargos seguem compondo total recebido e repasse sem alterar a base.
+- Por que: o documento Grand Castelão I de julho/2026 e a instrução explícita da cliente (feedback de agosto) demonstram garagem na base (650 + 25 = 675; 405/675 = 60%). A regra anterior produzia percentual e base errados na revisão e nos indicadores.
+- Regra nova de apresentação: acordos, rescisões e atrasos passam a exibir decomposição financeira — principal, ajuste (desconto/crédito), total recebido, comissão e repasse — como conceitos distintos; `valor` deixa de mudar de significado conforme o tipo. Valores explícitos do documento nunca são recalculados silenciosamente; divergência da equação `recebido − comissão = repasse` vira pendência.
+- Item sem seção explícita, sem valor próprio ou sem vínculo por unidade/evidência vira pendência de revisão sem efeito financeiro (fail-closed), em vez de pedir ao operador que escolha qual total manter.
+- Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` (CA14.2 revisado, CA27–CA27.3, valores-canário) e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

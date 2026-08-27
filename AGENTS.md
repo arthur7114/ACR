@@ -123,28 +123,16 @@ After implementation, use `.agent/scripts/checklist.py` and prioritize:
 4. Tests
 5. Database validation, when schema or database changes are involved
 
-### Prisma validation
+### Database validation (Supabase)
 
-If a change touches Prisma schema, models, relations, migrations, seeds, or any database contract, Prisma must be validated before finishing.
+This project uses Supabase (PostgreSQL + Storage) directly — there is no Prisma. If a change touches tables, columns, constraints, or any database contract, validate before finishing:
 
-Required checks:
+- every schema change has a SQL migration in `supabase/migrations/` (additive first; destructive only in a later, dedicated cycle)
+- the migration applies cleanly (`supabase db push` in a development environment)
+- reads of pre-migration rows still work (compatibility adapter or defaults for new columns)
+- impacted queries, snapshots, and rechecks are re-tested after the schema change
 
-- confirm `schema.prisma` matches the implementation
-- verify a migration was created when needed
-- verify the migration applied successfully
-- verify Prisma Client is up to date
-- check for drift between schema and database
-- validate impacted queries and mutations after the schema change
-
-Suggested validation order:
-
-1. `npx prisma validate`
-2. `npx prisma format`
-3. `npx prisma migrate dev`, or confirm the equivalent migration flow ran
-4. `npx prisma generate`
-5. Run application and type checks after the Prisma update
-
-Never finish a database-related task without confirming the database and client reflect the change.
+Never finish a database-related task without confirming the database and the code reflect the change.
 
 ---
 

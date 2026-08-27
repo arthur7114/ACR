@@ -34,7 +34,7 @@
 - CA12.1: resolucao de pendencia salva o valor oficial escolhido pelo operador e nunca chama a API com id de validacao vazio.
 - CA14: fechamento apenas com comprovante de repasse bloqueia aprovacao por prestacao ausente.
 - CA14.1: fechamento `rascunho` sem job ativo aparece como "Aguardando documentos" e direciona ao upload; apenas job ativo aparece como "Processando", e falha registrada oferece nova tentativa. Acesso direto à Revisão sem `analise_completa` também redireciona ao upload e nunca exibe uma revisão vazia.
-- CA14.2: intermediação com IPTU preserva aluguel como base percentual, exibe o IPTU separadamente e calcula `total recebido = aluguel + IPTU` e `repasse = total recebido - comissão`, respeitando valores explícitos do documento.
+- CA14.2 (revisado em 2026-08-27): a base percentual da intermediação é a soma dos componentes comissionáveis da linha — aluguel + garagem, quando presentes; IPTU, água, seguro e outros encargos compõem `total recebido` e `repasse` sem alterar a base. Valores explícitos do documento (`total_recebido`, `comissao`, `repasse`) são preservados em todos os tipos de recebimento extraordinário e validados pela equação `recebido − comissão = repasse` (± R$ 0,01); divergência gera pendência, nunca recálculo silencioso. Evidência da mudança: instrução da cliente (ago/2026) + documento Grand Castelão I jul/2026 (650 + 25 = 675; 405/675 = 60%).
 - CA14.3: a validação do resumo final subtrai a comissão de intermediação separadamente da comissão administrativa e das despesas, sem gerar divergência falsa nem duplicar a retenção.
 - CA14.4: cada receita separa competência original, competência de recebimento e dia de vencimento; `10` isolado é dia, referência de IPTU não vira competência de aluguel e ausência aparece como “-”.
 - CA14.5 (revisado em 2026-07-15): a coluna `Ref.` exibe a competência original extraída do documento em mês/ano, somente leitura; competência ausente não bloqueia a aprovação nem gera recheck bloqueante.
@@ -117,3 +117,27 @@
 - CA24: no César Rêgo, `SIT=ALUG` sem lançamento conta como inadimplente, o escopo por empreendimento precede todos os cálculos e a TED global é dividida igualmente entre os empreendimentos com conservação exata dos centavos.
 - CA25: `data_vencimento` da prestação define `dtVenc`; sem comprovante externo também define `dtCred`, `dtPgto` e o recebimento liquidado. Lançamento já enviado permanece imutável no reparo local.
 - CA26: documentos opcionais ausentes e despesas confirmadas em R$ 0,00 não geram pendência operacional; no César Rêgo, comissão, repasse, guardrails e parecer são recalculados depois do escopo por empreendimento, e linha sem recebimento valida comissão/repasse nulos como zero.
+- CA27: recebimentos extraordinários (acordo, rescisão, atraso, intermediação) são resolvidos exclusivamente pelo módulo canônico `lib/recebimentos-extraordinarios.ts`; revisão, resumo, snapshots, indicadores e payload derivado exibem os mesmos valores resolvidos, sem fórmula financeira paralela em componentes ou agregadores.
+- CA27.1: rescisão distingue principal bruto, ajuste (desconto/crédito), total recebido, comissão e repasse; totais de seção e indicadores usam o total recebido, nunca o principal bruto.
+- CA27.2: linha de recebimento sem seção explícita, sem valor próprio não-zero ou sem vínculo por unidade/evidência textual vira pendência de revisão sem efeito financeiro (fail-closed); despesas como ENEL, CAGECE ou seguro nunca são reclassificadas como intermediação; linha "R$ -" nunca gera item financeiro.
+- CA27.3: a competência de origem escrita no cabeçalho da seção (ex.: "INTERMEDIAÇÃO DE JUNHO DE 2026 RECEBIDA EM JULHO") é herdada pelas linhas que não a repetem; competência de origem e competência de recebimento permanecem separadas.
+
+## Valores-canário de julho/2026 (congelados em 2026-08-27)
+
+Oráculo versionado em `tests/canary/` (`pnpm test:canary` — permitido vermelho até o
+sub-plano correspondente concluir; `pnpm test` permanece verde e bloqueante).
+Fonte: PDFs de julho no Drive + vídeos do feedback de agosto. Aritmética conferida.
+
+| Fechamento | Valor esperado |
+|---|---|
+| Grand Maracanaú — comissão | regular 381,31; acordos 83,15; total 464,46 |
+| Grand Maracanaú — acordo apto 204 | recebido 466,93; comissão 32,69 (7%); repasse 434,24 |
+| Grand Maracanaú — total acordos | recebido 1.187,84; comissão 83,15; repasse 1.104,69 |
+| Grand Maracanaú — ocupação julho | 2 vagas (aptos 201 e 214); 214 também com evento de rescisão |
+| Grand Maracanaú — cobrança esperada apto 204 | 414,86 + 52,07 = 466,93 (aluguel + garagem), com fórmula visível |
+| Grand Castelão I — intermediação | base 675,00 (650 + 25); 60%; comissão 405,00; origem 06/2026; recebido 07/2026; total 726,44; repasse 321,44 |
+| LOCMAIS — rescisão | principal 1.890,00; ajuste −226,44; recebido 1.663,56; comissão 116,45; repasse 1.547,11 |
+| Grand Messejana I | intermediação 0; ENEL 127,95 permanece despesa; seguro apto 01 140,40 permanece despesa |
+| Plural | aluguel 3.348,52; administração 267,88; repasse 3.080,64 |
+| César Rêgo | separação João Cordeiro/Pompílio preservada; total líquido conciliado 13.068,01 |
+| Terreno Castelão | desconhecido/incompleto até o documento de julho ser disponibilizado (nunca zero) |
