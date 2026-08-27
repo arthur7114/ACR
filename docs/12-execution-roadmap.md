@@ -1343,6 +1343,20 @@ Próxima ação: sub-plano C (gates bloqueantes de fonte/cobertura + aliases),
 gap por componentes com garagem recebida persistida, e reparo de julho (D)
 mediante aprovação operacional do dry-run.
 
+## 2026-08-27 — Gate de fonte indisponível na aprovação (sub-plano C, parte 1)
+
+`assertFechamentoOperationalReady` agora verifica, antes de aprovar, que cada
+documento do fechamento tem `arquivo_url` com objeto existente no bucket
+`fechamento-documentos` (URL assinada como prova de existência). Documento
+registrado sem objeto — o caso LOCMAIS julho — bloqueia a aprovação apontando
+nominalmente os arquivos indisponíveis, em vez de aprovar sobre fonte ausente.
+Suíte 463/463, lint, typecheck e build verdes; publicado na main.
+
+Restante do sub-plano C: cobertura bloqueante na agregação (hoje o
+`buildConfidenceStatus` classifica mas não bloqueia), checksum na dedup de
+persistência, e fail-closed de duplicata por alias na leitura. Depois: gap de
+inadimplência por componentes e reparo de julho (D) sob aprovação do dry-run.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
