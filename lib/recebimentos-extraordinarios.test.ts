@@ -303,3 +303,30 @@ test("tipo outro usa o valor informado como total recebido", () => {
   assert.equal(r.totalRecebido, 320.5)
   assert.equal(r.repasse, 320.5)
 })
+
+test("em acordo/rescisão a base comissionável é o total pago pelo inquilino", () => {
+  // Confirmado nos documentos de julho: a comissão do acordo é a taxa de
+  // administração aplicada sobre o TOTAL recebido (aluguel + garagem + água +
+  // IPTU), não sobre aluguel + garagem. Usar a base menor inflava o percentual
+  // exibido (7,51% em vez de 7,00%) — queixa registrada na reunião de 27/08.
+  const r = resolverRecebimento({
+    tipo: "acordo",
+    imovelId: null,
+    apto: "1",
+    inquilino: "LOCATARIO",
+    competenciaOrigem: "2026-06",
+    competenciaRecebimento: "2026-07",
+    principal: 763.14,
+    ajuste: null,
+    componentes: { garagem: 27.65, encargos: 57.73 },
+    totalRecebidoInformado: 848.52,
+    comissaoInformada: 59.4,
+    repasseInformado: 789.12,
+    evidencia: { documentoId: null, secao: "ACORDOS", linhaOuTrecho: "1", confianca: 0.95 },
+  })
+
+  assert.equal(r.status, "resolvido")
+  if (r.status !== "resolvido") return
+  assert.equal(r.baseComissionavel, 848.52)
+  assert.equal(r.percentualRealizado, 7)
+})

@@ -192,7 +192,11 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
     if ((totalRecebido ?? principal ?? 0) === 0) return []
     const tipo = inferReceivedType(`${marker} ${observacao ?? ""}`)
     const comissao = moneyAt(row, table.columns.comissao)
-    const base = roundMoney((principal ?? totalRecebido ?? 0) + (garagem ?? 0))
+    // Intermediacao: percentual sobre aluguel + garagem. Demais tipos: taxa de
+    // administracao sobre o total pago pelo inquilino (inclui agua e IPTU).
+    const base = tipo === "intermediacao"
+      ? roundMoney((principal ?? totalRecebido ?? 0) + (garagem ?? 0))
+      : roundMoney(totalRecebido ?? principal ?? 0)
     return [{
       tipo,
       apto,

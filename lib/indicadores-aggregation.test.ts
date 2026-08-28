@@ -1608,3 +1608,18 @@ test("cobertura de comprovantes aponta nominalmente os fechamentos sem comprovan
   assert.equal(result.cobertura.comprovantes.ausentes, 1)
   assert.match(result.cobertura.comprovantes.detalhesAusentes.join(" "), /Grand Messejana II/)
 })
+
+test("fechamento com repasse embutido nao conta como comprovante ausente", () => {
+  // Cesar Rego e Plural trazem o repasse dentro do proprio documento: nao
+  // existe comprovante bancario separado a cobrar. Decisao da reuniao de
+  // 27/08 (Jose Walter e Pompilio Gomes).
+  const embutido = makeClosing({
+    analiseCompleta: makeAnalysis({ totals: { repasse_embutido: true, valor_comprovado: null } }),
+  })
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: [embutido] }))
+
+  assert.equal(result.cobertura.comprovantes.esperados, 0)
+  assert.equal(result.cobertura.comprovantes.ausentes, 0)
+  assert.deepEqual(result.cobertura.comprovantes.detalhesAusentes, [])
+})

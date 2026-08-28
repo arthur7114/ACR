@@ -91,8 +91,8 @@ export function resolverRecebimento(item: RecebimentoExtraordinario): ResolucaoF
     )
   }
 
-  const baseComissionavel = resolverBase(item)
-  const totalDerivado = derivarTotal(item, baseComissionavel)
+  const baseIntermediacao = resolverBase(item)
+  const totalDerivado = derivarTotal(item, baseIntermediacao)
   const totalRecebido = item.totalRecebidoInformado ?? totalDerivado
   if (totalRecebido === null || totalRecebido === 0) {
     return pendente(
@@ -101,8 +101,15 @@ export function resolverRecebimento(item: RecebimentoExtraordinario): ResolucaoF
     )
   }
 
-  const comissao = resolverComissao(item, totalRecebido, baseComissionavel)
+  const comissao = resolverComissao(item, totalRecebido, baseIntermediacao)
   const repasse = item.repasseInformado ?? roundMoney(totalRecebido - comissao)
+  // Na intermediacao a comissao incide sobre os componentes comissionaveis
+  // (aluguel + garagem). Em acordo/rescisao/atraso quem incide e a taxa de
+  // administracao, aplicada sobre o TOTAL pago pelo inquilino (mesma regra da
+  // comissao administrativa das linhas regulares). Usar a base menor inflava o
+  // percentual exibido — queixa da cliente confirmada nos documentos de julho.
+  const baseComissionavel =
+    item.tipo === "intermediacao" ? baseIntermediacao : roundMoney(totalRecebido)
 
   const divergencias = validarEquacao(totalRecebido, comissao, repasse)
   if (divergencias.length > 0) {

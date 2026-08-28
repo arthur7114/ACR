@@ -1334,12 +1334,18 @@ function summarizeTransferEvidence(closings: IndicadoresClosingInput[]) {
 }
 
 function summarizeProofCoverage(closings: IndicadoresClosingInput[]) {
+  // Extrato consolidado (Cesar Rego, Plural) traz o repasse dentro do proprio
+  // documento: nao existe comprovante bancario separado a cobrar. Esses
+  // fechamentos saem do denominador — comprovante nao aplicavel nao e
+  // comprovante ausente (decisao de 27/08: Jose Walter e Pompilio Gomes).
+  const aplicaveis = closings.filter(
+    (closing) => closing.analiseCompleta?.totals.repasse_embutido !== true,
+  )
   const hasProof = (closing: IndicadoresClosingInput) =>
     closing.analiseCompleta !== null &&
-    !closing.analiseCompleta.totals.repasse_embutido &&
     closing.analiseCompleta.totals.valor_comprovado !== null
-  const expected = closings.length
-  const present = closings.filter(hasProof).length
+  const expected = aplicaveis.length
+  const present = aplicaveis.filter(hasProof).length
   return {
     esperados: expected,
     presentes: present,
@@ -1347,7 +1353,7 @@ function summarizeProofCoverage(closings: IndicadoresClosingInput[]) {
     percentual: percentage(present, expected),
     // CA-IND24: o selo explica nominalmente QUAIS fechamentos estão sem
     // comprovante, em vez de um contador genérico.
-    detalhesAusentes: closings
+    detalhesAusentes: aplicaveis
       .filter((closing) => !hasProof(closing))
       .map(formatPairLabel),
   }

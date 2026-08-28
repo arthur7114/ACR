@@ -213,3 +213,13 @@ test("comissao de administracao tambem e lida quando o rotulo e percentual (COMI
   assert.equal(result.resumo_financeiro.comissao_administracao, 83.3)
   assert.equal(result.resumo_financeiro.total_outras_comissoes_despesas, 100)
 })
+
+test("percentual do acordo usa o total pago, nao aluguel mais garagem", () => {
+  const result = parseExcelPrestacao(planilhaLayoutReal(), "2026-07")
+  const acordo = result.acordos_rescisoes_recebidos.find((item) => item.tipo === "acordo")
+
+  // 59,40 / 848,52 = 7,00% (taxa de administracao). Sobre 763,14 + 27,65
+  // daria 7,51%, o percentual inflado relatado pela cliente.
+  assert.equal(acordo?.percentual, 7)
+  assert.equal(acordo?.agua, 0)
+})
