@@ -120,6 +120,9 @@
 - CA27: recebimentos extraordinários (acordo, rescisão, atraso, intermediação) são resolvidos exclusivamente pelo módulo canônico `lib/recebimentos-extraordinarios.ts`; revisão, resumo, snapshots, indicadores e payload derivado exibem os mesmos valores resolvidos, sem fórmula financeira paralela em componentes ou agregadores.
 - CA27.1: rescisão distingue principal bruto, ajuste (desconto/crédito), total recebido, comissão e repasse; totais de seção e indicadores usam o total recebido, nunca o principal bruto.
 - CA27.2: linha de recebimento sem seção explícita, sem valor próprio não-zero ou sem vínculo por unidade/evidência textual vira pendência de revisão sem efeito financeiro (fail-closed); despesas como ENEL, CAGECE ou seguro nunca são reclassificadas como intermediação; linha "R$ -" nunca gera item financeiro.
+- CA27.4: no layout Alive, a seção de intermediação vive no topo da aba e seu título não contém "RECEBIDA" (ex.: "INTERMEDIAÇÃO DE JUNHO DE 2026"); ela é extraída como intermediação, com aluguel, garagem, água e IPTU preservados, e a competência de origem herdada do título. A comissão de intermediação nunca reaparece como despesa no resíduo do resumo (CA14.3).
+- CA27.5: a comissão de administração vem do bloco de resumo do documento, que já soma a comissão retida nos acordos/rescisões, com rótulo "COMISSÃO ADMINISTRAÇÃO" ou percentual ("COMISSÃO 7%"); somar apenas as linhas por imóvel perderia essa parcela.
+- CA27.6: competência de origem aceita ano abreviado adjacente ao mês ("VIGÊNCIA DE JUNHO/26" → 2026-06), sem confundir com números soltos do texto (ex.: "IPTU 6/12").
 - CA27.3: a competência de origem escrita no cabeçalho da seção (ex.: "INTERMEDIAÇÃO DE JUNHO DE 2026 RECEBIDA EM JULHO") é herdada pelas linhas que não a repetem; competência de origem e competência de recebimento permanecem separadas.
 
 ## Valores-canário de julho/2026 (congelados em 2026-08-27)
@@ -138,7 +141,10 @@ Aritmética conferida.
 | Grand Maracanaú — ocupação julho | 2 vagas (aptos 201 e 214); 214 também com evento de rescisão |
 | Grand Maracanaú — cobrança esperada apto 204 | 414,86 + 52,07 = 466,93 (aluguel + garagem), com fórmula visível |
 | Grand Castelão I — intermediação | base 675,00 (650 + 25); 60%; comissão 405,00; origem 06/2026; recebido 07/2026; total 726,44; repasse 321,44 |
-| Grand Messejana II — intermediação | comissão 450,00; 60% (base 750,00); origem 06/2026; recebido 07/2026; repasse 369,13 |
+| Grand Messejana II — intermediação | comissão 450,00; 60% (base 750,00); origem 06/2026; recebido 07/2026; total 819,13; repasse 369,13 |
+| Grand Castelão I — comissão | regular 995,53; acordos 118,01; total 1.113,54 (o documento imprime COMISSÃO ADMINISTRAÇÃO já somando acordos) |
+| LOC MAIS — intermediação | base 800,00; 60%; comissão 480,00; origem 06/2026; recebido 07/2026; repasse 348,19 |
+| Reconciliação do retido (todos os layouts Alive) | recebidos − repasse = comissão administração + comissão intermediação + despesas itemizadas, tolerância R$ 0,01. Jul/2026 confirmado em Grand Castelão I, GM I, GM II e LOC MAIS |
 | Grand Maracanaú — vacância financeira | aptos 201 e 214 participam da quantidade e do valor; o valor não permanece 400,00 quando a vigência do 214 é aplicável |
 | José Walter — cadastro/histórico | um único imóvel canônico GA0002; junho ocupado; julho recebido 3.348,52 preservado |
 | João Cordeiro — histórico | março com ocupação 100%; dívida do Flat B preservada por competência (2 meses relatados) |

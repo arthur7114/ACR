@@ -166,7 +166,7 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
         garagem: item.garagem ?? null,
         iptu: item.iptu ?? parseTaggedMoney(observacao, "iptu"),
         seguro: null,
-        outrosEncargos: null,
+        outrosEncargos: item.agua ?? null,
       },
       percentualInformado: item.percentual ?? null,
     }

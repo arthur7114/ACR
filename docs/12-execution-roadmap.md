@@ -1402,6 +1402,62 @@ rescisão/pagamento atrasado no histórico por imóvel e no mapa de riscos
 (depende de reprocessamento/reparo para haver dado), cobertura bloqueante na
 confirmação, e o reparo de julho (D) sob aprovação do dry-run.
 
+## 2026-08-27 — Parser validado contra os documentos reais de julho
+
+O cliente forneceu as planilhas e PDFs de julho/2026 (Grand Castelão I, GM I,
+GM II, LOC MAIS, Terreno Castelão, Plural, César Rêgo). Rodar o parser contra a
+fonte real revelou três defeitos que nenhuma fixture sintética havia exposto —
+todos corrigidos com TDD:
+
+1. A intermediação, no layout Alive, vive numa seção no TOPO da aba cujo título
+   não contém "RECEBIDA" (ex.: "INTERMEDIAÇÃO DE JUNHO DE 2026"). O parser
+   exigia a palavra e ignorava a seção inteira: a comissão de intermediação
+   desaparecia da análise e reaparecia como despesa no resíduo do resumo
+   (CA27.4). Grand Castelão R$ 405,00, GM II R$ 450,00, LOC MAIS R$ 480,00 e
+   GM I R$ 0,00 estavam todas perdidas.
+2. A comissão de administração impressa no bloco de resumo já soma a comissão
+   retida nos acordos; o parser somava apenas as linhas por imóvel e perdia essa
+   parcela. O rótulo varia por layout: "COMISSÃO ADMINISTRAÇÃO" (Grand Castelão,
+   LOC MAIS, GM I) ou percentual "COMISSÃO 7%" (GM II) — CA27.5.
+3. Competência de origem com ano abreviado ("VIGÊNCIA DE JUNHO/26") retornava
+   nula, porque a regex exigia quatro dígitos. Agora aceita ano de dois dígitos
+   adjacente ao mês, sem confundir com "IPTU 6/12" (CA27.6).
+
+Também passou a capturar `agua` nos itens de recebimento, o que fecha a
+decomposição por componentes (Grand Castelão: 675,00 de base + 47,60 de água +
+3,84 de IPTU = 726,44 exatos).
+
+Validação contra a fonte, sem nenhuma escrita no banco:
+
+- Grand Castelão I — intermediação apto 204: base 675,00 (650 + 25), 60%,
+  comissão 405,00, total 726,44, repasse 321,44, origem 06/2026, recebido
+  07/2026. Comissão do fechamento: regular 995,53 + acordos 118,01 = 1.113,54.
+- GM II — intermediação: base 750,00, 60%, comissão 450,00, total 819,13,
+  repasse 369,13, origem 06/2026. Comissão: 1.112,98 + 155,00 = 1.267,98.
+- LOC MAIS — rescisão: principal 1.890,00, crédito de IPTU 226,44, recebido
+  1.663,56, comissão 116,45, repasse 1.547,11. Intermediação nova confirmada:
+  base 800,00, 60%, comissão 480,00, repasse 348,19.
+- GM I — intermediação 0,00; ENEL 127,95 e SEGURO APTO 01 140,40 permanecem
+  despesas.
+- Reconciliação do retido nos quatro: recebidos − repasse = comissão
+  administração + comissão intermediação + despesas itemizadas, com diferença
+  0,00 (GM II 0,01, arredondamento da própria planilha).
+- Terreno Castelão: a planilha NÃO tem aba de julho (as abas param em MAI 26).
+  A fonte confirma o estado "incompleto/desconhecido" do canário — não há
+  documento de julho a processar, e nada deve ser inventado.
+
+Grand Maracanaú não estava no conjunto entregue: os canários de 2 vagas
+(aptos 201/214), do acordo do apto 204 (466,93 / 32,69 / 434,24) e da cobrança
+esperada 414,86 + 52,07 seguem sem verificação documental.
+
+Suíte 475/475, canários 6/6, lint, typecheck, build e checklist 6/6 verdes.
+Documentos-fonte ficaram em `tmp/julho-2026/` (não versionado); nenhum dado
+pessoal foi para o repositório e nenhuma escrita no Supabase foi executada.
+
+Próxima ação: obter a planilha do Grand Maracanaú e o documento de julho do
+Terreno Castelão; então montar o dry-run do reparo de julho para aprovação
+operacional antes de qualquer escrita.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

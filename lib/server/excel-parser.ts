@@ -44,7 +44,8 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
   const acordos = parseReceivedSection(rows, "ACORDOS", competencia)
   const atrasados = parseReceivedSection(rows, "ATRASADOS", competencia)
   const inadimplencias = parseInadimplencias(rows)
-  const resumo = parseResumo(rows, receitas)
+  const comissaoIntermediacao = sumMoney(intermediacoes.map((item) => item.comissao))
+  const resumo = parseResumo(rows, receitas, comissaoIntermediacao)
 
   if (receitas.length === 0 && intermediacoes.length === 0 && acordos.length === 0 && atrasados.length === 0) {
     throw new Error(`Layout de prestação sem lançamentos reconhecíveis na aba "${sheetName}".`)
@@ -59,6 +60,9 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
   const repassesLinhas = sumMoney(receitas.map((item) => item.repasse))
   const receitasLinhas = sumMoney(receitas.map((item) => item.total))
   const totalComissaoDespesas = resumo.totalComissaoDespesas ?? roundMoney(recebidos - totalRepassar)
+  // O documento imprime COMISSAO ADMINISTRACAO ja somando a comissao retida
+  // nos acordos/rescisoes; somar apenas as linhas perderia essa parcela.
+  const comissaoAdministracao = resumo.comissaoAdministracao ?? comissoesLinhas
 
   return {
     tipo_documento: "prestacao_contas",
@@ -85,9 +89,13 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
       total_linhas_receitas: receitasLinhas,
       total_linhas_comissoes: comissoesLinhas,
       total_linhas_repasse: repassesLinhas,
-      comissao_administracao: comissoesLinhas,
+      comissao_administracao: comissaoAdministracao,
       outras_comissoes_despesas: resumo.despesas,
-      total_outras_comissoes_despesas: roundMoney(Math.max(totalComissaoDespesas - comissoesLinhas, 0)),
+      // A comissao de intermediacao tem balde proprio (CA14.3): ela nao pode
+      // reaparecer como despesa dentro do residuo.
+      total_outras_comissoes_despesas: roundMoney(
+        Math.max(totalComissaoDespesas - comissaoAdministracao - comissaoIntermediacao, 0),
+      ),
       total_comissao_despesas: totalComissaoDespesas,
       recebidos_em_nome_locador: recebidos,
       total_a_repassar: totalRepassar,
@@ -96,7 +104,7 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
     },
     totais: {
       total_receitas: recebidos,
-      total_comissoes: comissoesLinhas,
+      total_comissoes: comissaoAdministracao,
       total_repassar: totalRepassar,
     },
     campos_ausentes: [],
@@ -165,7 +173,7 @@ function buildReceita(row: Row, columns: ColumnMap, competencia: string): Receit
 }
 
 function parseReceivedSection(rows: Row[], marker: string, competencia: string) {
-  const sectionIndex = findRow(rows, (text) => text.includes(marker) && text.includes("RECEBID"))
+  const sectionIndex = findSectionIndex(rows, marker)
   if (sectionIndex < 0) return []
   const table = locateTable(rows, sectionIndex)
   if (!table) return []
@@ -192,6 +200,7 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
       valor: principal ?? totalRecebido ?? 0,
       aluguel,
       garagem,
+      agua: moneyAt(row, table.columns.agua),
       iptu: moneyAt(row, table.columns.iptu),
       total_recebido: totalRecebido,
       repasse: moneyAt(row, table.columns.repasse),
@@ -203,6 +212,23 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
       confianca: 1,
     } satisfies AcordoRescisaoRecebido]
   })
+}
+
+function findSectionIndex(rows: Row[], marker: string) {
+  return rows.findIndex((row) => {
+    const text = normalizeRow(row)
+    if (!text.includes(marker)) return false
+    if (text.includes("RECEBID")) return true
+    // Layout Alive: a intermediacao vive numa secao no topo da aba cujo titulo
+    // é "INTERMEDIACAO DE <MES> DE <ANO>", sem a palavra RECEBIDA. Exigimos
+    // linha de titulo (poucas celulas) com competencia, para nao confundir com
+    // uma linha de dados que apenas cite a palavra na observacao.
+    return countFilledCells(row) <= 3 && parseCompetenceFromText(text) !== null
+  })
+}
+
+function countFilledCells(row: Row) {
+  return row.filter((cell) => cell !== null && cell !== "").length
 }
 
 function parseSectionOriginCompetence(sectionRow: Row) {
@@ -250,18 +276,19 @@ function parseInadimplencias(rows: Row[]) {
   return items
 }
 
-function parseResumo(rows: Row[], receitas: ReceitaPorImovel[]) {
+function parseResumo(rows: Row[], receitas: ReceitaPorImovel[], comissaoIntermediacao = 0) {
   const recebidos = findSummaryMoney(rows, "RECEBIDOS EM NOME DO LOCADOR")
     ?? findSummaryMoney(rows, "SUBTOTAL RECEBIDOS EM NOME DO LOCADOR")
   const totalRepassar = findSummaryMoney(rows, "TOTAL A REPASSAR")
   const totalComissaoDespesas = findSummaryMoney(rows, "TOTAL COMISSAO + DESPESAS")
+  const comissaoAdministracao = findAdminCommission(rows)
   const despesas = parseSummaryExpenses(rows)
   if (totalComissaoDespesas !== null && despesas.length === 0) {
-    const comissao = sumMoney(receitas.map((item) => item.comissao))
-    const residual = roundMoney(totalComissaoDespesas - comissao)
+    const comissao = comissaoAdministracao ?? sumMoney(receitas.map((item) => item.comissao))
+    const residual = roundMoney(totalComissaoDespesas - comissao - comissaoIntermediacao)
     if (residual > 0) despesas.push({ descricao: "Despesas consolidadas não discriminadas", valor: residual, confianca: 1 })
   }
-  return { recebidos, totalRepassar, totalComissaoDespesas, despesas }
+  return { recebidos, totalRepassar, totalComissaoDespesas, comissaoAdministracao, despesas }
 }
 
 function parseSummaryExpenses(rows: Row[]) {
@@ -327,6 +354,24 @@ function mapColumns(header: Row): ColumnMap {
 
 function findColumn(values: string[], labels: string[]) {
   return values.findIndex((value) => labels.some((label) => value === label || value.startsWith(`${label} `)))
+}
+
+// A comissao de administracao impressa no bloco final aparece com rotulos
+// diferentes entre layouts: "COMISSAO ADMINISTRACAO" (Grand Castelao, LOC MAIS,
+// GM I) ou o percentual aplicado, "COMISSAO 7%" (GM II). Em ambos ela ja soma a
+// comissao retida nos acordos. Restrito a linhas esparsas do resumo para nao
+// casar com linha de dados nem com o cabecalho da tabela.
+function findAdminCommission(rows: Row[]) {
+  for (const row of rows) {
+    if (countFilledCells(row) > 4) continue
+    const value = lastMoney(row)
+    const label = normalizeText(lastTextBeforeMoney(row) ?? "")
+    if (value === null || !label || label.includes("INTERMEDIAC")) continue
+    const isAdmin = label.includes("COMISSAO") && label.includes("ADMINISTRACAO")
+    const isPercent = /^COMISSAO\s+\d+([.,]\d+)?\s*%$/.test(label)
+    if (isAdmin || isPercent) return value
+  }
+  return null
 }
 
 function findSummaryMoney(rows: Row[], label: string) {
@@ -415,9 +460,18 @@ function inferReceivedType(value: string): AcordoRescisaoRecebido["tipo"] {
 function parseCompetenceFromText(value: string | null) {
   if (!value) return null
   const normalized = normalizeText(value)
-  const year = normalized.match(/20\d{2}/)?.[0]
   const month = Object.entries(MONTHS).find(([, names]) => normalized.includes(names.long))?.[0]
-  return year && month ? `${year}-${month}` : null
+  if (!month) return null
+  const year = normalized.match(/20\d{2}/)?.[0] ?? parseTwoDigitYearAfterMonth(normalized, month)
+  return year ? `${year}-${month}` : null
+}
+
+// Ano abreviado colado ao mes ("VIGENCIA DE JUNHO/26"). Exige adjacencia ao
+// nome do mes para nao confundir com numeros soltos do texto (ex.: "IPTU 6/12").
+function parseTwoDigitYearAfterMonth(normalized: string, month: string) {
+  const nome = MONTHS[month].long
+  const match = new RegExp(`${nome}\\s*(?:DE\\s+)?\\/?\\s*(\\d{2})(?!\\d)`).exec(normalized)
+  return match ? `20${match[1]}` : null
 }
 
 function deduplicateReceivedItems(items: AcordoRescisaoRecebido[]) {

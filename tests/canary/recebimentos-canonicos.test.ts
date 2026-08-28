@@ -61,3 +61,29 @@ test("Grand Messejana II: intermediação de junho recebida em julho a 60%", () 
   assert.equal(resolucao.repasse, 369.13)
   assert.equal(resolucao.reconciliado, true)
 })
+
+// Canário LOC MAIS — julho/2026: intermediação confirmada na fonte
+// (base 800,00 a 60% = 480,00; encargo 28,19 compõe total e repasse).
+test("LOC MAIS: intermediação de junho recebida em julho a 60%", () => {
+  const resolucao = resolverRecebimento({
+    tipo: "intermediacao",
+    imovelId: null,
+    apto: "SALA 01",
+    inquilino: "LOCATARIO SALA 01",
+    competenciaOrigem: "2026-06",
+    competenciaRecebimento: "2026-07",
+    componentes: { aluguel: 800, garagem: null, iptu: 28.19, seguro: null, outrosEncargos: null },
+    percentualInformado: null,
+    totalRecebidoInformado: 828.19,
+    comissaoInformada: 480,
+    repasseInformado: 348.19,
+    evidencia: { documentoId: null, secao: "INTERMEDIAÇÃO DE JUNHO DE 2026", linhaOuTrecho: "SALA 01", confianca: 0.95 },
+  })
+
+  assert.equal(resolucao.status, "resolvido")
+  if (resolucao.status !== "resolvido") return
+  assert.equal(resolucao.baseComissionavel, 800)
+  assert.equal(resolucao.percentualRealizado, 60)
+  assert.equal(resolucao.totalRecebido, 828.19)
+  assert.equal(resolucao.repasse, 348.19)
+})

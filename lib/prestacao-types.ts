@@ -99,6 +99,7 @@ export const acordoRescisaoRecebidoSchema = z
     aluguel: z.number().nullable().optional(),
     garagem: z.number().nullable().optional(),
     ajuste: z.number().nullable().optional(),
+    agua: z.number().nullable().optional(),
     iptu: z.number().nullable().optional(),
     total_recebido: z.number().nullable().optional(),
     repasse: z.number().nullable().optional(),
