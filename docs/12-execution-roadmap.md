@@ -1538,6 +1538,33 @@ feita nesta rodada sem análise dedicada.
 
 Suíte 486/486, canários 6/6, lint, typecheck e build verdes. Nenhuma escrita.
 
+## 2026-08-28 — Aluguel médio e inadimplência do mês divergindo entre telas
+
+Relato da cliente na Revisão do João Cordeiro julho: "aluguel médio não está
+correto" (R$ 1.237,05, com o rótulo "1 unidade(s) com valor"). Confirmado: a
+média dividia apenas pelas unidades que tiveram aluguel no mês, excluindo
+silenciosamente a inadimplente. Numa carteira de duas unidades onde uma não
+pagou, o número descrevia a média de quem pagou.
+
+Correção (CA-IND25): a métrica passa a ser **aluguel recebido médio**, com
+denominador igual às unidades com cobrança ativa (alugadas + inadimplentes) — a
+inadimplente entra com recebimento zero. João Cordeiro julho: R$ 618,53 por
+unidade com cobrança ativa, em vez de R$ 1.237,05. O rótulo e o subtítulo dizem
+exatamente o que é medido e sobre quantas unidades. "Aluguel contratado médio"
+permanece métrica distinta, dos Indicadores, onde a vigência está disponível.
+
+Achado adicional na mesma tela: a Revisão exibia "Inadimplência do mês
+R$ 1.752,54" enquanto os Indicadores exibiam R$ 788,22 para o mesmo fechamento e
+competência — duas telas, dois números para o mesmo conceito. Causa: uma
+pendência deste agente. O parâmetro `cobrancaEsperada` havia sido adicionado a
+`receitaEsperadaInadimplente` em ciclo anterior, mas nunca ligado no call site;
+o loader seguia usando o proxy da última receita paga e o aluguel esperado do
+cadastro em vez da vigência. Corrigido (CA-IND26): a Revisão passa a usar a
+cobrança esperada da própria competência, a mesma base dos Indicadores.
+Verificado no dado real: base 788,22 para a unidade inadimplente.
+
+Suíte 489/489, canários 6/6, lint, typecheck e build verdes. Nenhuma escrita.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

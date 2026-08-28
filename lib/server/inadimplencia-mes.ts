@@ -45,6 +45,25 @@ export async function loadInadimplenciaMes(
     const aluguelEsperado =
       imovel?.valor_aluguel_esperado != null ? Number(imovel.valor_aluguel_esperado) : null
 
+    // A cobranca esperada da PROPRIA competencia (vigencia: aluguel + garagem)
+    // e a mesma base usada pelos indicadores. Sem ela, a Revisao caia no proxy
+    // da ultima receita paga e as duas telas exibiam valores diferentes para o
+    // mesmo conceito (Joao Cordeiro julho: 1.752,54 na Revisao, 788,22 nos
+    // indicadores).
+    const { data: snapshotAtual } = await supabase
+      .from("imovel_competencias")
+      .select("cobranca_esperada,aluguel_esperado")
+      .eq("imovel_id", imovelId)
+      .eq("competencia", params.competencia)
+      .maybeSingle()
+
+    const cobrancaEsperada =
+      snapshotAtual?.cobranca_esperada != null
+        ? Number(snapshotAtual.cobranca_esperada)
+        : snapshotAtual?.aluguel_esperado != null
+          ? Number(snapshotAtual.aluguel_esperado)
+          : null
+
     const snapshots: SnapshotReceita[] = (snaps ?? []).map((s) => ({
       competencia: String(s.competencia),
       receita_total: s.receita_total != null ? Number(s.receita_total) : null,
@@ -56,7 +75,7 @@ export async function loadInadimplenciaMes(
       apto: row.apto ?? "",
       inquilino: row.inquilino ?? "",
       imovel_id: imovelId,
-      valor: receitaEsperadaInadimplente(snapshots, aluguelEsperado),
+      valor: receitaEsperadaInadimplente(snapshots, aluguelEsperado, cobrancaEsperada),
     })
   }
 

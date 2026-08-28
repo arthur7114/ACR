@@ -140,6 +140,20 @@ export function calcularResumoReceitasAdicionais(
   }
 }
 
+// Aluguel recebido medio da competencia. O denominador sao as unidades com
+// cobranca ativa no mes (alugadas + inadimplentes), nao apenas as que pagaram:
+// dividir so pelas que pagaram exibia a media das bem-sucedidas e escondia a
+// parcela da carteira sem recebimento (Joao Cordeiro julho: 1.237,05 com uma
+// das duas unidades sem pagar nada).
+export function calcularAluguelRecebidoMedio(
+  linhasComCobrancaAtiva: Array<{ aluguel: number | null }>,
+): { valor: number | null; unidades: number } {
+  const unidades = linhasComCobrancaAtiva.length
+  if (unidades === 0) return { valor: null, unidades: 0 }
+  const recebido = linhasComCobrancaAtiva.reduce((total, linha) => total + (linha.aluguel ?? 0), 0)
+  return { valor: roundMoney(recebido / unidades), unidades }
+}
+
 export function classificarDespesaFechamento(descricao: string): CategoriaDespesaFechamento {
   const text = normalizeText(descricao)
   if (/estorno|revers|duplic|devolu|ajuste|correcao|credito/.test(text)) return "ajustes"

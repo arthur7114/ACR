@@ -31,6 +31,7 @@ import {
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
 import {
+  calcularAluguelRecebidoMedio,
   calcularIptuRecebidoExibicao,
   calcularResumoComissaoFechamento,
   calcularResumoReceitasAdicionais,
@@ -864,12 +865,15 @@ export function RevisaoView({
   })()
   const linhasAlugadas = linhasUnidades.filter(isRentedCurrentRow)
   const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
-  const mediaAluguel = linhasAluguelValido.length > 0
-    ? linhasAluguelValido.reduce((sum, row) => sum + row.aluguel, 0) / linhasAluguelValido.length
-    : 0
   const isInadimplenteEfetivo = (row: ReceitaPorImovel) =>
     isDelinquentRow(row) && (isExplicitInadimplencia(row) || !acordoAptos.has(aptoKey(row.apto)))
   const inadimplentes = linhasUnidades.filter(isInadimplenteEfetivo).length
+  // Denominador do aluguel médio: unidades com cobrança ativa no mês — alugadas
+  // e inadimplentes. A inadimplente participa com recebimento zero em vez de
+  // sair da conta, senão a média descreve apenas quem pagou.
+  const aluguelRecebidoMedio = calcularAluguelRecebidoMedio(
+    linhasUnidades.filter((row) => isRentedCurrentRow(row) || isInadimplenteEfetivo(row)),
+  )
   const vagos = linhasUnidades.filter(isVacantRow).length
   const airbnb = linhasUnidades.filter(isAirbnbRow).length
   // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
@@ -1225,9 +1229,9 @@ export function RevisaoView({
                 )}
                 <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
                 <MetricTile
-                  label="Aluguel médio"
-                  value={linhasAluguelValido.length > 0 ? formatBRL(mediaAluguel) : "-"}
-                  subtext={`${linhasAluguelValido.length} unidade(s) com valor`}
+                  label="Aluguel recebido médio"
+                  value={aluguelRecebidoMedio.valor !== null ? formatBRL(aluguelRecebidoMedio.valor) : "-"}
+                  subtext={`por unidade com cobrança ativa (${aluguelRecebidoMedio.unidades})`}
                 />
               </div>
               {inadimplenciaMes.valor > 0 && (

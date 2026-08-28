@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { PrestacaoAnalysis } from "./prestacao-types.ts"
 import {
+  calcularAluguelRecebidoMedio,
   calcularResumoComissaoFechamento,
   calcularIptuRecebidoExibicao,
   calcularResumoReceitasAdicionais,
@@ -238,4 +239,26 @@ test("usa o documento de despesas quando ele define o total do fechamento", () =
       ["agua_esgoto", 150],
     ],
   )
+})
+
+test("aluguel recebido medio divide pelas unidades com cobranca ativa, nao so pelas que pagaram", () => {
+  // Joao Cordeiro julho: Apart. A pagou 1.237,05, Apart. B nao pagou nada.
+  // Dividir por 1 exibia 1.237,05 e escondia metade da carteira sem receber.
+  const resultado = calcularAluguelRecebidoMedio([
+    { aluguel: 1237.05 },
+    { aluguel: null },
+  ])
+
+  assert.equal(resultado.unidades, 2)
+  assert.equal(resultado.valor, 618.53)
+})
+
+test("aluguel recebido medio e nulo sem unidade com cobranca ativa", () => {
+  assert.equal(calcularAluguelRecebidoMedio([]).valor, null)
+})
+
+test("aluguel recebido medio trata aluguel zero como recebimento zero", () => {
+  const resultado = calcularAluguelRecebidoMedio([{ aluguel: 600 }, { aluguel: 0 }, { aluguel: 300 }])
+  assert.equal(resultado.unidades, 3)
+  assert.equal(resultado.valor, 300)
 })
