@@ -1458,6 +1458,40 @@ Próxima ação: obter a planilha do Grand Maracanaú e o documento de julho do
 Terreno Castelão; então montar o dry-run do reparo de julho para aprovação
 operacional antes de qualquer escrita.
 
+## 2026-08-28 — Inadimplência acumulada deixava de ser desconhecida e virava zero (crítico)
+
+Relato da cliente sobre João Cordeiro julho: "Acumulada R$ 0,00" com um
+inquilino devendo dois meses. Causa raiz, confirmada no código e no banco:
+`lib/server/cesar-rego-parser.ts` devolve `inadimplencias_acumuladas: []`
+porque o layout C (extrato consolidado) não possui essa seção — e
+`sumAccumulatedDelinquency` convertia lista vazia em **zero confirmado**.
+A tela afirmava "não há dívida acumulada" onde a verdade era "nunca foi
+extraída", violando a regra do próprio domínio (`null` = ausente, `0` = zero
+confirmado).
+
+Correção: a ausência passa a ser declarada e respeitada. O parser César Rêgo
+registra `campos_ausentes: ["inadimplencias_acumuladas"]` e um alerta; a
+agregação devolve `null` e emite a lacuna `inadimplencia_nao_extraida` com os
+fechamentos nominalmente. Para não depender de reprocessamento, a detecção
+também aceita `plano_extracao.secoes_identificadas` sem menção a inadimplência
+— o que já classifica corretamente as análises persistidas.
+
+Verificado contra os oito fechamentos de julho no banco (somente leitura):
+João Cordeiro, Galpão Pompílio Gomes e Galpão José Walter passam a exibir "—";
+LOCMAIS, Grand Maracanaú, Grand Castelão I, GM I e GM II seguem somando o
+valor extraído. Grand Castelão maio e LOCMAIS maio, que identificam a seção com
+zero itens, permanecem zero confirmado — a distinção que importa. Maracanaú
+maio, cuja extração não identificou a seção, passa a "—" em vez de zero falso.
+
+O tooltip da métrica explica quando e por que aparece "—". O valor REAL da
+dívida acumulada desses três fechamentos continua indisponível: o documento não
+tem o dado, e a ata de 27/08 registra que ele vive numa planilha externa cuja
+cópia para a base foi interrompida. Enquanto não houver fonte, o honesto é
+desconhecido — nunca zero.
+
+Suíte 483/483, canários 6/6, lint, typecheck, build e checklist 6/6 verdes.
+Nenhuma escrita no banco.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

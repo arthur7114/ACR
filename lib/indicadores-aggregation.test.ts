@@ -59,6 +59,8 @@ interface PrestacaoFixture {
 }
 
 interface AnalysisFixture {
+  camposAusentes?: string[]
+  secoesIdentificadas?: string[]
   totals: {
     total_receitas: number
     total_comissoes: number
@@ -179,6 +181,8 @@ function makeAnalysis(overrides: {
   intermediacoes?: PrestacaoFixture["acordos_rescisoes_recebidos"]
   inadimplencias?: PrestacaoFixture["inadimplencias_acumuladas"]
   outrasDespesas?: PrestacaoFixture["outras_comissoes_despesas"]
+  camposAusentes?: string[]
+  secoesIdentificadas?: string[]
 } = {}): AnalysisFixture {
   return {
     totals: {
@@ -210,6 +214,8 @@ function makeAnalysis(overrides: {
       inadimplencias_acumuladas: overrides.inadimplencias ?? [],
       outras_comissoes_despesas: overrides.outrasDespesas,
     },
+    camposAusentes: overrides.camposAusentes,
+    secoesIdentificadas: overrides.secoesIdentificadas,
   }
 }
 
@@ -1622,4 +1628,58 @@ test("fechamento com repasse embutido nao conta como comprovante ausente", () =>
   assert.equal(result.cobertura.comprovantes.esperados, 0)
   assert.equal(result.cobertura.comprovantes.ausentes, 0)
   assert.deepEqual(result.cobertura.comprovantes.detalhesAusentes, [])
+})
+
+test("inadimplencia acumulada nao extraida e desconhecida, nunca zero confirmado", () => {
+  // Joao Cordeiro / Pompilio Gomes / Jose Walter: o extrato consolidado nao tem
+  // secao de dividas acumuladas. Exibir R$ 0,00 afirma que nao ha divida — o
+  // erro critico relatado pela cliente (CA-IND22).
+  const semSecao = makeClosing({
+    analiseCompleta: makeAnalysis({ camposAusentes: ["inadimplencias_acumuladas"] }),
+  })
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: [semSecao] }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, null)
+  const gap = result.cobertura.lacunas.find((l) => l.codigo === "inadimplencia_nao_extraida")
+  assert.equal(gap?.quantidade, 1)
+  assert.match(gap?.detalhes.join(" ") ?? "", /empreendimento-a|Empreendimento/i)
+})
+
+test("inadimplencia acumulada zero permanece zero quando a secao foi extraida", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({ analiseCompleta: makeAnalysis({ inadimplencias: [] }) })],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 0)
+  assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), false)
+})
+
+test("secao de inadimplencia nao identificada na extracao ja torna a metrica desconhecida", () => {
+  // Corrige a exibicao sem depender de reprocessamento: as analises ja
+  // persistidas do extrato consolidado declaram apenas 3 secoes, nenhuma de
+  // inadimplencia. Zero ali nunca foi zero confirmado.
+  const consolidado = makeClosing({
+    analiseCompleta: makeAnalysis({
+      secoesIdentificadas: ["relacao de imoveis", "lancamentos efetuados", "resumo"],
+    }),
+  })
+
+  const result = aggregateIndicadores(makeInput({ fechamentos: [consolidado] }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, null)
+  assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), true)
+})
+
+test("secao identificada com lista vazia continua sendo zero confirmado", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        secoesIdentificadas: ["receitas", "inadimplências", "resumo financeiro"],
+        inadimplencias: [],
+      }),
+    })],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 0)
 })

@@ -165,6 +165,8 @@ export function ViewGeral({
                 short: "Dívida de competências anteriores ainda em aberto.",
                 title: "Inadimplência acumulada",
                 definition: "Aluguel de meses anteriores que venceu e segue sem pagamento.",
+                limitation:
+                  "Aparece como “—” quando o documento da competência não traz a seção de dívidas acumuladas: sem fonte própria, o valor é desconhecido e não zero. A cobertura lista quais fechamentos estão nessa condição.",
               }}
             />
             <Metric

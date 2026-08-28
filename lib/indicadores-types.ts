@@ -26,6 +26,7 @@ export interface IndicadoresCoverageGap {
     | "linha_nao_vinculada"
     | "nao_atribuivel_ao_imovel"
     | "duplicidade_semantica"
+    | "inadimplencia_nao_extraida"
   quantidade: number
   mensagem: string
   detalhes: string[]

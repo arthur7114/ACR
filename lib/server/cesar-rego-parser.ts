@@ -110,7 +110,9 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
   const relacao: RelacaoImovel[] = []
   const lancamentos: Lancamento[] = []
   const resumoValores = new Map<string, number>()
-  const alertas: string[] = []
+  const alertas: string[] = [
+    "Inadimplencia acumulada de meses anteriores nao existe neste layout: o extrato consolidado nao traz a secao. A metrica permanece desconhecida ate haver fonte propria.",
+  ]
   const header = parseCesarRegoHeader(lines)
 
   let section: "header" | "relacao" | "lancamentos" | "resumo" = "header"
@@ -221,6 +223,10 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
     },
     receitas_por_imovel: receitas,
     acordos_rescisoes_recebidos: [],
+    // O layout C (extrato consolidado) nao possui secao de dividas acumuladas
+    // de meses anteriores. A lista fica vazia, mas a ausencia e DECLARADA em
+    // campos_ausentes para que os indicadores tratem a metrica como
+    // desconhecida em vez de zero confirmado (CA-IND22).
     inadimplencias_acumuladas: [],
     resumo_financeiro: {
       numero_documento: header.numeroDocumento,
@@ -246,7 +252,7 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
       total_comissoes: totalLinhasComissoes,
       total_repassar: resumo.totalARepassar ?? totalLinhasRepasse,
     },
-    campos_ausentes: [],
+    campos_ausentes: ["inadimplencias_acumuladas"],
     observacoes: ["Processado deterministicamente a partir do texto do PDF (layout Cesar Rego)."],
     confianca_geral: 1.0,
   }

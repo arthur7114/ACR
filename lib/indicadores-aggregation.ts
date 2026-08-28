@@ -74,6 +74,12 @@ export interface IndicadoresVigencyInput extends IndicadoresPairInput {
 }
 
 export interface IndicadoresAnalysisInput {
+  // Campos que a extracao declarou ausentes no documento. Metrica derivada de
+  // campo ausente e desconhecida (null), nunca zero confirmado.
+  camposAusentes?: string[] | null
+  // Seções que a extração declarou ter identificado no documento. Quando a
+  // lista existe e não menciona inadimplência, a seção não foi lida.
+  secoesIdentificadas?: string[] | null
   totals: {
     total_receitas: number
     total_comissoes: number
@@ -450,6 +456,18 @@ function buildCoverage(
   const unlinkedLines = eligibleUnlinkedLines
     .reduce((total, item) => total + item.quantidade, 0)
   const gaps: IndicadoresCoverage["lacunas"] = []
+  const semInadimplencia = eligibleClosings.filter(
+    (closing) => closing.analiseCompleta !== null && declarouInadimplenciaAusente(closing.analiseCompleta),
+  )
+  if (semInadimplencia.length > 0) {
+    gaps.push({
+      codigo: "inadimplencia_nao_extraida",
+      quantidade: semInadimplencia.length,
+      mensagem:
+        "A dívida acumulada de meses anteriores não existe no documento destes fechamentos; o indicador fica desconhecido em vez de zero até haver fonte própria.",
+      detalhes: semInadimplencia.map(formatPairLabel),
+    })
+  }
   if (duplicidades.length > 0) {
     gaps.push({
       codigo: "duplicidade_semantica",
@@ -1485,8 +1503,23 @@ function sumBrokerageCommission(analyses: IndicadoresAnalysisInput[]) {
   return values.length === 0 ? 0 : sumKnown(values)
 }
 
+export const CAMPO_INADIMPLENCIA_ACUMULADA = "inadimplencias_acumuladas"
+
+function declarouInadimplenciaAusente(analysis: IndicadoresAnalysisInput) {
+  if ((analysis.camposAusentes ?? []).includes(CAMPO_INADIMPLENCIA_ACUMULADA)) return true
+  // Analises ja persistidas nao trazem campos_ausentes; a lista de secoes
+  // identificadas resolve o caso sem exigir reprocessamento. Lista vazia ou
+  // ausente nao afirma nada e nao dispara o bloqueio.
+  const secoes = analysis.secoesIdentificadas ?? []
+  return secoes.length > 0 && !secoes.some((secao) => /inadimpl/i.test(secao))
+}
+
 function sumAccumulatedDelinquency(analyses: IndicadoresAnalysisInput[]) {
   if (analyses.length === 0) return null
+  // Lista vazia num layout que NAO tem a secao nao e zero: e ausencia de dado.
+  // Somar como zero afirmava "nao ha divida acumulada" para Joao Cordeiro,
+  // Pompilio Gomes e Jose Walter (CA-IND22).
+  if (analyses.some(declarouInadimplenciaAusente)) return null
   const sections = analyses.map(
     (analysis) => analysis.prestacao?.inadimplencias_acumuladas ?? null,
   )

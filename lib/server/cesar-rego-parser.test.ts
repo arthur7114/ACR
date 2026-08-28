@@ -176,3 +176,17 @@ test("César Rêgo março usa o resumo como verdade e separa IPTU de passagem", 
     1_100,
   )
 })
+
+test("extrato consolidado declara a inadimplencia acumulada como campo ausente", async () => {
+  const lines = await extractPdfTextLines(readFileSync(FIXTURE))
+  const result = parseCesarRegoPrestacao(lines, "2026-03")
+
+  // O layout C nao possui secao de dividas acumuladas: a lista vazia NAO pode
+  // ser lida como zero confirmado pelos indicadores (CA-IND22).
+  assert.equal(result.inadimplencias_acumuladas.length, 0)
+  assert.ok(result.campos_ausentes.includes("inadimplencias_acumuladas"))
+  assert.ok(
+    result.plano_extracao.alertas.some((alerta) => /inadimpl/i.test(alerta)),
+    "esperava alerta sobre inadimplencia acumulada nao extraida",
+  )
+})

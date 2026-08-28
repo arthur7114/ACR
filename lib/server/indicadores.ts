@@ -166,6 +166,13 @@ const calculationAnalysisSchema = z
       .passthrough(),
     prestacao: z
       .object({
+        // Ambos vivem DENTRO de prestacao no JSON persistido.
+        campos_ausentes: z.array(z.string()).nullable().optional(),
+        plano_extracao: z
+          .object({ secoes_identificadas: z.array(z.string()).nullable().optional() })
+          .passthrough()
+          .nullable()
+          .optional(),
         receitas_por_imovel: z
           .array(
             z
@@ -547,6 +554,8 @@ function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | nu
   const { totals, prestacao } = parsed.data
 
   return {
+    camposAusentes: prestacao?.campos_ausentes ?? null,
+    secoesIdentificadas: prestacao?.plano_extracao?.secoes_identificadas ?? null,
     totals: {
       total_receitas: totals.total_receitas,
       total_comissoes: totals.total_comissoes,
