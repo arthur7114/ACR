@@ -466,6 +466,7 @@ function buildSnapshotRow(input: {
       && tenantName === null
       && expectedRent !== null
       && currentRent === 0,
+    expectedRentIsKnown: expectedRent !== null && expectedRent > 0,
     isVariableRevenue: revenueModel === "variavel",
   }
   const status = classifyOccupancy(evidence)

@@ -33,6 +33,9 @@ interface OccupancyEvidence {
   // recebeu aluguel. É mais fraca que `hasVacancy` (que vem de texto explícito)
   // e por isso entra depois dela na classificação e guarda procedência própria.
   hasBlankTenancy?: boolean
+  // Aluguel contratado conhecido e maior que zero. Contrato ativo cadastrado com
+  // aluguel zero nao permite distinguir unidade vazia de falha de cadastro.
+  expectedRentIsKnown?: boolean
   // Receita variável (Airbnb) é operação de temporada conhecida pelo cadastro.
   // Um mês sem linha na prestação não a torna desconhecida.
   isVariableRevenue?: boolean
@@ -90,15 +93,21 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   // pode ser recuperação de mês anterior e, por isso, não pode apagá-la.
   if (evidence.hasDelinquency) return "inadimplente"
 
+  // Rescisão descreve saída efetiva: a unidade termina a competência desocupada
+  // mesmo tendo recebido aluguel proporcional aos dias ocupados (canário Grand
+  // Maracanaú 214: rescindiu e recebeu R$ 77,42). Receber parte do mês é
+  // pagamento, não ocupação na data de fechamento. A rescisão em si vira evento.
+  if (evidence.hasTermination) return "vago"
+
   const context = normalizePropertyKeyPart(
     [evidence.tenantName, evidence.observation].filter(Boolean).join(" "),
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
-  // Rescisão sem aluguel do mês recebido: a unidade terminou a competência
-  // desocupada (canário GM Maracanaú 214). A rescisão em si vira evento.
-  if (evidence.hasTermination) return "vago"
   if (evidence.hasVacancy) return "vago"
-  if (evidence.hasBlankTenancy) return "vago"
+  // Vacância inferida exige aluguel contratado conhecido. Com contrato ativo e
+  // aluguel cadastrado como zero (canário Grand Maracanaú 101) o estado é
+  // desconhecido: falha de cadastro não é vacância.
+  if (evidence.hasBlankTenancy && evidence.expectedRentIsKnown !== false) return "vago"
   // Inquilino nomeado na prestação é ocupação: a unidade não está vaga nem é
   // desconhecida. O aluguel do mês pode estar ausente porque o inquilino paga
   // atrasado (o recebimento do mês é atraso de competência anterior) — isso

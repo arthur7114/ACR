@@ -45,17 +45,39 @@ test("rescisao e evento, nao estado: inadimplencia explicita prevalece como esta
   )
 })
 
-test("rescisao com aluguel do mes recebido mantem ocupado como estado final", () => {
+test("rescisao com aluguel proporcional recebido termina a competencia vaga", () => {
+  // Canário Grand Maracanaú apto 214: rescindiu e recebeu R$ 77,42 de aluguel
+  // proporcional aos dias ocupados. Receber parte do mês descreve PAGAMENTO,
+  // não ocupação no fim da competência — a unidade esvaziou.
   assert.equal(
     classifyOccupancy({
       tenantName: "Inquilino",
       observation: null,
-      rentReceived: 700,
+      rentReceived: 77.42,
       hasTermination: true,
       hasDelinquency: false,
       hasVacancy: false,
     }),
-    "ocupado",
+    "vago",
+  )
+})
+
+test("aluguel contratado zerado sem inquilino e desconhecido, nunca vacancia", () => {
+  // Canário Grand Maracanaú apto 101: contrato ativo com aluguel cadastrado
+  // como zero. Zero não é aluguel contratado conhecido — sem ele não há como
+  // distinguir unidade vazia de falha de cadastro.
+  assert.equal(
+    classifyOccupancy({
+      tenantName: null,
+      observation: null,
+      rentReceived: 0,
+      hasTermination: false,
+      hasDelinquency: false,
+      hasVacancy: false,
+      hasBlankTenancy: true,
+      expectedRentIsKnown: false,
+    }),
+    "desconhecido",
   )
 })
 
