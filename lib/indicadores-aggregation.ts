@@ -229,6 +229,11 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
       eligibleIds.has(snapshot.fechamentoId) &&
       expectedPropertyIds.has(snapshot.imovelId),
   )
+  const historicalSnapshots = scope.snapshots.filter(
+    (snapshot) =>
+      snapshot.competencia < input.competencia &&
+      expectedPropertyIds.has(snapshot.imovelId),
+  )
   const coverage = buildCoverage(
     input,
     scope,
@@ -237,6 +242,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     eligibleClosings,
     currentSnapshots,
     duplicidades,
+    historicalSnapshots,
   )
   const contractedRent = contractedRentAtCompetence(
     input,
@@ -255,6 +261,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     expectedProperties,
     eligibleClosings,
     currentSnapshots,
+    historicalSnapshots,
     coverage,
     contractedRent,
     appPropertyIds,
@@ -415,6 +422,7 @@ function buildCoverage(
   eligibleClosings: IndicadoresClosingInput[],
   currentSnapshots: IndicadoresSnapshotInput[],
   duplicidades: DuplicidadeSemantica[] = [],
+  historicalSnapshots: IndicadoresSnapshotInput[] = [],
 ): IndicadoresCoverage {
   // A carteira histórica é a fonte de verdade da cobertura. Regras comerciais
   // definem operação, não comprovam que havia imóvel sob gestão na competência.
@@ -459,7 +467,9 @@ function buildCoverage(
   const semInadimplencia = eligibleClosings.filter(
     (closing) => closing.analiseCompleta !== null && declarouInadimplenciaAusente(closing.analiseCompleta),
   )
-  if (semInadimplencia.length > 0) {
+  // Se o historico permite derivar o saldo, a metrica tem valor e nao ha lacuna.
+  const derivavel = derivarAcumuladaDoHistorico(historicalSnapshots) !== null
+  if (semInadimplencia.length > 0 && !derivavel) {
     gaps.push({
       codigo: "inadimplencia_nao_extraida",
       quantidade: semInadimplencia.length,
@@ -630,6 +640,7 @@ function buildSummary(
   properties: IndicadoresPropertyInput[],
   eligibleClosings: IndicadoresClosingInput[],
   snapshots: IndicadoresSnapshotInput[],
+  historicalSnapshots: IndicadoresSnapshotInput[],
   coverage: IndicadoresCoverage,
   contractedRent: number | null,
   appPropertyIds: Set<string>,
@@ -721,7 +732,9 @@ function buildSummary(
         presentOccupancyStatus(property.statusAtual, appPropertyIds.has(property.id)),
       ),
     ),
-    inadimplenciaAcumulada: byProperty ? null : sumAccumulatedDelinquency(analyses),
+    inadimplenciaAcumulada: byProperty
+      ? null
+      : resolveAccumulatedDelinquency(analyses, historicalSnapshots),
   }
 }
 
@@ -1512,6 +1525,40 @@ function declarouInadimplenciaAusente(analysis: IndicadoresAnalysisInput) {
   // ausente nao afirma nada e nao dispara o bloqueio.
   const secoes = analysis.secoesIdentificadas ?? []
   return secoes.length > 0 && !secoes.some((secao) => /inadimpl/i.test(secao))
+}
+
+// Precedencia da divida acumulada: (1) a secao do documento, quando existe;
+// (2) o proprio historico mensal do sistema, quando o layout nao traz a secao —
+// os fechamentos anteriores JA registram o que era esperado, o que entrou na
+// competencia e o que foi recuperado de atraso; (3) desconhecida.
+function resolveAccumulatedDelinquency(
+  analyses: IndicadoresAnalysisInput[],
+  historicalSnapshots: IndicadoresSnapshotInput[],
+) {
+  const doDocumento = sumAccumulatedDelinquency(analyses)
+  if (doDocumento !== null) return doDocumento
+  return derivarAcumuladaDoHistorico(historicalSnapshots)
+}
+
+export function derivarAcumuladaDoHistorico(historicalSnapshots: IndicadoresSnapshotInput[]) {
+  const computaveis = historicalSnapshots.filter(
+    (snapshot) => (snapshot.cobrancaEsperada ?? snapshot.aluguelEsperado) !== null,
+  )
+  if (computaveis.length === 0) return null
+  // `aluguelRecebidoCompetencia` null = nao observado. Cair em `aluguelRecebido`
+  // misturaria o atraso recuperado com o aluguel do mes (e o atraso seria
+  // subtraido duas vezes, produzindo saldo negativo). Sem essa separacao em
+  // TODOS os meses da janela, o saldo nao e derivavel: fail-closed.
+  if (computaveis.some((snapshot) => snapshot.aluguelRecebidoCompetencia == null)) return null
+  const emAberto = computaveis.reduce((total, snapshot) => {
+    const esperado = snapshot.cobrancaEsperada ?? snapshot.aluguelEsperado ?? 0
+    const recebido = snapshot.aluguelRecebidoCompetencia ?? 0
+    const gap = Math.max(0, roundMoney(esperado - recebido))
+    // Atraso recuperado no mes quita divida de meses anteriores: entra como
+    // abatimento do saldo, senao o acumulado nunca baixaria.
+    return roundMoney(total + gap - (snapshot.atrasosRecuperados ?? 0))
+  }, 0)
+  return Math.max(0, roundMoney(emAberto))
 }
 
 function sumAccumulatedDelinquency(analyses: IndicadoresAnalysisInput[]) {

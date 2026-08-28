@@ -1683,3 +1683,64 @@ test("secao identificada com lista vazia continua sendo zero confirmado", () => 
 
   assert.equal(result.resumo.inadimplenciaAcumulada, 0)
 })
+
+test("sem secao no documento, a acumulada e derivada do historico dos fechamentos anteriores", () => {
+  // Padrao real do Apart. B (Joao Cordeiro): inquilino que nao paga na
+  // competencia e quita com atraso. A divida aberta e a soma dos gaps dos meses
+  // anteriores menos os atrasos ja recuperados — tudo no proprio historico.
+  const semSecao = makeAnalysis({
+    secoesIdentificadas: ["relacao de imoveis", "lancamentos efetuados", "resumo"],
+  })
+  const fechamentos = [
+    makeClosing({ id: "f-mar", competencia: "2026-03-01", analiseCompleta: semSecao }),
+    makeClosing({ id: "f-abr", competencia: "2026-04-01", analiseCompleta: semSecao }),
+    makeClosing({ id: "f-mai", competencia: COMPETENCIA, analiseCompleta: semSecao }),
+  ]
+  const snapshots = [
+    makeSnapshot({ fechamentoId: "f-mar", competencia: "2026-03-01", aluguelEsperado: 500, aluguelRecebidoCompetencia: 0, aluguelRecebido: 0 }),
+    makeSnapshot({ fechamentoId: "f-abr", competencia: "2026-04-01", aluguelEsperado: 500, aluguelRecebidoCompetencia: 500, aluguelRecebido: 800, atrasosRecuperados: 300 }),
+    makeSnapshot({ fechamentoId: "f-mai", competencia: COMPETENCIA, aluguelEsperado: 500, aluguelRecebidoCompetencia: 0, aluguelRecebido: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos, snapshots }))
+
+  // março 500 + abril 0 = 500 de gap; menos 300 recuperados = 200 em aberto.
+  // A competência corrente (maio) não entra: ela é a "inadimplência do mês".
+  assert.equal(result.resumo.inadimplenciaAcumulada, 200)
+  assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), false)
+})
+
+test("sem secao e sem historico anterior, a acumulada permanece desconhecida", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ secoesIdentificadas: ["relacao de imoveis", "resumo"] }),
+    })],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, null)
+  assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), true)
+})
+
+test("historico sem separar aluguel da competencia nao permite derivar a acumulada", () => {
+  // Snapshot com aluguelRecebidoCompetencia null significa "nao observado".
+  // Cair em aluguelRecebido misturaria atraso recuperado com aluguel do mes e
+  // produzia saldo negativo — exatamente a confusao de bases que o plano corrige.
+  const semSecao = makeAnalysis({ secoesIdentificadas: ["relacao de imoveis", "resumo"] })
+  const fechamentos = [
+    makeClosing({ id: "f-abr", competencia: "2026-04-01", analiseCompleta: semSecao }),
+    makeClosing({ id: "f-mai", competencia: COMPETENCIA, analiseCompleta: semSecao }),
+  ]
+  const snapshots = [
+    makeSnapshot({
+      fechamentoId: "f-abr", competencia: "2026-04-01",
+      aluguelEsperado: 788.22, aluguelRecebidoCompetencia: null,
+      aluguelRecebido: 1575.24, atrasosRecuperados: 1575.24,
+    }),
+    makeSnapshot({ fechamentoId: "f-mai", competencia: COMPETENCIA, aluguelEsperado: 788.22, aluguelRecebidoCompetencia: 0, aluguelRecebido: 0 }),
+  ]
+
+  const result = aggregateIndicadores(makeInput({ fechamentos, snapshots }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, null)
+  assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), true)
+})

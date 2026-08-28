@@ -1496,6 +1496,48 @@ desconhecido — nunca zero.
 Suíte 483/483, canários 6/6, lint, typecheck, build e checklist 6/6 verdes.
 Nenhuma escrita no banco.
 
+## 2026-08-28 — Dívida acumulada derivada do histórico (correção de rumo)
+
+Pergunta da cliente: "a fonte não é dos fechamentos anteriores?". Estava certa, e
+a resposta anterior deste agente — de que o dado dependia de planilha externa —
+estava errada. O sistema tem a série mensal completa: o que era esperado, o que
+entrou na competência e o que foi recuperado de atraso, fechamento por
+fechamento. A dívida acumulada é derivável disso.
+
+Implementada a precedência: seção do documento → histórico derivado → desconhecida
+(CA-IND22.1). A derivação soma os gaps das competências anteriores e abate os
+atrasos recuperados, com piso em zero.
+
+A primeira versão da derivação estava errada e o dado real expôs o erro: para o
+Apart. B do João Cordeiro ela produziu −R$ 2.362,68. Causa: `aluguel_competencia`
+é NULL nesse imóvel em todos os meses (não observado), e o fallback caía em
+`aluguel_recebido`, que contém os atrasos — contando o atraso como aluguel do mês
+e subtraindo-o de novo em seguida. É a mesma confusão de bases que este plano
+existe para eliminar. Corrigido para fail-closed (CA-IND22.2): sem a separação
+entre aluguel da competência e atraso em todos os meses da janela, a métrica
+permanece desconhecida.
+
+Efeito no dado real de julho, verificado somente-leitura:
+- Galpão Pompílio Gomes e Galpão José Walter: R$ 0,00 derivado do histórico —
+  zero legítimo, não mais "desconhecido".
+- João Cordeiro: permanece "—", agora por motivo preciso e auditável. O Apart. B
+  registra `aluguel_competencia` nulo em todos os meses.
+
+Achado que precisa de decisão da cliente: o Apart. A (0002520) acumula gap de
+R$ 113,27/mês entre fevereiro e maio (esperado R$ 1.213,27, recebido R$ 1.100,00),
+totalizando R$ 453,08; em junho o recebido passa a R$ 1.237,05 e o gap zera. Ou
+houve pagamento a menos por quatro meses, ou o aluguel contratado foi cadastrado
+adiantado em relação ao reajuste real — o que casa com o item da reunião sobre
+atualização monetária depender de procedimento manual.
+
+Desbloqueio identificado para a próxima rodada: competência inadimplente deve
+gravar `aluguel_competencia = 0` (zero confirmado) em vez de nulo, já que o
+documento afirma que nada entrou. Isso é alteração no construtor de snapshots,
+afeta classificação de ocupação e liquidação da competência, e por isso não foi
+feita nesta rodada sem análise dedicada.
+
+Suíte 486/486, canários 6/6, lint, typecheck e build verdes. Nenhuma escrita.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
