@@ -1565,6 +1565,52 @@ Verificado no dado real: base 788,22 para a unidade inadimplente.
 
 Suíte 489/489, canários 6/6, lint, typecheck e build verdes. Nenhuma escrita.
 
+## 2026-08-28 — Varredura de consistência entre Revisão e Indicadores
+
+Depois de dois relatos de "mesmo conceito, número diferente nas duas telas",
+foi feita a varredura sistemática: rodar os caminhos de código reais da Revisão
+e dos Indicadores sobre os mesmos fechamentos de julho e comparar métrica por
+métrica. Encontrou 13 pares divergentes na primeira passada.
+
+Duas causas reais, ambas regressões introduzidas por este agente:
+
+1. O loader dos indicadores mapeava apenas 6 campos dos acordos, descartando
+   `inquilino` e `confianca`. Como o guard fail-closed do módulo canônico
+   consulta exatamente esses campos, TODO acordo resolvia pendente no caminho
+   dos indicadores: a comissão de intermediação aparecia como R$ 0,00 (Grand
+   Castelão 405,00, GM II 450,00, LOC MAIS 480,00) e o repasse calculado ficava
+   inflado no mesmo valor, enquanto a Revisão exibia o número correto. O
+   mapeamento passou a preservar todos os campos que o resolvedor consulta, com
+   teste de regressão que resolve um item real ponta a ponta
+   (`lib/server/indicadores-mapeamento.test.ts`).
+2. `confianca` estava declarada como `number` no tipo de entrada da agregação,
+   incompatível com o `number | null` do banco.
+
+Três divergências eram artefato da própria comparação, não defeito: "acordos e
+rescisões recebidos" (a Revisão soma o recebido resolvido; os indicadores somam
+`outros_recebimentos` do snapshot — conceitos distintos), a acumulada do João
+Cordeiro (a Revisão omite o bloco quando não há itens, então não exibe zero
+falso) e o repasse do GM I (a Revisão mostra o declarado do documento; os
+indicadores mostram o calculado).
+
+O caso do GM I merece registro porque o comportamento está correto: o
+fail-closed recusa a intermediação fantasma de R$ 127,95 (ENEL sem vínculo,
+confiança 0,55) e a ponte financeira reporta `diferença não explicada` de
+R$ 127,95, com status `com_divergencia` e os motivos escritos. O valor não
+desaparece nem é absorvido em silêncio — ele aparece como divergência até o
+reprocessamento reclassificá-lo como despesa.
+
+Resultado final: **0 divergências** em 8 fechamentos de julho, 6 a 7 métricas
+comparadas por fechamento. A varredura foi versionada como
+`scripts/verify-consistencia-telas.ts` (somente leitura, sai com código 1 se
+achar divergência) para ser reexecutada depois do reparo:
+
+```
+node --import tsx scripts/verify-consistencia-telas.ts 2026-07-01
+```
+
+Suíte 495/495, canários 6/6, lint, typecheck, build e checklist 6/6 verdes.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

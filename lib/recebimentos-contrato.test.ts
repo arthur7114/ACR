@@ -35,6 +35,9 @@ const ALLOWLIST = new Set([
   "scripts/backfill-historico.ts",
   "scripts/repair-indicadores-confiabilidade.ts",
   "scripts/verify-indicadores-snapshots.ts",
+  // Verificador de consistencia entre telas: consome via resolverRecebimentosLegados
+  // justamente para comparar os dois caminhos com a mesma resolucao.
+  "scripts/verify-consistencia-telas.ts",
 ])
 
 function grepFiles(pattern: string): string[] {

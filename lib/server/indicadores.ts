@@ -145,6 +145,50 @@ const vigencyRowsSchema = z.array(
     ativo: z.boolean(),
   }),
 )
+// O resolvedor canonico consulta vinculo (apto/inquilino), confianca e os
+// componentes monetarios. Descartar qualquer um deles aqui faz TODO acordo
+// resolver pendente no caminho dos indicadores, zerando a comissao de
+// intermediacao enquanto a Revisao exibe o valor correto.
+export function mapAcordoRecebidoParaAgregacao(item: {
+  tipo: "intermediacao" | "acordo" | "rescisao" | "atraso" | "outro"
+  comissao?: number | null
+  apto?: string | null
+  inquilino?: string | null
+  valor?: number | null
+  aluguel?: number | null
+  garagem?: number | null
+  ajuste?: number | null
+  agua?: number | null
+  iptu?: number | null
+  total_recebido?: number | null
+  repasse?: number | null
+  percentual?: number | null
+  observacao?: string | null
+  confianca?: number | null
+  competencia_original?: string | null
+  competencia_recebimento?: string | null
+}) {
+  return {
+    tipo: item.tipo,
+    comissao: item.comissao ?? null,
+    apto: item.apto ?? null,
+    inquilino: item.inquilino ?? null,
+    valor: item.valor ?? null,
+    aluguel: item.aluguel ?? null,
+    garagem: item.garagem ?? null,
+    ajuste: item.ajuste ?? null,
+    agua: item.agua ?? null,
+    iptu: item.iptu ?? null,
+    total_recebido: item.total_recebido ?? null,
+    repasse: item.repasse ?? null,
+    percentual: item.percentual ?? null,
+    observacao: item.observacao ?? null,
+    confianca: item.confianca ?? null,
+    competencia_original: item.competencia_original ?? null,
+    competencia_recebimento: item.competencia_recebimento ?? null,
+  }
+}
+
 const calculationAnalysisSchema = z
   .object({
     totals: z
@@ -199,7 +243,18 @@ const calculationAnalysisSchema = z
                 tipo: z.enum(["intermediacao", "acordo", "rescisao", "atraso", "outro"]),
                 comissao: z.number().nullable().optional(),
                 apto: z.string().nullable().optional(),
+                inquilino: z.string().nullable().optional(),
                 valor: z.number().nullable().optional(),
+                aluguel: z.number().nullable().optional(),
+                garagem: z.number().nullable().optional(),
+                ajuste: z.number().nullable().optional(),
+                agua: z.number().nullable().optional(),
+                iptu: z.number().nullable().optional(),
+                total_recebido: z.number().nullable().optional(),
+                repasse: z.number().nullable().optional(),
+                percentual: z.number().nullable().optional(),
+                observacao: z.string().nullable().optional(),
+                confianca: z.number().nullable().optional(),
                 competencia_original: z.string().nullable().optional(),
                 competencia_recebimento: z.string().nullable().optional(),
               })
@@ -587,14 +642,7 @@ function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | nu
             dia_vencimento: line.dia_vencimento ?? null,
           })),
           acordos_rescisoes_recebidos:
-            prestacao.acordos_rescisoes_recebidos?.map((item) => ({
-              tipo: item.tipo,
-              comissao: item.comissao ?? null,
-              apto: item.apto ?? null,
-              valor: item.valor ?? null,
-              competencia_original: item.competencia_original ?? null,
-              competencia_recebimento: item.competencia_recebimento ?? null,
-            })) ?? null,
+            prestacao.acordos_rescisoes_recebidos?.map(mapAcordoRecebidoParaAgregacao) ?? null,
           inadimplencias_acumuladas:
             prestacao.inadimplencias_acumuladas?.map((item) => ({ valor: item.valor })) ?? null,
           outras_comissoes_despesas:

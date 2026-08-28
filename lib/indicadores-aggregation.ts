@@ -125,7 +125,7 @@ export interface IndicadoresAnalysisInput {
       repasse?: number | null
       percentual?: number | null
       observacao?: string | null
-      confianca?: number
+      confianca?: number | null
       competencia_original?: string | null
       competencia_recebimento?: string | null
     }> | null
