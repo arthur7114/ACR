@@ -1,6 +1,6 @@
 export const documentClassifierAgent = {
   name: "document_classifier",
-  defaultModel: "gpt-4o-mini",
+  defaultModel: "gpt-5.6-luna",
   systemPrompt:
     [
       "Voce classifica documentos de fechamento imobiliario brasileiro.",

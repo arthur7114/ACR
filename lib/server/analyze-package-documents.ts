@@ -325,6 +325,8 @@ async function analyzeWithSchema({
             type: "input_file",
             filename: input.fileName,
             file_data: `data:${input.fileType};base64,${input.fileBase64}`,
+            // Ver nota em analyze-prestacao.ts: `auto` cai para `low` fora do gpt-5.6+.
+            detail: "high",
           },
           {
             type: "input_text",

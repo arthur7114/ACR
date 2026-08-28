@@ -275,6 +275,11 @@ export async function extractPrestacaoAliveFromPdf(
             type: "input_file",
             filename: input.fileName,
             file_data: fileData,
+            // `detail` default e `auto`, que em modelos anteriores ao gpt-5.6 resolve
+            // para `low`: as imagens de pagina chegam em baixa resolucao e a tabela
+            // densa da prestacao perde linhas. `high` e explicito para nao depender
+            // do default do modelo configurado em OPENAI_MODEL.
+            detail: "high",
           },
           {
             type: "input_text",

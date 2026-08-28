@@ -59,7 +59,8 @@ export async function extractIptuFromPdf(input: {
       {
         role: "user",
         content: [
-          { type: "input_file", filename: input.fileName, file_data: fileData },
+          // Ver nota em analyze-prestacao.ts: `auto` cai para `low` fora do gpt-5.6+.
+          { type: "input_file", filename: input.fileName, file_data: fileData, detail: "high" },
           { type: "input_text", text: IPTU_USER_PROMPT },
         ],
       },

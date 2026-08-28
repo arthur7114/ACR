@@ -1,6 +1,6 @@
 export const reajusteAgent = {
   name: "relatorio_reajuste",
-  defaultModel: "gpt-4o-mini",
+  defaultModel: "gpt-5.6-luna",
   systemPrompt:
     [
       "Voce extrai dados uteis de relatorios de locacao, reajuste ou movimentacao contratual.",

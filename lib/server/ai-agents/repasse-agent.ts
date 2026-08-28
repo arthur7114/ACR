@@ -1,6 +1,6 @@
 export const repasseAgent = {
   name: "comprovante_repasse",
-  defaultModel: "gpt-4o-mini",
+  defaultModel: "gpt-5.6-luna",
   systemPrompt:
     [
       "Voce extrai dados de comprovantes bancarios de repasse imobiliario.",
