@@ -53,6 +53,7 @@
 - CA14.15: confiança de classificação abaixo de 80% produz documento
   `desconhecido` e bloqueio; nomes de arquivo repetidos não cruzam conteúdo entre
   posições; layout César detectado nunca usa fallback probabilístico após erro.
+- CA14.19 (2026-08-31): falha ao carregar uma tela sempre exibe o motivo, nunca fica em carregamento indefinido. Em Configurações, quem não tem perfil administrador recebe 403 com "Permissão insuficiente. Perfil mínimo: admin." e a tela mostra essa mensagem com ação de tentar novamente — antes o erro era registrado no estado mas a renderização caía em `!draft` e girava para sempre, fazendo permissão negada parecer página quebrada.
 - CA14.16: contexto de fechamento enviado pelo navegador não é fonte de IDs,
   nomes ou competência; a API reconstrói o escopo pelo UUID persistido.
 - CA14.17: visualizador não muta dados; operador não aprova nem resolve

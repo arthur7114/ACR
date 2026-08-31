@@ -129,6 +129,33 @@ export function ConfiguracoesView() {
     setMessage(testarContaId ? "Configuração salva e conexão validada." : "Configuração salva.")
   }
 
+  // Falha sem rascunho carregado precisa MOSTRAR o motivo. Antes caia em
+  // `!draft` e a tela girava para sempre: quem nao tem perfil admin recebia 403
+  // com a mensagem correta da API e via apenas "Carregando configurações...".
+  if (error && !draft) {
+    return (
+      <div className="rounded-xl border border-[#FCA5A5] bg-[#FEF2F2] p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-[#991B1B]" />
+          <div className="space-y-1">
+            <p className="text-[14px] font-semibold text-[#991B1B]">Não foi possível carregar as configurações</p>
+            <p className="text-[13px] text-[#991B1B]">{error}</p>
+            <p className="text-[12px] text-[#7F1D1D]">
+              A configuração do eGestor e a gestão de usuários exigem perfil administrador.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={loadConfig}
+          className="mt-4 h-9 rounded-lg border border-[#FCA5A5] bg-white px-4 text-[13px] font-medium text-[#991B1B] hover:bg-[#FEF2F2]"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
   if (loading || !draft) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl border border-[#EEF1EE] bg-white py-16 text-[#6B7F6E]">
