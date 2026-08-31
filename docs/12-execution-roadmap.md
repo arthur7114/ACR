@@ -1704,6 +1704,32 @@ Duas pendências registradas, nenhuma resolvida nesta rodada:
 Histórico jan–jun segue com 713 checksums inválidos (lógica v2); regularizar
 exige backfill histórico, que muda classificação de ocupação passada.
 
+## 2026-08-31 — Despesas em "Outros" por classificação via texto livre
+
+A cliente apontou que uma ENEL caía na categoria certa e a outra em "Outras
+despesas". Causa: `desdobrarDespesasFechamento` classificava pela descrição, que
+para itens do documento de despesas é `observacao || fornecedor` — texto de nota
+fiscal ou boleto. A primeira ENEL acertava por acidente ("Comprovante Pix" casa
+com o padrão de tarifas? não: casa "enel" no texto completo), a segunda dizia
+"Comprovante de pagamento" e caía em "Outros"; os 8 seguros, "Boleto com Nosso
+Número...", também. Total fora de categoria: R$ 1.227,76.
+
+O documento já traz `tipo` estruturado em cada item (`energia`, `agua`, `iptu`,
+`seguro`) e ele era ignorado. Agora o tipo tem precedência e o texto é fallback
+(CA14.8.1). GM II julho passa a exibir Energia R$ 211,18 (2 itens), Água e
+esgoto R$ 1.827,90 e Seguros R$ 1.121,33 (8 itens), somando os mesmos
+R$ 3.160,41 — nenhum valor muda, só a categoria.
+
+Também nesta rodada, com autorização explícita e evidência da própria
+revalidação ("Recebimento com código 9089 não existe"): o lançamento eGestor do
+GM II julho foi liberado para relançamento. Não houve exclusão — o código, a
+resposta original, a data de envio e a evidência ficaram registrados em
+`egestor_envios` (ação `lancamento_removido_no_egestor`) e o lançamento voltou a
+`validado` com `egestor_codigo` nulo, preservando valor, tags e `origem_chave`.
+A liberação aborta se a revalidação não tiver confirmado a ausência do código.
+
+Suíte 499/499, canários 6/6, lint e typecheck verdes.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

@@ -14,6 +14,20 @@ export interface ItemDespesaFechamento {
   descricao: string
   referencia: string | null
   valor: number
+  // Categoria vinda do proprio documento, quando ele a informa. Tem precedencia
+  // sobre a inferencia por texto: a observacao de uma despesa e um texto de nota
+  // fiscal ou boleto, que frequentemente nao cita a categoria (GM II julho: a
+  // segunda ENEL e os 8 seguros caiam em "Outros" porque a observacao dizia
+  // apenas "Comprovante de pagamento" e "Boleto com Nosso Numero").
+  categoria?: CategoriaDespesaFechamento
+}
+
+// Tipos do documento de despesas -> categorias do desdobramento.
+const CATEGORIA_POR_TIPO: Record<string, CategoriaDespesaFechamento> = {
+  energia: "energia",
+  agua: "agua_esgoto",
+  iptu: "iptu",
+  seguro: "seguro",
 }
 
 export interface GrupoDespesaFechamento {
@@ -184,6 +198,7 @@ function despesaToItem(item: Despesa): ItemDespesaFechamento {
     descricao: item.observacao || item.fornecedor || "Despesa extraída",
     referencia: item.referencia || extrairReferencia(item.observacao || item.fornecedor || ""),
     valor: roundMoney(item.valor),
+    categoria: CATEGORIA_POR_TIPO[item.tipo],
   }
 }
 
@@ -216,7 +231,8 @@ export function desdobrarDespesasFechamento({
 
   const grupos = new Map<CategoriaDespesaFechamento, ItemDespesaFechamento[]>()
   for (const item of itens) {
-    const categoria = classificarDespesaFechamento(item.descricao)
+    // Tipo do documento primeiro; texto so quando o documento nao classifica.
+    const categoria = item.categoria ?? classificarDespesaFechamento(item.descricao)
     grupos.set(categoria, [...(grupos.get(categoria) ?? []), item])
   }
 

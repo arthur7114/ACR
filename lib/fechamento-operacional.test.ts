@@ -262,3 +262,51 @@ test("aluguel recebido medio trata aluguel zero como recebimento zero", () => {
   assert.equal(resultado.unidades, 3)
   assert.equal(resultado.valor, 300)
 })
+
+test("desdobramento usa o tipo estruturado do documento, nao o texto da observacao", () => {
+  // GM II julho: o documento traz tipo="energia" e tipo="seguro" em cada item,
+  // mas a observacao e um texto de nota fiscal/boleto que nao cita a categoria.
+  // Classificar pelo texto jogava a segunda ENEL e os 8 seguros em "Outros".
+  const despesa = (tipo: "energia" | "agua" | "seguro" | "outro", valor: number, observacao: string) => ({
+    tipo,
+    fornecedor: "FORNECEDOR",
+    valor,
+    vencimento: null,
+    referencia: null,
+    observacao,
+    endereco: null,
+    unidade_consumidora: null,
+    pago_em: null,
+    pago_por: null,
+    confianca: 1,
+  })
+
+  const result = desdobrarDespesasFechamento({
+    totalDespesas: 490.41,
+    despesas: [
+      despesa("energia", 104.75, "Nota fiscal nº 225045233. Comprovante Pix."),
+      despesa("energia", 106.43, "Nota fiscal nº 220723216. Comprovante de pagamento."),
+      despesa("seguro", 139.83, "Boleto com Nosso Numero 175/43497383-1."),
+      despesa("agua", 139.4, "Nota fiscal numero 1959588."),
+    ],
+  })
+
+  const porCategoria = new Map(result.map((grupo) => [grupo.categoria, grupo.total]))
+  assert.equal(porCategoria.get("energia"), 211.18)
+  assert.equal(porCategoria.get("seguro"), 139.83)
+  assert.equal(porCategoria.get("agua_esgoto"), 139.4)
+  assert.equal(porCategoria.get("outros"), undefined)
+})
+
+test("sem tipo estruturado, o desdobramento continua classificando pelo texto", () => {
+  const result = desdobrarDespesasFechamento({
+    totalDespesas: 300,
+    resumoItens: [
+      { descricao: "ENEL unidade 101", valor: 200, confianca: 1 },
+      { descricao: "SEGURO APTO 02", valor: 100, confianca: 1 },
+    ],
+  })
+  const porCategoria = new Map(result.map((grupo) => [grupo.categoria, grupo.total]))
+  assert.equal(porCategoria.get("energia"), 200)
+  assert.equal(porCategoria.get("seguro"), 100)
+})
