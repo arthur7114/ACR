@@ -1657,6 +1657,53 @@ intermediação exigem reprocessamento do documento, não reparo.
 
 Suíte 497/497, canários 6/6, lint, typecheck e build verdes.
 
+## 2026-08-31 — Reprocessamento por planilha (Castelão, GM I, GM II, LOC MAIS)
+
+A cliente apontou que a intermediação do Grand Castelão exibia 62,31% em vez de
+60%. O valor (R$ 405,00) estava correto; o percentual não, porque a análise
+gravada — extraída do PDF pela IA antes da correção do parser — **não tinha o
+campo garagem**, então a base saía 650 em vez de 675. Sem o dado, nenhum ajuste
+de leitura resolveria: era caso de reprocessamento, como a cliente havia pedido.
+
+Reprocessamento feito a partir das planilhas, com `scripts/reprocessar-planilha.ts`
+(dry-run por padrão). Como os fechamentos estão em `lancado_egestor` e o domínio
+proíbe novos documentos nesse status, o script substitui apenas a prestação da
+análise, preserva o resto do pacote e **mantém o status**, para não regredir o
+estado do eGestor.
+
+Resultado: Castelão 62,31% → **60,00%** (base 675, com garagem 25 e água 47,60
+agora gravadas); GM II base 700 → **750**; inadimplências acumuladas capturadas
+a mais (Castelão 3→4, LOC MAIS 1→2); e a intermediação fantasma de R$ 127,95 do
+GM I **removida** (acordos 4→3). Receitas, comissão de administração e repasse
+ficaram idênticos nos quatro.
+
+Regressão introduzida e corrigida no mesmo ciclo: a primeira gravação deixou as
+linhas SEM `imovel_id`, porque o parser de planilha não vincula — no fluxo de
+upload o vínculo é resolvido depois, contra o cadastro. Isso zerou a
+inadimplência do mês na Revisão e acendeu "27 receitas sem imóvel vinculado" no
+GM II. O script passou a resolver o vínculo pelo cadastro ativo do
+empreendimento, com aborto se alguma linha não tiver imóvel cadastrado.
+Estado final: 8 de 8 fechamentos com 100% das receitas vinculadas, 0 pendências.
+
+Verificações: varredura entre telas **0 divergências**; snapshots com cobertura
+100%, 0 duplicados, **0 checksums inválidos em julho**.
+
+Duas pendências registradas, nenhuma resolvida nesta rodada:
+
+1. **GM I, resíduo de R$ 127,95.** A ENEL está no resumo da prestação
+   (`total_outras_comissoes_despesas` = 268,35), mas `totals.total_despesas`
+   ficou em 140,40, porque `calculateTotals` dá precedência ao documento de
+   despesas — que só traz o seguro. O consolidado retido do próprio documento
+   (1.091,62) reconcilia por construção: 13.721,12 − 1.091,62 = 12.629,50. A
+   correção provável é preferir o consolidado retido ao total do documento
+   externo, mas isso muda uma regra financeira central e afeta todos os
+   fechamentos — precisa de ciclo próprio com conferência.
+2. **LOC MAIS bloqueado na aprovação** pelo gate de fonte: o PDF original não
+   está no Storage. Depende de recuperação ou reenvio do arquivo.
+
+Histórico jan–jun segue com 713 checksums inválidos (lógica v2); regularizar
+exige backfill histórico, que muda classificação de ocupação passada.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

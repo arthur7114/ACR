@@ -21,7 +21,29 @@ import {
   loadActiveIndicadoresProperties,
 } from "@/lib/server/indicadores-snapshots"
 import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
-import type { PackageAnalysis } from "@/lib/prestacao-types"
+import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
+import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
+
+// O parser de planilha nao vincula imovel_id — no fluxo de upload o vinculo e
+// resolvido depois, contra o cadastro. Reprocessando direto, as linhas voltariam
+// SEM vinculo, o que zera a inadimplencia do mes na Revisao e bloqueia a
+// aprovacao. Aqui o vinculo e resolvido pelo cadastro ativo do empreendimento,
+// pela mesma normalizacao de codigo usada nos snapshots.
+function resolverVinculosPeloCadastro(
+  linhas: ReceitaPorImovel[],
+  cadastro: Array<{ id: string; unit: string }>,
+): { linhas: ReceitaPorImovel[]; vinculadas: number; semCadastro: string[] } {
+  const porUnidade = new Map(cadastro.map((imovel) => [normalizeCodigoImovel(imovel.unit), imovel.id]))
+  const semCadastro: string[] = []
+  let vinculadas = 0
+  const resultado = linhas.map((linha) => {
+    const imovelId = porUnidade.get(normalizeCodigoImovel(linha.apto)) ?? null
+    if (imovelId) vinculadas += 1
+    else semCadastro.push(linha.apto)
+    return imovelId ? { ...linha, imovel_id: imovelId } : linha
+  })
+  return { linhas: resultado, vinculadas, semCadastro }
+}
 
 const dinheiro = (v: unknown) => (v === null || v === undefined ? "—" : Number(v).toFixed(2))
 
@@ -73,10 +95,23 @@ async function main() {
 
   // Preserva imobiliária/empreendimento já resolvidos: o nome lido da planilha
   // não é fonte de identidade cadastral.
+  const properties = await loadActiveIndicadoresProperties({
+    supabase,
+    imobiliariaId: fechamento.imobiliaria_id as string,
+    empreendimentoId: fechamento.empreendimento_id as string,
+    competencia,
+  })
+  const vinculos = resolverVinculosPeloCadastro(prestacao.receitas_por_imovel, properties)
+  if (vinculos.semCadastro.length > 0) {
+    throw new Error(
+      `Abortado: ${vinculos.semCadastro.length} linha(s) sem imovel cadastrado no empreendimento: ${vinculos.semCadastro.join(", ")}. Resolva o cadastro antes de reprocessar.`,
+    )
+  }
   const analysis = refreshPackageValidation({
     ...anterior,
     prestacao: {
       ...prestacao,
+      receitas_por_imovel: vinculos.linhas,
       imobiliaria: anterior.prestacao.imobiliaria,
       empreendimento: anterior.prestacao.empreendimento,
     },
@@ -87,12 +122,6 @@ async function main() {
   console.log(`  antes: ${resumo(anterior)}`)
   console.log(`  apos : ${resumo(analysis)}`)
 
-  const properties = await loadActiveIndicadoresProperties({
-    supabase,
-    imobiliariaId: fechamento.imobiliaria_id as string,
-    empreendimentoId: fechamento.empreendimento_id as string,
-    competencia,
-  })
   const snapshots = buildIndicadoresSnapshotRows({
     properties,
     fechamentoId: fechamento.id as string,
@@ -103,6 +132,7 @@ async function main() {
     throw new Error(`Abortado: ${snapshots.unlinkedLineCount} linha(s) sem vínculo inequívoco de imóvel.`)
   }
   console.log(`  snapshots=${snapshots.rows.length} cobertura=${snapshots.matchedPropertyCount}/${snapshots.expectedPropertyCount} semVinculo=${snapshots.unlinkedLineCount}`)
+  console.log(`  vinculos resolvidos=${vinculos.vinculadas}/${vinculos.linhas.length}`)
 
   if (!options.commit) {
     console.log("  MODO DRY-RUN: nenhuma escrita realizada.")
