@@ -38,6 +38,8 @@ const ALLOWLIST = new Set([
   // Verificador de consistencia entre telas: consome via resolverRecebimentosLegados
   // justamente para comparar os dois caminhos com a mesma resolucao.
   "scripts/verify-consistencia-telas.ts",
+  // Reprocessamento por planilha: usa o resolvedor para o relatorio antes/depois.
+  "scripts/reprocessar-planilha.ts",
 ])
 
 function grepFiles(pattern: string): string[] {
