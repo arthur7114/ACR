@@ -1611,6 +1611,52 @@ node --import tsx scripts/verify-consistencia-telas.ts 2026-07-01
 
 Suíte 495/495, canários 6/6, lint, typecheck, build e checklist 6/6 verdes.
 
+## 2026-08-31 — Deploy, reparo de julho e checksum canônico
+
+O cliente devolveu a lista de correções marcando três itens como não
+funcionando. A investigação mostrou que os três estavam corretos no código e no
+banco; o que faltava era **deploy**. O histórico do EasyPanel revelou que o
+auto-deploy está DESLIGADO e o último build era de 28/08 09:45 (`38e8640`),
+deixando três commits fora do ar. Deploy disparado pela URL de trigger do
+próprio painel com autorização explícita: build verde de 4 minutos, `main`
+(`4ac9fb0`) publicada.
+
+Reparo de julho executado nos 8 fechamentos. Os dois César Rêgo bloqueavam
+isolados — o extrato é conjunto e reparar um deixava R$ 12.414,16 do outro sem
+destino; rodados juntos (`--cesar-rego`), distribuíram corretamente. Grand
+Maracanaú passou a bater com o canário: **2 vagas (201 e 214)**, o 214 com
+evento de rescisão, o 101 saindo de vago para desconhecido.
+
+Antes do commit do reparo, a conferência do canário evitou gravar o resultado
+errado: o classificador daria 201 e 101 como vagas com o 214 ocupado, porque o
+214 recebeu R$ 77,42 de aluguel proporcional. Corrigido — rescisão decide o
+estado antes do recebimento, e aluguel contratado igual a zero é desconhecido,
+não vacância.
+
+Quarta ocorrência da mesma classe de erro nesta sequência: coluna nova que um
+consumidor não recebe. Desta vez foram a RPC de reparo (`aplicar_reparo_v4`,
+migration `202608280001`) e a reconstrução de checksum do verificador. A causa
+comum era `createIndicadoresSnapshotChecksum` usando `JSON.stringify` puro: o
+hash dependia da ORDEM das chaves e da presença de campos opcionais, com duas
+listas de campos mantidas à mão. O checksum passou a ser canônico — chaves
+ordenadas, ausente/`undefined`/`null` equivalentes — o que elimina a classe.
+
+Estado de julho: 118 snapshots na `recebimentos-canonicos-v3.1`, eventos e
+cobrança esperada preenchidos, verificador com **0 checksums inválidos**,
+cobertura 100%, 0 duplicados, 0 falhas de reconciliação, e a varredura de
+consistência entre telas em **0 divergências**.
+
+Pendência registrada: jan–jun somam 713 snapshots com checksum inválido, porque
+foram gravados com a lógica v2. Regularizá-los exige backfill histórico, que
+**muda a classificação histórica de ocupação** (rescisão passa a vago, aluguel
+zerado passa a desconhecido). É mudança visível para a cliente e não foi
+executada — depende de aprovação.
+
+Grand Messejana I segue fora do reparo: os R$ 127,95 da ENEL classificados como
+intermediação exigem reprocessamento do documento, não reparo.
+
+Suíte 497/497, canários 6/6, lint, typecheck e build verdes.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

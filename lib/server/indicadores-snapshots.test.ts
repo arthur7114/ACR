@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
-import { buildIndicadoresSnapshotRows } from "./indicadores-snapshots.ts"
+import {
+  createIndicadoresSnapshotChecksum, buildIndicadoresSnapshotRows } from "./indicadores-snapshots.ts"
 
 test("agrupa aluguel e multa da mesma unidade sem trocar receita por aluguel", () => {
   const analysis = {
@@ -1695,4 +1696,39 @@ test("garagem recebida da competencia e persistida separada do aluguel", () => {
   )
 
   assert.equal(row.garagem_recebida, 52.07)
+})
+
+test("checksum e canonico: independe da ordem das chaves e de campo opcional ausente", () => {
+  // A causa raiz de quatro divergencias: builder e verificador mantem listas de
+  // campos a mao. Com JSON.stringify puro, trocar a ordem ou omitir um campo
+  // opcional muda o hash e o verificador acusa divergencia que nao existe.
+  const base = {
+    imovel_id: "a", fechamento_id: "b", competencia: "2026-07-01",
+    status_ocupacao: "vago" as const, status_origem: "x", inquilino_nome: null,
+    aluguel_esperado: 400, aluguel_esperado_origem: "vigencia" as const,
+    aluguel_recebido: 0, receita_total: 0, desconto: null,
+    comissao_administracao: null, repasse_apurado: null,
+    vencimento_referencia: null, quantidade_linhas: 1,
+    origem: "processamento" as const, qualidade: "completo" as const,
+    calculo_versao: "v", cobranca_esperada: 400, garagem_recebida: null,
+  }
+  const trocado = {
+    garagem_recebida: null, cobranca_esperada: 400, calculo_versao: "v",
+    qualidade: "completo" as const, origem: "processamento" as const,
+    quantidade_linhas: 1, vencimento_referencia: null, repasse_apurado: null,
+    comissao_administracao: null, desconto: null, receita_total: 0,
+    aluguel_recebido: 0, aluguel_esperado_origem: "vigencia" as const,
+    aluguel_esperado: 400, inquilino_nome: null, status_origem: "x",
+    status_ocupacao: "vago" as const, competencia: "2026-07-01",
+    fechamento_id: "b", imovel_id: "a",
+  }
+  assert.equal(
+    createIndicadoresSnapshotChecksum(base),
+    createIndicadoresSnapshotChecksum(trocado),
+  )
+  // Campo opcional ausente equivale a nulo explicito.
+  assert.equal(
+    createIndicadoresSnapshotChecksum({ ...base, eventos: undefined }),
+    createIndicadoresSnapshotChecksum(base),
+  )
 })

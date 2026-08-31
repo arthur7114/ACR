@@ -17,7 +17,11 @@ import type { createSupabaseAdmin } from "./supabase"
 
 // v3: estado final × eventos (rescisão deixa de ser status), cobrança esperada
 // por componentes e valores de acordos via resolvedor canônico (plano v2, sub-plano B).
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3"
+// v3.1: a primeira gravação da v3 rodou contra a RPC de reparo ANTIGA, que
+// descartava eventos, cobranca_esperada e garagem_recebida. O checksum já havia
+// sido persistido, então o reparo passou a responder "unchanged" e as colunas
+// ficaram nulas. Bump de versão invalida os checksums e força a regravação.
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.1"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -850,8 +854,22 @@ function normalizeOptionalCompetence(value: string | null | undefined) {
   return null
 }
 
+// Checksum canonico: chaves ordenadas e `undefined` normalizado para null.
+// Com JSON.stringify puro, o hash dependia da ORDEM das chaves e da presenca de
+// campos opcionais — e existem duas listas de campos mantidas a mao (o builder
+// aqui e a reconstrucao a partir do banco em scripts/backfill). Qualquer
+// divergencia de ordem ou de campo novo entre elas produzia "checksum invalido"
+// sem nenhuma diferenca real de conteudo.
 export function createIndicadoresSnapshotChecksum(
   value: Omit<IndicadoresSnapshotRow, "checksum">,
 ) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
+  // Campos ausentes, `undefined` e `null` sao a mesma coisa aqui: coluna sem
+  // valor. Descarta-los torna o hash indiferente a qual das tres formas a lista
+  // de campos usou. Zero e string vazia permanecem, porque sao valor.
+  const canonico = Object.fromEntries(
+    (Object.entries(value) as Array<[string, unknown]>)
+      .filter(([, conteudo]) => conteudo !== undefined && conteudo !== null)
+      .sort((esquerda, direita) => esquerda[0].localeCompare(direita[0])),
+  )
+  return createHash("sha256").update(JSON.stringify(canonico)).digest("hex")
 }

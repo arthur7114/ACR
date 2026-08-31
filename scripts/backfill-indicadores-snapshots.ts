@@ -273,6 +273,9 @@ interface DatabaseSnapshotRow {
   inquilino_nome: string | null
   aluguel_esperado: number | string | null
   aluguel_esperado_origem: "cadastro" | "vigencia" | null
+  cobranca_esperada?: number | string | null
+  eventos?: string[] | null
+  garagem_recebida?: number | string | null
   aluguel_recebido: number | string | null
   aluguel_competencia: number | string | null
   atrasos_recuperados: number | string | null
@@ -356,7 +359,8 @@ async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillO
     .from(SNAPSHOT_TABLE)
     .select(
       `imovel_id,fechamento_id,competencia,status_ocupacao,status_origem,inquilino_nome,
-       aluguel_esperado,aluguel_esperado_origem,aluguel_recebido,receita_total,desconto,
+       aluguel_esperado,aluguel_esperado_origem,cobranca_esperada,eventos,garagem_recebida,
+       aluguel_recebido,receita_total,desconto,
        aluguel_competencia,atrasos_recuperados,atrasos_competencia_origem,outros_recebimentos,entradas_passagem,
        saidas_passagem,comissao_administracao,repasse_apurado,vencimento_referencia,
        competencia_original,competencia_recebimento,dia_vencimento,modelo_receita,
@@ -428,6 +432,9 @@ function calculatePersistedSnapshotChecksum(snapshot: DatabaseSnapshotRow) {
     inquilino_nome: snapshot.inquilino_nome,
     aluguel_esperado: nullableNumber(snapshot.aluguel_esperado),
     aluguel_esperado_origem: snapshot.aluguel_esperado_origem,
+    cobranca_esperada: nullableNumber(snapshot.cobranca_esperada ?? null),
+    eventos: (snapshot.eventos ?? []) as never,
+    garagem_recebida: nullableNumber(snapshot.garagem_recebida ?? null),
     aluguel_recebido: nullableNumber(snapshot.aluguel_recebido),
     aluguel_competencia: nullableNumber(snapshot.aluguel_competencia),
     atrasos_recuperados: nullableNumber(snapshot.atrasos_recuperados),
