@@ -2,6 +2,7 @@ import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
 import type {
+  IndicadoresAccumulatedCoverage,
   IndicadoresAttentionItem,
   IndicadoresCoverage,
   IndicadoresData,
@@ -178,6 +179,7 @@ export interface IndicadoresAggregationInput {
   calculoVersao: string
   competencia: string
   atualizadoEm: string
+  cadastroAtualizadoEm?: string | null
   vigenciasDisponiveis?: boolean
   filtros: {
     empresaId: string | null
@@ -294,6 +296,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
       competencia: input.competencia,
       competenciaLabel: formatCompetence(input.competencia, "long"),
       atualizadoEm: input.atualizadoEm,
+      cadastroAtualizadoEm: input.cadastroAtualizadoEm ?? null,
       statusConfianca: confidence.status,
       motivosConfianca: confidence.reasons,
       qualidade: isComplete(coverage) ? "completa" : "preliminar",
@@ -469,7 +472,13 @@ function buildCoverage(
   )
   // Se o historico permite derivar o saldo, a metrica tem valor e nao ha lacuna.
   const derivavel = derivarAcumuladaDoHistorico(historicalSnapshots) !== null
-  if (semInadimplencia.length > 0 && !derivavel) {
+  // Quando ao menos um fechamento declara a secao, o numero exibido vem do
+  // documento e fala por uma PARTE do escopo: quem nao declara segue sendo
+  // lacuna, e a tela precisa nomear quais fechamentos estao de fora.
+  const temDeclarante = eligibleClosings.some(
+    (closing) => closing.analiseCompleta !== null && declarouInadimplencia(closing.analiseCompleta),
+  )
+  if (semInadimplencia.length > 0 && (temDeclarante || !derivavel)) {
     gaps.push({
       codigo: "inadimplencia_nao_extraida",
       quantidade: semInadimplencia.length,
@@ -649,6 +658,11 @@ function buildSummary(
   const analyses = eligibleClosings
     .map((closing) => closing.analiseCompleta)
     .filter((analysis): analysis is IndicadoresAnalysisInput => analysis !== null)
+  // Filtrado por imóvel a acumulada não se aplica: a seção do documento é do
+  // fechamento inteiro, não da unidade.
+  const acumulada = byProperty
+    ? { valor: null, cobertura: null }
+    : resolveAccumulatedDelinquency(analyses, historicalSnapshots)
   const economicRevenue = byProperty
     ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
     : sumKnown(analyses.map((analysis) => analysis.totals.total_receitas))
@@ -732,10 +746,34 @@ function buildSummary(
         presentOccupancyStatus(property.statusAtual, appPropertyIds.has(property.id)),
       ),
     ),
-    inadimplenciaAcumulada: byProperty
-      ? null
-      : resolveAccumulatedDelinquency(analyses, historicalSnapshots),
+    divergenciaCadastroCompetencia: countStatusDivergence(properties, snapshots, appPropertyIds),
+    inadimplenciaAcumulada: acumulada.valor,
+    inadimplenciaAcumuladaCobertura: acumulada.cobertura,
   }
+}
+
+// Quantas unidades o cadastro descreve de um jeito e a competência exibida de
+// outro. É a resposta direta para "filtrei julho e a barra Hoje não bate": as
+// duas barras têm fontes distintas — o documento do mês e o cadastro, que só é
+// reescrito por sincronização manual — e este número diz em quantas unidades
+// elas discordam, em vez de deixar o leitor conciliar 118 linhas na mão.
+function countStatusDivergence(
+  properties: IndicadoresPropertyInput[],
+  snapshots: IndicadoresSnapshotInput[],
+  appPropertyIds: Set<string>,
+) {
+  const porImovel = new Map(snapshots.map((snapshot) => [snapshot.imovelId, snapshot]))
+  if (porImovel.size === 0) return null
+  return properties.filter((property) => {
+    const snapshot = porImovel.get(property.id)
+    if (!snapshot) return false
+    const noMes = presentOccupancyStatus(
+      snapshot.statusOcupacao,
+      snapshot.modeloReceita === "variavel",
+    )
+    const hoje = presentOccupancyStatus(property.statusAtual, appPropertyIds.has(property.id))
+    return noMes !== hoje
+  }).length
 }
 
 function buildFinancialBridge(summary: IndicadoresSummary): IndicadoresFinancialBridge {
@@ -954,11 +992,6 @@ function buildCompetenciaReallocations(
   return map
 }
 
-function applyReallocation(base: number | null, incoming = 0, outgoing = 0) {
-  if (incoming === 0 && outgoing === 0) return base
-  return roundMoney((base ?? 0) + incoming - outgoing)
-}
-
 function buildMonthlySeries(input: IndicadoresAggregationInput, scope: AggregationScope) {
   // O historico exibivel sao as competencias com lastro (fechamento ou snapshot)
   // ate o mes de referencia. A serie nao materializa meses que existiriam apenas
@@ -1032,6 +1065,9 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       )
 
     const reallocation = reallocations.get(competencia)
+    // Mesma funcao que a tela de referencia usa, agora por mes: a decomposicao
+    // da realizacao vem da mesma identidade, sem calculo paralelo.
+    const monthlyRealization = buildRentRealization(snapshots, monthlyContractedRent)
     const receitaBase = input.filtros.imovelId
       ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
       : sumKnown(analyses.map((analysis) => analysis.totals.total_receitas))
@@ -1076,13 +1112,18 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
     return {
       competencia,
       label: formatCompetence(competencia, "short"),
-      receitaTotal: applyReallocation(receitaBase, reallocation?.receitaIn, reallocation?.receitaOut),
+      receitaTotal: receitaBase,
       aluguelContratado: monthlyContractedRent,
-      aluguelRecebido: applyReallocation(aluguelBase, reallocation?.aluguelIn, reallocation?.aluguelOut),
+      aluguelRecebido: aluguelBase,
       repasseApurado: input.filtros.imovelId
         ? sumKnown(snapshots.map((snapshot) => snapshot.repasseApurado))
         : sumKnown(analyses.map((analysis) => analysis.totals.total_a_repassar)),
+      vacancia: monthlyRealization.vacancia,
+      inadimplencia: monthlyRealization.inadimplenciaMes,
+      descontos: monthlyRealization.descontos,
+      outrosAjustes: monthlyRealization.outrosAjustes,
       ocupacaoPercentual: occupancy.percentual,
+      inadimplenciaPercentual: percentage(occupancy.inadimplentes, occupancy.denominador),
       coberturaPercentual: occupancy.coberturaPercentual,
       qualidade: hasGap || expectedPairs.size === 0 ? ("preliminar" as const) : ("completa" as const),
       competenciaAjusteReceita: roundMoney((reallocation?.receitaIn ?? 0) - (reallocation?.receitaOut ?? 0)),
@@ -1149,18 +1190,37 @@ function buildHeat(
       competencia,
       label: formatCompetence(competencia, "short"),
     })),
-    linhas: sortedProperties.map((property) => ({
-      imovelId: property.id,
-      unidade: property.unidade,
-      inquilinoNome: property.inquilinoNome,
-      empreendimentoId: property.empreendimentoId,
-      empreendimentoNome: property.empreendimentoNome ?? property.empreendimentoId,
-      hoje: property.statusAtual,
-      celulas: months.map((competencia) =>
+    linhas: sortedProperties.map((property) => {
+      const celulas = months.map((competencia) =>
         buildHeatCell(snapshotByPropertyMonth.get(`${property.id}::${competencia}`), competencia),
-      ),
-    })),
+      )
+      return {
+        imovelId: property.id,
+        unidade: property.unidade,
+        inquilinoNome: property.inquilinoNome,
+        inquilinoAtual: resolveCurrentTenant(property, celulas),
+        empreendimentoId: property.empreendimentoId,
+        empreendimentoNome: property.empreendimentoNome ?? property.empreendimentoId,
+        hoje: property.statusAtual,
+        celulas,
+      }
+    }),
   }
+}
+
+// Inquilino ATUAL da unidade: a evidencia mais recente que existe. O cadastro so
+// e reescrito por sincronizacao manual e pode ser mais antigo que o ultimo mes
+// processado — em jul/2026 a unidade 3 do GM I exibia DANDARA, do cadastro de
+// 07/07, enquanto o documento de julho ja nomeava VICTOR. Vago nao tem
+// inquilino: nomear quem morava ali descreveria um contrato que nao existe mais.
+function resolveCurrentTenant(
+  property: IndicadoresPropertyInput,
+  celulas: IndicadoresHeatCell[],
+): string | null {
+  const maisRecente = [...celulas].reverse().find((cell) => cell.statusOcupacao !== null)
+  const status = maisRecente?.statusOcupacao ?? property.statusAtual
+  if (status === "vago") return null
+  return maisRecente?.inquilinoNome ?? property.inquilinoNome
 }
 
 function buildHeatCell(
@@ -1518,6 +1578,16 @@ function sumBrokerageCommission(analyses: IndicadoresAnalysisInput[]) {
 
 export const CAMPO_INADIMPLENCIA_ACUMULADA = "inadimplencias_acumuladas"
 
+// Declarou de fato: nao marcou o campo como ausente, nao entregou um layout sem
+// a secao, e a lista existe (ainda que vazia — vazia com secao e zero
+// confirmado).
+function declarouInadimplencia(analysis: IndicadoresAnalysisInput) {
+  return (
+    !declarouInadimplenciaAusente(analysis) &&
+    (analysis.prestacao?.inadimplencias_acumuladas ?? null) !== null
+  )
+}
+
 function declarouInadimplenciaAusente(analysis: IndicadoresAnalysisInput) {
   if ((analysis.camposAusentes ?? []).includes(CAMPO_INADIMPLENCIA_ACUMULADA)) return true
   // Analises ja persistidas nao trazem campos_ausentes; a lista de secoes
@@ -1534,10 +1604,24 @@ function declarouInadimplenciaAusente(analysis: IndicadoresAnalysisInput) {
 function resolveAccumulatedDelinquency(
   analyses: IndicadoresAnalysisInput[],
   historicalSnapshots: IndicadoresSnapshotInput[],
-) {
+): { valor: number | null; cobertura: IndicadoresAccumulatedCoverage | null } {
   const doDocumento = sumAccumulatedDelinquency(analyses)
-  if (doDocumento !== null) return doDocumento
-  return derivarAcumuladaDoHistorico(historicalSnapshots)
+  if (doDocumento !== null) {
+    return {
+      valor: doDocumento.valor,
+      cobertura: {
+        declarados: doDocumento.declarados,
+        total: doDocumento.total,
+        origem: "documento",
+      },
+    }
+  }
+  const doHistorico = derivarAcumuladaDoHistorico(historicalSnapshots)
+  if (doHistorico === null) return { valor: null, cobertura: null }
+  return {
+    valor: doHistorico,
+    cobertura: { declarados: 0, total: analyses.length, origem: "historico" },
+  }
 }
 
 export function derivarAcumuladaDoHistorico(historicalSnapshots: IndicadoresSnapshotInput[]) {
@@ -1561,18 +1645,25 @@ export function derivarAcumuladaDoHistorico(historicalSnapshots: IndicadoresSnap
   return Math.max(0, roundMoney(emAberto))
 }
 
+// Soma a divida acumulada declarada nos documentos e devolve a cobertura.
+//
+// Lista vazia num layout que NAO tem a secao nao e zero: e ausencia de dado.
+// Somar como zero afirmava "nao ha divida acumulada" para Joao Cordeiro,
+// Pompilio Gomes e Jose Walter (CA-IND22). Mas anular o consolidado porque UM
+// fechamento nao declara escondia o que os outros declaram: em jul/2026,
+// R$ 56.199,25 em 5 de 8 empreendimentos apareciam como "—". A soma agora e do
+// que foi declarado, com `declarados/total` para a tela dizer sobre quantos
+// fechamentos o numero fala.
 function sumAccumulatedDelinquency(analyses: IndicadoresAnalysisInput[]) {
   if (analyses.length === 0) return null
-  // Lista vazia num layout que NAO tem a secao nao e zero: e ausencia de dado.
-  // Somar como zero afirmava "nao ha divida acumulada" para Joao Cordeiro,
-  // Pompilio Gomes e Jose Walter (CA-IND22).
-  if (analyses.some(declarouInadimplenciaAusente)) return null
-  const sections = analyses.map(
-    (analysis) => analysis.prestacao?.inadimplencias_acumuladas ?? null,
+  const declarantes = analyses.filter(declarouInadimplencia)
+  if (declarantes.length === 0) return null
+  const values = declarantes.flatMap((analysis) =>
+    (analysis.prestacao?.inadimplencias_acumuladas ?? []).map((item) => item.valor),
   )
-  if (sections.some((section) => section === null)) return null
-  const values = sections.flatMap((section) => section!.map((item) => item.valor))
-  return values.length === 0 ? 0 : sumKnown(values)
+  const valor = values.length === 0 ? 0 : sumKnown(values)
+  if (valor === null) return null
+  return { valor, declarados: declarantes.length, total: analyses.length }
 }
 
 function sumForStatus(

@@ -50,6 +50,11 @@ export interface IndicadoresMeta {
   competencia: string
   competenciaLabel: string
   atualizadoEm: string
+  // Última escrita no CADASTRO de imóveis, isolada. `atualizadoEm` é o máximo de
+  // imóveis + fechamentos + snapshots: usá-lo no rótulo da posição cadastral
+  // atribuía ao cadastro o frescor de outra tabela (01/09 vindo dos fechamentos,
+  // enquanto o cadastro não era tocado desde 12/08).
+  cadastroAtualizadoEm: string | null
   statusConfianca: IndicadoresConfidenceStatus
   motivosConfianca: string[]
   /** @deprecated Compatibilidade temporária com consumidores v1. */
@@ -137,6 +142,18 @@ export interface IndicadoresSummary {
   ocupacaoCompetencia: IndicadoresOccupancy
   ocupacaoHoje: IndicadoresOccupancy
   inadimplenciaAcumulada: number | null
+  // Em quantas unidades o cadastro (posição "Hoje") descreve situação diferente
+  // da competência exibida. `null` quando não há snapshot para comparar.
+  divergenciaCadastroCompetencia: number | null
+  // Cobertura da acumulada: quantos fechamentos do escopo declararam a seção de
+  // dívidas e de onde veio o número. `null` quando a métrica é desconhecida.
+  inadimplenciaAcumuladaCobertura: IndicadoresAccumulatedCoverage | null
+}
+
+export interface IndicadoresAccumulatedCoverage {
+  declarados: number
+  total: number
+  origem: "documento" | "historico"
 }
 
 export interface IndicadoresFinancialBridge {
@@ -193,11 +210,23 @@ export interface IndicadoresRentRealization {
 export interface IndicadoresMonthlyPoint {
   competencia: string
   label: string
+  // Valores do mês como os documentos declaram. A reatribuição por competência
+  // de origem NÃO é aplicada aqui: ela vive nos campos `competenciaAjuste*`, para
+  // que o número do gráfico seja o número do fechamento. Antes, maio exibia
+  // R$ 88.111,89 de receita, que não batia com nenhum fechamento.
   receitaTotal: number | null
   aluguelContratado: number | null
   aluguelRecebido: number | null
   repasseApurado: number | null
+  // Decomposição da realização do aluguel no mês, na mesma identidade da tela de
+  // referência: contratado − vacância − inadimplência − descontos + ajustes =
+  // recebido da competência.
+  vacancia: number | null
+  inadimplencia: number | null
+  descontos: number | null
+  outrosAjustes: number | null
   ocupacaoPercentual: number | null
+  inadimplenciaPercentual: number | null
   coberturaPercentual: number | null
   qualidade: IndicadoresQuality
   // Saldo reatribuido por competencia original (positivo = recebeu valores de
@@ -235,7 +264,10 @@ export interface IndicadoresHeatCell {
 export interface IndicadoresHeatRow {
   imovelId: string
   unidade: string
+  /** Inquilino do cadastro. Pode estar mais antigo que o último mês processado. */
   inquilinoNome: string | null
+  /** Inquilino atual pela evidência mais recente; `null` quando a unidade está vaga. */
+  inquilinoAtual: string | null
   empreendimentoId: string
   empreendimentoNome: string
   hoje: OccupancyStatus

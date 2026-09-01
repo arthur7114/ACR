@@ -1,4 +1,8 @@
-import type { IndicadoresData, IndicadoresHeatRow } from "@/lib/indicadores-types"
+import type {
+  IndicadoresAccumulatedCoverage,
+  IndicadoresData,
+  IndicadoresHeatRow,
+} from "@/lib/indicadores-types"
 
 export type DashboardMetric = "valor" | "percentual"
 export type HeatMetric = "inad" | "vac"
@@ -6,6 +10,7 @@ export type DashboardTab = "geral" | "receita" | "mapa" | "imoveis"
 export type MonthlySeriesPeriod = "3" | "6" | "12" | "custom"
 export type ConfidenceStatus = "confirmado" | "em_conferencia" | "incompleto" | "com_divergencia"
 
+export type MonthlyPoint = IndicadoresData["serieMensal"][number]
 export type OccupancySummary = IndicadoresData["resumo"]["ocupacaoCompetencia"]
 export type OccupancyStatus = IndicadoresData["heat"]["linhas"][number]["hoje"]
 
@@ -101,13 +106,39 @@ export function formatDateTime(value: string | null): string {
   }).format(date)
 }
 
-// CA-IND21: "Hoje" é posição cadastral, não a competência selecionada. O
-// rótulo declara a natureza e a data/hora da última sincronização.
+// Nota da barra "Hoje": em quantas unidades a posição cadastral discorda da
+// competência exibida. Sem ela, as duas barras parecem medir a mesma coisa em
+// dois momentos e a diferença lê-se como erro de cálculo — foi exatamente a
+// leitura relatada em julho/2026 (87,2% no mês, 94,1% no cadastro).
+export function formatDivergenciaCadastro(divergencias: number | null): string | null {
+  if (divergencias === null || divergencias === 0) return null
+  return divergencias === 1
+    ? "1 imóvel com situação diferente da competência exibida"
+    : `${divergencias} imóveis com situação diferente da competência exibida`
+}
+
+// CA-IND21: "Hoje" é posição cadastral, não a competência selecionada. O rótulo
+// declara a natureza e a data/hora da última sincronização DO CADASTRO — nunca a
+// data de outra tabela, que faria uma posição antiga parecer atual.
 export function formatHojeSincronizado(atualizadoEm: string | null): string {
   const quando = formatDateTime(atualizadoEm)
   return quando === "—"
     ? "Hoje — posição do cadastro"
     : `Hoje — cadastro sincronizado em ${quando}`
+}
+
+// Cobertura da inadimplência acumulada. Só aparece quando o número NÃO fala
+// pelo escopo inteiro: parcial, porque parte dos fechamentos não traz a seção de
+// dívidas; ou derivada do histórico do sistema, quando nenhum documento a traz.
+// Sem esta nota, um parcial se leria como total — foi o que motivou trocar o
+// "—" pelo valor declarado (jul/2026: R$ 56.199,25 em 5 de 8 fechamentos).
+export function formatAcumuladaCobertura(
+  cobertura: IndicadoresAccumulatedCoverage | null,
+): string | null {
+  if (!cobertura) return null
+  if (cobertura.origem === "historico") return "derivada do histórico do sistema"
+  if (cobertura.declarados >= cobertura.total) return null
+  return `${cobertura.declarados} de ${cobertura.total} fechamentos com a seção de dívidas`
 }
 
 // CA-IND23/P0.4: nota exibida junto das linhas de vacância/inadimplência
@@ -220,6 +251,10 @@ export interface ConferenceVerdict {
 // o comprovado transformaria comprovante ausente em divergência — falso alarme
 // numa tela cujo trabalho é dizer se o mês pode ser confiado. Quando ainda falta
 // comprovante, "confere" é verdadeiro mas não é final: fica neutro, nunca verde.
+function roundMoneyValue(value: number) {
+  return Math.round(value * 100) / 100
+}
+
 export function describeConference(input: {
   comprovado: number | null
   banco: number | null
@@ -229,7 +264,13 @@ export function describeConference(input: {
   const { comprovado, banco, comprovantes, status } = input
 
   if (comprovado !== null && banco !== null) {
-    const delta = Math.abs(comprovado - banco)
+    // Arredonda ANTES de comparar. O delta de jul/2026 era 0,010000000002 — um
+    // centavo exato representado em binário — e passava no `> 0.01`, acendendo
+    // "Difere do banco em R$ 0,01" para uma diferença que a própria tolerância
+    // do projeto considera conciliada (a ponte financeira, que arredonda, dava
+    // `reconciliada: true` no mesmo mês). Alarme de centavo gasta a atenção que
+    // a tela precisa guardar para divergência de verdade.
+    const delta = roundMoneyValue(Math.abs(comprovado - banco))
     if (delta > 0.01) return { label: `Difere do banco em ${formatCurrency(delta)}`, tone: "danger" }
     return { label: "Confere com o banco", tone: comprovantes.ausentes === 0 ? "positive" : "neutral" }
   }
@@ -253,7 +294,6 @@ export interface HeatGroup {
   empreendimentoNome: string
   linhas: IndicadoresHeatRow[]
   celulas: HeatGroupCell[]
-  unidadesEmRiscoHoje: number
 }
 
 // D27: uma linha por unidade tornava o mapa uma rolagem interminável. O default
@@ -300,7 +340,6 @@ export function buildHeatGroups(input: {
       empreendimentoNome: linhas[0].empreendimentoNome,
       linhas: [...linhas].sort((a, b) => a.unidade.localeCompare(b.unidade, "pt-BR", { numeric: true })),
       celulas,
-      unidadesEmRiscoHoje: linhas.filter((row) => row.hoje === riskStatus).length,
     })
   }
 
@@ -433,4 +472,34 @@ export function escapeCsv(value: string | number | null): string {
   const raw = String(value)
   const text = typeof value === "string" && /^[=+\-@]/.test(raw) ? `'${raw}` : raw
   return /[;"\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+// A conta escrita fecha a leitura do gráfico: as quatro linhas mostram a forma,
+// e a identidade diz que a distância entre o teto e o recebido é exatamente a
+// soma das perdas do mês. Mesma identidade da tela de referência.
+export function realizationIdentity(point: MonthlyPoint): string | null {
+  const { aluguelContratado, aluguelRecebido, vacancia, inadimplencia } = point
+  if (aluguelContratado === null || aluguelRecebido === null) return null
+  if (vacancia === null || inadimplencia === null) return null
+  const descontos = point.descontos ?? 0
+  const ajustes = point.outrosAjustes ?? 0
+  const partes = [
+    `contratado ${formatCurrency(aluguelContratado)}`,
+    `− vacância ${formatCurrency(vacancia)}`,
+    `− inadimplência ${formatCurrency(inadimplencia)}`,
+  ]
+  if (descontos !== 0) partes.push(`− descontos ${formatCurrency(descontos)}`)
+  if (ajustes !== 0) partes.push(`${ajustes < 0 ? "−" : "+"} ajustes ${formatCurrency(Math.abs(ajustes))}`)
+  return `${partes.join(" ")} = recebido ${formatCurrency(aluguelRecebido)}`
+}
+
+// Reatribuição por competência de origem: já não entra no valor plotado (o valor
+// é o que o fechamento declara), então aparece como nota. Sem ela, o dinheiro que
+// mudou de mês desapareceria da leitura.
+export function reallocationNote(point: MonthlyPoint): string | null {
+  const ajuste = point.competenciaAjusteAluguel
+  if (!ajuste) return null
+  return ajuste > 0
+    ? `${formatCurrency(ajuste)} de aluguel desta competência foram recebidos em outros meses.`
+    : `${formatCurrency(Math.abs(ajuste))} recebidos neste mês pertencem a competências anteriores.`
 }

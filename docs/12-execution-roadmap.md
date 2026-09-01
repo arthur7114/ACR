@@ -1768,6 +1768,183 @@ do eGestor está inválido — o lançamento ficou em `status=erro` e o fechamen
 `erro_egestor`. O token se configura em Configurações → eGestor, tela que exigia
 perfil admin e que até hoje mostrava spinner infinito em vez do 403.
 
+## 2026-09-01 — Auditoria dos indicadores contra os fechamentos, e as cinco correções
+
+Pergunta do usuário: os indicadores batem com os fechamentos? Varredura nos 25
+fechamentos (mai/jun/jul): **23 batiam em todas as métricas**. Receita, comissão
+de administração, comissão de intermediação, despesas retidas, repasse declarado
+e inadimplência acumulada batiam em 100% dos casos. As duas divergências eram na
+**inadimplência do mês**, com causas opostas — uma em cada tela.
+
+`verify-indicadores-snapshots`: cobertura 355/355, 0 checksums inválidos, 0
+duplicados, 0 falhas de reconciliação, 0 linhas sem vínculo. A primeira execução
+retornou `ok: false` apenas por `sources.unchanged: false` na tabela
+`fechamentos` — leitura concorrente, não defeito: três leituras seguidas dos
+mesmos campos deram checksum idêntico e a reexecução voltou `ok: true`.
+
+**Por que a varredura dizia "0 divergências".** `verify-consistencia-telas` sem
+argumento usava o mês corrente. Rodado em 01/09/2026 — mês ainda sem fechamento
+— ele imprimia "0 divergencia(s)" sem comparar nada. Era também o único
+verificador que não carregava `.env.local`, então em shell limpo nem subia. Maio
+e junho nunca entraram na varredura.
+
+### 1. Inadimplência do mês zerada na Revisão (CA-IND27)
+
+GM I maio/2026: o documento marca os aptos 1, 15, 16 e 22 como INADIMPLÊNCIA, os
+snapshots trazem 650,00 + 677,72 + 625,87 + 678,31 = **2.631,90**, e a Revisão
+exibia R$ 0,00 — na verdade o bloco inteiro desaparecia (`valor > 0` como
+condição de render). Causa: `ehInadimplenteDoMes` exigia `imovel_id` na linha, e
+as 23 linhas de maio foram gravadas sem vínculo (o parser de planilha não
+vincula; no upload o vínculo é resolvido depois). Falha aberta.
+
+Correção: o detector passa a olhar só a marcação do documento; a rota da Revisão
+resolve o vínculo na leitura com `attachExistingImovelLinks` (a mesma regra dos
+fluxos de gravação, casamento exato e candidato único, sem escrever nada); e o
+loader devolve `valor: number | null` mais `pendentes[]` — o que não puder ser
+apurado aparece nominalmente e o valor vira "—", nunca R$ 0,00. Maio passou a
+bater **sem nenhuma escrita no banco**.
+
+### 2. Rescisão proporcional classificada como inadimplente (CA-IND28)
+
+Maracanaú 202, jun/2026: rescindiu em 01/06, pagou 1 dia proporcional (13,33 de
+400) e carrega dívida do próprio inquilino sem competência declarada ("VALOR DA
+RESCISÃO (MAIO, JUNHO...)", R$ 893,33). O snapshot saía `inadimplente` e a
+inadimplência do mês derivava 400 − 13,33 = **386,67** — mês integral que a
+unidade não devia e número que o documento não afirma. O apto 201, mesma rescisão
+proporcional sem dívida listada, era classificado `vago`: mesmo caso, dois
+estados. A guarda `currentCompetenceSettled` não pegava o caso porque numa
+rescisão o pagamento é proporcional e "mês quitado" nunca é verdadeiro.
+
+Correção: dívida de competência anterior passa a ceder também à rescisão. Dívida
+declarada com a competência do fechamento e texto explícito de inadimplência na
+linha continuam vencendo. O dry-run do backfill de junho mostra **1 update e 117
+skips** — a única linha afetada é o apto 202.
+
+### 3. Acumulada anulada por quem não declara (CA-IND29, revisa CA-IND22)
+
+Julho: R$ 56.199,25 declarados em 5 fechamentos apareciam como "—" porque 3
+(João Cordeiro, Pompílio Gomes, José Walter) trazem `inadimplencias_acumuladas`
+em `campos_ausentes`. O fallback do histórico também falhava fechado: 18 dos 237
+snapshots de mai+jun têm `aluguel_competencia` nulo (17 do backfill de maio, 1 do
+processamento de junho; 16 em Maracanaú, 2 em João Cordeiro).
+
+Correção: soma o declarado e devolve a cobertura (`declarados/total/origem`); a
+tela mostra "5 de 8 fechamentos com a seção de dívidas". A lacuna
+`inadimplencia_nao_extraida` continua nominando quem ficou de fora — e agora é
+emitida também quando existe declarante, para o parcial não se ler como total.
+Verificado no dado real: mai 39.176,45 (5 de 9), jun 52.411,08 (5 de 8), jul
+56.199,25 (5 de 8).
+
+### 4. O rótulo "Hoje" atribuía ao cadastro o frescor de outra tabela (CA-IND30)
+
+`meta.atualizadoEm` é o máximo entre imóveis, fechamentos e snapshots. Usado no
+rótulo da posição cadastral, anunciava "cadastro sincronizado em 01/09/2026,
+07:14" quando o cadastro não era tocado desde **12/08** — e 83 dos 119 imóveis
+estão parados em 07/07. O cadastro só é reescrito pelo endpoint manual
+`POST /api/cadastros/imoveis/sync`; o processamento de fechamento não o atualiza.
+Daí a leitura do usuário: julho mostrava 87,2% e a barra "Hoje" 94,1%.
+
+Correção: `meta.cadastroAtualizadoEm` isola a última escrita do próprio cadastro
+(desconhecida, nunca "agora", quando não há imóvel no escopo), e a barra declara
+"21 imóveis com situação diferente da competência exibida" — o número que
+explica a diferença entre as duas barras.
+
+### 5. O verificador que passava vazio
+
+`verify-consistencia-telas` agora carrega o `.env.local` e, sem argumento, varre
+**todas** as competências com fechamento, falhando com exit 1 quando não há nada
+para comparar. Também alinhado à rota da Revisão (resolve o vínculo antes de
+comparar) e reporta as unidades inadimplentes sem base apurada.
+
+**Escrita autorizada e aplicada.** Backfill rodado nas três competências, com
+dry-run antes de cada uma: maio 0 updates (119 skips), junho **1 update** (117
+skips), julho 0 updates (118 skips). O alcance total foi uma única linha — o
+snapshot do apto 202 de Maracanaú em junho — e maio/julho ficaram provados
+coerentes com a lógica nova. Nenhuma tabela-fonte foi tocada
+(`sourceTablesUnchanged: true` nas três).
+
+Efeito medido em junho: inadimplência do mês 4.150,34 → **3.763,67** (os 386,67
+que a unidade não devia saíram) e vacância 11.380,37 → 11.780,37 (o apto 202
+entrou com sua cobrança esperada, como o 201 já entrava). Julho ficou intacto:
+6.166,84 e 11.425,81, os mesmos números de antes do ciclo.
+
+**Estado verificado:** suíte 504 → 511 testes, canários 6/6, lint, tipos, build e
+checklist do projeto 6/6 verdes. `verify-consistencia-telas` em **0 divergências**
+nos 25 fechamentos das três competências. `verify-indicadores-snapshots` em
+`ok: true` — cobertura 355/355, 0 checksums inválidos, 0 duplicados, 0 falhas de
+reconciliação.
+
+Arquivos: `lib/inadimplencia-mes.ts`, `lib/server/inadimplencia-mes.ts`,
+`lib/server/indicadores-snapshots.ts`, `lib/indicadores-aggregation.ts`,
+`lib/indicadores-types.ts`, `lib/server/indicadores.ts`,
+`app/api/fechamentos/[id]/route.ts`, `app/(app)/fechamentos/[id]/revisao/page.tsx`,
+`components/acr/views/revisao-view.tsx`,
+`components/acr/indicadores/tabs/view-geral.tsx`,
+`components/acr/indicadores/lib/presentation.ts`,
+`scripts/verify-consistencia-telas.ts`, testes e docs 02/06/12.
+
+## 2026-09-01 — Evolução mensal, mapa de riscos e detalhamento
+
+Segunda leva do mesmo ciclo, a partir da leitura do usuário sobre a tela.
+
+**A pergunta que abriu o item: de onde vem a "Receita" do gráfico.** De
+`totals.total_receitas` dos fechamentos, ajustada por competência de origem. Em
+julho a soma crua dos 8 documentos é R$ 85.273,78 e o gráfico exibia
+R$ 84.806,85 — a diferença de R$ 466,93 são atrasos recuperados em julho que
+pertencem a meses anteriores. Dois defeitos apareceram junto:
+
+1. **Regimes misturados nos mesmos eixos.** "Receitas" e "Aluguel recebido" por
+   competência de origem, "Repasse" por caixa (decisão explícita no código). Em
+   maio o gráfico contava R$ 2.846,67 que entraram no caixa em junho/julho,
+   enquanto o repasse do mesmo ponto não os incluía.
+2. **"Receitas" não era receita de ninguém.** Aluguel 67.504,30 + rescisões
+   5.320,47 + acordos 3.752,44 + água 2.162,83 + intermediação 2.150,00 + garagem
+   1.652,91 + IPTU 620,74 + atrasos 414,86 + passagens 342,04 + seguro 178,45 −
+   desconto 20,00. Água, IPTU e seguro são reembolso: entram e saem como despesa.
+
+**Decisão (CA-IND31/32/33).** O modo valores passa a medir a realização do
+aluguel: contratado, recebido da competência, vacância e inadimplência, com a
+identidade escrita sob a legenda. `buildRentRealization` — a mesma função da tela
+de referência — passou a rodar por mês, então a decomposição não é cálculo
+paralelo. A reatribuição saiu do valor e virou nota, e `applyReallocation` foi
+removida. No modo percentual, `Cobertura` deu lugar a `Inadimplentes`.
+
+Resultado no dado real, com a identidade fechando nos três meses:
+
+| Mês | Contratado | Recebido | Inadimplência | Vacância | Inadimplentes |
+|---|---|---|---|---|---|
+| mai/2026 | 85.748,23 | 73.682,73 | 2.631,90 | 9.851,70 | 4,3% |
+| jun/2026 | 85.748,23 | 70.236,43 | 3.763,67 | 11.780,37 | 5,1% |
+| jul/2026 | 86.129,65 | 67.484,30 | 6.166,84 | 11.425,81 | 6,0% |
+
+O gráfico antigo mostrava três linhas quase planas. A série nova mostra recebido
+caindo R$ 6.198,43 em dois meses e inadimplência mais que dobrando — tendência
+que estava no dado e não chegava à tela.
+
+**Alarme de centavo (CA-IND34).** "Difere do banco em R$ 0,01" acendia porque o
+delta era 0,010000000002 — um centavo exato em ponto flutuante — e passava no
+`> 0.01`, enquanto a ponte financeira, que arredonda, dava `reconciliada: true`
+no mesmo mês. Passou a arredondar antes de comparar. No caminho apareceu que
+`describeConference` existia **duas vezes**: a canônica em `presentation.ts`
+(usada pela Conciliação financeira) e uma cópia local em `view-geral.tsx`, com o
+bug nas duas. Unificado na canônica. O teste de nomenclatura passava por causa da
+duplicata — ele varria só os arquivos de tab; passou a varrer `presentation.ts`.
+
+**Mapa de riscos (CA-IND35).** Unidade vaga não exibe mais nome de inquilino, nem
+na célula, nem no rótulo acessível, nem no agregado de empreendimento com uma
+unidade. O rótulo da linha passou a "Inquilino atual: <nome>", resolvido pela
+evidência mais recente: era o caso da unidade 3 do GM I, que exibia DANDARA, do
+cadastro de 07/07, enquanto julho já nomeava VICTOR. A coluna "Hoje" saiu, junto
+com `unidadesEmRiscoHoje`, que só existia para ela.
+
+**Detalhamento por imóvel (CA-IND36).** A unidade virou botão e abre o
+`ImovelHistoricoDrawer` existente, que ganhou um slot opcional de visão geral —
+os Indicadores passam os números da competência em tela. No mobile, botão dentro
+da linha expandida. Nenhuma linha do tempo duplicada.
+
+**Verificações:** suíte 515 → 517 testes, lint, tipos e build verdes; identidade
+da realização conferida nos três meses contra o banco.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

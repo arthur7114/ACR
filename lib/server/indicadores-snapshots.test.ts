@@ -1415,6 +1415,71 @@ test("divida de competencia anterior do mesmo inquilino continua valendo quando 
   assert.equal(row.status_ocupacao, "inadimplente")
 })
 
+test("rescisao com pagamento proporcional nao vira inadimplente por divida de outro mes", () => {
+  // Grand Maracanau 202, jun/2026: rescindiu em 01/06, pagou 1 dia proporcional
+  // (13,33 de 400) e carrega divida do proprio inquilino sem competencia
+  // declarada ("VALOR DA RESCISAO (MAIO, JUNHO...)", R$ 893,33). O estado saia
+  // `inadimplente` e a inadimplencia do mes derivava 400 - 13,33 = 386,67 — mes
+  // integral que a unidade nunca devia e numero que o documento nao afirma. O
+  // apto 201, mesma rescisao proporcional sem divida listada, ja era `vago`.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Bruno Eduardo",
+        aluguel: 13.33,
+        total: 13.33,
+        observacao: "RESCISAO. PROPORCIONAL DE 01 DIA (01/06).",
+      },
+      inadimplencias: [
+        { inquilino: "Bruno Eduardo", valor: 893.33, competencia_original: null },
+      ],
+    }),
+    400,
+  )
+
+  assert.equal(row.status_ocupacao, "vago")
+  assert.deepEqual(row.eventos, ["rescisao"])
+})
+
+test("rescisao nao apaga inadimplencia declarada na propria linha", () => {
+  // Rescisao nao e alvara: texto explicito de inadimplencia na competencia
+  // corrente continua vencendo, porque descreve o mes, nao a divida antiga.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Bruno Eduardo",
+        aluguel: 0,
+        total: 0,
+        observacao: "RESCISAO. INADIMPLENCIA.",
+      },
+    }),
+    400,
+  )
+
+  assert.equal(row.status_ocupacao, "inadimplente")
+})
+
+test("rescisao nao apaga divida da propria competencia corrente", () => {
+  // Divida declarada COM competencia igual a do fechamento e o sinal mais forte
+  // que existe: continua vencendo a rescisao.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: {
+        inquilino: "Bruno Eduardo",
+        aluguel: 13.33,
+        total: 13.33,
+        observacao: "RESCISAO. PROPORCIONAL DE 01 DIA (01/06).",
+      },
+      inadimplencias: [
+        { inquilino: "Bruno Eduardo", valor: 386.67, competencia_original: "06/2026" },
+      ],
+    }),
+    400,
+  )
+
+  assert.equal(row.status_ocupacao, "inadimplente")
+})
+
 test("linha sem inquilino e sem aluguel vira vago, com procedencia de inferencia", () => {
   const row = statusFor(
     prestacaoFixture({ receita: { inquilino: "", aluguel: 0, total: 0 } }),

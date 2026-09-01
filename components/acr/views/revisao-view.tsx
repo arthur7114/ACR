@@ -539,7 +539,7 @@ export function RevisaoView({
   egestorEnvios = [],
   statusEventos = [],
   vinculosImoveis = { total_receitas: 0, total_vinculadas: 0, pendentes: [], imoveis: [] },
-  inadimplenciaMes = { valor: 0, unidades: [] },
+  inadimplenciaMes = { valor: 0, unidades: [], pendentes: [] },
   onVinculosChange,
 }: RevisaoViewProps) {
   const [activeValidation, setActiveValidation] = useState<{
@@ -790,6 +790,12 @@ export function RevisaoView({
   const vagasAcordos = acordosRescisoesRecebidos.reduce((sum, item) => sum + vagasDoAcordo(item), 0)
   const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
   const totalInadimplenciaAcumulada = inadimplenciasAcumuladas.reduce((sum, item) => sum + item.valor, 0)
+  // Unidades marcadas como inadimplentes que nao puderam ser apuradas. Ficam
+  // visiveis em vez de somarem zero: a metrica falha fechada (`-`) quando
+  // nenhuma unidade e apuravel, e declara a lacuna quando so parte e.
+  const inadimplenciaMesPendentes = inadimplenciaMes.pendentes.length
+  const inadimplenciaMesVisivel =
+    inadimplenciaMes.valor === null || inadimplenciaMes.valor > 0 || inadimplenciaMesPendentes > 0
   const totalLinhas = linhasImoveis.reduce((sum, row) => sum + row.total, 0)
   const rowTotals = sumRows(linhasImoveis)
   // Total de vagas = vagas das receitas + vagas informadas nos acordos/rescisoes.
@@ -1234,7 +1240,7 @@ export function RevisaoView({
                   subtext={`por unidade com cobrança ativa (${aluguelRecebidoMedio.unidades})`}
                 />
               </div>
-              {inadimplenciaMes.valor > 0 && (
+              {inadimplenciaMesVisivel && (
                 <div className="flex items-center justify-between rounded-xl bg-[#FEF2F2] px-4 py-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-[#DC2626]">Inadimplência do mês</p>
@@ -1242,8 +1248,21 @@ export function RevisaoView({
                       {pluralize(inadimplenciaMes.unidades.length, "unidade não paga neste mês", "unidades não pagas neste mês")}
                       {" · valor esperado (histórico)"}
                     </p>
+                    {inadimplenciaMesPendentes > 0 && (
+                      <p className="mt-0.5 text-[12px] font-semibold text-[#991B1B]">
+                        {pluralize(
+                          inadimplenciaMesPendentes,
+                          "unidade marcada como inadimplente sem base para apurar",
+                          "unidades marcadas como inadimplentes sem base para apurar",
+                        )}
+                        {" · "}
+                        {inadimplenciaMes.pendentes.map((pendencia) => pendencia.apto || "sem apto").join(", ")}
+                      </p>
+                    )}
                   </div>
-                  <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">{formatBRL(inadimplenciaMes.valor)}</p>
+                  <p className="text-[20px] font-bold tabular-nums text-[#DC2626]">
+                    {inadimplenciaMes.valor === null ? "—" : formatBRL(inadimplenciaMes.valor)}
+                  </p>
                 </div>
               )}
               {inadimplenciasAcumuladas.length > 0 && (

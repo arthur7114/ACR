@@ -446,18 +446,30 @@ function buildSnapshotRow(input: {
     && expectedRent > 0
     && currentRent !== null
     && roundMoney(currentRent - expectedRent) >= -0.01
+  // Rescisão fecha a competência da unidade: depois da saída ela não devia o mês
+  // integral, e o `mês já quitado` nunca é verdadeiro porque o pagamento é
+  // proporcional aos dias ocupados. Sem esta condição, a dívida de outro mês do
+  // próprio inquilino sobrepunha a rescisão (Grand Maracanaú 202, jun/2026:
+  // `inadimplente` e 386,67 derivados de um mês que não era devido, enquanto o
+  // apto 201 — mesma rescisão proporcional, sem dívida listada — ficava `vago`).
+  const hasTermination =
+    input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText)
   const evidence = {
     tenantName,
     observation,
     rentReceived: currentRent,
-    hasTermination:
-      input.terminationKeys.has(input.propertyKey) || hasTerminationEvidence(evidenceText),
+    hasTermination,
     // Dívida acumulada da PRÓPRIA competência corrente nunca é apagada — é
     // exatamente o sinal que classifyOccupancy deve priorizar. A de competência
-    // ANTERIOR cede à vacância explícita, a outro devedor e ao mês já quitado.
+    // ANTERIOR cede à vacância explícita, a outro devedor, ao mês já quitado e à
+    // rescisão. Texto explícito de inadimplência na linha descreve o mês e
+    // continua vencendo em qualquer caso.
     hasDelinquency:
       input.delinquencyKeys.currentCompetence.has(input.propertyKey) ||
-      (priorDebtIsFromCurrentOccupant && !currentVacancyEvidence && !currentCompetenceSettled) ||
+      (priorDebtIsFromCurrentOccupant &&
+        !currentVacancyEvidence &&
+        !currentCompetenceSettled &&
+        !hasTermination) ||
       hasDelinquencyEvidence(evidenceText),
     hasVacancy: currentVacancyEvidence,
     hasLatePayment: recoveredLate !== null && recoveredLate > 0,

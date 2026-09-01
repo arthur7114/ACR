@@ -4,10 +4,14 @@
 // aparecia com valores diferentes nas duas telas.
 //
 // Somente leitura. Uso:
-//   node --import tsx scripts/verify-consistencia-telas.ts 2026-07-01
+//   node --import tsx scripts/verify-consistencia-telas.ts               # todas as competencias com fechamento
+//   node --import tsx scripts/verify-consistencia-telas.ts 2026-07-01    # uma ou mais competencias
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { getIndicadores } from "@/lib/server/indicadores"
 import { loadInadimplenciaMes } from "@/lib/server/inadimplencia-mes"
+import { attachExistingImovelLinks } from "@/lib/server/fechamento-imoveis"
 import { calcularResumoComissaoFechamento } from "@/lib/fechamento-operacional"
 import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
@@ -42,18 +46,44 @@ export function compararMetricas(
   })
 }
 
-async function main() {
-  const competencia = process.argv[2] ?? new Date().toISOString().slice(0, 8) + "01"
-  const supabase = createSupabaseAdmin()
+type SupabaseAdmin = ReturnType<typeof createSupabaseAdmin>
+
+export interface DivergenciaCompetencia extends DivergenciaMetrica {
+  competencia: string
+}
+
+async function listarCompetencias(supabase: SupabaseAdmin) {
+  const { data, error } = await supabase.from("fechamentos").select("competencia")
+  if (error) throw error
+  return [...new Set((data ?? []).map((row) => String(row.competencia)))].sort()
+}
+
+async function varrerCompetencia(
+  supabase: SupabaseAdmin,
+  competencia: string,
+): Promise<DivergenciaCompetencia[]> {
   const { data: fechamentos, error } = await supabase
     .from("fechamentos")
-    .select("id,empreendimento_id,analise_completa,empreendimentos(nome)")
+    .select("id,imobiliaria_id,empreendimento_id,analise_completa,empreendimentos(nome)")
     .eq("competencia", competencia)
   if (error) throw error
 
-  const divergencias: DivergenciaMetrica[] = []
+  const divergencias: DivergenciaCompetencia[] = []
   for (const fechamento of fechamentos ?? []) {
-    const analise = fechamento.analise_completa as PackageAnalysis | null
+    // Mesmo caminho de leitura da rota da Revisao: o vinculo com o cadastro e
+    // resolvido antes de comparar, senao o verificador mediria uma tela que o
+    // usuario nunca ve.
+    const gravada = fechamento.analise_completa as PackageAnalysis | null
+    const analise = gravada
+      ? await attachExistingImovelLinks(
+          supabase,
+          {
+            imobiliariaId: fechamento.imobiliaria_id as string,
+            empreendimentoId: fechamento.empreendimento_id as string,
+          },
+          gravada,
+        )
+      : null
     const prestacao = analise?.prestacao
     if (!prestacao) continue
     const nome =
@@ -87,16 +117,64 @@ async function main() {
       })
     }
 
-    const encontradas = compararMetricas(nome, pares)
+    const encontradas = compararMetricas(nome, pares).map((item) => ({ ...item, competencia }))
     divergencias.push(...encontradas)
-    console.log(`${encontradas.length === 0 ? "ok  " : "DIF "} ${nome} (${pares.length} metricas)`)
+    const pendentes = inadimplenciaMes.pendentes.length
+    const nota = pendentes > 0 ? ` · ${pendentes} inadimplente(s) sem base apurada` : ""
+    console.log(
+      `${encontradas.length === 0 ? "ok  " : "DIF "} ${nome} (${pares.length} metricas)${nota}`,
+    )
+  }
+  return divergencias
+}
+
+async function main() {
+  // Sem carregar o .env.local o verificador so roda com o env exportado no
+  // shell — os outros verificadores carregam, este nao, e por isso ele ficava
+  // fora da rotina.
+  loadEnvLocal()
+  const supabase = createSupabaseAdmin()
+  // Sem argumento, varre TODAS as competencias com fechamento. O default antigo
+  // era o mes corrente: rodado em 01/09/2026, um mes ainda sem fechamento, ele
+  // imprimia "0 divergencia(s)" sem comparar nada. Foi assim que mai/2026 e
+  // jun/2026 nunca entraram na varredura e duas divergencias reais passaram.
+  const argumentos = process.argv.slice(2)
+  const competencias = argumentos.length > 0 ? argumentos : await listarCompetencias(supabase)
+  if (competencias.length === 0) {
+    console.error("Nenhuma competencia com fechamento: nada foi comparado.")
+    process.exitCode = 1
+    return
   }
 
-  console.log(`\n${divergencias.length} divergencia(s) em ${competencia}`)
+  const divergencias: DivergenciaCompetencia[] = []
+  for (const competencia of competencias) {
+    console.log(`\n=== ${competencia} ===`)
+    divergencias.push(...(await varrerCompetencia(supabase, competencia)))
+  }
+
+  console.log(
+    `\n${divergencias.length} divergencia(s) em ${competencias.length} competencia(s): ${competencias.join(", ")}`,
+  )
   for (const d of divergencias) {
-    console.log(`  - ${d.fechamento} · ${d.rotulo}: revisao=${d.revisao ?? "—"} indicadores=${d.indicadores ?? "—"}`)
+    console.log(
+      `  - ${d.competencia} · ${d.fechamento} · ${d.rotulo}: revisao=${d.revisao ?? "—"} indicadores=${d.indicadores ?? "—"}`,
+    )
   }
   process.exitCode = divergencias.length === 0 ? 0 : 1
+}
+
+function loadEnvLocal() {
+  const filePath = join(process.cwd(), ".env.local")
+  if (!existsSync(filePath)) return
+  for (const rawLine of readFileSync(filePath, "utf8").split("\n")) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith("#")) continue
+    const separator = line.indexOf("=")
+    if (separator < 0) continue
+    const key = line.slice(0, separator).trim()
+    const value = line.slice(separator + 1).trim().replace(/^["']|["']$/g, "")
+    if (!(key in process.env)) process.env[key] = value
+  }
 }
 
 // Mesmo idioma dos outros verificadores: so executa quando chamado direto, para

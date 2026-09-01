@@ -1,10 +1,15 @@
 "use client"
 
 import { useState } from "react"
-import type { IndicadoresData } from "@/lib/indicadores-types"
-import { formatCompactCurrency, formatCurrency, formatPercent, type DashboardMetric } from "../lib/presentation"
-
-type MonthlyPoint = IndicadoresData["serieMensal"][number]
+import {
+  formatCompactCurrency,
+  formatCurrency,
+  formatPercent,
+  realizationIdentity,
+  reallocationNote,
+  type DashboardMetric,
+  type MonthlyPoint,
+} from "../lib/presentation"
 
 interface Series {
   key: string
@@ -14,15 +19,26 @@ interface Series {
   format: (value: number | null) => string
 }
 
+// A série de valores mede a REALIZAÇÃO do aluguel contratado: o teto, o que foi
+// recebido na competência e as duas perdas que explicam a distância entre eles.
+// Antes eram "Receitas", "Aluguel recebido" e "Repasse" — e o vão vertical entre
+// elas não significava nada, porque misturava regime (receita por competência de
+// origem contra repasse por caixa, até R$ 2.846 de descasamento em maio/2026),
+// reembolso de água/IPTU/seguro que entra e sai, e comissão. Aqui a distância
+// entre o teto e o recebido é exatamente a soma das perdas.
 const VALUE_SERIES: Series[] = [
-  { key: "receita", label: "Receitas", color: "var(--acr-green)", read: (point) => point.receitaTotal, format: formatCurrency },
-  { key: "aluguel", label: "Aluguel recebido", color: "#78ad80", read: (point) => point.aluguelRecebido, format: formatCurrency },
-  { key: "repasse", label: "Repasse", color: "var(--acr-muted)", read: (point) => point.repasseApurado, format: formatCurrency },
+  { key: "contratado", label: "Aluguel contratado", color: "var(--acr-muted)", read: (point) => point.aluguelContratado, format: formatCurrency },
+  { key: "recebido", label: "Recebido da competência", color: "var(--acr-green)", read: (point) => point.aluguelRecebido, format: formatCurrency },
+  { key: "inadimplencia", label: "Inadimplência", color: "#c2410c", read: (point) => point.inadimplencia, format: formatCurrency },
+  { key: "vacancia", label: "Vacância", color: "#b45309", read: (point) => point.vacancia, format: formatCurrency },
 ]
 
+// Cobertura saiu: é qualidade do dado, não indicador de operação, e já vive no
+// banner de confiança do topo. No lugar entra a inadimplência em percentual, que
+// é a leitura que acompanha a ocupação.
 const PERCENT_SERIES: Series[] = [
   { key: "ocupacao", label: "Ocupação", color: "var(--acr-green)", read: (point) => point.ocupacaoPercentual, format: formatPercent },
-  { key: "cobertura", label: "Cobertura", color: "#9ec7a5", read: (point) => point.coberturaPercentual, format: formatPercent },
+  { key: "inadimplencia", label: "Inadimplentes", color: "#c2410c", read: (point) => point.inadimplenciaPercentual, format: formatPercent },
 ]
 
 const WIDTH = 760
@@ -73,6 +89,16 @@ export function MonthlySeries({
           </span>
         ))}
       </div>
+      {metric !== "percentual" && (
+        <>
+          {realizationIdentity(activePoint) && (
+            <p className="mt-1 text-xs text-acr-muted-2 tabular-nums">{realizationIdentity(activePoint)}</p>
+          )}
+          {reallocationNote(activePoint) && (
+            <p className="mt-0.5 text-xs text-acr-muted-2">{reallocationNote(activePoint)}</p>
+          )}
+        </>
+      )}
 
       {/* O SVG escala junto com a largura: abaixo de ~600px os rótulos ficariam
           ilegíveis, então a caixa rola em vez de encolher o texto. */}

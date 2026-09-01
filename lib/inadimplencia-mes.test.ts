@@ -2,13 +2,19 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { ehInadimplenteDoMes, receitaEsperadaInadimplente, type SnapshotReceita } from "./inadimplencia-mes.ts"
 
-test("detecta inadimplente do mes por marcador INADIMPLENCIA + imovel vinculado", () => {
-  assert.equal(ehInadimplenteDoMes({ imovel_id: "x", observacao: "INADIMPLÊNCIA" }), true)
-  assert.equal(ehInadimplenteDoMes({ imovel_id: "x", observacao: "inadimplencia da unidade" }), true)
-  // sem imovel vinculado nao conta (nao da pra buscar historico)
-  assert.equal(ehInadimplenteDoMes({ imovel_id: null, observacao: "INADIMPLÊNCIA" }), false)
+test("detecta inadimplente do mes pelo marcador INADIMPLENCIA da observacao", () => {
+  assert.equal(ehInadimplenteDoMes({ observacao: "INADIMPLÊNCIA" }), true)
+  assert.equal(ehInadimplenteDoMes({ observacao: "inadimplencia da unidade" }), true)
   // sem marcador nao conta
-  assert.equal(ehInadimplenteDoMes({ imovel_id: "x", observacao: "IPTU de passagem" }), false)
+  assert.equal(ehInadimplenteDoMes({ observacao: "IPTU de passagem" }), false)
+  assert.equal(ehInadimplenteDoMes({ observacao: null }), false)
+})
+
+test("vinculo ausente nao desmarca a inadimplencia declarada pelo documento", () => {
+  // GM I maio/2026: as 23 linhas foram gravadas sem `imovel_id` e a Revisao
+  // exibia R$ 0,00 com 4 unidades marcadas como INADIMPLENCIA no documento.
+  // Quem trata a falta de vinculo e o loader (pendencia), nao este detector.
+  assert.equal(ehInadimplenteDoMes({ observacao: "RESCISÃO. INADIMPLÊNCIA." }), true)
 })
 
 // Cenario real Apto 7 GM II: junho zerado/inadimplente; maio foi o ultimo pago
@@ -32,8 +38,14 @@ test("ignora o proprio mes inadimplente (zerado) ao escolher o valor", () => {
   assert.equal(receitaEsperadaInadimplente(soInadimplente, 716.31), 716.31)
 })
 
-test("sem historico e sem aluguel esperado -> zero", () => {
-  assert.equal(receitaEsperadaInadimplente([], null), 0)
+test("sem historico e sem aluguel esperado -> desconhecido, nunca zero", () => {
+  // Zero afirmaria que a unidade inadimplente nao devia nada. Sem base, o
+  // valor e desconhecido e o loader registra a pendencia.
+  assert.equal(receitaEsperadaInadimplente([], null), null)
+})
+
+test("aluguel esperado zerado continua sendo zero confirmado", () => {
+  assert.equal(receitaEsperadaInadimplente([], 0), 0)
 })
 
 test("cobranca esperada tem precedencia sobre o proxy de receita paga", async () => {

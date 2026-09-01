@@ -14,6 +14,7 @@ import {
   resolveMetricValue,
 } from "../lib/presentation"
 import { EmptyState, Panel, PanelHeader, StatusChip } from "../primitives/dashboard-ui"
+import { ImovelHistoricoDrawer } from "@/components/acr/views/imovel-historico-drawer"
 
 const PAGE_SIZE = 20
 
@@ -31,6 +32,9 @@ type SortDirection = "asc" | "desc"
 
 export function ViewRegistro({ data }: { data: IndicadoresData }) {
   const [query, setQuery] = useState("")
+  // A linha responde "quanto" na competencia; o historico responde "desde
+  // quando". Abrir os dois no mesmo lugar evita sair da tela para conferir.
+  const [aberto, setAberto] = useState<IndicadoresPropertyRevenue | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: "unidade", direction: "asc" })
   const [page, setPage] = useState(1)
 
@@ -55,6 +59,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
   }
 
   return (
+    <>
     <Panel className="min-w-0 overflow-hidden">
       <PanelHeader
         title="Detalhamento por imóvel"
@@ -130,7 +135,16 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                   const references = getFinancialReferences(row)
                   return (
                     <tr key={`${row.imovelId}-${row.competencia}`} className="border-b border-acr-line last:border-0">
-                      <th scope="row" className="px-3 py-3 text-left font-bold text-acr-ink">{row.unidade}</th>
+                      <th scope="row" className="px-3 py-0 text-left font-bold text-acr-ink">
+                        <button
+                          type="button"
+                          onClick={() => setAberto(row)}
+                          title={`Abrir histórico da unidade ${row.unidade}`}
+                          className="-mx-1 w-full rounded px-1 py-3 text-left underline decoration-acr-line decoration-dotted underline-offset-4 transition-colors motion-reduce:transition-none hover:text-acr-green-strong hover:decoration-acr-green focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green"
+                        >
+                          {row.unidade}
+                        </button>
+                      </th>
                       <td className="max-w-52 px-3 py-3 text-acr-muted-2"><span className="block truncate">{row.empreendimentoNome}</span></td>
                       <td className="max-w-52 px-3 py-3">
                         <span className="block truncate font-medium text-acr-ink">{row.inquilinoNome ?? "—"}</span>
@@ -156,7 +170,13 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
           </div>
 
           <div className="divide-y divide-acr-line md:hidden">
-            {visible.map((row) => <MobileRevenueRow key={`${row.imovelId}-${row.competencia}`} row={row} />)}
+            {visible.map((row) => (
+              <MobileRevenueRow
+                key={`${row.imovelId}-${row.competencia}`}
+                row={row}
+                onAbrir={() => setAberto(row)}
+              />
+            ))}
           </div>
 
           <Pagination page={safePage} pageCount={pageCount} onPageChange={setPage} />
@@ -168,7 +188,45 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
         />
       )}
     </Panel>
+    {aberto && (
+      <ImovelHistoricoDrawer
+        empreendimentoId={aberto.empreendimentoId}
+        empreendimentoNome={aberto.empreendimentoNome}
+        unidade={aberto.unidade}
+        visaoGeral={buildVisaoGeral(aberto)}
+        onClose={() => setAberto(null)}
+      />
+    )}
+    </>
   )
+}
+
+// Visao geral da competencia em tela: os mesmos numeros da linha, sem recalcular
+// nada, para o drawer abrir respondendo "como esta este mes" antes do historico.
+function buildVisaoGeral(row: IndicadoresPropertyRevenue) {
+  const references = getFinancialReferences(row)
+  return {
+    titulo: `Visão geral · ${formatCompetenceLabel(row.competencia)}`,
+    itens: [
+      { label: "Situação", valor: occupancyLabel(row.statusOcupacao) },
+      { label: "Inquilino", valor: row.inquilinoNome ?? "—" },
+      { label: "Aluguel contratado", valor: formatContractedRent(row.aluguelEsperado, row.modeloReceita) },
+      { label: "Recebido da competência", valor: formatCurrency(row.aluguelRecebidoCompetencia) },
+      { label: "Atrasos recuperados", valor: formatCurrency(resolveMetricValue(row.atrasosRecuperados)) },
+      { label: "Outros recebimentos", valor: formatCurrency(resolveMetricValue(row.outrosRecebimentos)) },
+      { label: "Receitas do fechamento", valor: formatCurrency(row.receitaTotal) },
+      { label: "Comissão adm.", valor: formatCurrency(row.comissaoAdministracao) },
+      { label: "Repasse calculado", valor: formatCurrency(row.repasseApurado) },
+      { label: "Competência do aluguel", valor: references.rentCompetence },
+      { label: "Recebido em", valor: references.receiptCompetence },
+      { label: "Vence dia", valor: references.dueDay },
+    ],
+  }
+}
+
+function formatCompetenceLabel(competencia: string) {
+  const [ano, mes] = competencia.split("-")
+  return `${mes}/${ano}`
 }
 
 function normalizeSearch(value: string): string {
@@ -239,7 +297,7 @@ function QualityCell({ row }: { row: IndicadoresPropertyRevenue }) {
   )
 }
 
-function MobileRevenueRow({ row }: { row: IndicadoresPropertyRevenue }) {
+function MobileRevenueRow({ row, onAbrir }: { row: IndicadoresPropertyRevenue; onAbrir: () => void }) {
   const references = getFinancialReferences(row)
   return (
     <details className="group px-4 py-2">
@@ -267,6 +325,15 @@ function MobileRevenueRow({ row }: { row: IndicadoresPropertyRevenue }) {
         <MobileValue label="Recebido em" value={references.receiptCompetence} />
         <MobileValue label="Vence dia" value={references.dueDay} />
         <MobileValue label="Origem" value={<QualityCell row={row} />} />
+        <div className="col-span-2">
+          <button
+            type="button"
+            onClick={onAbrir}
+            className="min-h-11 w-full rounded-lg border border-acr-line bg-white px-3 text-sm font-semibold text-acr-green-strong transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green"
+          >
+            Ver histórico do imóvel
+          </button>
+        </div>
       </div>
     </details>
   )

@@ -21,7 +21,10 @@ import { SegmentedBar, type BarSegment } from "../charts/segmented-bar"
 import {
   confidenceLabel,
   filterMonthlySeriesPeriod,
+  formatAcumuladaCobertura,
   formatCount,
+  describeConference,
+  formatDivergenciaCadastro,
   formatCurrency,
   formatHojeSincronizado,
   formatPercent,
@@ -61,18 +64,19 @@ export function ViewGeral({
   onMetricChange: (metric: DashboardMetric) => void
 }) {
   const { resumo, ponteFinanceira: bridge, realizacaoAluguel: realizacao } = data
+  const notaAcumulada = formatAcumuladaCobertura(resumo.inadimplenciaAcumuladaCobertura)
   const [seriesPeriod, setSeriesPeriod] = useState<MonthlySeriesPeriod>("12")
   const [customRange, setCustomRange] = useState<SeriesRange>(() => initialSeriesRange(data.serieMensal))
   const resolvedRange = resolveSeriesRange(data.serieMensal, customRange)
   const visibleSeries = filterMonthlySeriesPeriod(data.serieMensal, seriesPeriod, resolvedRange)
   const resultado = resolveMetricValue(resumo.repasseCalculado, resumo.repasseApurado)
   const comprovantes = data.cobertura.comprovantes
-  const conference = describeConference(
-    resumo.repasseCalculadoComprovado,
-    resumo.repasseConfirmadoBanco,
+  const conference = describeConference({
+    comprovado: resumo.repasseCalculadoComprovado,
+    banco: resumo.repasseConfirmadoBanco,
     comprovantes,
-    getConfidenceStatus(data),
-  )
+    status: getConfidenceStatus(data),
+  })
 
   const comissoes = resolveMetricValue(
     bridge.comissoes,
@@ -166,9 +170,13 @@ export function ViewGeral({
                 title: "Inadimplência acumulada",
                 definition: "Aluguel de meses anteriores que venceu e segue sem pagamento.",
                 limitation:
-                  "Aparece como “—” quando o documento da competência não traz a seção de dívidas acumuladas: sem fonte própria, o valor é desconhecido e não zero. A cobertura lista quais fechamentos estão nessa condição.",
+                  "Soma o que os documentos da competência declaram. Quando parte dos fechamentos não traz a seção de dívidas, o valor fala apenas pelos que trazem e a legenda diz quantos são — os demais aparecem na cobertura. Só fica “—” quando nenhum documento traz a seção e o histórico do sistema também não permite derivar o saldo: aí o valor é desconhecido, não zero.",
               }}
-            />
+            >
+              {notaAcumulada && (
+                <p className="mt-2 text-xs text-acr-muted-2">{notaAcumulada}</p>
+              )}
+            </Metric>
             <Metric
               label="Vacância"
               value={formatCurrency(realizacao.vacancia)}
@@ -202,7 +210,11 @@ export function ViewGeral({
           </Metric>
           <div className="mt-5 space-y-4">
             <OccupancyDistribution label={data.meta.competenciaLabel} occupancy={resumo.ocupacaoCompetencia} />
-            <OccupancyDistribution label={formatHojeSincronizado(data.meta.atualizadoEm)} occupancy={resumo.ocupacaoHoje} />
+            <OccupancyDistribution
+              label={formatHojeSincronizado(data.meta.cadastroAtualizadoEm)}
+              occupancy={resumo.ocupacaoHoje}
+              note={formatDivergenciaCadastro(resumo.divergenciaCadastroCompetencia)}
+            />
           </div>
         </Panel>
       </div>
@@ -274,14 +286,16 @@ export function ViewGeral({
             </div>
           )}
           help={metric === "valor" ? {
-            short: "Cada mês conta na competência de origem do aluguel.",
-            title: "Evolução mensal",
-            definition: "Cada mês soma os valores na competência de origem do aluguel, não no mês em que o dinheiro entrou. Um aluguel de março pago em maio conta em março.",
-            limitation: "Por isso um mês pode diferir do resultado do topo, que segue o caixa do fechamento.",
+            short: "Quanto do aluguel contratado foi realizado em cada mês.",
+            title: "Realização do aluguel, mês a mês",
+            definition: "O aluguel contratado é o teto do mês; o recebido da competência é o que entrou por ele; vacância e inadimplência são as duas perdas que explicam a distância entre os dois. A conta escrita sob a legenda fecha a identidade, incluindo descontos e ajustes quando existem.",
+            source: "Vigências para o contratado; histórico mensal por imóvel para o recebido e as perdas.",
+            limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor: aparece como nota abaixo da legenda, para o número continuar batendo com o documento.",
           } : {
-            short: "Ocupação e cobertura do histórico mês a mês.",
-            title: "Evolução mensal",
-            definition: "Ocupação e cobertura do histórico mensal em cada competência.",
+            short: "Ocupação e inadimplência do histórico mês a mês.",
+            title: "Evolução mensal em percentual",
+            definition: "Ocupação e percentual de unidades inadimplentes em cada competência, ambos sobre os imóveis classificados no mês.",
+            limitation: "A cobertura do dado saiu daqui: ela é qualidade da extração, não da operação, e vive no banner de confiança do topo.",
           }}
         />
         {seriesPeriod === "custom" && data.serieMensal.length > 0 && (
@@ -447,7 +461,15 @@ function isMonthlySeriesPeriod(value: string | null): value is MonthlySeriesPeri
   return value === "3" || value === "6" || value === "12" || value === "custom"
 }
 
-function OccupancyDistribution({ label, occupancy }: { label: string; occupancy: IndicadoresOccupancy }) {
+function OccupancyDistribution({
+  label,
+  occupancy,
+  note,
+}: {
+  label: string
+  occupancy: IndicadoresOccupancy
+  note?: string | null
+}) {
   const segments: BarSegment[] = OCCUPANCY_FILLS.filter((item) => (occupancy[item.key] as number) > 0).map((item) => ({
     key: item.key,
     label: item.label,
@@ -463,29 +485,8 @@ function OccupancyDistribution({ label, occupancy }: { label: string; occupancy:
         <span className="text-xs font-semibold text-acr-ink tabular-nums">{formatPercent(occupancy.percentual)}</span>
       </div>
       <SegmentedBar segments={segments} caption={`Situação dos imóveis em ${label}`} className="mt-2" />
+      {note && <p className="mt-1.5 text-xs text-acr-muted-2">{note}</p>}
     </div>
   )
 }
 
-// O veredito só é honesto entre iguais: compara-se o resultado dos fechamentos
-// que TÊM comprovante contra o que o banco confirmou. Medir o calculado total
-// contra o comprovado transformaria comprovante ausente em divergência — falso
-// alarme numa tela cujo trabalho é dizer se o mês pode ser confiado. Quando
-// ainda falta comprovante, "confere" é verdadeiro mas não é final: fica neutro,
-// nunca verde, e a contagem de comprovantes acompanha o selo.
-function describeConference(
-  comprovado: number | null,
-  banco: number | null,
-  comprovantes: { presentes: number; ausentes: number; esperados: number },
-  status: ReturnType<typeof getConfidenceStatus>,
-): { label: string; tone: "positive" | "warning" | "danger" | "neutral" } {
-  if (comprovado !== null && banco !== null) {
-    const delta = Math.abs(comprovado - banco)
-    if (delta > 0.01) return { label: `Difere do banco em ${formatCurrency(delta)}`, tone: "danger" }
-    return { label: "Confere com o banco", tone: comprovantes.ausentes === 0 ? "positive" : "neutral" }
-  }
-  if (status === "confirmado") return { label: confidenceLabel(status), tone: "positive" }
-  if (status === "com_divergencia") return { label: confidenceLabel(status), tone: "danger" }
-  if (status === "incompleto") return { label: confidenceLabel(status), tone: "warning" }
-  return { label: confidenceLabel(status), tone: "neutral" }
-}

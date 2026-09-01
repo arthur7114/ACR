@@ -23,10 +23,11 @@ import {
   formatCount,
   formatCurrency,
   occupancyLabel,
+  type HeatGroup,
   type HeatGroupCell,
   type HeatMetric,
 } from "../lib/presentation"
-import { EmptyState, Metric, Panel, PanelHeader, StatusChip, ToggleButton } from "../primitives/dashboard-ui"
+import { EmptyState, Metric, Panel, PanelHeader, ToggleButton } from "../primitives/dashboard-ui"
 
 export type { HeatMetric }
 
@@ -93,9 +94,6 @@ export function ViewMapa({
                         {month.label}
                       </th>
                     ))}
-                    <th scope="col" className="sticky right-0 top-0 z-30 min-w-28 border-b border-l-2 border-acr-green/25 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-green-strong">
-                      Hoje
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -127,21 +125,21 @@ export function ViewMapa({
                             <GroupCell
                               key={cell.competencia}
                               cell={cell}
-                              tenantName={group.linhas.length === 1
-                                ? group.linhas[0].celulas.find((candidate) => candidate.competencia === cell.competencia)?.inquilinoNome ?? null
-                                : undefined}
+                              tenantName={inquilinoDaUnicaUnidade(group, cell.competencia)}
                             />
                           ))}
-                          <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-3 text-center font-bold text-acr-ink tabular-nums">
-                            {group.unidadesEmRiscoHoje > 0 ? formatCount(group.unidadesEmRiscoHoje) : "—"}
-                          </td>
                         </tr>
                         {isOpen && group.linhas.map((row) => (
                           <tr key={`${group.empreendimentoId}-${row.imovelId}`}>
                             <th scope="row" className="sticky left-0 z-10 min-w-64 max-w-64 border-b border-r border-acr-line bg-acr-page py-2.5 pl-10 pr-4 text-left">
                               <span className="block truncate font-semibold text-acr-ink">{row.unidade}</span>
-                              {row.inquilinoNome && (
-                                <span className="mt-0.5 block truncate font-normal text-acr-muted-2">{row.inquilinoNome}</span>
+                              {row.inquilinoAtual && (
+                                <span
+                                  className="mt-0.5 block truncate font-normal text-acr-muted-2"
+                                  title={row.inquilinoAtual}
+                                >
+                                  Inquilino atual: {row.inquilinoAtual}
+                                </span>
                               )}
                             </th>
                             {data.heat.meses.map((month) => (
@@ -153,9 +151,6 @@ export function ViewMapa({
                                 unit={row.unidade}
                               />
                             ))}
-                            <td className="sticky right-0 z-10 border-b border-l-2 border-acr-green/20 bg-acr-green-tint px-3 py-2.5 text-center">
-                              <StatusChip status={row.hoje} />
-                            </td>
                           </tr>
                         ))}
                       </Fragment>
@@ -255,6 +250,16 @@ function DelinquencyPanel({ data }: { data: IndicadoresData }) {
   )
 }
 
+// Empreendimento de uma unidade so mostra o inquilino na propria linha do grupo.
+// Vago nao tem inquilino: devolve `undefined` para a celula nao imprimir nome
+// nenhum, em vez de nomear quem morava ali ao lado de "Vago".
+function inquilinoDaUnicaUnidade(group: HeatGroup, competencia: string) {
+  if (group.linhas.length !== 1) return undefined
+  const celula = group.linhas[0].celulas.find((candidate) => candidate.competencia === competencia)
+  if (!celula || celula.statusOcupacao === "vago") return undefined
+  return celula.inquilinoNome ?? null
+}
+
 function GroupCell({
   cell,
   tenantName,
@@ -316,11 +321,13 @@ function UnitCell({
 
   return (
     <td
-      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}, ${tenantAriaLabel(cell.inquilinoNome)}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
+      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${status === "vago" ? "" : `, ${tenantAriaLabel(cell.inquilinoNome)}`}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
       className={cn("min-w-32 max-w-32 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums", heatTone(percentage))}
     >
       <span className="block font-semibold">{occupancyLabel(status)}</span>
-      <TenantName name={cell.inquilinoNome} />
+      {/* Unidade vaga nao tem inquilino: imprimir o nome de quem morava ao lado
+          de "Vago" descrevia duas coisas contraditorias na mesma celula. */}
+      {status !== "vago" && <TenantName name={cell.inquilinoNome} />}
       {detail.kind === "detalhado" && <span className="mt-0.5 block text-[10px]">{formatCurrency(cell.valor)}</span>}
     </td>
   )

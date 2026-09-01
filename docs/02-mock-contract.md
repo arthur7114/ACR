@@ -108,6 +108,69 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
   internos da avaliação não são repetidos como ressalva textual no topo; os
   valores ainda sem classificação permanecem visíveis na conciliação.
 
+### Ajuste registrado — evolução mensal, mapa e detalhamento (2026-09-01)
+
+- Ponto alterado, 1: a **evolução mensal em valores** deixa de plotar
+  "Receitas", "Aluguel recebido" e "Repasse" e passa a medir a realização do
+  aluguel contratado: teto contratado, recebido da competência, vacância e
+  inadimplência, com a identidade escrita sob a legenda.
+- Por que: as três séries antigas não eram comparáveis no mesmo par de eixos.
+  "Receitas" e "Aluguel recebido" eram por competência de origem e "Repasse" por
+  caixa — em maio/2026 o descasamento era de R$ 2.846,67 — e "Receitas" somava
+  aluguel, acordos, rescisões, intermediação e o reembolso de água/IPTU/seguro
+  que entra e sai como despesa. A distância vertical entre as linhas, que é o
+  que o olho lê primeiro num gráfico de linhas, não descrevia nada.
+- Melhoria substituta: quatro séries de uma mesma identidade, verificada nos três
+  meses reais, mais a conta escrita citando só os termos que existem no mês. A
+  reatribuição por competência sai do valor e vira nota, então cada ponto volta a
+  bater com o documento do mês (maio: R$ 85.265,22 em vez de R$ 88.111,89).
+- Ponto alterado, 2: no **modo percentual**, sai `Cobertura` e entra
+  `Inadimplentes`. Cobertura é qualidade da extração, não indicador de operação, e
+  já é declarada no banner de confiança do topo.
+- Ponto alterado, 3: no **mapa de riscos**, unidade vaga não exibe nome de
+  inquilino; o rótulo da linha declara "Inquilino atual: <nome>", resolvido pela
+  evidência mais recente e não pelo cadastro; e a coluna "Hoje" sai, porque a
+  competência exibida já vem do filtro.
+- Ponto alterado, 4: no **detalhamento por imóvel**, a unidade é clicável e abre
+  o drawer de histórico já existente, com uma visão geral da competência em tela
+  no topo.
+- Critérios: CA-IND31 a CA-IND36 em `docs/06-acceptance-criteria.md`.
+- Docs atualizados: este contrato, `docs/06-acceptance-criteria.md` e
+  `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — ausência que esconde dado (2026-09-01)
+
+- Ponto alterado: três lugares deixam de usar "—"/ocultação como resposta e
+  passam a mostrar o que existe com a cobertura declarada ao lado.
+  1. **Inadimplência acumulada (Indicadores):** exibe a soma declarada pelos
+     fechamentos que trazem a seção de dívidas, com a legenda
+     "N de M fechamentos com a seção de dívidas" quando o número não fala pelo
+     escopo inteiro.
+  2. **Inadimplência do mês (Revisão):** o bloco aparece sempre que o documento
+     marcar alguma unidade como inadimplente. Unidade que não puder ser apurada
+     entra como pendência nominal e o valor vira "—" em vez de R$ 0,00; antes o
+     bloco simplesmente não era renderizado.
+  3. **Ocupação, barra "Hoje" (Indicadores):** a data é a do próprio cadastro, e
+     a barra declara em quantas unidades a posição cadastral discorda da
+     competência exibida.
+- Por que: a semântica "`—` é ausência" continua válida, mas estava sendo usada
+  para o caso errado. Um fechamento sem a seção de dívidas anulava a acumulada
+  de todos (jul/2026: R$ 56.199,25 declarados em 5 de 8 apareciam como "—"), uma
+  linha sem `imovel_id` zerava a inadimplência do mês da Revisão (GM I maio: 4
+  unidades marcadas no documento, R$ 0,00 na tela) e o rótulo do cadastro
+  mostrava a data dos fechamentos, anunciando como "sincronizado hoje" uma
+  posição de 12/08. Esconder o que se sabe não é conservador: é uma afirmação
+  falsa de ausência.
+- Melhoria substituta: valor parcial + cobertura explícita, no mesmo idioma de
+  cobertura que o painel já usa para ocupação ("percentual, classificados e
+  cobertura lado a lado"). Nenhuma métrica passa a afirmar zero onde há
+  desconhecido, e a lacuna `inadimplencia_nao_extraida` continua nominando quem
+  ficou de fora.
+- Critérios: CA-IND27, CA-IND28, CA-IND29 (revisa CA-IND22) e CA-IND30 (revisa
+  CA-IND21) em `docs/06-acceptance-criteria.md`.
+- Docs atualizados: este contrato, `docs/06-acceptance-criteria.md` e
+  `docs/12-execution-roadmap.md`.
+
 ### Ajuste registrado — locação por app na ocupação (2026-07-31)
 
 - Ponto alterado: a ocupação ganha a categoria própria `Alugado por app`, separada de `Ocupado`, com etiqueta e contagem próprias nos blocos de ocupação, na tabela `Detalhamento por imóvel` e no mapa `Riscos por imóvel`. Conta como ocupada no numerador do percentual.

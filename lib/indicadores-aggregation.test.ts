@@ -885,6 +885,39 @@ test("não usa o inquilino atual como fallback para a competência histórica", 
   assert.equal(result.heat.linhas[0].celulas[0].inquilinoNome, null)
 })
 
+test("inquilino atual da linha vem da evidencia mais recente, nao do cadastro", () => {
+  // O cadastro so e reescrito por sincronizacao manual e pode estar mais antigo
+  // que o ultimo mes processado: em jul/2026 a unidade 3 do GM I mostrava
+  // DANDARA, do cadastro de 07/07, enquanto o documento de julho ja nomeava
+  // VICTOR. O rotulo da linha do mapa passa a declarar o mais recente.
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ inquilinoNome: "Inquilino do cadastro" })],
+    snapshots: [makeSnapshot({ inquilinoNome: "Inquilino do mes" })],
+  }))
+
+  assert.equal(result.heat.linhas[0].inquilinoAtual, "Inquilino do mes")
+  // O campo do cadastro segue disponivel, sem virar a fonte do rotulo.
+  assert.equal(result.heat.linhas[0].inquilinoNome, "Inquilino do cadastro")
+})
+
+test("unidade vaga na evidencia mais recente nao tem inquilino atual", () => {
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ inquilinoNome: "Quem morava aqui" })],
+    snapshots: [makeSnapshot({ statusOcupacao: "vago", inquilinoNome: "Quem morava aqui" })],
+  }))
+
+  assert.equal(result.heat.linhas[0].inquilinoAtual, null)
+})
+
+test("sem snapshot, o inquilino atual cai no cadastro", () => {
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ inquilinoNome: "Inquilino do cadastro" })],
+    snapshots: [],
+  }))
+
+  assert.equal(result.heat.linhas[0].inquilinoAtual, "Inquilino do cadastro")
+})
+
 test("preserva o inquilino de cada competência nas células do histórico", () => {
   const result = aggregateIndicadores(makeInput({
     competencia: "2026-06-01",
@@ -943,7 +976,7 @@ test("filtro por imóvel recalcula dados atribuíveis e anula campos do fechamen
 
 // --- Reatribuicao por competencia original (caso Joao Cordeiro maio/2026) ---
 
-test("serie mensal atribui linha recebida em maio a competencia original de marco", () => {
+test("serie mensal expoe a reatribuicao como ajuste, sem alterar o valor do mes", () => {
   const closings = [
     makeClosing({
       id: "fechamento-marco",
@@ -978,12 +1011,17 @@ test("serie mensal atribui linha recebida em maio a competencia original de marc
 
   const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
   const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
-  assert.equal(marco.receitaTotal, 1_882.64)
-  assert.equal(marco.aluguelRecebido, 1_788.22)
+  // O valor plotado e o que o fechamento declara — dobrar a receita de marco
+  // com dinheiro que entrou em maio produzia um numero que nao batia com
+  // nenhum documento (maio/2026 real: R$ 88.111,89 contra 85.265,22 dos
+  // fechamentos). A reatribuicao continua calculada e visivel no ajuste, que a
+  // tela mostra como nota do mes.
+  assert.equal(marco.receitaTotal, 1_000)
+  assert.equal(marco.aluguelRecebido, 1_000)
   assert.equal(marco.competenciaAjusteReceita, 882.64)
   assert.equal(marco.competenciaAjusteAluguel, 788.22)
-  assert.equal(maio.receitaTotal, 1_213.27)
-  assert.equal(maio.aluguelRecebido, 1_100)
+  assert.equal(maio.receitaTotal, 2_095.91)
+  assert.equal(maio.aluguelRecebido, 1_888.22)
   assert.equal(maio.competenciaAjusteReceita, -882.64)
   assert.equal(maio.competenciaAjusteAluguel, -788.22)
   // O caixa do mes (repasse) e o resumo da competencia corrente nao mudam.
@@ -991,7 +1029,7 @@ test("serie mensal atribui linha recebida em maio a competencia original de marc
   assert.equal(result.resumo.receitaTotal, 2_095.91)
 })
 
-test("atraso pago em maio move receita para marco sem inventar aluguel recebido", () => {
+test("atraso pago em maio aparece como ajuste de marco, sem inventar aluguel recebido", () => {
   // Caso Terreno Castelao: aluguel de marco quitado em maio via inadimplencia
   // paga (acordos tipo atraso); a linha corrente de maio esta zerada.
   const closings = [
@@ -1028,8 +1066,8 @@ test("atraso pago em maio move receita para marco sem inventar aluguel recebido"
 
   const marco = result.serieMensal.find((point) => point.competencia === "2026-03-01")!
   const maio = result.serieMensal.find((point) => point.competencia === "2026-05-01")!
-  assert.equal(marco.receitaTotal, 1_817.36)
-  assert.equal(maio.receitaTotal, 107.35)
+  assert.equal(marco.receitaTotal, 100)
+  assert.equal(maio.receitaTotal, 1_824.71)
   // Atraso nunca compos o aluguel recebido de nenhum mes: metrica intacta.
   assert.equal(marco.aluguelRecebido, 0)
   assert.equal(maio.aluguelRecebido, 0)
@@ -1082,7 +1120,7 @@ test("atraso com competencia original fora da janela nao inventa mes na serie", 
   assert.equal(maio.receitaTotal, 776.97)
 })
 
-test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () => {
+test("filtro por imovel calcula o ajuste apenas das linhas do imovel e ignora acordos", () => {
   const propertyA = makeProperty({ id: "imovel-a", unidade: "101" })
   const propertyB = makeProperty({ id: "imovel-b", unidade: "102" })
   const closings = [
@@ -1123,8 +1161,8 @@ test("filtro por imovel reatribui apenas linhas do imovel e ignora acordos", () 
   // So a linha do imovel filtrado se move; a linha do imovel-b e o acordo nao.
   assert.equal(marco.competenciaAjusteReceita, 900)
   assert.equal(maio.competenciaAjusteReceita, -900)
-  assert.equal(marco.receitaTotal, 900)
-  assert.equal(maio.receitaTotal, 0)
+  assert.equal(marco.receitaTotal, 0)
+  assert.equal(maio.receitaTotal, 900)
 })
 
 test("deriva cobertura da vigência histórica e ignora regra sem imóvel na carteira", () => {
@@ -1644,6 +1682,78 @@ test("inadimplencia acumulada nao extraida e desconhecida, nunca zero confirmado
   const gap = result.cobertura.lacunas.find((l) => l.codigo === "inadimplencia_nao_extraida")
   assert.equal(gap?.quantidade, 1)
   assert.match(gap?.detalhes.join(" ") ?? "", /empreendimento-a|Empreendimento/i)
+})
+
+test("conta as unidades em que o cadastro discorda da competencia exibida", () => {
+  // Julho/2026 real: a barra do mes dizia 87,2% e a do cadastro 94,1%, com 22
+  // unidades em estados diferentes. Sem esse numero, a diferenca entre as duas
+  // barras se le como erro de calculo em vez de fontes com datas diferentes.
+  const iguais = aggregateIndicadores(makeInput())
+  assert.equal(iguais.resumo.divergenciaCadastroCompetencia, 0)
+
+  const divergente = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ statusAtual: "ocupado" })],
+    snapshots: [makeSnapshot({ statusOcupacao: "vago" })],
+  }))
+  assert.equal(divergente.resumo.divergenciaCadastroCompetencia, 1)
+})
+
+test("sem snapshot na competencia nao ha o que comparar com o cadastro", () => {
+  const result = aggregateIndicadores(makeInput({ snapshots: [] }))
+  assert.equal(result.resumo.divergenciaCadastroCompetencia, null)
+})
+
+test("acumulada parcial: soma quem declarou e informa sobre quantos fechamentos fala", () => {
+  // Julho/2026 real: 5 de 8 empreendimentos declaram a secao (R$ 56.199,25) e 3
+  // nao declaram. Anular tudo por causa dos 3 escondia os R$ 56 mil atras de um
+  // "—". O numero agora e o declarado, com a cobertura ao lado.
+  const declara = makeClosing({
+    analiseCompleta: makeAnalysis({ inadimplencias: [{ valor: 500 }] }),
+  })
+  const naoDeclara = makeClosing({
+    ...makePair("sem-secao"),
+    id: "fechamento-sem-secao",
+    analiseCompleta: makeAnalysis({ camposAusentes: ["inadimplencias_acumuladas"] }),
+  })
+
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [makeRule(), makeRule(makePair("sem-secao"))],
+    fechamentos: [declara, naoDeclara],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 500)
+  assert.deepEqual(result.resumo.inadimplenciaAcumuladaCobertura, {
+    declarados: 1,
+    total: 2,
+    origem: "documento",
+  })
+  // A lacuna continua nomeando quem ficou de fora, senao o parcial vira total.
+  const gap = result.cobertura.lacunas.find((l) => l.codigo === "inadimplencia_nao_extraida")
+  assert.equal(gap?.quantidade, 1)
+})
+
+test("cobertura total quando todos os fechamentos declaram a secao", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({ analiseCompleta: makeAnalysis({ inadimplencias: [{ valor: 300 }] }) })],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 300)
+  assert.deepEqual(result.resumo.inadimplenciaAcumuladaCobertura, {
+    declarados: 1,
+    total: 1,
+    origem: "documento",
+  })
+})
+
+test("acumulada desconhecida nao inventa cobertura", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ camposAusentes: ["inadimplencias_acumuladas"] }),
+    })],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, null)
+  assert.equal(result.resumo.inadimplenciaAcumuladaCobertura, null)
 })
 
 test("inadimplencia acumulada zero permanece zero quando a secao foi extraida", () => {

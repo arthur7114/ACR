@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { purgeFechamentos } from "@/lib/server/cadastros-delete"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
-import { loadFechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
+import { attachExistingImovelLinks, loadFechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import { loadInadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
@@ -44,7 +44,19 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "Fechamento nao encontrado." }, { status: 404 })
   }
 
-  const analiseCompleta = (data.analise_completa as PackageAnalysis | null) ?? null
+  // Resolve o vinculo com o cadastro na leitura, com a mesma regra dos fluxos de
+  // gravacao (casamento exato de codigo, um unico candidato). Analises gravadas
+  // por caminhos que nao vinculam — reprocessamento por planilha, por exemplo —
+  // chegavam aqui sem `imovel_id`, o que zerava a inadimplencia do mes e acendia
+  // "receitas sem imovel vinculado" na tela. Somente leitura: nada e persistido.
+  const analiseCompletaGravada = (data.analise_completa as PackageAnalysis | null) ?? null
+  const analiseCompleta = analiseCompletaGravada
+    ? await attachExistingImovelLinks(
+        supabase,
+        { imobiliariaId: data.imobiliaria_id, empreendimentoId: data.empreendimento_id },
+        analiseCompletaGravada,
+      )
+    : null
   const { data: regraComercial } = await supabase
     .from("regras_comerciais")
     .select("id,taxa_administracao_percent,taxa_intermediacao_percent,ativo")

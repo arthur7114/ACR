@@ -329,6 +329,9 @@ export async function getIndicadores(query: IndicadoresQuery = {}): Promise<Indi
       : "indicadores-operacionais-v1-rollback",
     competencia,
     atualizadoEm: latestUpdate(loaded.properties, loaded.closings, snapshotData ?? []),
+    // Só o cadastro: o rótulo da posição "Hoje" fala do cadastro, e emprestar a
+    // data dos fechamentos o fazia parecer sincronizado hoje.
+    cadastroAtualizadoEm: latestPropertyUpdate(loaded.properties),
     vigenciasDisponiveis: v2Enabled ? loaded.vigenciesAvailable : undefined,
     filtros: {
       empresaId: query.empresaId ?? null,
@@ -721,6 +724,12 @@ function latestCompetence(closings: ClosingRow[]) {
   if (latest) return latest
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
+// Sem imóvel no escopo a data e desconhecida — nunca "agora", que e o que
+// `latestUpdate` devolve como ultimo recurso e o que produzia o rotulo falso.
+function latestPropertyUpdate(properties: Array<{ atualizado_em: string }>) {
+  return properties.map((row) => row.atualizado_em).sort().at(-1) ?? null
 }
 
 function latestUpdate(

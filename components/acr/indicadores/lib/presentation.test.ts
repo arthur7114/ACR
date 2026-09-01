@@ -45,6 +45,7 @@ function makeRow(overrides: Partial<IndicadoresHeatRow> & { imovelId: string }):
   return {
     unidade: overrides.imovelId,
     inquilinoNome: null,
+    inquilinoAtual: null,
     empreendimentoId: "emp-1",
     empreendimentoNome: "Grand Messejana I",
     hoje: "ocupado",
@@ -263,7 +264,6 @@ test("mapa por empreendimento: vacância usa o próprio status de risco e ordena
   // Inadimplente não é risco de vacância.
   assert.equal(groups[0].celulas[0].unidadesEmRisco, 0)
   assert.equal(groups[1].celulas[0].unidadesEmRisco, 1)
-  assert.equal(groups[1].unidadesEmRiscoHoje, 1)
 })
 
 test("resume a cobertura histórica de cada unidade sem jargão técnico", () => {
@@ -332,6 +332,9 @@ test("separa competência do aluguel, recebimento e vencimento", () => {
 
 test("mantém a nomenclatura de negócio e remove termos técnicos da interface", () => {
   const files = [
+    // A copia de interface tambem vive aqui: `describeConference` era duplicada
+    // em view-geral e o teste passava por causa da duplicata.
+    "./presentation.ts",
     "../primitives/dashboard-ui.tsx",
     "../tabs/view-geral.tsx",
     "../tabs/view-receita.tsx",
@@ -409,4 +412,124 @@ test("nota de cobranca esperada aparece apenas quando difere da base do aluguel"
   assert.equal(notaCobrancaEsperada(500, 500), null)
   assert.equal(notaCobrancaEsperada(null, 414.86), null)
   assert.equal(notaCobrancaEsperada(466.93, null), null)
+})
+
+test("nota de cobertura da acumulada so aparece quando o numero nao fala pelo escopo inteiro", async () => {
+  const { formatAcumuladaCobertura } = await import("./presentation.ts")
+  // Escopo inteiro declarou: o valor fala por todos, nota nenhuma.
+  assert.equal(
+    formatAcumuladaCobertura({ declarados: 8, total: 8, origem: "documento" }),
+    null,
+  )
+  // Parcial: precisa dizer sobre quantos fechamentos fala.
+  assert.match(
+    formatAcumuladaCobertura({ declarados: 5, total: 8, origem: "documento" }) ?? "",
+    /5 de 8/,
+  )
+  // Derivada: a origem muda a leitura, mesmo cobrindo tudo.
+  assert.match(
+    formatAcumuladaCobertura({ declarados: 0, total: 3, origem: "historico" }) ?? "",
+    /histórico/i,
+  )
+  // Desconhecida: sem cobertura, a tela mostra "—" e nao inventa nota.
+  assert.equal(formatAcumuladaCobertura(null), null)
+})
+
+test("nota de divergencia do cadastro so aparece quando ha divergencia", async () => {
+  const { formatDivergenciaCadastro } = await import("./presentation.ts")
+  assert.equal(formatDivergenciaCadastro(0), null)
+  assert.equal(formatDivergenciaCadastro(null), null)
+  assert.match(formatDivergenciaCadastro(1) ?? "", /^1 imóvel /)
+  assert.match(formatDivergenciaCadastro(22) ?? "", /22 imóveis/)
+})
+
+test("veredito do banco ignora diferenca que arredonda para um centavo", async () => {
+  const { describeConference } = await import("./presentation.ts")
+  const comprovantes = { presentes: 8, ausentes: 0, esperados: 8 }
+  // Caso real de jul/2026: 56.588,90 contra 56.588,89 dava delta
+  // 0,010000000002 em ponto flutuante e acendia alarme de divergencia.
+  const centavo = describeConference({
+    comprovado: 56588.9,
+    banco: 56588.89,
+    comprovantes,
+    status: "confirmado",
+  })
+  assert.equal(centavo.tone, "positive")
+  assert.match(centavo.label, /Confere com o banco/)
+
+  // Dois centavos ja e divergencia e continua acendendo.
+  const doisCentavos = describeConference({
+    comprovado: 56588.91,
+    banco: 56588.89,
+    comprovantes,
+    status: "confirmado",
+  })
+  assert.equal(doisCentavos.tone, "danger")
+  assert.match(doisCentavos.label, /Difere do banco/)
+})
+
+test("identidade da realizacao fecha o gráfico e cita apenas o que existe no mes", async () => {
+  const { realizationIdentity } = await import("./presentation.ts")
+  const base = {
+    competencia: "2026-07-01",
+    label: "jul. de 2026",
+    receitaTotal: 85273.78,
+    aluguelContratado: 86129.65,
+    aluguelRecebido: 67484.3,
+    repasseApurado: 72737.54,
+    vacancia: 11425.81,
+    inadimplencia: 6166.84,
+    descontos: 20,
+    outrosAjustes: -1032.7,
+    ocupacaoPercentual: 87.2,
+    inadimplenciaPercentual: 6,
+    coberturaPercentual: 99.2,
+    qualidade: "completa" as const,
+    competenciaAjusteReceita: -466.93,
+    competenciaAjusteAluguel: 0,
+    statusConfianca: "confirmado" as const,
+  }
+  const texto = realizationIdentity(base) ?? ""
+  assert.match(texto, /contratado/)
+  assert.match(texto, /vacância/)
+  assert.match(texto, /inadimplência/)
+  assert.match(texto, /descontos/)
+  assert.match(texto, /− ajustes/)
+  assert.match(texto, /= recebido/)
+
+  // Desconto e ajuste zerados nao entram na conta: a frase nao carrega termo
+  // que nao aconteceu no mes.
+  const limpo = realizationIdentity({ ...base, descontos: 0, outrosAjustes: 0 }) ?? ""
+  assert.equal(limpo.includes("descontos"), false)
+  assert.equal(limpo.includes("ajustes"), false)
+
+  // Sem teto ou sem recebido nao ha identidade para afirmar.
+  assert.equal(realizationIdentity({ ...base, aluguelContratado: null }), null)
+  assert.equal(realizationIdentity({ ...base, inadimplencia: null }), null)
+})
+
+test("nota de reatribuicao declara o sentido do deslocamento", async () => {
+  const { reallocationNote } = await import("./presentation.ts")
+  const base = {
+    competencia: "2026-05-01",
+    label: "mai. de 2026",
+    receitaTotal: 85265.22,
+    aluguelContratado: 85748.23,
+    aluguelRecebido: 73682.73,
+    repasseApurado: 70749.97,
+    vacancia: 9851.7,
+    inadimplencia: 2631.9,
+    descontos: 133.53,
+    outrosAjustes: 551.63,
+    ocupacaoPercentual: 87.2,
+    inadimplenciaPercentual: 4.3,
+    coberturaPercentual: 98.3,
+    qualidade: "completa" as const,
+    competenciaAjusteReceita: 2846.67,
+    competenciaAjusteAluguel: 787.96,
+    statusConfianca: "confirmado" as const,
+  }
+  assert.match(reallocationNote(base) ?? "", /recebidos em outros meses/)
+  assert.match(reallocationNote({ ...base, competenciaAjusteAluguel: -787.96 }) ?? "", /pertencem a competências anteriores/)
+  assert.equal(reallocationNote({ ...base, competenciaAjusteAluguel: 0 }), null)
 })

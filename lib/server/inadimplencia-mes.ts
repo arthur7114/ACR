@@ -9,25 +9,53 @@ export interface InadimplenciaMesUnidade {
   valor: number
 }
 
+// `sem_imovel_vinculado`: a linha declara inadimplencia mas nao aponta para o
+// cadastro, entao nao ha historico nem vigencia de onde tirar a base.
+// `sem_base_de_calculo`: o imovel existe, mas nem cobranca esperada, nem mes
+// pago anterior, nem aluguel esperado estao disponiveis.
+export type InadimplenciaMesMotivo = "sem_imovel_vinculado" | "sem_base_de_calculo"
+
+export interface InadimplenciaMesPendencia {
+  apto: string
+  inquilino: string
+  motivo: InadimplenciaMesMotivo
+}
+
 export interface InadimplenciaMes {
-  valor: number
+  // `null` = ha inadimplencia declarada mas nenhuma unidade apuravel. Nunca 0:
+  // zero e "zero confirmado" na semantica da tela.
+  valor: number | null
   unidades: InadimplenciaMesUnidade[]
+  pendentes: InadimplenciaMesPendencia[]
 }
 
 // Soma o valor esperado (do historico) das unidades inadimplentes do mes
 // corrente. Distinta da inadimplencia acumulada (dividas de meses anteriores,
 // que ja vem em inadimplencias_acumuladas).
+//
+// Falha fechada: unidade marcada como inadimplente que nao puder ser apurada
+// entra em `pendentes` em vez de contribuir com zero em silencio. A analise
+// deve chegar aqui com os vinculos ja resolvidos contra o cadastro
+// (`attachExistingImovelLinks`), como faz a rota da Revisao.
 export async function loadInadimplenciaMes(
   supabase: ReturnType<typeof createSupabaseAdmin>,
   params: { competencia: string; analiseCompleta: PackageAnalysis | null },
 ): Promise<InadimplenciaMes> {
   const rows = params.analiseCompleta?.prestacao?.receitas_por_imovel ?? []
-  const inadimplentes = rows.filter((row) => ehInadimplenteDoMes({ imovel_id: row.imovel_id, observacao: row.observacao }))
-  if (inadimplentes.length === 0) return { valor: 0, unidades: [] }
+  const inadimplentes = rows.filter((row) => ehInadimplenteDoMes({ observacao: row.observacao }))
+  if (inadimplentes.length === 0) return { valor: 0, unidades: [], pendentes: [] }
 
   const unidades: InadimplenciaMesUnidade[] = []
+  const pendentes: InadimplenciaMesPendencia[] = []
   for (const row of inadimplentes) {
-    const imovelId = row.imovel_id as string
+    const apto = row.apto ?? ""
+    const inquilino = row.inquilino ?? ""
+    const imovelId = row.imovel_id ?? null
+    if (!imovelId) {
+      pendentes.push({ apto, inquilino, motivo: "sem_imovel_vinculado" })
+      continue
+    }
+
     const { data: snaps } = await supabase
       .from("imovel_competencias")
       .select("competencia,receita_total,aluguel_recebido,status_ocupacao")
@@ -71,14 +99,18 @@ export async function loadInadimplenciaMes(
       status_ocupacao: s.status_ocupacao ?? null,
     }))
 
-    unidades.push({
-      apto: row.apto ?? "",
-      inquilino: row.inquilino ?? "",
-      imovel_id: imovelId,
-      valor: receitaEsperadaInadimplente(snapshots, aluguelEsperado, cobrancaEsperada),
-    })
+    const valor = receitaEsperadaInadimplente(snapshots, aluguelEsperado, cobrancaEsperada)
+    if (valor === null) {
+      pendentes.push({ apto, inquilino, motivo: "sem_base_de_calculo" })
+      continue
+    }
+
+    unidades.push({ apto, inquilino, imovel_id: imovelId, valor })
   }
 
-  const valor = Number(unidades.reduce((soma, u) => soma + u.valor, 0).toFixed(2))
-  return { valor, unidades }
+  const valor =
+    unidades.length === 0
+      ? null
+      : Number(unidades.reduce((soma, u) => soma + u.valor, 0).toFixed(2))
+  return { valor, unidades, pendentes }
 }

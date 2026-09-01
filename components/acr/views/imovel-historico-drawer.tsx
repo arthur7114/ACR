@@ -23,6 +23,10 @@ interface ImovelHistoricoDrawerProps {
   empreendimentoNome: string
   unidade: string
   codigo?: string | null
+  // Visao geral opcional de quem abriu o drawer. Os Indicadores passam os
+  // numeros da competencia em tela, para o drawer responder "como esta este mes"
+  // antes de "como foi o historico", sem duplicar o calculo aqui.
+  visaoGeral?: { titulo: string; itens: Array<{ label: string; valor: string }> }
   onClose: () => void
 }
 
@@ -41,6 +45,7 @@ export function ImovelHistoricoDrawer({
   empreendimentoNome,
   unidade,
   codigo,
+  visaoGeral,
   onClose,
 }: ImovelHistoricoDrawerProps) {
   const [historico, setHistorico] = useState<ImovelHistorico | null>(null)
@@ -132,6 +137,21 @@ export function ImovelHistoricoDrawer({
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
+          {visaoGeral && (
+            <section className="acr-card mb-4 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">{visaoGeral.titulo}</p>
+              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                {visaoGeral.itens.map((item) => (
+                  <div key={item.label} className="min-w-0">
+                    <dt className="text-[11px] text-[#6B7F6E]">{item.label}</dt>
+                    <dd className="truncate text-[13px] font-semibold tabular-nums text-[#1A2B1C]" title={item.valor}>
+                      {item.valor}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-20 text-[#6B7F6E]">
               <Loader2 size={18} className="animate-spin" />
