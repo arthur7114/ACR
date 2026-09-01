@@ -1730,6 +1730,44 @@ A liberação aborta se a revalidação não tiver confirmado a ausência do có
 
 Suíte 499/499, canários 6/6, lint e typecheck verdes.
 
+## 2026-09-01 — Limpeza do histórico e reconstrução dos indicadores
+
+Com autorização explícita, o histórico anterior a maio/2026 foi apagado e o
+histórico remanescente reconstruído até bater com os fechamentos.
+
+**Exclusão.** Antes de apagar, os 1.373 registros do escopo foram exportados em
+JSON e entregues ao usuário (fechamentos 37, snapshots 476, movimentações 423,
+validações 362, documentos 74, eventos 1; **zero lançamentos eGestor**). A
+exclusão rodou em transação única, com aborto se houvesse lançamento enviado no
+escopo e verificação pós-delete dentro da própria transação. Apagados exatamente
+1.373 registros — o mesmo número exportado. Restam 25 fechamentos (mai/jun/jul).
+Os binários no Storage não foram tocados.
+
+**Reconstrução.** Snapshots de maio (119) e junho (118) regravados com a lógica
+atual. Maio fica em 87,39% de cobertura (104/119): 15 unidades sob gestão sem
+linha na prestação daquele mês — lacuna de documento, não de cálculo.
+
+**Causa do resíduo de R$ 127,95 do GM I, resolvida.** Não era a regra de
+precedência de despesas, como se supunha: era o próprio script de
+reprocessamento usando `refreshPackageValidation`, que faz
+`{...calculado.totals, ...analise.totals}` — os totais gravados sobrescrevem os
+recalculados, por design, para revalidar sem mexer em dinheiro. Num
+reprocessamento a prestação muda de fato e os totais precisam ser recomputados.
+Trocado por `validatePackage`, montando a análise como o fluxo real do
+processamento. Com isso `total_despesas` do GM I passou de 140,40 (só o seguro,
+do documento antigo) para 268,35 (ENEL 127,95 + seguro 140,40) e a ponte fechou.
+
+**Estado final verificado:** `verify-indicadores-snapshots` retorna **ok: true**
+— 0 checksums inválidos (eram 713), cobertura 100%, 0 duplicados, **0 falhas de
+reconciliação**. `verify-consistencia-telas` em **0 divergências**. Os 25
+fechamentos remanescentes reproduzem seus indicadores.
+
+**Achado operacional:** às 12:07 o reenvio do GM II ao eGestor falhou com
+"Aplicativo ou usuário não encontrado. Verifique seu token de acesso." O token
+do eGestor está inválido — o lançamento ficou em `status=erro` e o fechamento em
+`erro_egestor`. O token se configura em Configurações → eGestor, tela que exigia
+perfil admin e que até hoje mostrava spinner infinito em vez do 403.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

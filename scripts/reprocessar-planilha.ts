@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { parseExcelPrestacao } from "@/lib/server/excel-parser"
-import { refreshPackageValidation } from "@/lib/server/package-rechecks"
+import { validatePackage } from "@/lib/server/package-rechecks"
 import {
   buildPackageMovimentacoes,
   buildValidacoesRows,
@@ -107,15 +107,36 @@ async function main() {
       `Abortado: ${vinculos.semCadastro.length} linha(s) sem imovel cadastrado no empreendimento: ${vinculos.semCadastro.join(", ")}. Resolva o cadastro antes de reprocessar.`,
     )
   }
-  const analysis = refreshPackageValidation({
-    ...anterior,
-    prestacao: {
-      ...prestacao,
-      receitas_por_imovel: vinculos.linhas,
-      imobiliaria: anterior.prestacao.imobiliaria,
-      empreendimento: anterior.prestacao.empreendimento,
-    },
+  // `validatePackage` e nao `refreshPackageValidation`: o refresh preserva os
+  // totais gravados (`{...calculado, ...anterior.totals}`), pensado para
+  // revalidar sem mexer em dinheiro. Num reprocessamento a prestacao mudou de
+  // fato, entao os totais PRECISAM ser recalculados — senao total_despesas fica
+  // do documento antigo e a ponte financeira nao fecha.
+  const prestacaoNova = {
+    ...prestacao,
+    receitas_por_imovel: vinculos.linhas,
+    imobiliaria: anterior.prestacao.imobiliaria,
+    empreendimento: anterior.prestacao.empreendimento,
+  }
+  const validacao = validatePackage({
+    documents: anterior.documents,
+    prestacao: prestacaoNova,
+    repasse: anterior.repasse,
+    despesas: anterior.despesas,
+    reajuste: anterior.reajuste,
   })
+  const analysis: PackageAnalysis = {
+    ...anterior,
+    documents: anterior.documents,
+    prestacao: validacao.prestacao!,
+    repasse: validacao.repasse,
+    despesas: validacao.despesas,
+    reajuste: validacao.reajuste,
+    totals: validacao.totals,
+    parecer: validacao.parecer,
+    rechecks: validacao.rechecks,
+    guardrails: validacao.guardrails,
+  }
 
   const nome = (fechamento.empreendimentos as { nome?: string } | null)?.nome ?? fechamento.id
   console.log(`\n### ${nome} (${competencia}) status=${fechamento.status}`)
