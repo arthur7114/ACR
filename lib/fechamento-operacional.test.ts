@@ -251,6 +251,17 @@ test("aluguel recebido medio divide pelas unidades com cobranca ativa, nao so pe
 
   assert.equal(resultado.unidades, 2)
   assert.equal(resultado.valor, 618.53)
+  assert.equal(resultado.recebido, 1237.05)
+})
+
+test("aluguel recebido medio expoe a formula que o cliente reproduz: aluguel das alugadas / alugadas", () => {
+  // GM II jul/26: 22 pagantes (12.811,93), 1 inadimplente (0) e 1 intermediacao (0)
+  // sao 24 alugadas. O tile imprime "R$ 12.811,93 ÷ 24 alugadas".
+  const pagantes = Array.from({ length: 21 }, () => ({ aluguel: 600 }))
+  const resultado = calcularAluguelRecebidoMedio([...pagantes, { aluguel: 211.93 }, { aluguel: 0 }, { aluguel: null }])
+  assert.equal(resultado.unidades, 24)
+  assert.equal(resultado.recebido, 12811.93)
+  assert.equal(resultado.valor, 533.83)
 })
 
 test("aluguel recebido medio e nulo sem unidade com cobranca ativa", () => {

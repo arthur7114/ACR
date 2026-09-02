@@ -307,6 +307,32 @@ function isExplicitInadimplencia(row: ReceitaPorImovel) {
   return /inadimpl/.test(text)
 }
 
+// Rescisao no mes (ex.: "RESCISÃO. PROPORCIONAL DE 10 DIAS"): a unidade teve
+// locatario e saiu dentro da competencia. Continua alugada no mes do fechamento;
+// nos indicadores ela encerra o mes vaga (evento de rescisao).
+function isRescisaoRow(row: ReceitaPorImovel) {
+  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
+  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
+  return /rescis/.test(text)
+}
+
+// Unidade ALUGADA na competencia = teve locatario no mes. Inclui pagantes,
+// inadimplentes, intermediacao e rescisoes proporcionais; exclui vagas e
+// aplicativos. Definicao do cliente (GM II jul/26: 22 pagantes + 1 inadimplente
+// + 1 intermediacao = 24 alugadas e 3 vagas). Os demais tiles sao subconjuntos.
+function isOccupiedRow(row: ReceitaPorImovel) {
+  return !isAirbnbRow(row) && !isVacantRow(row)
+}
+
+// Atualizacao monetaria no mes: a coluna REAJUSTE do documento aponta para a
+// competencia e a linha nao e contrato novo (proporcional). Fonte unica: o
+// proprio documento — sem inferir reajuste por comparacao de valores.
+function isReajusteRow(row: ReceitaPorImovel, competenciaMes: string | null) {
+  if (!competenciaMes || !row.reajuste_mes || row.reajuste_mes !== competenciaMes) return false
+  if (isAirbnbRow(row) || isIntermediacaoRow(row) || isVacantRow(row)) return false
+  return !/proporcional/i.test(row.observacao ?? "")
+}
+
 function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()) {
   if (isAirbnbRow(row)) {
     return {
@@ -341,6 +367,13 @@ function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()
     return {
       label: "Inadimplente",
       classes: "border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]",
+    }
+  }
+
+  if (isRescisaoRow(row)) {
+    return {
+      label: "Rescisão",
+      classes: "border-[#FCD34D] bg-[#FEF3C7] text-[#92400E]",
     }
   }
 
@@ -773,6 +806,17 @@ export function RevisaoView({
   // Totais para o rodape da tabela de acordos: principal bruto (espelha o TOTAL
   // impresso), recebido, comissão e repasse resolvidos como grandezas distintas.
   const acordosPrincipalTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.valor ?? 0), 0)
+  // Componentes (aluguel, garagem, água, IPTU, seguro) dos acordos/rescisões, como
+  // impressos no documento — mesmas colunas da tabela de receitas por imóvel.
+  const somaAcordos = (pick: (item: AcordoRescisaoRecebido) => number | null | undefined) =>
+    acordosRescisoesRecebidos.reduce((sum, item) => sum + (pick(item) ?? 0), 0)
+  const acordosComponentes = {
+    aluguel: somaAcordos((item) => item.aluguel),
+    garagem: somaAcordos((item) => item.garagem),
+    agua: somaAcordos((item) => item.agua),
+    iptu: somaAcordos((item) => item.iptu),
+    seguro: somaAcordos((item) => item.seguro_incendio),
+  }
   const acordosTemAjuste = acordosRescisoesRecebidos.some((item) => typeof item.ajuste === "number")
   const acordosAjusteTotal = acordosRescisoesRecebidos.reduce((sum, item) => sum + (item.ajuste ?? 0), 0)
   const acordosRecebidoTotal = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.totalRecebido, 0)
@@ -869,17 +913,20 @@ export function RevisaoView({
       return true
     })
   })()
-  const linhasAlugadas = linhasUnidades.filter(isRentedCurrentRow)
-  const linhasAluguelValido = linhasAlugadas.filter((row): row is ReceitaPorImovel & { aluguel: number } => row.aluguel !== null && row.aluguel > 0)
+  // Alugadas = unidades com locatário no mês; inadimplentes, intermediação e
+  // rescisões são subconjuntos (ver isOccupiedRow). O cliente confere estas
+  // contagens contra o documento: 27 unidades − 3 vagas = 24 alugadas.
+  const linhasAlugadas = linhasUnidades.filter(isOccupiedRow)
   const isInadimplenteEfetivo = (row: ReceitaPorImovel) =>
     isDelinquentRow(row) && (isExplicitInadimplencia(row) || !acordoAptos.has(aptoKey(row.apto)))
   const inadimplentes = linhasUnidades.filter(isInadimplenteEfetivo).length
-  // Denominador do aluguel médio: unidades com cobrança ativa no mês — alugadas
-  // e inadimplentes. A inadimplente participa com recebimento zero em vez de
-  // sair da conta, senão a média descreve apenas quem pagou.
-  const aluguelRecebidoMedio = calcularAluguelRecebidoMedio(
-    linhasUnidades.filter((row) => isRentedCurrentRow(row) || isInadimplenteEfetivo(row)),
-  )
+  const rescisoes = linhasUnidades.filter(isRescisaoRow).length
+  const competenciaMes = competenciaMesAno ? competenciaMesAno.slice(0, 2) : null
+  const reajustes = linhasUnidades.filter((row) => isReajusteRow(row, competenciaMes)).length
+  // Aluguel recebido médio = coluna Aluguel das unidades alugadas ÷ unidades
+  // alugadas (o mesmo número do tile). Inadimplente e intermediação entram com
+  // zero. A fórmula aparece no tile para o cliente reproduzir na calculadora.
+  const aluguelRecebidoMedio = calcularAluguelRecebidoMedio(linhasAlugadas)
   const vagos = linhasUnidades.filter(isVacantRow).length
   const airbnb = linhasUnidades.filter(isAirbnbRow).length
   // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
@@ -896,7 +943,7 @@ export function RevisaoView({
     
     if (filtroStatus === "vagos") return isVacantRow(row)
     if (filtroStatus === "inadimplentes") return isInadimplenteEfetivo(row)
-    if (filtroStatus === "alugados") return isRentedCurrentRow(row)
+    if (filtroStatus === "alugados") return isOccupiedRow(row)
     if (filtroStatus === "airbnb") return isAirbnbRow(row)
     return true
   })
@@ -1224,20 +1271,40 @@ export function RevisaoView({
 
           {linhasImoveis.length > 0 && (
             <div className="space-y-3">
-              <SectionTitle title="Situação das unidades" description="Aluguel ativo, inadimplência, vacância, aplicativos e intermediação são contagens separadas." />
-              <div className={`grid grid-cols-2 gap-3 md:grid-cols-6 ${intermediadas > 0 ? "lg:grid-cols-7" : ""}`}>
-                <MetricTile label="Alugadas" value={`${linhasAlugadas.length}`} subtext="Com cobrança ativa" tone="positive" />
-                <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Sem aluguel recebido no mês" tone={inadimplentes > 0 ? "danger" : "default"} />
-                <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Disponíveis" tone={vagos > 0 ? "warning" : "default"} />
-                <MetricTile label="Aplicativos" value={`${airbnb}`} subtext="Não contam como vagos" />
+              <SectionTitle
+                title="Situação das unidades"
+                description={`${linhasUnidades.length} unidades no documento. Alugadas = unidades com locatário no mês; inadimplentes, intermediação, rescisões e reajustes já estão dentro de Alugadas.`}
+              />
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+                <MetricTile
+                  label="Alugadas"
+                  value={`${linhasAlugadas.length}`}
+                  subtext={`${linhasUnidades.length} unidades − ${vagos} ${vagos === 1 ? "vaga" : "vagas"}${airbnb > 0 ? ` − ${airbnb} aplicativos` : ""}`}
+                  tone="positive"
+                  tooltip="Unidade com locatário na competência: pagante, inadimplente, em intermediação ou com rescisão proporcional no mês."
+                />
+                <MetricTile label="Inadimplentes" value={`${inadimplentes}`} subtext="Dentro das alugadas · sem aluguel no mês" tone={inadimplentes > 0 ? "danger" : "default"} />
                 {intermediadas > 0 && (
-                  <MetricTile label="Intermediação" value={`${intermediadas}`} subtext="Categoria à parte" />
+                  <MetricTile label="Intermediação" value={`${intermediadas}`} subtext="Dentro das alugadas · contrato novo" />
                 )}
+                {rescisoes > 0 && (
+                  <MetricTile label="Rescisões" value={`${rescisoes}`} subtext="Dentro das alugadas · saíram no mês" tone="warning" />
+                )}
+                {reajustes > 0 && (
+                  <MetricTile label="Reajustes" value={`${reajustes}`} subtext="Atualização monetária no mês" tooltip="Linhas cuja coluna REAJUSTE do documento aponta para esta competência (contratos novos não contam)." />
+                )}
+                <MetricTile label="Aptos vagos" value={`${vagos}`} subtext="Sem locatário no mês" tone={vagos > 0 ? "warning" : "default"} />
+                <MetricTile label="Aplicativos" value={`${airbnb}`} subtext="Não contam como vagos" />
                 <MetricTile label="Vagas garagem" value={`${vagasTotais}`} subtext="Total de vagas" />
                 <MetricTile
                   label="Aluguel recebido médio"
                   value={aluguelRecebidoMedio.valor !== null ? formatBRL(aluguelRecebidoMedio.valor) : "-"}
-                  subtext={`por unidade com cobrança ativa (${aluguelRecebidoMedio.unidades})`}
+                  subtext={
+                    aluguelRecebidoMedio.valor !== null
+                      ? `${formatBRL(aluguelRecebidoMedio.recebido)} ÷ ${aluguelRecebidoMedio.unidades} alugadas`
+                      : "Sem unidade alugada"
+                  }
+                  tooltip="Coluna Aluguel das unidades alugadas dividida pelo número de unidades alugadas. Inadimplente e intermediação entram com zero."
                 />
               </div>
               {inadimplenciaMesVisivel && (
@@ -1527,6 +1594,14 @@ export function RevisaoView({
                             {badge.label}
                           </span>
                         )}
+                        {isReajusteRow(row, competenciaMes) && (
+                          <span
+                            className="inline-flex h-5 items-center rounded-full border border-[#C7D2FE] bg-[#EEF2FF] px-2 text-[10px] font-semibold text-[#3730A3]"
+                            title="Atualização monetária: o reajuste anual do contrato cai neste mês. Clique no apto para ver o histórico de valores."
+                          >
+                            Reajuste
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F] cursor-pointer hover:underline" onClick={() => row.aluguel !== null && onOpenModal(row.apto, row.inquilino, row.aluguel)}>
@@ -1593,7 +1668,7 @@ export function RevisaoView({
             <span className="text-[13px] text-[#6B7F6E]">{pluralize(acordosRescisoesRecebidos.length, "item", "itens")}</span>
           </div>
           <div className="max-h-[360px] overflow-auto">
-            <table className="w-full min-w-[1240px] text-sm">
+            <table className="w-full min-w-[1680px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
                   {[
@@ -1601,6 +1676,11 @@ export function RevisaoView({
                     { label: "Apto" },
                     { label: "Inquilino" },
                     { label: "Competência original" },
+                    { label: "Aluguel", title: "Coluna ALUGUEL da linha no documento" },
+                    { label: "Garagem", title: "Coluna GARAGEM da linha" },
+                    { label: "Água", title: "Coluna ÁGUA da linha" },
+                    { label: "IPTU", title: "Coluna IPTU da linha" },
+                    { label: "Seg. inc.", title: "Seguro incêndio da linha" },
                     { label: "Principal", title: "Valor bruto impresso no documento" },
                     { label: "Ajuste", title: "Desconto (−) ou crédito (+) aplicado sobre o principal" },
                     { label: "Recebido", title: "Total efetivamente recebido — é o que soma nos totais" },
@@ -1609,7 +1689,7 @@ export function RevisaoView({
                     { label: "Recebido em" },
                     { label: "Obs" },
                   ].map(({ label, title }) => (
-                    <th key={label} title={title} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${["Principal", "Ajuste", "Recebido", "Comissão", "Repasse"].includes(label) ? "text-right" : "text-left"}`}>
+                    <th key={label} title={title} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${["Aluguel", "Garagem", "Água", "IPTU", "Seg. inc.", "Principal", "Ajuste", "Recebido", "Comissão", "Repasse"].includes(label) ? "text-right" : "text-left"}`}>
                       {label}
                     </th>
                   ))}
@@ -1636,6 +1716,13 @@ export function RevisaoView({
                       </td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_original ?? "-"}</td>
+                      {/* Componentes da linha, na mesma ordem da tabela de receitas: o
+                          cliente confere acordo/rescisão coluna a coluna contra o documento. */}
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.aluguel === "number" ? formatBRL(item.aluguel) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.garagem === "number" ? formatBRL(item.garagem) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.agua === "number" ? formatBRL(item.agua) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.iptu === "number" ? formatBRL(item.iptu) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.seguro_incendio === "number" ? formatBRL(item.seguro_incendio) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatBRL(item.valor)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.ajuste === "number" ? formatBRL(item.ajuste) : "-"}</td>
                       {pendente ? (
@@ -1660,6 +1747,11 @@ export function RevisaoView({
               <tfoot className="sticky bottom-0 z-10">
                 <tr className="border-t border-[#EEF1EE] bg-[#F8FAF8] font-semibold text-[#1A2B1C]">
                   <td className="px-4 py-3" colSpan={4}>Total</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosComponentes.aluguel)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosComponentes.garagem)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosComponentes.agua)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosComponentes.iptu)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosComponentes.seguro)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosPrincipalTotal)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{acordosTemAjuste ? formatBRL(acordosAjusteTotal) : "-"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatBRL(acordosRecebidoTotal)}</td>

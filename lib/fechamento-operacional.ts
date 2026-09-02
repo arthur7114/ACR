@@ -154,18 +154,21 @@ export function calcularResumoReceitasAdicionais(
   }
 }
 
-// Aluguel recebido medio da competencia. O denominador sao as unidades com
-// cobranca ativa no mes (alugadas + inadimplentes), nao apenas as que pagaram:
-// dividir so pelas que pagaram exibia a media das bem-sucedidas e escondia a
-// parcela da carteira sem recebimento (Joao Cordeiro julho: 1.237,05 com uma
-// das duas unidades sem pagar nada).
+// Aluguel recebido medio da competencia. O denominador sao as unidades ALUGADAS
+// no mes (com locatario: pagantes, inadimplentes, intermediacao, rescisao
+// proporcional), nao apenas as que pagaram: dividir so pelas que pagaram exibia
+// a media das bem-sucedidas e escondia a parcela da carteira sem recebimento
+// (Joao Cordeiro julho: 1.237,05 com uma das duas unidades sem pagar nada).
+// Devolve tambem o numerador para a tela imprimir a formula: o cliente dividiu a
+// receita de aluguel pela contagem exibida e nao reproduziu o valor (GM II jul/26,
+// tile dizia 23 unidades enquanto Alugadas mostrava 22).
 export function calcularAluguelRecebidoMedio(
-  linhasComCobrancaAtiva: Array<{ aluguel: number | null }>,
-): { valor: number | null; unidades: number } {
-  const unidades = linhasComCobrancaAtiva.length
-  if (unidades === 0) return { valor: null, unidades: 0 }
-  const recebido = linhasComCobrancaAtiva.reduce((total, linha) => total + (linha.aluguel ?? 0), 0)
-  return { valor: roundMoney(recebido / unidades), unidades }
+  linhasAlugadas: Array<{ aluguel: number | null }>,
+): { valor: number | null; unidades: number; recebido: number } {
+  const unidades = linhasAlugadas.length
+  if (unidades === 0) return { valor: null, unidades: 0, recebido: 0 }
+  const recebido = roundMoney(linhasAlugadas.reduce((total, linha) => total + (linha.aluguel ?? 0), 0))
+  return { valor: roundMoney(recebido / unidades), unidades, recebido }
 }
 
 export function classificarDespesaFechamento(descricao: string): CategoriaDespesaFechamento {
