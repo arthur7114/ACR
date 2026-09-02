@@ -25,42 +25,49 @@ const GMII_JUNHO: PrestacaoRecheck[] = [
   check({ id: "rows_present", status: "passed" }),
 ]
 
-test("contagem de alertas == alertas listados, sem opcionais e despesa zerada", () => {
+test("alerta nao bloqueante nunca aparece: nem em lista, nem em contagem", () => {
   const summary = getValidationSummary(GMII_JUNHO)
-  const { warning } = derivePendencias(GMII_JUNHO)
+  const { failed, resolved } = derivePendencias(GMII_JUNHO)
 
-  assert.equal(summary.warnings, 1)
-  assert.equal(warning.length, 1)
-  assert.equal(summary.warnings, warning.length)
+  assert.equal(summary.blocked, 0)
+  assert.equal(failed.length, 0)
+  assert.equal(resolved.length, 0)
+  assert.ok(!("warnings" in summary))
+  // Warning nao conta como "ok" tampouco: so os dois checks aprovados.
+  assert.equal(summary.passed, 2)
 })
 
-test("warnings legados sem ação não aparecem na lista", () => {
-  const ids = derivePendencias(GMII_JUNHO).warning.map((c) => c.id)
-  assert.ok(!ids.includes("optional_despesas_comprovantes"))
-  assert.ok(!ids.includes("optional_relatorio_reajuste"))
-  assert.ok(!ids.includes("total_despesas"))
-  assert.deepEqual(ids, ["total_linhas_receitas"])
+test("warning resolvido tambem fica fora do grupo de resolvidos", () => {
+  const mix: PrestacaoRecheck[] = [
+    check({ id: "acordos_competencias", status: "warning", dbStatus: "resolvida" }),
+    check({ id: "total_linhas_repasse", status: "failed", dbStatus: "ignorada_com_justificativa" }),
+  ]
+  const { resolved } = derivePendencias(mix)
+  assert.deepEqual(resolved.map((c) => c.id), ["total_linhas_repasse"])
 })
 
 test("scores de confianca nunca entram na contagem nem na lista", () => {
-  const ids = derivePendencias(GMII_JUNHO).warning.map((c) => c.id)
-  assert.ok(!ids.includes("despesas_confidence"))
-  assert.ok(!ids.includes("reajuste_confidence"))
+  const mix: PrestacaoRecheck[] = [
+    check({ id: "prestacao_confidence", status: "failed" }),
+    check({ id: "required_prestacao_contas", status: "failed" }),
+  ]
+  assert.deepEqual(derivePendencias(mix).failed.map((c) => c.id), ["required_prestacao_contas"])
+  assert.equal(getValidationSummary(mix).blocked, 1)
 })
 
-test("invariante contagem==lista vale para bloqueios e alertas em qualquer entrada", () => {
+test("invariante contagem==lista vale para bloqueios em qualquer entrada", () => {
   const mix: PrestacaoRecheck[] = [
     check({ id: "required_prestacao_contas", status: "failed" }),
     check({ id: "total_linhas_repasse", status: "failed" }),
     check({ id: "total_despesas", status: "warning" }),
     check({ id: "acordos_competencias", status: "warning", dbStatus: "resolvida" }),
     check({ id: "prestacao_confidence", status: "failed" }),
+    check({ id: "rows_present", status: "passed" }),
   ]
   const summary = getValidationSummary(mix)
-  const { failed, warning, resolved } = derivePendencias(mix)
+  const { failed, resolved } = derivePendencias(mix)
   assert.equal(summary.blocked, failed.length)
-  assert.equal(summary.warnings, warning.length)
   assert.equal(summary.blocked, 2) // confidence failed nao conta
-  assert.equal(summary.warnings, 0) // despesa zerada e resolvido não são operacionais
-  assert.equal(resolved.length, 1)
+  assert.equal(summary.passed, 1)
+  assert.equal(resolved.length, 0) // warning resolvido nao e exibido
 })

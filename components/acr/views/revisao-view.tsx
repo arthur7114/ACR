@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { ResolveConflictModal } from "@/components/acr/resolve-conflict-modal"
 import { ExpenseBreakdownCard } from "@/components/acr/expense-breakdown"
+import { Hint, HintIcon, normalizeHintLines } from "@/components/acr/hint-tooltip"
 import { FechamentoVinculosDrawer } from "@/components/acr/fechamento-vinculos-drawer"
 import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
@@ -109,38 +110,48 @@ function MetricTile({
 }) {
   const valueClass =
     tone === "positive" ? "text-[#2D8C3A]" : tone === "danger" ? "text-[#DC2626]" : tone === "warning" ? "text-[#92400E]" : "text-[#1A2B1C]"
+  // Definição primeiro, derivação depois: o texto de apoio mora na tooltip.
+  const hint = normalizeHintLines([tooltip, subtext])
 
   return (
-    <div className="rounded-lg border border-[#EEF1EE] bg-white px-3 py-2.5 relative group" title={tooltip}>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B7F6E] flex items-center gap-1">
+    <Hint
+      lines={hint}
+      className={`flex flex-col rounded-lg border border-[#EEF1EE] bg-white px-3 py-2.5${
+        hint.length > 0 ? " transition hover:border-[#D5DDD6] hover:bg-[#FBFCFB]" : ""
+      }`}
+    >
+      <p className="flex items-start gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#6B7F6E]">
         {label}
-        {tooltip && <Info size={12} className="text-[#8A9A8C]" />}
+        {hint.length > 0 && <Info size={11} className="mt-px shrink-0 text-[#8A9A8C]" aria-hidden />}
       </p>
-      <p className={`mt-1 text-[17px] font-bold leading-tight tabular-nums ${valueClass}`}>{value}</p>
-      {subtext && <p className="mt-0.5 text-[11px] leading-tight text-[#6B7F6E]">{subtext}</p>}
-    </div>
+      <p className={`mt-auto pt-1 text-[17px] font-bold leading-tight tabular-nums ${valueClass}`}>{value}</p>
+    </Hint>
   )
 }
 
-function SectionTitle({ title, description }: { title: string; description?: string }) {
+function SectionTitle({ title, description, hint }: { title: string; description?: string; hint?: string }) {
   return (
     <div>
-      <h3 className="text-[14px] font-bold text-[#1A2B1C]">{title}</h3>
+      <h3 className="flex items-center gap-1.5 text-[14px] font-bold text-[#1A2B1C]">
+        {title}
+        <HintIcon lines={[hint]} label={`Como ler ${title.toLowerCase()}`} align="start" />
+      </h3>
       {description && <p className="mt-0.5 text-[12px] text-[#6B7F6E]">{description}</p>}
     </div>
   )
 }
 
+// `aprovado_com_ressalvas` = aprovado com alertas não bloqueantes. Alerta não
+// bloqueante não aparece na interface (decisão de 2026-09-02), então o parecer
+// se apresenta como pronto para aprovação; o status segue no banco.
 function getOpinionLabel(status: TechnicalOpinion["status"]) {
-  if (status === "aprovado_tecnico") return "Pronto para aprovação"
-  if (status === "aprovado_com_ressalvas") return "Aprovado com ressalvas"
-  return "Aguardando resolução"
+  if (status === "bloqueado") return "Aguardando resolução"
+  return "Pronto para aprovação"
 }
 
 function getOpinionClasses(status: TechnicalOpinion["status"]) {
-  if (status === "aprovado_tecnico") return "bg-[#DCFCE7] text-[#166534] border-[#22C55E]"
-  if (status === "aprovado_com_ressalvas") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
-  return "bg-[#FEE2E2] text-[#991B1B] border-[#DC2626]"
+  if (status === "bloqueado") return "bg-[#FEE2E2] text-[#991B1B] border-[#DC2626]"
+  return "bg-[#DCFCE7] text-[#166534] border-[#22C55E]"
 }
 
 // Rótulo das despesas do locador vem como "Reembolso — <apto>" / "Desconto —
@@ -169,7 +180,6 @@ function getCheckClasses(check: PrestacaoRecheck) {
   const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
   if (isResolved) return "bg-[#E6F4EA] text-[#137333] border-[#A3E2B9]"
   if (check.status === "failed") return "bg-[#FEE2E2] text-[#991B1B] border-[#FCA5A5]"
-  if (check.status === "warning") return "bg-[#FEF3C7] text-[#92400E] border-[#F59E0B]"
   return "bg-[#DCFCE7] text-[#166534] border-[#86EFAC]"
 }
 
@@ -177,7 +187,6 @@ function getCheckLabel(check: PrestacaoRecheck) {
   const isResolved = check.dbStatus === "resolvida" || check.dbStatus === "ignorada_com_justificativa"
   if (isResolved) return "Resolvido"
   if (check.status === "failed") return "Bloqueante"
-  if (check.status === "warning") return "Alerta"
   return "OK"
 }
 
@@ -185,31 +194,30 @@ function pluralize(count: number, singular: string, plural: string) {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-function getValidationSummaryLabel(summary: { blocked: number; warnings: number; passed: number }) {
+function getValidationSummaryLabel(summary: { blocked: number; passed: number }) {
   const parts = [summary.blocked > 0 ? pluralize(summary.blocked, "bloqueio", "bloqueios") : "Sem bloqueios"]
-  if (summary.warnings > 0) parts.push(pluralize(summary.warnings, "alerta", "alertas"))
   if (summary.passed > 0) parts.push(`${summary.passed} ok`)
   return parts.join(" · ")
 }
 
-function getObjectiveOpinionCopy(summary: { blocked: number; warnings: number; passed: number }) {
+function getObjectiveOpinionCopy(summary: { blocked: number; passed: number }) {
   if (summary.blocked > 0) return "Fechamento bloqueado por pendências obrigatórias. Resolva os itens abaixo antes de aprovar."
-  if (summary.warnings > 0) return "Há alertas para revisar antes de aprovar. Confira os itens destacados abaixo."
   return "Validações principais concluídas. O fechamento não possui bloqueios operacionais."
 }
 
 // Faixa lateral colorida do card de parecer (em vez de tingir o card inteiro).
 function getOpinionAccentClass(status: TechnicalOpinion["status"]) {
-  if (status === "aprovado_tecnico") return "border-l-[#22C55E]"
-  if (status === "aprovado_com_ressalvas") return "border-l-[#F59E0B]"
-  return "border-l-[#DC2626]"
+  if (status === "bloqueado") return "border-l-[#DC2626]"
+  return "border-l-[#22C55E]"
 }
 
-type RepasseTone = "ok" | "alerta" | "divergente" | "pendente"
+type RepasseTone = "ok" | "divergente" | "pendente"
 
 // O tom do número-herói vem APENAS da conciliação do repasse (recheck dedicado +
 // diferença), nunca de um bloqueio não-relacionado. Assim o valor correto não
 // aparece vermelho só porque falta um documento ou uma regra de comissão.
+// Diferença dentro da tolerância (recheck `warning`) é conciliação OK: alerta
+// não bloqueante não existe na interface (decisão de 2026-09-02).
 function getRepasseConciliacao(
   rechecks: PrestacaoRecheck[],
   totals: PackageAnalysis["totals"],
@@ -220,33 +228,29 @@ function getRepasseConciliacao(
   const check = rechecks.find((c) => c.id === "repasse_conciliation")
   const diff = totals.diferenca_repasse
   const tone: RepasseTone =
-    check?.status === "passed"
+    check?.status === "passed" || check?.status === "warning"
       ? "ok"
-      : check?.status === "warning"
-        ? "alerta"
-        : check?.status === "failed"
-          ? "divergente"
-          : diff === null
-            ? "pendente"
-            : diff <= 0.01
-              ? "ok"
-              : diff <= 5
-                ? "alerta"
-                : "divergente"
+      : check?.status === "failed"
+        ? "divergente"
+        : diff === null
+          ? "pendente"
+          : diff <= 5
+            ? "ok"
+            : "divergente"
   if (tone === "ok")
     return {
       tone,
       message: totals.repasse_embutido
         ? "Repasse conforme o total do próprio extrato (sem comprovante separado)."
-        : "Repasse conciliado com o comprovante bancário.",
+        : diff !== null && diff > 0.01
+          ? `Repasse conciliado com o comprovante bancário (diferença de ${formatBRL(diff)} dentro da tolerância).`
+          : "Repasse conciliado com o comprovante bancário.",
     }
-  if (tone === "alerta") return { tone, message: `Diferença de ${formatBRL(diff ?? 0)} dentro da tolerância — confira.` }
   if (tone === "divergente") return { tone, message: `Divergência de ${formatBRL(diff ?? 0)} entre o cálculo e o comprovante.` }
   return { tone, message: "Comprovante de repasse ainda não conciliado." }
 }
 
 function getHeroToneClasses(tone: RepasseTone) {
-  if (tone === "alerta") return { card: "border-[#FDE68A] bg-[#FFFBEB]", value: "text-[#B45309]" }
   if (tone === "divergente") return { card: "border-[#FCA5A5] bg-[#FEF2F2]", value: "text-[#DC2626]" }
   return { card: "border-[#BFE4C7] bg-[#F4F9F5]", value: "text-[#2D8C3A]" }
 }
@@ -654,9 +658,10 @@ export function RevisaoView({
   const documents = analysisResult.documents ?? []
   const rechecks = analysisResult.rechecks ?? []
   // Contagem (parecer) e lista (pendencias) saem da MESMA peneira, para o topo
-  // nunca dizer "N alertas" e a abinha mostrar menos.
-  const { failed: failedRechecks, warning: warningRechecks, resolved: resolvedRechecks } = derivePendencias(rechecks)
-  const temPendencias = failedRechecks.length + warningRechecks.length + resolvedRechecks.length > 0
+  // nunca dizer "N bloqueios" e a abinha mostrar menos. Alertas nao bloqueantes
+  // ja ficam fora da peneira: nao aparecem em lugar nenhum.
+  const { failed: failedRechecks, resolved: resolvedRechecks } = derivePendencias(rechecks)
+  const temPendencias = failedRechecks.length + resolvedRechecks.length > 0
   const validationSummary = getValidationSummary(rechecks)
   const blockingCount = validationSummary.blocked + vinculosImoveis.pendentes.length
   const hasBlocking = blockingCount > 0
@@ -667,8 +672,8 @@ export function RevisaoView({
   const hasPendingAnexos = egestorLancamentos.some((l) => l.anexo_status === "pendente")
   const repasseConciliacao = getRepasseConciliacao(rechecks, totals)
   const heroTone = getHeroToneClasses(repasseConciliacao.tone)
-  const bannerState: "blocked" | "warning" | "ok" = hasBlocking ? "blocked" : validationSummary.warnings > 0 ? "warning" : "ok"
-  const pendenciasDefault = failedRechecks.length > 0 ? ["bloqueios"] : warningRechecks.length > 0 ? ["alertas"] : []
+  const bannerState: "blocked" | "ok" = hasBlocking ? "blocked" : "ok"
+  const pendenciasDefault = failedRechecks.length > 0 ? ["bloqueios"] : []
 
   const openResolve = (check: PrestacaoRecheck) => {
     setActiveValidation({
@@ -988,33 +993,19 @@ export function RevisaoView({
       ) : null}
       <div
         className={`rounded-lg p-3 flex items-center justify-between border ${
-          bannerState === "blocked"
-            ? "bg-[#FEE2E2] border-[#DC2626]"
-            : bannerState === "warning"
-              ? "bg-[#FFFBEB] border-[#F59E0B]"
-              : "bg-[#EFF7F1] border-[#2D8C3A]"
+          bannerState === "blocked" ? "bg-[#FEE2E2] border-[#DC2626]" : "bg-[#EFF7F1] border-[#2D8C3A]"
         }`}
       >
         <div className="flex items-center gap-2">
           {bannerState === "blocked" ? (
             <AlertTriangle size={18} className="text-[#DC2626] shrink-0" />
-          ) : bannerState === "warning" ? (
-            <AlertTriangle size={18} className="text-[#B45309] shrink-0" />
           ) : (
             <CheckCircle size={18} className="text-[#2D8C3A] shrink-0" />
           )}
-          <span
-            className={`text-[14px] ${
-              bannerState === "blocked" ? "text-[#991B1B]" : bannerState === "warning" ? "text-[#92400E]" : "text-[#1A5C24]"
-            }`}
-          >
+          <span className={`text-[14px] ${bannerState === "blocked" ? "text-[#991B1B]" : "text-[#1A5C24]"}`}>
             {bannerState === "blocked"
-              ? `${pluralize(blockingCount, "pendência bloqueante", "pendências bloqueantes")} a resolver antes de aprovar${
-                  validationSummary.warnings > 0 ? ` · ${pluralize(validationSummary.warnings, "alerta", "alertas")}` : ""
-                }.`
-              : bannerState === "warning"
-                ? `Sem bloqueios · ${pluralize(validationSummary.warnings, "alerta", "alertas")} para revisar antes de aprovar.`
-                : "Sem pendências bloqueantes no fechamento."}
+              ? `${pluralize(blockingCount, "pendência bloqueante", "pendências bloqueantes")} a resolver antes de aprovar.`
+              : "Sem pendências bloqueantes no fechamento."}
           </span>
         </div>
       </div>
@@ -1024,7 +1015,7 @@ export function RevisaoView({
           <h1 className="text-[24px] font-bold text-[#1A2B1C] tracking-tight">{title}</h1>
           <p className="text-[14px] text-[#6B7F6E] mt-1">{imobiliariaNome} - conciliação da competência</p>
           <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium mt-2 border ${getOpinionClasses(parecer.status)}`}>
-            {parecer.status === "aprovado_tecnico" ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+            {parecer.status === "bloqueado" ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
             {getOpinionLabel(parecer.status)}
           </span>
         </div>
@@ -1273,7 +1264,7 @@ export function RevisaoView({
             <div className="space-y-3">
               <SectionTitle
                 title="Situação das unidades"
-                description={`${linhasUnidades.length} unidades no documento. Alugadas = unidades com locatário no mês; inadimplentes, intermediação, rescisões e reajustes já estão dentro de Alugadas.`}
+                hint={`${linhasUnidades.length} unidades no documento. Alugadas = unidades com locatário no mês; inadimplentes, intermediação, rescisões e reajustes já estão dentro de Alugadas.`}
               />
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
                 <MetricTile
@@ -1372,29 +1363,6 @@ export function RevisaoView({
                         )}
                         <RecheckRow check={check} onResolve={openResolve} onRefresh={onRefresh} />
                       </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            )}
-            {warningRechecks.length > 0 && (
-              <AccordionItem value="alertas" className="border-0">
-                <AccordionTrigger className="py-3 hover:no-underline">
-                  <div className="flex w-full items-center gap-3">
-                    <AlertTriangle size={16} className="text-[#F59E0B]" />
-                    <div className="min-w-0 text-left">
-                      <h3 className="text-[14px] font-bold leading-tight text-[#1A2B1C]">Alertas</h3>
-                      <p className="text-[12px] font-normal leading-tight text-[#6B7F6E]">Revise antes de aprovar — não bloqueiam</p>
-                    </div>
-                    <span className="ml-auto mr-2 inline-flex h-7 shrink-0 items-center rounded-full bg-[#FEF3C7] px-3 text-[12px] font-semibold text-[#92400E]">
-                      {pluralize(warningRechecks.length, "alerta", "alertas")}
-                    </span>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent className="pb-3">
-                  <div className="divide-y divide-[#EEF1EE] border-t border-[#EEF1EE]">
-                    {warningRechecks.map((check) => (
-                      <RecheckRow key={check.id} check={check} onResolve={openResolve} onRefresh={onRefresh} />
                     ))}
                   </div>
                 </AccordionContent>
