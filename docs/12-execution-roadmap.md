@@ -1997,6 +1997,149 @@ da linha expandida. Nenhuma linha do tempo duplicada.
 **Verificações:** suíte 515 → 517 testes, lint, tipos e build verdes; identidade
 da realização conferida nos três meses contra o banco.
 
+## Auditoria de reconciliação do repasse (2026-09-02)
+
+Auditoria financeira independente contra o corpus real do cliente (cinco
+planilhas `CAIXA ADMINISTRAÇÃO LOCAÇÃO` e a prestação da Plural) e contra o
+banco de produção. Baseline antes de qualquer alteração: 539 testes, 6 canários,
+lint, tipos e build verdes.
+
+**Suspeita levantada e descartada.** As quatro colunas de cabeçalho de
+`fechamentos` (`total_receitas`, `total_comissoes`, `total_despesas`,
+`total_repassar`) não se reconciliam entre si em 9 dos 25 fechamentos: sobram
+891,90 e −445,95 no Galpão José Walter, 540,00/480,00/450,01/405,00 em LOCMAIS,
+GM II e Grand Castelão, e 5,55 constante em Pompílio Gomes e João Cordeiro.
+Parecia violação do ADR-0001.
+
+Não é. Essas colunas guardam a comissão de **administração** e as despesas
+econômicas; a comissão de **intermediação** (balde próprio por CONTEXT.md), a
+tarifa bancária e o IPTU de passagem ficam em campos separados de
+`analise_completa.totals`. A equação do ADR-0001 vale sobre o **resumo
+financeiro exibido**, e ali ela fecha: `recebidos − total_comissao_despesas −
+comissão de intermediação = total a repassar` fecha centavo a centavo nos **25
+de 25** fechamentos. Os 5,55 são a tarifa, já dentro do consolidado retido; os
+891,90/−445,95 são saída e entrada de IPTU de passagem; os valores redondos são
+intermediação. Nenhum dinheiro errado.
+
+Também verificado e limpo: zero duplicidade em `imovel_competencias` e em
+`fechamentos` (empreendimento + competência), zero imóvel órfão. Os cinco pares
+de empreendimento com nome quase igual (`Locmais`/`LOCMAIS`,
+`Grand Castelao I`/`Grand Castelão I`, `Galpao`/`Galpão Pompilio Gomes`,
+`Terreno`/`TERRENO CASTELÃO`) e o registro de nome vazio estão todos com
+`ativo = false`, **zero imóveis e zero fechamentos** — resíduo inerte, não
+partem dado entre si.
+
+**O que ficou de correção estrutural.** A promessa do ADR-0001 era conferida uma
+única vez, dentro da análise (`compareResumoFormula`), e nunca mais depois:
+reprocessamento, script de reparo, correção manual ou migration podem desfazer a
+igualdade sem que nada acuse, porque os rechecks ficam congelados no parecer.
+`scripts/verify-reconciliacao-repasse.ts` refaz a conta sobre o estado
+persistido — a diferença entre "estava certo quando foi analisado" e "está certo
+agora". Somente leitura, sai com código 1 em divergência, aceita competências
+como argumento e declara quantos fechamentos foram efetivamente comparados
+(silêncio por quebra tem de ser distinguível de silêncio por saúde, mesma guarda
+do `verify-aluguel-contratado`).
+
+A comissão de intermediação vem de `resolverRecebimentosLegados`, não de uma
+soma própria: o resolvedor canônico deixa de fora o item sem vínculo ou com
+confiança abaixo do mínimo (CA27.2), que vira pendência em vez de soma. Um
+verificador que somasse a coluna crua acusaria divergência justamente nos
+fechamentos que trataram a pendência corretamente. A guarda de allowlist de
+`recebimentos-contrato.test.ts` pegou a primeira versão, que reimplementava a
+soma — a allowlist funcionou como projetada.
+
+**Verificações:** suíte 539 → 548 testes, 6 canários, lint, tipos e build verdes;
+verificador executado contra o banco de produção nas três competências —
+25 comparados, nenhuma divergência.
+
+## Auditoria dos indicadores (2026-09-02)
+
+Ciclo dedicado a provar, indicador por indicador, se o que o dashboard mostra é
+reconstruível a partir dos registros. Baseline preservada: nada que estava verde
+ficou vermelho.
+
+**Método.** Para as três competências (mai, jun, jul/2026) reconstruí cada KPI
+fora do código do ACR e comparei em quatro pontos — registros elegíveis, cálculo
+independente, API (`getIndicadores`) e UI (as funções reais de
+`components/acr/indicadores/lib/presentation.ts`). Também testei aditividade,
+filtrando por cada empreendimento e somando de volta.
+
+**Resultado: delta zero em todos os KPIs.**
+
+| Verificação | Escopo | Delta |
+|---|---|---|
+| Ponte financeira (identidade completa) | 3 competências | 0,00 |
+| `repasse declarado` × soma de `fechamentos.total_repassar` | 25 fechamentos | 0,00 |
+| Aditividade por empreendimento (receitas, comissões, despesas, repasse, contratado, inadimplência) | 25 escopos | 0,00 |
+| Realização do aluguel (identidade CA-IND06) | 3 competências | 0,00 |
+| Ocupação (baldes × denominador × percentual) | 3 competências | 0,00 |
+| Série mensal × resumo da competência | 3 competências | 0,00 |
+| Compatibilidade v1 × v2 | 3 competências | 0,00 |
+| API → UI (identidade exibida, comissões, status, conferência) | 3 competências | 0,00 |
+
+**Três falsos positivos descartados** — todos por comparar campos de significados
+diferentes, o mesmo erro do ciclo anterior:
+
+- `ponte.comissoes` (administração **+** intermediação) contra
+  `ponte.comissaoAdministracao` (só administração). Diferem em R$ 540,00 em maio
+  e R$ 1.335,00 em julho, exatamente a intermediação do mês. A identidade certa é
+  `comissoes = administração + intermediação`, e ela fecha.
+- A soma dos baldes de ocupação contra `denominador`: o denominador exclui os
+  `desconhecidos` de propósito (eles têm `coberturaPercentual` próprio). Somá-los
+  daria 118 contra 117.
+- `resumo.aluguelRecebido` (R$ 67.951,23, **com** atrasos recuperados) contra
+  `serie.aluguelRecebido` (R$ 67.484,30, só a competência). A diferença é
+  exatamente `atrasosRecuperados`; são grandezas distintas com nome parecido.
+
+**Lacuna real encontrada (não é erro de cálculo).** `valoresSemClassificacao` é
+um resíduo *por construção* — o que sobra da identidade da realização — e ele é
+não nulo nas três competências (−117,79 em maio, −1.777,89 em junho, −3.945,36 em
+julho, 4,4% do contratado). Por CA-IND06 qualquer resíduo impede `Confirmado`,
+então o dashboard fica permanentemente em `com_divergencia`. O alarme está
+tecnicamente correto, mas um alarme que toca todo mês deixa de ser lido.
+
+Decompondo por unidade, o resíduo é 100% explicável e cai em duas classes que o
+domínio já nomeia em outro lugar:
+
+1. **Intermediação (primeiro mês de contrato).** Em julho, LOCMAIS SALA 01,
+   GM II apto 9 e Grand Castelão 204 têm `aluguel_recebido` zerado e
+   `outros_recebimentos` de 828,19 / 819,13 / 726,44 — exatamente os totais de
+   intermediação dos respectivos fechamentos. O locador recebe zero de aluguel
+   porque a administradora retém o mês como taxa; não é inadimplência. Somam
+   −2.031,98.
+2. **Proporcionalidade** de contrato novo iniciado no meio do mês (GM II 3, 8 e
+   23 — os mesmos dias 16, 27 e 30/07 já registrados neste doc) e de rescisão que
+   encerra o mês vaga. O `aluguel_esperado` é do mês cheio enquanto o devido é a
+   fração.
+
+Nenhuma das duas tem balde na decomposição: `ajustesClassificados` só cobre
+`em_rescisao`, e nas três competências não há nenhuma unidade nesse status
+(por isso ele é 0,00 em todos os meses). A tela de **Revisão** já distingue
+intermediação (`isIntermediacaoRow`: "não é alugada, vaga nem inadimplente");
+os **Indicadores** não. Criar os baldes muda a identidade do CA-IND06 e é
+decisão do contador — **não foi feito neste ciclo**.
+
+**Proteção permanente.** `lib/indicadores-identidades.ts` declara as 14
+identidades canônicas como lista de dados, não como script por indicador
+(`verificarIdentidades`), e `decomporResiduoRealizacao` abre o resíduo por
+unidade. A decomposição **não nomeia a causa** de propósito: batizar uma parcela
+de "intermediação" seria inventar classificação que os indicadores ainda não
+modelam. `scripts/verify-indicadores-identidades.ts` roda as identidades, a
+aditividade por empreendimento e o elo com `fechamentos.total_repassar` — sem
+esse elo os indicadores poderiam estar coerentes consigo mesmos e errados em
+relação ao fechamento. Somente leitura, sai com código 1 em divergência.
+
+Execução em 2026-09-02, nas três competências: 42 identidades conferidas,
+aditividade em 25 escopos, nenhuma divergência; a decomposição explica o resíduo
+inteiro nos três meses (6, 10 e 13 unidades).
+
+**Verificações:** suíte 548 → 559 testes, 6 canários, lint, tipos e build verdes;
+`verify-reconciliacao-repasse` segue em 25/25 sem divergência.
+
+**Fora de escopo deste ciclo:** o "aluguel recebido médio" é KPI da tela de
+Revisão, não dos Indicadores; OCR, extração linha a linha, idempotência e
+precisão monetária global não foram tocados.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
