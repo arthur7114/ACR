@@ -93,6 +93,56 @@ lidas; a coluna ENCARGOS foi mapeada (em junho ela está sem valores). O julho
 do Maracanaú foi lido do PDF pela IA e suas 30 linhas reconciliam componentes ×
 total, então não precisa de reprocessamento.
 
+## Correção do aluguel contratado (2026-09-02)
+
+Diagnóstico: em julho, 32 das 118 unidades registravam `aluguel_contratado`
+ABAIXO do recebido, mais 2 com contrato ativo e valor zero. A carteira aparecia
+rendendo mais que o contratado, o que é impossível, e puxava "Cobrança
+esperada", "Vacância" e o percentual de realização para baixo. Causa: o
+relatório de vigência (documento 3) nunca foi processado — o de julho do Grand
+Messejana II estava no Storage classificado como `desconhecido` com status
+`erro`, porque a confiança da IA ficou em 0,72, abaixo do limiar de 0,80.
+
+`lib/server/reajuste-relatorio-parser.ts` lê o relatório deterministicamente
+(sem IA): seção ATUALIZAÇÃO MONETÁRIA (valor do ano anterior e do ano corrente
+por apartamento) e seção APARTAMENTO ALUGADO (contrato novo, com data de
+início). O relatório de março que já estava em `docs/Artefatos` virou fixture de
+regressão, e um teste garante que a extração por pdfjs (usada pelo script) e por
+pdftotext produzem a mesma leitura.
+
+`scripts/aplicar-vigencias-contratuais.ts` aplica a correção com dry-run por
+padrão, em duas fontes com autoridade decrescente:
+
+1. **Relatório de vigência.** Guardrail: o valor "anterior" impresso tem de
+   bater com o cadastrado, senão a linha é recusada em vez de sobrescrever algo
+   de outra origem. Nas 5 atualizações monetárias de julho os cinco valores
+   bateram exatamente, o que confirma que o relatório é a fonte certa.
+2. **Coluna ALUGUEL da prestação**, só em mês cheio (sem PROPORCIONAL) e só na
+   direção defasada (documento comprova valor maior que o cadastro). Mesmo
+   precedente do reparo Pompílio/César Rêgo da migration 202608120001.
+
+Nunca reduz valor sem documento, não toca unidade de receita variável (Airbnb) e
+não cria vigência para linha sem imóvel vinculado. A vigência antiga é encerrada,
+não sobrescrita: o valor velho é o que explica os meses já fechados.
+
+Resultado em julho/2026: 36 vigências corrigidas (5 por atualização monetária, 3
+por contrato novo, 28 pela prestação), snapshots recalculados pelo reparador
+idempotente, e as unidades com contratado abaixo do recebido caíram de 32 para 1.
+A remanescente é o apto 204 do Grand Maracanaú, inadimplente em julho que quitou
+atraso de junho: recebido maior que o contratado é o comportamento correto ali.
+O relatório de julho do GM II foi reclassificado de `desconhecido`/`erro` para
+`relatorio_reajuste`/`processado`.
+
+Duas observações registradas e não corrigidas:
+
+- A tabela `imovel_vigencias` exige `vigencia_inicio` no dia 1 (check
+  `imovel_vigencias_competencia_inicio_check`). Os contratos que começam no meio
+  do mês (aptos 3, 8 e 23, dias 16, 27 e 30/07) entram no dia 1 com a data real
+  preservada no campo `fonte`.
+- O reparador de indicadores regenera as validações do Grand Maracanaú a cada
+  execução, sem alterar dinheiro nem o conjunto de rechecks. É ruído cosmético de
+  idempotência, anterior a este ciclo.
+
 ## Prints de agosto (13 a 18/08) — situação
 
 Todos os itens dos prints (José Walter sem aluguel recebido, alerta de

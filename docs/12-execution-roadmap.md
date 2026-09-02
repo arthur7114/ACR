@@ -40,7 +40,12 @@ R$ 281,33). Em 2026-09-02 o parser passou a registrar colunas numéricas não
 mapeadas (`plano_extracao.colunas_nao_lidas`), o recheck de componentes nomeia a
 coluna e bloqueia quando o total da linha não fecha, e `ENCARGOS` (Grand
 Maracanaú) mapeia para `outros_recebimentos` no parser e na IA. Suíte 525
-testes, canários 6/6, tipos e lint verdes.
+testes, canários 6/6, tipos e lint verdes. Em 2026-09-02 o aluguel contratado
+foi corrigido: leitura determinística do relatório de vigência (documento 3),
+36 vigências de julho atualizadas com trilha de auditoria e snapshots
+recalculados; unidades com contratado abaixo do recebido caíram de 32 para 1
+(um atraso de junho quitado em julho, legítimo). Suíte 535 testes, tipos e lint
+verdes.
 
 ## Proxima acao recomendada
 
