@@ -27,6 +27,9 @@ const ALLOWLIST = new Set([
   // Reconciliação de despesas: lê comissão de intermediação de itens já
   // filtrados pelo gate fail-closed do validatePackage (roda pós-partição).
   "lib/despesas-locador.ts",
+  // Verificador read-only da equação do repasse sobre o estado persistido:
+  // lê os itens do JSON e resolve a comissão por resolverRecebimentosLegados.
+  "scripts/verify-reconciliacao-repasse.ts",
   // Usos não financeiros (eventos de rescisão, dedup, chaves, sincronização)
   "lib/server/acordos.ts",
   "lib/server/sync-imoveis.ts",
