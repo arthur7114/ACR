@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 import {
+  buildInadimplenciasAcumuladas,
   buildReceitas,
   extractPdfTextLines,
   isCesarRegoConsolidado,
@@ -42,22 +43,137 @@ test("aluguel de um unico mes gera uma linha com repasse = saldo final", () => {
   assert.equal(receitas[0].repasse, 1175.2)
 })
 
-test("contrato ALUG sem lancamento vira inadimplencia explicita", () => {
-  const receitas = buildReceitas(
-    [{
-      codigo: "0002521",
-      endereco: "JOAO CORDEIRO,488 APART. B",
-      aluguel: 788.22,
-      ultimoPagamento: "05/2026",
-      situacao: "APTO ALUG",
-    }],
-    [],
-  )
+const APTO_B_JULHO = {
+  codigo: "0002521",
+  endereco: "JOAO CORDEIRO,488 APART. B",
+  aluguel: 788.22,
+  ultimoPagamento: "05/2026",
+  situacao: "APTO ALUG",
+}
+
+test("contrato ALUG sem lancamento vira inadimplencia explicita, identificada e com aluguel do documento", () => {
+  const receitas = buildReceitas([APTO_B_JULHO], [], "2026-07")
 
   assert.equal(receitas.length, 1)
   assert.equal(receitas[0].total, 0)
   assert.match(receitas[0].observacao ?? "", /INADIMPLENCIA/i)
   assert.doesNotMatch(receitas[0].observacao ?? "", /\bVAGO\b/i)
+  // Mesma identificacao das linhas com lancamento: a Revisao nao mostra "-" e o
+  // mapa nao diz "Inquilino nao informado" ao lado de Inadimplente.
+  assert.equal(receitas[0].inquilino, "JOAO CORDEIRO,488 APART. B")
+  assert.equal(receitas[0].competencia_original, "07/2026")
+  // Base da inadimplencia do mes: coluna ALUGUEL da Relacao de Imoveis.
+  assert.equal(receitas[0].aluguel_esperado, 788.22)
+})
+
+test("imovel sem contrato ativo e sem lancamento continua neutro (nao inadimplente)", () => {
+  const receitas = buildReceitas([{ ...APTO_B_JULHO, situacao: "APTO DESALUG" }], [], "2026-07")
+
+  assert.equal(receitas.length, 1)
+  assert.doesNotMatch(receitas[0].observacao ?? "", /INADIMPLENCIA/i)
+  assert.equal(receitas[0].competencia_original, null)
+  assert.equal(receitas[0].aluguel_esperado, null)
+})
+
+test("ALUG que pagou meses anteriores mas nao o da competencia: mes corrente inadimplente vem primeiro", () => {
+  // Joao Cordeiro jun/26: 0002521 pagou abril e maio dentro do fechamento de
+  // junho e nao pagou junho. A Revisao conta 1 unidade = primeira linha do apto,
+  // entao a competencia em aberto precisa abrir a lista.
+  const receitas = buildReceitas(
+    [{ ...APTO_B_JULHO, ultimoPagamento: "03/2026" }],
+    [
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "04/2026", credito: 788.22, saldo: 788.22 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "04/2026", debito: 39.41, saldo: 748.81 }),
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "05/2026", credito: 788.22, saldo: 1537.03 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "05/2026", debito: 39.41, saldo: 1497.62 }),
+    ],
+    "2026-06",
+  )
+
+  assert.deepEqual(
+    receitas.map((row) => row.competencia_original),
+    ["06/2026", "04/2026", "05/2026"],
+  )
+  assert.match(receitas[0].observacao ?? "", /INADIMPLENCIA.*06\/2026/i)
+  assert.equal(receitas[0].aluguel, null)
+  assert.equal(receitas[0].aluguel_esperado, 788.22)
+  assert.equal(receitas[0].inquilino, "JOAO CORDEIRO,488 APART. B")
+  // As linhas pagas nao mudam.
+  assert.equal(receitas[1].aluguel, 788.22)
+  assert.equal(receitas[2].aluguel, 788.22)
+})
+
+test("ALUG com aluguel da competencia lancado nao ganha linha inadimplente", () => {
+  const receitas = buildReceitas(
+    [{ ...APTO_B_JULHO, ultimoPagamento: "06/2026" }],
+    [lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "07/2026", credito: 788.22, saldo: 788.22 })],
+    "2026-07",
+  )
+  assert.equal(receitas.length, 1)
+  assert.doesNotMatch(receitas[0].observacao ?? "", /INADIMPLENCIA/i)
+})
+
+test("credito de ALUGUEL sem mes legivel impede a inferencia de inadimplencia", () => {
+  const receitas = buildReceitas(
+    [APTO_B_JULHO],
+    [lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: null, credito: 788.22, saldo: 788.22 })],
+    "2026-07",
+  )
+  assert.equal(receitas.length, 1)
+  assert.doesNotMatch(receitas[0].observacao ?? "", /INADIMPLENCIA/i)
+})
+
+test("acumulada inferida: ult. pg 05/2026 na competencia 07/2026 deve junho, no valor do aluguel da Relacao", () => {
+  const { itens, semBase } = buildInadimplenciasAcumuladas([APTO_B_JULHO], [], "2026-07")
+
+  assert.deepEqual(semBase, [])
+  assert.equal(itens.length, 1)
+  assert.equal(itens[0].apto, "0002521")
+  assert.equal(itens[0].inquilino, "JOAO CORDEIRO,488 APART. B")
+  assert.equal(itens[0].valor, 788.22)
+  assert.equal(itens[0].competencia_original, "06/2026")
+  assert.match(itens[0].condicao ?? "", /06\/2026/)
+})
+
+test("acumulada inferida desconta os meses pagos no proprio documento (atraso quitado)", () => {
+  // Jun/26: ult. pg 03/2026, pagou abril e maio neste fechamento -> nada acumulado.
+  const { itens } = buildInadimplenciasAcumuladas(
+    [{ ...APTO_B_JULHO, ultimoPagamento: "03/2026" }],
+    [
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "04/2026", credito: 788.22 }),
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "05/2026", credito: 788.22 }),
+    ],
+    "2026-06",
+  )
+  assert.deepEqual(itens, [])
+})
+
+test("acumulada inferida atravessa o ano e ignora contrato desalugado", () => {
+  const { itens } = buildInadimplenciasAcumuladas(
+    [
+      { codigo: "0000001", endereco: "Rua A", aluguel: 500, ultimoPagamento: "11/2025", situacao: "APTO ALUG" },
+      { codigo: "0000002", endereco: "Rua B", aluguel: 500, ultimoPagamento: "01/2025", situacao: "APTO DESALUG" },
+    ],
+    [],
+    "2026-03",
+  )
+  assert.deepEqual(
+    itens.map((item) => `${item.apto}:${item.competencia_original}`),
+    ["0000001:12/2025", "0000001:01/2026", "0000001:02/2026"],
+  )
+})
+
+test("acumulada sem base (ALUG sem ult. pg ou sem aluguel) fica declarada, nunca zero", () => {
+  const { itens, semBase } = buildInadimplenciasAcumuladas(
+    [
+      { ...APTO_B_JULHO, codigo: "0000001", ultimoPagamento: null },
+      { ...APTO_B_JULHO, codigo: "0000002", aluguel: null },
+    ],
+    [],
+    "2026-07",
+  )
+  assert.deepEqual(itens, [])
+  assert.deepEqual(semBase, ["0000001", "0000002"])
 })
 
 test("cabecalho Cesar Rego extrai numero, vencimento e emissao", () => {
@@ -177,16 +293,25 @@ test("César Rêgo março usa o resumo como verdade e separa IPTU de passagem", 
   )
 })
 
-test("extrato consolidado declara a inadimplencia acumulada como campo ausente", async () => {
+test("extrato consolidado infere a inadimplencia acumulada da Relacao de Imoveis", async () => {
   const lines = await extractPdfTextLines(readFileSync(FIXTURE))
   const result = parseCesarRegoPrestacao(lines, "2026-03")
 
-  // O layout C nao possui secao de dividas acumuladas: a lista vazia NAO pode
-  // ser lida como zero confirmado pelos indicadores (CA-IND22).
-  assert.equal(result.inadimplencias_acumuladas.length, 0)
-  assert.ok(result.campos_ausentes.includes("inadimplencias_acumuladas"))
-  assert.ok(
-    result.plano_extracao.alertas.some((alerta) => /inadimpl/i.test(alerta)),
-    "esperava alerta sobre inadimplencia acumulada nao extraida",
+  // Marco/26: 0002521 esta ALUG com ult. pg 12/2025 e sem lancamento -> deve
+  // janeiro e fevereiro (acumulada) e marco (inadimplencia do mes). Todos os
+  // contratos ativos tem base, entao a metrica deixa de ser "campo ausente".
+  assert.deepEqual(
+    result.inadimplencias_acumuladas.map((item) => `${item.apto}:${item.competencia_original}:${item.valor}`),
+    ["0002521:01/2026:788.22", "0002521:02/2026:788.22"],
   )
+  assert.deepEqual(result.campos_ausentes, [])
+  assert.ok(
+    !result.plano_extracao.alertas.some((alerta) => /inadimplencia acumulada/i.test(alerta)),
+    "sem base faltando, nao deve haver alerta de acumulada nao apuravel",
+  )
+  const aptoB = result.receitas_por_imovel.find((row) => row.apto === "0002521")
+  assert.match(aptoB?.observacao ?? "", /INADIMPLENCIA/)
+  assert.equal(aptoB?.inquilino, "JOAO CORDEIRO,488 APART. B")
+  assert.equal(aptoB?.competencia_original, "03/2026")
+  assert.equal(aptoB?.aluguel_esperado, 788.22)
 })

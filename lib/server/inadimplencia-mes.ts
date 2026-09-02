@@ -99,7 +99,12 @@ export async function loadInadimplenciaMes(
       status_ocupacao: s.status_ocupacao ?? null,
     }))
 
-    const valor = receitaEsperadaInadimplente(snapshots, aluguelEsperado, cobrancaEsperada)
+    // O aluguel declarado pelo PROPRIO documento (Relacao de Imoveis do Cesar
+    // Rego) vence qualquer base derivada: e o que o locador le no extrato.
+    const declaradoNoDocumento =
+      row.aluguel_esperado != null && row.aluguel_esperado > 0 ? Number(row.aluguel_esperado) : null
+    const valor =
+      declaradoNoDocumento ?? receitaEsperadaInadimplente(snapshots, aluguelEsperado, cobrancaEsperada)
     if (valor === null) {
       pendentes.push({ apto, inquilino, motivo: "sem_base_de_calculo" })
       continue

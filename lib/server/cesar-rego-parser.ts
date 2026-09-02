@@ -110,9 +110,7 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
   const relacao: RelacaoImovel[] = []
   const lancamentos: Lancamento[] = []
   const resumoValores = new Map<string, number>()
-  const alertas: string[] = [
-    "Inadimplencia acumulada de meses anteriores nao existe neste layout: o extrato consolidado nao traz a secao. A metrica permanece desconhecida ate haver fonte propria.",
-  ]
+  const alertas: string[] = []
   const header = parseCesarRegoHeader(lines)
 
   let section: "header" | "relacao" | "lancamentos" | "resumo" = "header"
@@ -196,7 +194,15 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
     throw new Error("Layout Cesar Rego identificado, mas nenhuma secao foi extraida do PDF.")
   }
 
-  let receitas = buildReceitas(relacao, lancamentos)
+  let receitas = buildReceitas(relacao, lancamentos, competencia)
+  // O extrato nao traz secao de dividas acumuladas; a Relacao de Imoveis
+  // (SIT + ult. pg + aluguel) permite inferi-las para os contratos ativos.
+  const acumuladas = buildInadimplenciasAcumuladas(relacao, lancamentos, competencia)
+  if (acumuladas.semBase.length > 0) {
+    alertas.push(
+      `Inadimplencia acumulada nao apuravel para ${acumuladas.semBase.join(", ")}: a Relacao de Imoveis nao informa ultimo pagamento ou aluguel. A metrica permanece desconhecida para esses imoveis.`,
+    )
+  }
   const resumo = buildResumo(resumoValores, receitas, alertas)
   receitas = reconcileReceitaTotals(
     receitas,
@@ -223,11 +229,11 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
     },
     receitas_por_imovel: receitas,
     acordos_rescisoes_recebidos: [],
-    // O layout C (extrato consolidado) nao possui secao de dividas acumuladas
-    // de meses anteriores. A lista fica vazia, mas a ausencia e DECLARADA em
-    // campos_ausentes para que os indicadores tratem a metrica como
-    // desconhecida em vez de zero confirmado (CA-IND22).
-    inadimplencias_acumuladas: [],
+    // Inferida da Relacao de Imoveis (ver buildInadimplenciasAcumuladas). Quando
+    // algum contrato ativo nao tem base para a inferencia, a ausencia e
+    // DECLARADA em campos_ausentes para que os indicadores tratem a metrica
+    // como desconhecida em vez de zero confirmado (CA-IND22).
+    inadimplencias_acumuladas: acumuladas.itens,
     resumo_financeiro: {
       numero_documento: header.numeroDocumento,
       data_emissao: header.dataEmissao,
@@ -252,7 +258,7 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
       total_comissoes: totalLinhasComissoes,
       total_repassar: resumo.totalARepassar ?? totalLinhasRepasse,
     },
-    campos_ausentes: ["inadimplencias_acumuladas"],
+    campos_ausentes: acumuladas.semBase.length > 0 ? ["inadimplencias_acumuladas"] : [],
     observacoes: ["Processado deterministicamente a partir do texto do PDF (layout Cesar Rego)."],
     confianca_geral: 1.0,
   }
@@ -368,7 +374,18 @@ function isDescontoLancamento(item: Lancamento): boolean {
   return /\bDESCONTO\b/.test(descricao) || /\bDESC\./.test(descricao)
 }
 
-export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[]): ReceitaPorImovel[] {
+// Regra do cliente (2026-09-02) para o layout C: o documento nao marca
+// inadimplencia. A Relacao de Imoveis diz se o imovel esta alugado (SIT=ALUG);
+// se esta alugado e nao ha lancamento de ALUGUEL da competencia do fechamento,
+// o mes esta inadimplente — mesmo quando o inquilino pagou meses ANTERIORES
+// neste documento (Joao Cordeiro 0002521 em jun/26 pagou abril e maio; junho
+// ficou em aberto). `competencia` chega como "YYYY-MM" (ou "YYYY-MM-DD").
+export function buildReceitas(
+  relacao: RelacaoImovel[],
+  lancamentos: Lancamento[],
+  competencia: string | null = null,
+): ReceitaPorImovel[] {
+  const competenciaMesAno = competenciaToMesAno(competencia)
   const porImovel = new Map<string, Lancamento[]>()
   for (const lancamento of lancamentos) {
     const grupo = porImovel.get(lancamento.codigo) ?? []
@@ -385,37 +402,67 @@ export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[
     const imovel = relacao.find((item) => item.codigo === codigo) ?? null
     const grupo = porImovel.get(codigo) ?? []
 
+    const ultimoPagamento = imovel?.ultimoPagamento ? ` (ult. pg ${imovel.ultimoPagamento})` : ""
+    const contratoAtivo = isContratoAtivo(imovel)
+    // O nome do inquilino nao consta neste layout: usa o endereco como
+    // identificacao da unidade (por isso o endereco sai da observacao). Vale
+    // tambem para a linha inferida: sem isso ela saia com inquilino vazio, a
+    // Revisao imprimia "-" e o mapa "Inquilino nao informado" ao lado de
+    // Inadimplente (Joao Cordeiro 0002521, jul/26).
+    const identificacao = imovel?.endereco?.trim() || ""
+    // Linha da competencia em aberto: aluguel_esperado vem da coluna ALUGUEL da
+    // Relacao, que e o que a Revisao mostra como inadimplencia do mes.
+    const inadimplenciaDoMes = (detalhe: string, inquilino: string) =>
+      buildReceita(codigo, inquilino, {
+        observacao: detalhe,
+        competencia_original: competenciaMesAno,
+        vencimento: competenciaMesAno,
+        aluguel_esperado: imovel?.aluguel ?? null,
+      })
+
     if (grupo.length === 0) {
-      const ultimoPagamento = imovel?.ultimoPagamento ? ` (ult. pg ${imovel.ultimoPagamento})` : ""
-      const contratoAtivo = /\bALUG\b/.test(normalize(imovel?.situacao ?? ""))
-      const detalhe = contratoAtivo
-        ? `INADIMPLENCIA. Contrato ativo (SIT=ALUG) sem lancamentos no mes${ultimoPagamento}.`
-        : `Sem lancamentos no mes${ultimoPagamento}.`
+      if (!contratoAtivo) {
+        return [buildReceita(codigo, identificacao, { observacao: `Sem lancamentos no mes${ultimoPagamento}.` })]
+      }
       return [
-        buildReceita(codigo, "", {
-          observacao: joinObservacao(imovel?.endereco, detalhe),
-        }),
+        inadimplenciaDoMes(
+          `INADIMPLENCIA. Contrato ativo (SIT=ALUG) sem lancamentos no mes${ultimoPagamento}.`,
+          identificacao,
+        ),
       ]
     }
 
-    // O nome do inquilino nao consta neste layout: usa o endereco como
-    // identificacao da unidade (por isso o endereco sai da observacao).
-    const inquilino = grupo[0].inquilino.trim() || imovel?.endereco?.trim() || ""
+    const inquilino = grupo[0].inquilino.trim() || identificacao
 
+    const aluguelCreditos = grupo.filter(
+      (item) => item.credito !== null && normalize(item.descricao).startsWith("ALUGUEL"),
+    )
     // Meses distintos de ALUGUEL recebidos para este imovel no fechamento.
     const mesesAluguel = [
-      ...new Set(
-        grupo
-          .filter((item) => item.credito !== null && normalize(item.descricao).startsWith("ALUGUEL"))
-          .map((item) => item.mesAno)
-          .filter((mes): mes is string => Boolean(mes)),
-      ),
+      ...new Set(aluguelCreditos.map((item) => item.mesAno).filter((mes): mes is string => Boolean(mes))),
     ]
+
+    // Pagou meses anteriores mas nao o da competencia: a competencia esta
+    // inadimplente e vai PRIMEIRO, porque a Revisao conta 1 unidade = a primeira
+    // linha do apto. Credito de ALUGUEL sem mes legivel impede a inferencia —
+    // pode ser o proprio mes corrente.
+    const aluguelSemMes = aluguelCreditos.some((item) => !item.mesAno)
+    const mesCorrenteEmAberto =
+      contratoAtivo && competenciaMesAno !== null && !aluguelSemMes && !mesesAluguel.includes(competenciaMesAno)
+    const linhaEmAberto = mesCorrenteEmAberto
+      ? [
+          inadimplenciaDoMes(
+            `INADIMPLENCIA. Contrato ativo (SIT=ALUG) sem lancamento de ALUGUEL de ${competenciaMesAno}${ultimoPagamento}.`,
+            inquilino,
+          ),
+        ]
+      : []
 
     // Caso comum (0 ou 1 mes de aluguel): UMA linha, repasse = saldo final do
     // grupo. Comportamento historico preservado byte a byte.
     if (mesesAluguel.length <= 1) {
       return [
+        ...linhaEmAberto,
         buildReceitaDoGrupo(codigo, inquilino, grupo, {
           competencia: mesesAluguel[0] ?? null,
           repasse: grupo[grupo.length - 1].saldo,
@@ -430,7 +477,7 @@ export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[
     // um acumulado do grupo, o repasse por mes vira o liquido (creditos-debitos)
     // daquele mes.
     const primeiroMes = mesesAluguel[0]
-    return mesesAluguel.map((mes) => {
+    const linhasPorMes = mesesAluguel.map((mes) => {
       const itens = grupo.filter((item) => {
         if (item.mesAno === mes) return true
         const foraDaLista = !item.mesAno || !mesesAluguel.includes(item.mesAno)
@@ -441,7 +488,98 @@ export function buildReceitas(relacao: RelacaoImovel[], lancamentos: Lancamento[
       )
       return buildReceitaDoGrupo(codigo, inquilino, itens, { competencia: mes, repasse })
     })
+    return [...linhaEmAberto, ...linhasPorMes]
   })
+}
+
+function isContratoAtivo(imovel: RelacaoImovel | null): boolean {
+  return /\bALUG\b/.test(normalize(imovel?.situacao ?? ""))
+}
+
+// "2026-07" | "2026-07-01" -> "07/2026" (formato dos lancamentos do extrato).
+function competenciaToMesAno(competencia: string | null | undefined): string | null {
+  const match = (competencia ?? "").match(/^(\d{4})-(\d{2})/)
+  return match ? `${match[2]}/${match[1]}` : null
+}
+
+function parseMesAno(value: string): { month: number; year: number } | null {
+  const match = value.match(/^(\d{2})\/(\d{4})$/)
+  return match ? { month: Number(match[1]), year: Number(match[2]) } : null
+}
+
+// Meses "MM/YYYY" estritamente entre dois marcos, em ordem cronologica. Acima
+// de 24 meses o "ult. pg" descreve outro contrato, nao uma divida corrente, e
+// a inferencia deixa de ser confiavel — corta ali.
+const MAX_MESES_ACUMULADOS = 24
+function mesesEntre(inicio: string, fim: string): string[] {
+  const a = parseMesAno(inicio)
+  const b = parseMesAno(fim)
+  if (!a || !b) return []
+  const meses: string[] = []
+  let index = a.year * 12 + (a.month - 1) + 1
+  const end = b.year * 12 + (b.month - 1)
+  while (index < end && meses.length < MAX_MESES_ACUMULADOS) {
+    meses.push(`${String((index % 12) + 1).padStart(2, "0")}/${Math.floor(index / 12)}`)
+    index += 1
+  }
+  return meses
+}
+
+type InadimplenciaAcumuladaInferida = PrestacaoAnalysis["inadimplencias_acumuladas"][number]
+
+// Inadimplencia acumulada inferida da Relacao de Imoveis: contrato ativo
+// (SIT=ALUG) com "ult. pg" anterior ao mes que antecede a competencia deve os
+// meses no intervalo, descontados os que foram pagos neste mesmo documento
+// (atraso quitado). Valor = coluna ALUGUEL da Relacao. Imovel alugado sem
+// "ult. pg" ou sem aluguel na Relacao nao tem base: fica em `semBase`, e a
+// metrica permanece desconhecida para ele (CA-IND22: nunca zero confirmado).
+export function buildInadimplenciasAcumuladas(
+  relacao: RelacaoImovel[],
+  lancamentos: Lancamento[],
+  competencia: string | null,
+): { itens: InadimplenciaAcumuladaInferida[]; semBase: string[] } {
+  const competenciaMesAno = competenciaToMesAno(competencia)
+  const itens: InadimplenciaAcumuladaInferida[] = []
+  const semBase: string[] = []
+
+  for (const imovel of relacao) {
+    if (!isContratoAtivo(imovel)) continue
+    if (!competenciaMesAno || !imovel.ultimoPagamento || !parseMesAno(imovel.ultimoPagamento)) {
+      semBase.push(imovel.codigo)
+      continue
+    }
+    const pagosNoDocumento = new Set(
+      lancamentos
+        .filter(
+          (item) =>
+            item.codigo === imovel.codigo &&
+            item.credito !== null &&
+            normalize(item.descricao).startsWith("ALUGUEL") &&
+            item.mesAno,
+        )
+        .map((item) => item.mesAno as string),
+    )
+    const meses = mesesEntre(imovel.ultimoPagamento, competenciaMesAno).filter((mes) => !pagosNoDocumento.has(mes))
+    if (meses.length === 0) continue
+    if (imovel.aluguel === null) {
+      semBase.push(imovel.codigo)
+      continue
+    }
+    for (const mes of meses) {
+      itens.push({
+        apto: imovel.codigo,
+        inquilino: imovel.endereco.trim() || null,
+        valor: imovel.aluguel,
+        condicao: `Aluguel de ${mes} sem lancamento`,
+        observacao: `Inferido da Relacao de Imoveis: SIT=ALUG com ultimo pagamento em ${imovel.ultimoPagamento}.`,
+        competencia_original: mes,
+        dia_vencimento: null,
+        confianca: 0.9,
+      })
+    }
+  }
+
+  return { itens, semBase }
 }
 
 export function parseCesarRegoHeader(lines: CesarHeaderLine[]): CesarRegoHeader {
@@ -589,6 +727,7 @@ function buildReceita(
       | "competencia_original"
       | "competencia_recebimento"
       | "dia_vencimento"
+      | "aluguel_esperado"
       | "outros_recebimentos"
       | "entradas_passagem"
       | "saidas_passagem"
@@ -614,6 +753,7 @@ function buildReceita(
     competencia_original: values.competencia_original ?? null,
     competencia_recebimento: values.competencia_recebimento ?? null,
     dia_vencimento: values.dia_vencimento ?? null,
+    aluguel_esperado: values.aluguel_esperado ?? null,
     outros_recebimentos: values.outros_recebimentos ?? null,
     entradas_passagem: values.entradas_passagem ?? null,
     saidas_passagem: values.saidas_passagem ?? null,
@@ -699,11 +839,6 @@ function buildResumo(valores: Map<string, number>, receitas: ReceitaPorImovel[],
     totalOutrasDespesas,
     totalComissaoDespesas,
   }
-}
-
-function joinObservacao(endereco: string | null | undefined, detalhe: string | null): string | null {
-  const parts = [endereco?.trim() || null, detalhe?.trim() || null].filter((part): part is string => Boolean(part))
-  return parts.length > 0 ? parts.join(". ") : null
 }
 
 function sumOrNull(values: number[]): number | null {

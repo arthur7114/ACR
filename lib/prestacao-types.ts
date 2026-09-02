@@ -50,6 +50,10 @@ export const receitaPorImovelSchema = z
     competencia_original: z.string().nullable().optional(),
     competencia_recebimento: z.string().nullable().optional(),
     dia_vencimento: z.number().int().min(1).max(31).nullable().optional(),
+    // Aluguel que o DOCUMENTO declara como devido na competencia (ex.: coluna
+    // ALUGUEL da Relacao de Imoveis no layout Cesar Rego). Preenchido so quando
+    // a fonte e o proprio documento; e a base preferida da inadimplencia do mes.
+    aluguel_esperado: z.number().nullable().optional(),
     // Dimensoes da conciliacao v2. Permanecem opcionais para que analises
     // historicas continuem validas ate serem reprocessadas.
     outros_recebimentos: z.number().nullable().optional(),
@@ -81,6 +85,7 @@ export interface ReceitaPorImovel {
   competencia_original?: string | null
   competencia_recebimento?: string | null
   dia_vencimento?: number | null
+  aluguel_esperado?: number | null
   outros_recebimentos?: number | null
   entradas_passagem?: number | null
   saidas_passagem?: number | null
