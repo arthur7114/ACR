@@ -171,6 +171,93 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Docs atualizados: este contrato, `docs/06-acceptance-criteria.md` e
   `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — alertas não bloqueantes somem e célula vaga no mapa (2026-09-02)
+
+- Ponto alterado, 1: a Revisão deixa de exibir **alertas não bloqueantes**
+  (rechecks `warning`) em qualquer lugar: sai o grupo "Alertas" das pendências,
+  a contagem "N alertas" do parecer e do banner, a etiqueta amarela "Alerta" e
+  o estado intermediário do banner. O parecer `aprovado_com_ressalvas` se
+  apresenta como "Pronto para aprovação" (ressalva = alerta não bloqueante). A
+  diferença de repasse dentro da tolerância (até R$ 5,00) é conciliação OK, em
+  verde, com a diferença citada na frase.
+- Por que: decisão do produto em 2026-09-02 — "não devem aparecer em nenhum
+  lugar, nunca". O alerta pedia leitura sem oferecer ação que mudasse a
+  aprovação; só bloqueio é trabalho.
+- O que permanece: os rechecks `warning` continuam calculados e persistidos em
+  `validacoes` com severidade `alerta`, para auditoria e para o dia em que a
+  regra mudar. Nenhuma migration; a peneira é `isVisibleValidation` em
+  `lib/revisao-pendencias.ts`, e contagem e lista saem dela.
+- Ponto alterado, 2: no mapa "Riscos por imóvel" em modo Inadimplência, a
+  célula de unidade **vaga** fica branca (contorno fino) e sem valor. Antes
+  entrava com 0% (verde) e mostrava o aluguel esperado inteiro como se fosse
+  dinheiro em aberto. A legenda ganha o quadrado "vago" só nesse modo. Modo
+  Vacância não muda.
+- Texto de apoio na Revisão: a derivação de cada KPI de "Situação das
+  unidades" e a descrição da seção passam a ficar em tooltip (regra geral do
+  produto: texto explicativo que cabe em tooltip não fica solto na tela).
+- Ponto alterado, 3 (César Rêgo, layout C): o documento não marca
+  inadimplência; a Relação de Imóveis diz se o imóvel está alugado (`SIT=ALUG`)
+  e qual foi o último mês pago (`ULT. PG`). Regra do cliente: **alugado sem
+  lançamento de ALUGUEL da competência = inadimplente no mês**, mesmo quando o
+  inquilino pagou meses anteriores nesse documento (a linha em aberto vem
+  primeiro, identificada pelo endereço, com `aluguel_esperado` = coluna ALUGUEL
+  da Relação, que a Revisão usa como inadimplência do mês). Os meses entre
+  `ULT. PG` e a competência, descontados os pagos no documento, entram em
+  **inadimplência acumulada** com o aluguel da Relação (João Cordeiro jul/26:
+  julho em aberto + junho acumulado, R$ 788,22 cada). Contrato ativo sem
+  `ULT. PG` ou sem aluguel na Relação mantém a métrica declarada como ausente.
+  No mapa "Riscos por imóvel", célula **inadimplente** é sempre vermelha —
+  status é fato do documento, não fração do aluguel esperado.
+- Ponto alterado, 4 (mapa "Riscos por imóvel", modo Inadimplência, reunião de
+  2026-09-02): a célula da unidade mostra **só o inquilino** — a cor diz o
+  estado; "Vago" segue escrito em branco e "Desconhecido" escrito em cinza. Uma
+  inadimplência **quitada em mês posterior** (atraso recuperado cuja
+  competência de origem aponta para ela) volta a **verde com um check**; o
+  hover diz "Inadimplência de <mês>: R$ X · Quitada em <mês>: R$ Y" (ou, se
+  parcial, "pago R$ Y em <mês> · em aberto R$ Z", e a célula segue vermelha).
+  A quitação sai do risco do mês na linha do empreendimento e do painel
+  "Unidades em aberto", mas fica listada no hover da célula do empreendimento
+  ("<mês>: N em aberto · M quitadas" + uma linha por unidade). O histórico
+  não apaga que a inadimplência existiu. Célula ocupada cujo snapshot veio sem
+  nome usa o inquilino atual da linha (Galpão José Walter jun/jul, Plural).
+  Unidade listada na prestação sem inquilino e sem aluguel é **vaga**, mesmo
+  com aluguel cadastrado zerado (Grand Maracanaú 101; antes "Desconhecido").
+  Leitura da célula do empreendimento: "N / M" é **N unidades em risco entre M
+  com dado** — não "alugadas".
+- Ponto alterado, 5 (reunião de 2026-09-02, "massa falida" e rescisão):
+  - **Dívida registrada pela acumulada.** A seção "Inadimplência acumulada" de
+    um fechamento nomeia a competência em aberto (campo estruturado, "VIGÊNCIA
+    DE MAIO 2025", "MAIO, JUNHO"). A célula dessa competência recebe a dívida:
+    se o mês não tinha evidência própria (sem linha ou "Desconhecido"), passa a
+    **inadimplente** e mostra o saldo; se tinha (rescisão, ocupado), o status
+    fica e a dívida vai para o hover. O saldo é o do **último fechamento que
+    lista a dívida** (cada documento reafirma e corrige o valor); pagamentos são
+    acordos/rescisões/atrasos recebidos para a unidade e o inquilino; quando um
+    fechamento posterior deixa de listar a dívida, ela está **quitada** (verde
+    com check). Grand Maracanaú 202: maio vermelho "saldo R$ 893,33", hover com
+    "Pago em jun. de 2026: R$ 480,00 — PRIMEIRA METADE DA MULTA".
+  - **Rescisão no mapa.** Mês com evento de rescisão aparece escrito "Rescisão"
+    (célula branca, com o inquilino), e o hover traz o recebido proporcional e a
+    observação do documento (dias e período). Para isso o snapshot passa a
+    guardar `observacao` (migration `202609020001`); rows antigas só ganham o
+    texto após recálculo.
+  - **"Hoje" sai da Ocupação.** A barra do cadastro (94,1%) divergia do último
+    fechamento (87,2%) porque o cadastro é sincronizado à mão, conta locação por
+    app como "Ocupado" e carrega status antigos (35 unidades diferentes em
+    jul/26). Quem quer a posição mais atual escolhe a competência. A coluna
+    "Hoje" do Detalhamento por imóvel permanece.
+- Ponto alterado, 6 (reunião de 2026-09-02, **Evolução mensal**): o gráfico de
+  linhas vira **barras agrupadas por mês** e o texto sai da tela — fica só a
+  legenda. Sai a linha de valores do mês ativo, a identidade escrita e a nota de
+  reatribuição (substituição da entrada de 2026-09-01); o detalhamento de cada
+  barra — mês, cada série e seu valor — aparece no **hover/foco** da barra ou da
+  faixa do mês, com a série sob o ponteiro em destaque, e continua na tabela
+  acessível. O aluguel contratado deixa de ser barra: é o **teto do mês**,
+  desenhado como linha de referência sobre o grupo. Cores validadas contra
+  daltonismo (verde recebido, âmbar vacância, vermelho-escuro inadimplência; o
+  par laranja↔vermelho anterior era indistinguível para deutan, ΔE 0,1). Modo
+  percentual: barras de ocupação (verde) e inadimplentes (vermelho-escuro).
+
 ### Ajuste registrado — locação por app na ocupação (2026-07-31)
 
 - Ponto alterado: a ocupação ganha a categoria própria `Alugado por app`, separada de `Ocupado`, com etiqueta e contagem próprias nos blocos de ocupação, na tabela `Detalhamento por imóvel` e no mapa `Riscos por imóvel`. Conta como ocupada no numerador do percentual.

@@ -2140,6 +2140,295 @@ inteiro nos três meses (6, 10 e 13 unidades).
 Revisão, não dos Indicadores; OCR, extração linha a linha, idempotência e
 precisão monetária global não foram tocados.
 
+## 2026-09-02 — Texto de apoio da Revisão migra para tooltip
+
+**Pedido.** Em "Situação das unidades", cada tile trazia a derivação do número
+embaixo do valor ("27 unidades − 3 vagas", "Dentro das alugadas · sem aluguel
+no mês", "R$ 12.811,93 ÷ 24 alugadas") e a seção abria com um parágrafo de
+duas frases. Diretriz do produto registrada neste ciclo: **texto explicativo
+que cabe numa tooltip não fica solto na tela** — vale para qualquer tela, não
+só para esta.
+
+**O que mudou.**
+
+- `components/acr/hint-tooltip.tsx` (novo): `Hint` envolve um gatilho próprio
+  (o card inteiro) e `HintIcon` é o ícone de informação para títulos. Os dois
+  usam o `Tooltip` do shadcn/Radix já instalado e até então sem uso; o `title`
+  nativo saiu. Primeira linha = definição, seguintes = derivação em tom menor.
+  Gatilho é `<button>`: abre no hover, no foco por teclado e no toque
+  (clique força abertura; perder o foco fecha).
+- `MetricTile` (Revisão): `subtext` deixou de ser renderizado embaixo do valor
+  e passou a compor a tooltip junto com `tooltip`; todo tile com texto de apoio
+  mostra o ícone. Valor alinha pela base (`mt-auto`), então a fileira fica
+  uniforme mesmo com rótulo de duas linhas.
+- `SectionTitle` ganhou `hint`: a descrição de "Situação das unidades" passou
+  para o ícone ao lado do título. "Resumo financeiro" e "Prévia eGestor" mantêm
+  a descrição inline por serem uma frase curta.
+
+**Ressalva registrada.** A frase "inadimplentes, intermediação, rescisões e
+reajustes já estão dentro de Alugadas" — que evita somar 24 + 1 + 1 + 1 — agora
+só aparece por hover/foco/toque. O mock contract já previa "informação
+acessível por tooltip/popover" (substituição de 2026-07-28).
+
+**Verificações:** tipos e lint verdes nos arquivos alterados. Validado no
+navegador em GM II jul/26 (24 alugadas, 1 inadimplente): fileira de tiles
+uniforme, ícone em todos, tooltip de "Alugadas" abre por toque/clique com a
+definição e "27 unidades − 3 vagas". Detalhe de implementação que quase passou:
+o `TooltipTrigger` do Radix fecha a tooltip no clique; o handler precisa ir no
+próprio `TooltipTrigger` com `preventDefault` para o toque abrir em vez de
+fechar.
+
+## 2026-09-02 — Alertas não bloqueantes somem; célula vaga no mapa fica branca
+
+**Pedido.** "Remover alertas que não são bloqueantes. Eles não devem aparecer
+em nenhum lugar, nunca." E: no mapa de calor da inadimplência, unidade vaga
+sem valor e com cor branca.
+
+**Alertas (rechecks `warning`).**
+
+- A peneira mudou de lugar: `isVisibleValidation` em
+  `lib/revisao-pendencias.ts` exclui `warning` antes de qualquer contagem ou
+  lista. `PendenciasDerivadas` perdeu o grupo `warning`; `ValidationSummary`
+  perdeu `warnings`. Um warning resolvido também não entra em "Resolvidos".
+  Tipos forçam a regra: não há mais como uma tela receber alertas.
+- Revisão: saiu o accordion "Alertas — Revise antes de aprovar — não
+  bloqueiam", o estado amarelo do banner, a etiqueta "Alerta" das linhas e as
+  frases "N alertas". Parecer `aprovado_com_ressalvas` (ressalva = warning) se
+  apresenta como "Pronto para aprovação", em verde. Diferença de repasse dentro
+  da tolerância (≤ R$ 5,00, recheck `warning`) é conciliação OK em verde, com a
+  diferença citada na frase em vez de um cartão amarelo "confira".
+- O que NÃO mudou: cálculo e persistência dos rechecks em `validacoes`
+  (severidade `alerta`) continuam, para auditoria. Notificações não citavam
+  alertas (só "Análise concluída"/"Falha na análise"). Sem migration.
+
+**Mapa (Riscos por imóvel, modo Inadimplência).** A célula vaga entrava com 0%
+de inadimplência (verde `q0`) e `valor` = aluguel esperado − 0 recebido, ou
+seja, o aluguel inteiro impresso como se fosse dinheiro em aberto. Agora
+`UnitCell` detecta `metric === "inad" && status === "vago"`: fundo branco com
+contorno fino, sem valor, rótulo acessível só com "Vago". Legenda ganha o
+quadrado "vago" nesse modo. Modo Vacância não muda (vago ali é 100%, por
+definição).
+
+**Verificações:** `pnpm test` 559/559; tipos e lint verdes;
+`lib/revisao-pendencias.test.ts` reescrito para a nova regra (warning nunca em
+lista, contagem ou resolvidos; warning não conta como "ok"). GM II jul/26 no
+navegador: antes tinha "1 alerta · Documentos desconhecidos"; agora banner
+"Sem pendências bloqueantes", parecer "Sem bloqueios · 14 ok", pendências só
+"Resolvidos", palavra "alerta" ausente da página.
+
+**Docs:** `docs/02-mock-contract.md` ganhou "Ajuste registrado — alertas não
+bloqueantes somem e célula vaga no mapa (2026-09-02)"; a linha de
+`revisao` em "Telas contratadas" ainda diz "bloqueios/alertas/validações ok" e
+foi mantida como histórico, com o ajuste registrado logo abaixo.
+
+## 2026-09-02 — César Rêgo: inadimplência por competência e acumulada inferida
+
+**Pedido.** "No João Cordeiro não vem informando no documento quando um imóvel
+está inadimplente. Na tabelinha de cima ele diz se está alugado ou desalugado;
+se está alugado mas não consta lançamento, está inadimplente e no mapa tem que
+ficar vermelhinho." E: junho e julho sem pagamento → julho deve mostrar
+inadimplência do mês (aluguel de julho) e acumulada de um mês (junho).
+
+**Diagnóstico.** A regra `SIT=ALUG` sem lançamento → INADIMPLENCIA já existia
+(CA24), mas só disparava quando o imóvel não tinha lançamento NENHUM no
+documento. Em jun/26 o 0002521 pagou abril e maio dentro do fechamento de junho
+e junho ficou em aberto — o parser gerava as duas linhas pagas (04, 05) e
+nenhuma para junho; o snapshot de junho saía "Ocupado". Em jul/26 a linha
+inferida saía com inquilino vazio ("-" na Revisão, "Inquilino não informado" no
+mapa) e o mapa pintava a célula de verde: 0% porque o cadastro não tem aluguel
+esperado. A acumulada era declarada "campo ausente" para o layout inteiro.
+
+**O que mudou.**
+
+- `buildReceitas(relacao, lancamentos, competencia)` (`cesar-rego-parser.ts`):
+  contrato ativo sem crédito de ALUGUEL da competência gera a linha inadimplente
+  da competência — **primeira do apto**, porque a Revisão conta 1 unidade = a
+  primeira linha —, identificada pelo endereço (como as linhas pagas) e com
+  `aluguel_esperado` = coluna ALUGUEL da Relação. Crédito de ALUGUEL sem mês
+  legível impede a inferência (pode ser o mês corrente).
+- `buildInadimplenciasAcumuladas`: meses estritamente entre `ULT. PG` e a
+  competência, descontados os pagos no documento, viram
+  `inadimplencias_acumuladas` com o aluguel da Relação (teto de 24 meses).
+  Contrato ativo sem `ULT. PG`/aluguel entra em `semBase`: alerta nominal e
+  `campos_ausentes` mantido só nesse caso (CA-IND22).
+- `ReceitaPorImovel.aluguel_esperado` (novo, opcional, sem migration — viaja no
+  JSON `analise_completa`). `loadInadimplenciaMes` usa esse valor antes de
+  cobrança esperada, proxy do snapshot e cadastro: é o que o locador lê no
+  extrato.
+- Mapa de riscos: célula `inadimplente` é sempre `q5` (vermelha) no modo
+  Inadimplência, independentemente do percentual.
+
+**Verificações:** `pnpm test` 567/567 (8 testes novos no parser), canários 6/6,
+tipos e lint verdes. PDF real de março/26: 0002521 sai com março em aberto,
+`aluguel_esperado` 788,22 e acumulada janeiro + fevereiro (788,22 cada);
+`campos_ausentes` vazio. No navegador, a célula jul/26 do 0002521 já está
+vermelha (`rgb(192, 67, 47)`) com o dado persistido.
+
+**Pendente de dado, não de código:** os fechamentos João Cordeiro jun/26 e
+jul/26 foram gravados pelo parser antigo. Para a Revisão mostrar julho em
+aberto (R$ 788,22), junho acumulado (R$ 788,22) e o inquilino na linha, é
+preciso reprocessar os dois (Reprocessar → reenviar o PDF). Junho passará a
+ter 3 linhas para o 0002521 (06 em aberto, 04 e 05 pagos) e o snapshot de junho
+vira inadimplente; jul/26 deixa de dizer "Inquilino não informado" no mapa.
+
+**Ressalva registrada:** `ULT. PG` é lido como competência do último aluguel
+pago (no extrato de julho ele diz 05/2026 embora o pagamento de maio tenha
+entrado em junho). Se em algum extrato o campo for data de pagamento, a
+acumulada sairá um mês menor — o canário de março cobre a leitura atual.
+
+## 2026-09-02 — Mapa de riscos: inadimplência quitada, célula só com inquilino, 101 vago
+
+**Pedido (reunião).** (1) Quando uma inadimplência é paga depois, o histórico
+do mapa deve mostrar o mês verde mas registrar que ela existiu: um check e, no
+hover, "inadimplência do mês tanto, quitado tanto em tal competência" — e no
+empreendimento, a lista de quem estava em aberto e quem quitou. (2) A célula
+da unidade no modo inadimplência mostra só o nome do inquilino, não "Ocupado".
+(3) Galpão José Walter aparecia "Inquilino não informado" em jun/jul. (4) O 101
+do Grand Maracanaú é vago, não "Desconhecido".
+
+**Diagnósticos.**
+
+- (3) Layout Plural (extração por IA): maio veio com o endereço no campo
+  inquilino, junho e julho vieram vazios. O cadastro tem "GALPAO JOSE WALTER".
+  A leitura "0 / 1" da linha do empreendimento é "0 em risco entre 1 com dado",
+  não "0 alugadas" — registrado no contrato porque foi lido assim na reunião.
+- (4) `classifyOccupancy` devolvia `desconhecido` de propósito quando a unidade
+  vinha sem inquilino e sem aluguel mas o cadastro tinha aluguel zero ("falha de
+  cadastro não é vacância", canário antigo do próprio 101). O cliente decidiu o
+  contrário: o documento lista a unidade vazia, ela está vaga.
+- (1) O dado já existia: `imovel_competencias.atrasos_competencia_origem`
+  (migration 202608070002) aponta o mês que um atraso recuperado quita, mas a
+  query dos indicadores não o carregava e o mapa não o usava.
+
+**O que mudou.**
+
+- `lib/server/indicadores.ts` carrega `atrasos_competencia_origem`;
+  `IndicadoresSnapshotInput.atrasosCompetenciaOrigem`.
+- `buildHeat` (`indicadores-aggregation.ts`): `resolveQuitacao` — para cada
+  célula, soma os atrasos recuperados de meses posteriores da mesma unidade com
+  origem igual à competência; `IndicadoresHeatCell.quitacao = { competencia,
+  valor } | null`. Sem origem informada, sem quitação (nunca inferida).
+- `presentation.ts`: `isInadimplenciaQuitada` (quitação cobre o valor em aberto
+  ou o valor é desconhecido; parcial mantém o risco), `HeatGroupCell` ganha
+  `unidadesQuitadas` e `detalhes` (uma linha por unidade inadimplente no mês,
+  quitada ou não); quitada sai de `unidadesEmRisco`/`percentual`/`valor` e do
+  `buildDelinquencySummary`. `formatCompetenciaCurta` para meses fora do período.
+- `view-mapa.tsx`: modo inadimplência mostra só o inquilino (fallback: inquilino
+  atual da linha); inadimplente quitada = verde `q0` + check + hover (`Hint`);
+  parcial = vermelha + hover com pago/saldo; célula do empreendimento ganha
+  check quando há quitadas e hover com o resumo do mês e a lista por unidade.
+  Legenda: "inadimplência quitada depois". Modo vacância não muda.
+- `classifyOccupancy`: `hasBlankTenancy` → `vago` sem exigir aluguel cadastrado.
+
+**Verificações:** `pnpm test` 571/571 (4 testes novos em `presentation`, canário
+do 101 invertido para `vago`), canários 6/6, tipos e lint verdes. No navegador
+(jul/26): Grand Messejana I apto 1 — maio em aberto R$ 650,00 quitado em junho
+(R$ 748,93) sai verde com check e hover "Inadimplência de mai. de 2026: R$
+650,00 · Quitada em jun. de 2026: R$ 748,93"; linha do empreendimento "0 / 30,
+1 quitadas depois". GA0002 jun/jul mostra "GALPAO JOSE WALTER".
+
+**Pendente de dado, não de código:** dois casos citados na reunião dependem de
+recalcular snapshots (`scripts/backfill-indicadores-snapshots.ts`): Izabel (105
+Grand Castelão I) — o snapshot de jul/26 foi gravado sem
+`atrasos_competencia_origem`, então junho segue vermelho até o recálculo; e o
+101 do Grand Maracanaú — o status `desconhecido` está persistido e só vira
+`vago` recalculando mai–jul/26. Não rodado neste ciclo por ser escrita na base.
+
+## 2026-09-02 — "Massa falida" no mapa, rescisão escrita, "Hoje" sai da Ocupação
+
+**Pedido (reunião).** (1) Grand Maracanaú 202: inadimplente em maio, rescindiu
+em junho com acordo, pagou parte em junho e não pagou o resto em julho — a
+dívida não aparecia em lugar nenhum. Maio tem que constar como inadimplente e o
+hover dizer quanto já foi pago e o saldo, atualizado a cada fechamento (o valor
+pode vir corrigido) e baixado quando pago. (2) Mês de rescisão aparece como
+"Rescisão", não "Vago", com o proporcional (valor e dias) no hover. (3) Os dois
+indicadores de Ocupação (julho × Hoje) deviam ser iguais e não eram; tirar o
+"Hoje" e entender a diferença.
+
+**Diagnósticos.**
+
+- (1) O documento de maio não listou o 202 (15 de 30 unidades) → snapshot
+  `desconhecido`. Junho registrou a rescisão (proporcional de 1 dia, R$ 13,33),
+  a primeira metade da multa (R$ 480,00) e, na acumulada, "VALOR DA RESCISÃO
+  (MAIO, JUNHO E SEGUNDA METADE DA MULTA) ... R$ 893,33"; julho repetiu o saldo
+  e trouxe inquilino novo. A única evidência de maio é a acumulada de junho.
+- (2) O classificador devolve `vago` para rescisão de propósito (CA27/P0.3: o
+  status é como o mês terminou; a rescisão é evento). O evento já está no
+  snapshot (`eventos`), mas o mapa não o lia e a observação não era persistida.
+- (3) "Hoje" é `imoveis.status` (cadastro sincronizado à mão), não o último
+  fechamento: 35 unidades diferentes em jul/26 — 13 Airbnb contadas como
+  "Ocupado" no cadastro, vagos/ocupados trocados (GM II 6/12/18/26 vagos em
+  julho, "ocupado" no cadastro), inadimplentes antigos.
+
+**O que mudou.**
+
+- Loader (`lib/server/indicadores.ts`) passa a mapear `apto`, `inquilino`,
+  `condicao`, `observacao` e `competencia_original` da acumulada, e a carregar
+  `observacao` do snapshot.
+- `buildHeat` recebe os fechamentos do escopo: `buildPropertyLedger` cruza
+  acumulada e acordos/rescisões por unidade (`normalizeCodigoImovel`);
+  `inferirCompetenciasDaDivida` ancora cada item nas competências que nomeia;
+  `resolveDivida` devolve `{ registradaEm, inquilino, condicao, saldo,
+  saldoEm, pagamentos, quitada, retroativa }`; `applyDivida` só muda o status
+  quando não há evidência própria.
+- `IndicadoresHeatCell` ganha `eventos`, `observacao`, `aluguelRecebido`,
+  `divida` (opcionais). `isInadimplenciaQuitada` também aceita `divida.quitada`.
+- Mapa: célula com evento `rescisao` escreve "Rescisão" (branca, com inquilino)
+  e o hover traz recebido proporcional + observação; célula inadimplente sem
+  valor do mês mostra "saldo R$ X"; hover lista registro, saldo, pagamentos e
+  quitação. Empreendimento conta a retroativa como risco do mês.
+- Snapshot persiste `observacao` (migration `202609020001_snapshot_observacao`:
+  coluna + RPC `persistir_pacote_fechamento_v1` regravada com o campo).
+- Visão geral: barra "Hoje" removida; a coluna "Hoje" do Detalhamento fica.
+
+**Verificações:** tipos e lint verdes; `pnpm test` com 3 testes novos de
+agregação (massa falida com saldo/pagamentos, quitação por omissão, inferência
+de competências). Navegador (jul/26): 202 maio vermelho "BRUNO EDUARDO DA SILVA
+· saldo R$ 893,33", hover com saldo em jul/26 e "Pago em jun. de 2026: R$
+480,00 — PRIMEIRA METADE DA MULTA"; linha do GRAND MARACANAÚ "1 de 30 em risco"
+em maio; junho ainda "Vago" porque o snapshot de jun/26 foi gravado antes da
+coluna `eventos` — vira "Rescisão" com o recálculo dos snapshots (mesmo
+pendente dos ciclos anteriores), e a observação só existe após aplicar a
+migration e recalcular.
+
+**Ressalvas registradas.** A dívida é acompanhada pelo inquilino: se o
+documento reescrever o nome, o saldo reaparece como registro novo. Mês por
+extenso sem ano assume o ano do fechamento (ou o anterior, se o mês for maior).
+Pagamento é atribuído pela unidade + inquilino, sem conferir se cobre esta
+competência ou outra dívida do mesmo inquilino.
+
+## 2026-09-02 — Evolução mensal em barras, só legenda, valores no hover
+
+**Pedido.** "Vamos pra gráfico de barra, o de linha tá muito zoado e aparecendo
+muito texto. Só a legenda do que é cada coisa; passando o mouse nas barras
+aparece o detalhamento e o valor de cada uma."
+
+**O que mudou** (`components/acr/indicadores/charts/monthly-series.tsx`,
+reescrito):
+
+- Barras agrupadas por competência, ≤ 24px, topo arredondado 4px, 2px de
+  espaçador; o aluguel contratado vira **linha de teto** sobre o grupo (é o
+  limite do mês, não uma categoria). Faixa do mês selecionado com fundo.
+- Texto na tela: só a legenda (retângulo para barra, traço para o teto).
+  Saíram a linha "mês ativo + valores", a identidade escrita
+  (`realizationIdentity`) e a nota de reatribuição (`reallocationNote`) — as
+  funções e seus testes ficam em `presentation.ts`.
+- Hover/foco: um tooltip por mês listando todas as séries com o valor forte e a
+  barra sob o ponteiro destacada; a faixa inteira do mês também é alvo. Barras
+  são focáveis por teclado (`role="graphics-symbol"`, `aria-label` com mês,
+  série e valor). Tabela `sr-only` mantida.
+- Paleta validada com `dataviz/scripts/validate_palette.js` (modo claro): a
+  antiga (#6b7f6e, #2d8c3a, #c2410c, #b45309) falhava — cinza abaixo do piso de
+  croma e laranja↔vermelho com ΔE 0,1 para deutan. Nova: recebido #2d8c3a,
+  vacância #d9a441, inadimplência #9f2a2a (todas as checagens passam);
+  percentual #2d8c3a/#9f2a2a passa. O app é só tema claro; no escuro âmbar e
+  vermelho saem da banda de luminosidade — registrado, não aplicável hoje.
+- Ajuda do painel reescrita para descrever a linha de teto e o hover.
+
+**Verificações:** tipos, lint e suíte; no navegador, hover na barra de vacância
+de jun/26 abre "jun. de 2026 · Aluguel contratado (teto) R$ 87.621,97 ·
+Recebido sem dado · Vacância R$ 11.780,37 · Inadimplência R$ 3.807,02".
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
