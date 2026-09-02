@@ -43,6 +43,8 @@ interface Ajuste {
   empreendimentoId: string
   vigenciaAtualId: string | null
   vigenciaAtualInicio: string | null
+  /** Inicio da vigencia seguinte, quando ja existe uma (preenchimento retroativo). */
+  proximaVigenciaInicio: string | null
   valorAnterior: number | null
   valorNovo: number
   garagemNova: number | null
@@ -163,8 +165,18 @@ async function montarPlano(
 
     const inicioCompetencia = primeiroDiaDoMes(competencia)
     const vigenciaVigente = new Map<string, (typeof vigencias)[number]>()
+    // Preenchimento retroativo (maio/junho depois de julho ja corrigido): a
+    // vigencia inserida NAO pode ficar em aberto, senao cobre tambem os meses
+    // seguintes e passa a concorrer com a vigencia que ja existe la.
+    const proximaVigencia = new Map<string, string>()
     for (const vigencia of vigencias ?? []) {
-      if (vigencia.vigencia_inicio > inicioCompetencia) continue
+      if (vigencia.vigencia_inicio > inicioCompetencia) {
+        const atual = proximaVigencia.get(vigencia.imovel_id)
+        if (!atual || vigencia.vigencia_inicio < atual) {
+          proximaVigencia.set(vigencia.imovel_id, vigencia.vigencia_inicio)
+        }
+        continue
+      }
       if (vigencia.vigencia_fim && vigencia.vigencia_fim < inicioCompetencia) continue
       vigenciaVigente.set(vigencia.imovel_id, vigencia)
     }
@@ -245,6 +257,7 @@ async function montarPlano(
         empreendimentoId: imovel.empreendimento_id,
         vigenciaAtualId: vigencia?.id ?? null,
         vigenciaAtualInicio: vigencia?.vigencia_inicio ?? null,
+        proximaVigenciaInicio: proximaVigencia.get(imovel.id) ?? null,
         valorAnterior: atual,
         valorNovo,
         garagemNova,
@@ -283,12 +296,17 @@ async function aplicar(supabase: ReturnType<typeof createSupabaseAdmin>, ajustes
       if (error) throw error
     }
 
+    // Fecha a vigencia nova no mes anterior a proxima, quando ela existe.
+    const fimDaNova = ajuste.proximaVigenciaInicio
+      ? fimDaVigenciaAnterior(ajuste.proximaVigenciaInicio)
+      : null
+
     const { error: erroInsert } = await supabase.from("imovel_vigencias").insert({
       imovel_id: ajuste.imovelId,
       imobiliaria_id: ajuste.imobiliariaId,
       empreendimento_id: ajuste.empreendimentoId,
       vigencia_inicio: ajuste.vigenciaInicio,
-      vigencia_fim: null,
+      vigencia_fim: fimDaNova,
       modelo_receita: "fixo",
       aluguel_contratado: ajuste.valorNovo,
       garagem_contratada: ajuste.garagemNova,
@@ -298,11 +316,15 @@ async function aplicar(supabase: ReturnType<typeof createSupabaseAdmin>, ajustes
     })
     if (erroInsert) throw erroInsert
 
-    const { error: erroImovel } = await supabase
-      .from("imoveis")
-      .update({ valor_aluguel_esperado: ajuste.valorNovo })
-      .eq("id", ajuste.imovelId)
-    if (erroImovel) throw erroImovel
+    // `imoveis.valor_aluguel_esperado` descreve o contrato VIGENTE. Num
+    // preenchimento retroativo ele nao pode receber o valor de um mes antigo.
+    if (!ajuste.proximaVigenciaInicio) {
+      const { error: erroImovel } = await supabase
+        .from("imoveis")
+        .update({ valor_aluguel_esperado: ajuste.valorNovo })
+        .eq("id", ajuste.imovelId)
+      if (erroImovel) throw erroImovel
+    }
 
     const { error: erroAuditoria } = await supabase.from("auditoria_correcoes").insert({
       fechamento_id: ajuste.fechamentoId,
@@ -338,7 +360,8 @@ async function main() {
   for (const ajuste of ajustes) {
     console.log(
       `  ${ajuste.empreendimento} apto ${ajuste.unidade}: ${dinheiro(ajuste.valorAnterior)} -> ${dinheiro(ajuste.valorNovo)}` +
-        `${ajuste.garagemNova !== null ? ` (garagem ${dinheiro(ajuste.garagemNova)})` : ""} [${ajuste.origem}, desde ${ajuste.vigenciaInicio}]`,
+        `${ajuste.garagemNova !== null ? ` (garagem ${dinheiro(ajuste.garagemNova)})` : ""} [${ajuste.origem}, desde ${ajuste.vigenciaInicio}` +
+        `${ajuste.proximaVigenciaInicio ? ` até ${fimDaVigenciaAnterior(ajuste.proximaVigenciaInicio)}` : ""}]`,
     )
   }
   console.log(`\n  total: ${ajustes.length} ajuste(s)`)

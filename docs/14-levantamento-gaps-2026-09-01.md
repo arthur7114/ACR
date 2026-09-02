@@ -133,6 +133,39 @@ atraso de junho: recebido maior que o contratado é o comportamento correto ali.
 O relatório de julho do GM II foi reclassificado de `desconhecido`/`erro` para
 `relatorio_reajuste`/`processado`.
 
+### Maio e junho (preenchimento retroativo)
+
+O mesmo script rodou em maio e junho. Preencher meses anteriores tem dois riscos
+que não existem ao corrigir o mês mais recente, e ambos estão tratados:
+
+- a vigência inserida é **fechada no mês da própria competência** quando já
+  existe uma posterior, senão ela cobriria também os meses seguintes e passaria
+  a concorrer com a vigência de julho;
+- `imoveis.valor_aluguel_esperado` descreve o contrato **vigente**, então só é
+  atualizado quando a vigência inserida é a mais recente. Sem isso, corrigir
+  maio rebaixaria o cadastro para um valor antigo.
+
+Por isso a ordem é cronológica inversa: julho, junho, maio.
+
+| Competência | Antes | Depois | Vigências corrigidas |
+|---|---|---|---|
+| mai/2026 | 18 | 2 | 16 |
+| jun/2026 | 30 | 5 | 26 |
+| jul/2026 | 32 | 1 | 36 |
+
+As 8 unidades remanescentes não são defeito: em todas, `atrasos_recuperados` é
+exatamente a diferença entre recebido e contratado, ou seja, o inquilino quitou
+mês anterior. Exemplo: João Cordeiro 0002521 em junho recebeu R$ 1.576,18 contra
+R$ 788,22 contratados, exatamente dois meses de uma vez.
+
+Uma recusa em maio: uma linha do Terreno Castelão sem unidade identificada, que
+o script se nega a adivinhar (fail-closed).
+
+**Nota de método.** A checagem "recebido > contratado" usada neste levantamento é
+um proxy: ela acusa também as quitações de atraso, que são legítimas. Um
+verificador permanente deveria descontar `atrasos_recuperados` antes de comparar.
+Não foi implementado neste ciclo.
+
 Duas observações registradas e não corrigidas:
 
 - A tabela `imovel_vigencias` exige `vigencia_inicio` no dia 1 (check
