@@ -17,6 +17,31 @@
 -- NÃO cobre os arquivos no Storage: as 74 linhas de documentos_fechamento
 -- apontam para objetos no bucket, que continuarão lá. Apagar os binários é
 -- decisão separada — sem eles, o histórico remanescente perde a fonte.
+--
+-- ---------------------------------------------------------------------------
+-- ATUALIZAÇÃO 2026-09-02
+--
+-- As PARTES 1 e 2 abaixo JÁ FORAM EXECUTADAS: fechamentos, imovel_competencias,
+-- movimentacoes, validacoes, documentos_fechamento, fechamento_status_eventos e
+-- egestor_lancamentos não têm mais nenhuma linha anterior a maio, e não há
+-- órfão em nenhuma delas. Rodar de novo é inócuo (apaga zero linhas).
+--
+-- Restou UMA tabela fora do escopo original: `lancamentos_competencia`, escrita
+-- pelo backfill de contratos. Todas as suas 1.060 linhas têm `fechamento_id`
+-- nulo (não pertencem a nenhum fechamento) e 718 delas descrevem competências
+-- anteriores a maio. Nenhum código da aplicação lê essa tabela — só
+-- `scripts/backfill-contratos.ts`, que a escreve, e `scripts/verify-competencia.ts`.
+-- A PARTE 3 trata dela.
+--
+-- O QUE NÃO DEVE SER APAGADO, apesar de ter data anterior a maio:
+--   imovel_vigencias ativas com vigencia_inicio < maio ..... 120
+--   contratos_locacao com inicio < maio .................... 108
+--   contrato_valores com vigencia_inicio < maio ............ 127
+-- Essas datas são INÍCIO DE CONTRATO, não histórico de fechamento. Um contrato
+-- que começou em janeiro e continua valendo precisa manter janeiro como início;
+-- apagá-las destrói a vigência que cobre maio, junho e julho — inclusive as
+-- correções de aluguel contratado aplicadas em 2026-09-02.
+-- ---------------------------------------------------------------------------
 
 -- ============================ PARTE 1 — CONFERÊNCIA ============================
 -- Rode isto primeiro e confira se os números batem com o esperado.
@@ -91,3 +116,28 @@ begin
 end $$;
 
 commit;
+
+-- ============================ PARTE 3 — LANÇAMENTOS ===========================
+-- Órfãos do backfill de contratos (fechamento_id nulo em 100% das linhas).
+-- Rode a conferência, decida o escopo e execute APENAS o delete escolhido.
+
+-- Conferência:
+select 'lancamentos anteriores a maio' as item, count(*) as linhas
+  from public.lancamentos_competencia where competencia_recebimento < '2026-05-01'
+union all select 'lancamentos de maio em diante', count(*)
+  from public.lancamentos_competencia where competencia_recebimento >= '2026-05-01'
+union all select 'lancamentos sem competencia de recebimento', count(*)
+  from public.lancamentos_competencia where competencia_recebimento is null
+union all select 'lancamentos ligados a algum fechamento (deve ser 0)', count(*)
+  from public.lancamentos_competencia where fechamento_id is not null;
+
+-- Escopo A — só o que é anterior a maio (recomendado):
+-- begin;
+-- delete from public.lancamentos_competencia where competencia_recebimento < '2026-05-01';
+-- commit;
+
+-- Escopo B — a tabela inteira, se o backfill de contratos for descartado por
+-- completo. Isso deixa `scripts/verify-competencia.ts` sem fonte de dados.
+-- begin;
+-- delete from public.lancamentos_competencia;
+-- commit;
