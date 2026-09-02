@@ -472,6 +472,7 @@ function buildRechecks({
     checkOptionalDocument(documents, "despesas_comprovantes", "Despesas e comprovantes"),
     checkUnknownDocuments(documents),
     checkPrestacaoRows(prestacao),
+    checkLineComponents(prestacao),
     compareTotal("total_linhas_receitas", "Total das linhas de receitas", "Total", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? [])),
     compareColumnTotal(
       "total_linhas_comissoes",
@@ -645,6 +646,69 @@ function buildTechnicalOpinion(rechecks: PrestacaoRecheck[], guardrails: Prestac
     motivos: ["Validacoes deterministicas passaram sem divergencias bloqueantes."],
     confianca: 0.95,
     requer_revisao_humana: false,
+  }
+}
+
+// Coluna perdida na leitura (ex.: SEG INC. da planilha GM II jul/26) nao muda o
+// TOTAL da linha, copiado do documento — por isso nenhum total conferia e a
+// coluna chegou zerada na Revisao. A soma dos componentes ABAIXO do total e o
+// sinal deterministico de componente nao lido. Componentes ACIMA do total sao
+// legitimos (IPTU de passagem anulado no layout C) e nao acusam. Alerta de
+// qualidade de leitura: nao bloqueia a aprovacao.
+function checkLineComponents(prestacao: PrestacaoAnalysis | null): PrestacaoRecheck {
+  const divergentes = (prestacao?.receitas_por_imovel ?? []).flatMap((row) => {
+    const componentes = [
+      row.aluguel_com_desconto ?? row.aluguel,
+      row.garagem,
+      row.agua,
+      row.iptu,
+      row.seguro_incendio,
+      row.outros_recebimentos,
+    ]
+    if (componentes.every((valor) => valor === null || valor === undefined)) return []
+    const soma = roundMoney(sum(componentes.map((valor) => valor ?? 0)))
+    const faltante = roundMoney(row.total - soma)
+    if (faltante <= MONEY_TOLERANCE) return []
+    return [{ apto: row.apto || row.inquilino || "sem identificacao", faltante }]
+  })
+  // Colunas numericas que o parser deterministico viu no cabecalho e nao soube
+  // ler. Com elas a mensagem nomeia a coluna em vez de chutar; e quando os
+  // totais das linhas tambem nao fecham, o dinheiro nao lido e real e bloqueia.
+  const colunasNaoLidas = prestacao?.plano_extracao.colunas_nao_lidas ?? []
+  const descricaoColunas = colunasNaoLidas
+    .map((coluna) => `"${coluna.coluna}" (${formatBRL(coluna.total)} em ${coluna.linhas} linha(s))`)
+    .join(", ")
+  if (divergentes.length === 0) {
+    if (colunasNaoLidas.length > 0) {
+      return {
+        id: "linhas_componentes",
+        label: "Componentes das linhas de receita",
+        status: "warning",
+        message: `Coluna(s) nao lida(s) pelo parser: ${descricaoColunas}. Os totais das linhas fecham sem ela(s), entao provavelmente nao e receita — confira o documento e, se for, mapeie a coluna.`,
+      }
+    }
+    return {
+      id: "linhas_componentes",
+      label: "Componentes das linhas de receita",
+      status: "passed",
+      message: "Aluguel, garagem, agua, IPTU, seguro e outros recebimentos reconstroem o total de cada linha.",
+    }
+  }
+  const totalFaltante = roundMoney(sum(divergentes.map((item) => item.faltante)))
+  const detalheLinhas = divergentes.map((item) => `apto ${item.apto} (${formatBRL(item.faltante)})`).join(", ")
+  if (colunasNaoLidas.length > 0) {
+    return {
+      id: "linhas_componentes",
+      label: "Componentes das linhas de receita",
+      status: "failed",
+      message: `Coluna(s) nao lida(s) pelo parser: ${descricaoColunas}. ${divergentes.length} linha(s) com total acima da soma dos componentes (${formatBRL(totalFaltante)}): ${detalheLinhas}. A receita nao e reconstruivel sem essa coluna — mapeie-a antes de aprovar.`,
+    }
+  }
+  return {
+    id: "linhas_componentes",
+    label: "Componentes das linhas de receita",
+    status: "warning",
+    message: `${divergentes.length} linha(s) com total acima da soma dos componentes (${formatBRL(totalFaltante)} sem coluna de origem): ${detalheLinhas}. Provavel coluna nao lida (ex.: seguro incendio); confira o documento.`,
   }
 }
 

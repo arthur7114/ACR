@@ -41,6 +41,9 @@ export const receitaPorImovelSchema = z
     total: z.number(),
     comissao: z.number().nullable(),
     repasse: z.number().nullable(),
+    // Mes ("MM") do reajuste anual do contrato, quando o documento imprime a
+    // coluna REAJUSTE. Igual ao mes da competencia = atualizacao monetaria no mes.
+    reajuste_mes: z.string().regex(/^(0[1-9]|1[0-2])$/).nullable().optional(),
     imovel_id: z.string().uuid().nullable().optional(),
     // Competencia do aluguel e mes em que o valor entrou no fechamento sao
     // dimensoes distintas. O vencimento permanece como campo legado de leitura.
@@ -73,6 +76,7 @@ export interface ReceitaPorImovel {
   total: number
   comissao: number | null
   repasse: number | null
+  reajuste_mes?: string | null
   imovel_id?: string | null
   competencia_original?: string | null
   competencia_recebimento?: string | null
@@ -101,6 +105,7 @@ export const acordoRescisaoRecebidoSchema = z
     ajuste: z.number().nullable().optional(),
     agua: z.number().nullable().optional(),
     iptu: z.number().nullable().optional(),
+    seguro_incendio: z.number().nullable().optional(),
     total_recebido: z.number().nullable().optional(),
     repasse: z.number().nullable().optional(),
     // Comissao retida sobre este recebimento (ex.: comissao do acordo, taxa de
@@ -133,12 +138,25 @@ export const inadimplenciaAcumuladaSchema = z
 
 export type InadimplenciaAcumulada = z.infer<typeof inadimplenciaAcumuladaSchema>
 
+export const colunaNaoLidaSchema = z
+  .object({
+    coluna: z.string(),
+    total: z.number(),
+    linhas: z.number().int().nonnegative(),
+  })
+  .strict()
+
+export type ColunaNaoLida = z.infer<typeof colunaNaoLidaSchema>
+
 export const extractionPlanSchema = z
   .object({
     documento_lido_integralmente: z.boolean(),
     secoes_identificadas: z.array(z.string()),
     estrategia: z.array(z.string()),
     alertas: z.array(z.string()),
+    // Colunas numericas do documento que o parser deterministico nao mapeou.
+    // Opcional: analises antigas e a extracao por IA nao preenchem.
+    colunas_nao_lidas: z.array(colunaNaoLidaSchema).optional(),
   })
   .strict()
 

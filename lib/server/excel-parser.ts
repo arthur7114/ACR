@@ -40,6 +40,7 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
 
   const empreendimento = firstText(rows[0]) || "Empreendimento não identificado"
   const receitas = parseReceitas(rows, vigenciaIndex, competencia)
+  const colunasNaoLidas = findUnmappedNumericColumns(rows, vigenciaIndex)
   const intermediacoes = parseReceivedSection(rows, "INTERMEDIAC", competencia)
   const acordos = parseReceivedSection(rows, "ACORDOS", competencia)
   const atrasados = parseReceivedSection(rows, "ATRASADOS", competencia)
@@ -73,7 +74,13 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
       documento_lido_integralmente: true,
       secoes_identificadas: ["intermediações", "receitas", "acordos/rescisões", "inadimplências", "resumo financeiro"],
       estrategia: ["Extração determinística por cabeçalhos da planilha e valores monetários arredondados."],
-      alertas: [],
+      // Coluna numerica que o parser nao conhece e descartada em silencio se
+      // ninguem a listar: o total da linha (copiado do documento) continua certo
+      // e nenhum total acusa. Aqui ela fica nomeada para o recheck de componentes.
+      alertas: colunasNaoLidas.map(
+        (coluna) => `Coluna "${coluna.coluna}" com ${coluna.linhas} linha(s) e R$ ${coluna.total.toFixed(2)} não é lida pelo parser.`,
+      ),
+      colunas_nao_lidas: colunasNaoLidas,
     },
     receitas_por_imovel: receitas,
     acordos_rescisoes_recebidos: deduplicateReceivedItems([
@@ -160,9 +167,13 @@ function buildReceita(row: Row, columns: ColumnMap, competencia: string): Receit
     agua: moneyAt(row, columns.agua),
     iptu: moneyAt(row, columns.iptu),
     seguro_incendio: moneyAt(row, columns.seguro),
+    // ENCARGOS (Grand Maracanau): receita do locador sem coluna propria no
+    // schema; entra em outros_recebimentos (decisao de 2026-09-02).
+    outros_recebimentos: moneyAt(row, columns.encargos),
     total: moneyAt(row, columns.total) ?? 0,
     comissao: moneyAt(row, columns.comissao),
     repasse: moneyAt(row, columns.repasse),
+    reajuste_mes: parseMonthName(textAt(row, columns.reajuste)),
     competencia_original: competencia,
     competencia_recebimento: competencia,
     dia_vencimento: diaVencimento,
@@ -206,6 +217,7 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
       garagem,
       agua: moneyAt(row, table.columns.agua),
       iptu: moneyAt(row, table.columns.iptu),
+      seguro_incendio: moneyAt(row, table.columns.seguro),
       total_recebido: totalRecebido,
       repasse: moneyAt(row, table.columns.repasse),
       comissao,
@@ -325,6 +337,32 @@ function locateTable(rows: Row[], sectionIndex: number) {
   return { columns: mapColumns(rows[headerIndex]), rows: tableRows }
 }
 
+// Colunas conhecidas que nao carregam dinheiro: podem ter numero (dia 10,
+// carencia 11) sem serem receita. Tudo que nao esta mapeado nem aqui e coluna
+// numerica desconhecida — o parser a descartaria e o total nao acusaria.
+const NON_MONETARY_HEADERS = ["VENC", "CARENCIA", "DATA INICIO", "DATA", "REAJUSTE", "OBSERVACAO", "NOME", "APTO", "IMOVEL", "UNIDADE"]
+
+function findUnmappedNumericColumns(rows: Row[], sectionIndex: number) {
+  const table = locateTable(rows, sectionIndex)
+  if (!table) return []
+  const headerIndex = findHeaderRow(rows, sectionIndex)
+  const header = rows[headerIndex] ?? []
+  const mapped = new Set(Object.values(table.columns).filter((index) => index >= 0))
+  const width = Math.max(header.length, ...table.rows.map((row) => row.length))
+  const result: Array<{ coluna: string; total: number; linhas: number }> = []
+  for (let index = 0; index < width; index += 1) {
+    if (mapped.has(index)) continue
+    const label = normalizeText(header[index]).replace(/[.:;,]+$/, "").trim()
+    if (NON_MONETARY_HEADERS.some((known) => label === known || label.startsWith(`${known} `))) continue
+    const valores = table.rows
+      .map((row) => (typeof row[index] === "number" ? parseMoney(row[index]) : null))
+      .filter((valor): valor is number => valor !== null && valor !== 0)
+    if (valores.length === 0) continue
+    result.push({ coluna: label || `coluna ${index + 1} sem título`, total: sumMoney(valores), linhas: valores.length })
+  }
+  return result
+}
+
 function findHeaderRow(rows: Row[], sectionIndex: number) {
   const limit = Math.min(rows.length, sectionIndex + 5)
   for (let index = sectionIndex + 1; index < limit; index += 1) {
@@ -338,6 +376,7 @@ function mapColumns(header: Row): ColumnMap {
   return {
     nome: findColumn(values, ["NOME"]),
     unidade: findColumn(values, ["APTO", "IMOVEL", "UNIDADE"]),
+    reajuste: findColumn(values, ["REAJUSTE"]),
     aluguel: findColumn(values, ["ALUGUEL", "PRINCIPAL"]),
     principal: findColumn(values, ["PRINCIPAL"]),
     desconto: findColumn(values, ["DESCONTO"]),
@@ -346,6 +385,7 @@ function mapColumns(header: Row): ColumnMap {
     agua: findColumn(values, ["AGUA"]),
     iptu: findColumn(values, ["IPTU"]),
     seguro: findColumn(values, ["SEG INC", "SEGURO"]),
+    encargos: findColumn(values, ["ENCARGOS", "ENCARGO"]),
     total: findColumn(values, ["TOTAL"]),
     comissao: findColumn(values, ["COMISSAO"]),
     repasse: findColumn(values, ["REPASSE"]),
@@ -356,8 +396,12 @@ function mapColumns(header: Row): ColumnMap {
   }
 }
 
+// Cabecalhos reais trazem pontuacao e espacos extras ("SEG INC.", "IPTU ",
+// "COMISSAO "). O casamento ignora pontuacao final: sem isso a coluna inteira
+// de seguro incendio era perdida (GM II jul/26: 8 linhas zeradas na Revisao).
 function findColumn(values: string[], labels: string[]) {
-  return values.findIndex((value) => labels.some((label) => value === label || value.startsWith(`${label} `)))
+  const headers = values.map((value) => value.replace(/[.:;,]+$/, "").trim())
+  return headers.findIndex((value) => labels.some((label) => value === label || value.startsWith(`${label} `)))
 }
 
 // A comissao de administracao impressa no bloco final aparece com rotulos
@@ -459,6 +503,16 @@ function inferReceivedType(value: string): AcordoRescisaoRecebido["tipo"] {
   if (normalized.includes("RESCIS")) return "rescisao"
   if (normalized.includes("ACORD")) return "acordo"
   return "outro"
+}
+
+// Coluna REAJUSTE da planilha Alive: nome do mes do reajuste anual do contrato
+// ("JULHO", "MARCO"). Devolve o mes em "MM" para a Revisao comparar com a
+// competencia; texto irreconhecivel vira null (nunca um mes inventado).
+function parseMonthName(value: string | null) {
+  if (!value) return null
+  const normalized = normalizeText(value)
+  const month = Object.entries(MONTHS).find(([, names]) => normalized === names.long || normalized === names.short)?.[0]
+  return month ?? null
 }
 
 function parseCompetenceFromText(value: string | null) {

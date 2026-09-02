@@ -223,3 +223,83 @@ test("percentual do acordo usa o total pago, nao aluguel mais garagem", () => {
   assert.equal(acordo?.percentual, 7)
   assert.equal(acordo?.agua, 0)
 })
+
+// GM II jul/26: a planilha real imprime o cabecalho "SEG INC." (com ponto) e
+// "IPTU " (com espaco). O casamento por igualdade exata perdia a coluna inteira
+// de seguro incendio — 8 linhas com valor viravam null e a coluna aparecia
+// zerada na Revisao (queixa do cliente em 2026-09-01).
+test("le SEG INC. com pontuacao no cabecalho e captura o mes de reajuste da linha", () => {
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["GRAND MESSEJANA II"],
+    ["VIGÊNCIA DE JULHO DE 2026"],
+    ["NOME", "APTO", "REAJUSTE", "ALUGUEL", "DESCONTO", "ALUGUEL C/ DESCONTO", "GARAGEM", "ÁGUA", "IPTU ", "SEG INC.", "TOTAL", "COMISSÃO ", "REPASSE", "OBSERVAÇÃO", "VENC.", "CARÊNCIA"],
+    ["LUIS AUGUSTO", 2, "JULHO", 690.63, null, 690.63, 52.32, 67.7, 1.43, 139.83, 951.91, 66.63, 885.28, "IPTU (7/12). SEGURO (1/1). VAGA DE GARAGEM PARA CARRO.", 10, 11],
+    ["CRISTINA", 5, "JANEIRO", 617.92, null, 617.92, 50, 67.7, 1.43, null, 737.05, 51.59, 685.46, "IPTU (7/12). SEGURO QUITADO.", 10, 11],
+    [null, 6, "JANEIRO", null, null, null, null, null, null, null, null, null, null, "DESOCUPADO", null, null],
+    ["TOTAL", null, null, 1308.55, null, 1308.55, 102.32, 135.4, 2.86, 139.83, 1688.96, 118.22, 1570.74],
+    ["ACORDOS/RESCISÕES RECEBIDAS EM JULHO DE 2026"],
+    ["NOME", "APTO", "REAJUSTE", "ALUGUEL", "DESCONTO", "ALUGUEL C/ DESCONTO", "GARAGEM", "ÁGUA", "IPTU ", "SEG INC.", "TOTAL", "COMISSÃO ", "REPASSE", "OBSERVAÇÃO", "VENC.", "CARÊNCIA"],
+    ["LUANA", 7, "MARÇO", 790.33, null, 790.33, 27.58, 74.7, 1.57, 12.5, 906.68, 63.47, 843.21, "ACORDO. VIGÊNCIA DE JUNHO DE 2026. VAGA DE GARAGEM PARA MOTO.", 10, 11],
+    ["TOTAL", null, null, null, null, null, null, null, null, null, 906.68, 63.47, 843.21],
+    ["COMISSÕES"],
+    ["COMISSÃO 7% ", null, null, null, null, null, null, null, null, null, 181.69],
+    ["TOTAL COMISSÃO + DESPESAS", null, null, null, null, null, null, null, null, null, 181.69],
+    ["R$ RECEBIDOS EM NOME DO LOCADOR", null, null, null, null, null, null, null, null, null, 2595.64],
+    ["TOTAL A REPASSAR", null, null, null, null, null, null, null, null, null, 2413.95],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "JUL 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-07")
+
+  const [luis, cristina, vago] = result.receitas_por_imovel
+  assert.equal(luis?.seguro_incendio, 139.83)
+  assert.equal(luis?.iptu, 1.43)
+  assert.equal(luis?.reajuste_mes, "07")
+  assert.equal(cristina?.seguro_incendio, null)
+  assert.equal(cristina?.reajuste_mes, "01")
+  assert.equal(vago?.reajuste_mes, "01")
+  assert.equal(result.acordos_rescisoes_recebidos.length, 1)
+  assert.equal(result.acordos_rescisoes_recebidos[0]?.seguro_incendio, 12.5)
+  assert.equal(result.acordos_rescisoes_recebidos[0]?.agua, 74.7)
+})
+
+// Grand Maracanau: a planilha traz ENCARGOS (receita do locador) e DATA INICIO
+// LOCACAO no lugar de REAJUSTE. ENCARGOS vai para outros_recebimentos; qualquer
+// coluna numerica que o parser nao conheca e registrada em colunas_nao_lidas para
+// o recheck nomear a coluna em vez de chutar. Colunas conhecidas nao monetarias
+// (VENC., CARENCIA, DATA INICIO) nao entram na lista.
+test("mapeia ENCARGOS para outros_recebimentos e registra coluna numerica desconhecida", () => {
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["GRAND MARACANAÚ"],
+    ["VIGÊNCIA DE JUNHO DE 2026"],
+    ["NOME", "APTO", "DATA INÍCIO LOCAÇÃO", "ALUGUEL", "DESCONTO", "ALUGUEL C/ DESCONTO", "GARAGEM", "IPTU", "SEG INC.", "ENCARGOS", "TAXA EXTRA", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO", "VENC.", "CARÊNCIA"],
+    ["JOSÉ LUCAS", 201, "20/07/2026", 154.84, null, 154.84, null, 3.35, 89.57, 15.7, 20, 283.46, 19.84, 263.62, "PROPORCIONAL.", 10, 11],
+    ["RAPHAEL", 204, "12/07/2023", 417.57, null, 417.57, 20, 0, null, null, null, 437.57, 30.63, 406.94, null, 10, 11],
+    ["TOTAL", null, null, 572.41, null, 572.41, 20, 3.35, 89.57, 15.7, 20, 721.03, 50.47, 670.56],
+    ["COMISSÃO ADMINISTRAÇÃO", null, null, null, null, null, null, null, null, null, null, 50.47],
+    ["TOTAL COMISSÃO + DESPESAS", null, null, null, null, null, null, null, null, null, null, 50.47],
+    ["R$ RECEBIDOS EM NOME DO LOCADOR", null, null, null, null, null, null, null, null, null, null, 721.03],
+    ["TOTAL A REPASSAR", null, null, null, null, null, null, null, null, null, null, 670.56],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "JUN 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-06")
+
+  assert.equal(result.receitas_por_imovel[0]?.outros_recebimentos, 15.7)
+  assert.equal(result.receitas_por_imovel[0]?.reajuste_mes, null)
+  assert.equal(result.receitas_por_imovel[1]?.outros_recebimentos, null)
+  assert.deepEqual(result.plano_extracao.colunas_nao_lidas, [{ coluna: "TAXA EXTRA", total: 20, linhas: 1 }])
+  assert.equal(result.plano_extracao.alertas.length, 1)
+  assert.match(result.plano_extracao.alertas[0], /TAXA EXTRA/)
+})
+
+test("planilha com todas as colunas conhecidas nao registra coluna nao lida", () => {
+  const result = parseExcelPrestacao(
+    readFileSync("docs/Artefatos/CAIXA ADMINISTRAÇÃO LOCAÇÃO - GM II (1).xlsx"),
+    "2026-03",
+  )
+  assert.deepEqual(result.plano_extracao.colunas_nao_lidas, [])
+  assert.deepEqual(result.plano_extracao.alertas, [])
+})

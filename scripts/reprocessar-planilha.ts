@@ -53,11 +53,15 @@ function resumo(analysis: PackageAnalysis) {
   const interm = resolverRecebimentosLegados(
     p.acordos_rescisoes_recebidos.filter((item) => item.tipo === "intermediacao"),
   ).map((x) => `${dinheiro(x.financeiro.comissao)} a ${dinheiro(x.financeiro.percentualRealizado)}% (base ${dinheiro(x.financeiro.baseComissionavel)})`)
+  const seguro = p.receitas_por_imovel.reduce((soma, linha) => soma + (linha.seguro_incendio ?? 0), 0)
+  const alertas = analysis.rechecks.filter((check) => check.status !== "passed").map((check) => `${check.id}:${check.status}`)
   return [
     `recebidos=${dinheiro(p.resumo_financeiro.recebidos_em_nome_locador)}`,
     `comissao=${dinheiro(p.resumo_financeiro.comissao_administracao)}`,
     `repasse=${dinheiro(p.resumo_financeiro.total_a_repassar)}`,
     `linhas=${p.receitas_por_imovel.length}`,
+    `seguro=${dinheiro(seguro)}`,
+    `rechecks!=passed=[${alertas.join(", ") || "—"}]`,
     `acordos=${p.acordos_rescisoes_recebidos.length}`,
     `acumuladas=${p.inadimplencias_acumuladas.length}`,
     `intermediacao=[${interm.join("; ") || "—"}]`,

@@ -801,3 +801,171 @@ test("recebimento com evidencia suficiente permanece e o recheck passa", () => {
   const check = result.rechecks.find((item) => item.id === "recebimentos_sem_evidencia")
   assert.equal(check?.status, "passed")
 })
+
+// GM II jul/26: a coluna SEG INC. da planilha nao foi lida e 8 linhas ficaram com
+// seguro null. Nenhum recheck acusou, porque o TOTAL da linha (copiado do
+// documento) continuou correto. A soma dos componentes menor que o total e o
+// sinal deterministico de coluna perdida na leitura.
+test("alerta quando a soma dos componentes da linha fica abaixo do total impresso", () => {
+  const prestacao = createPrestacao({
+    receitas_por_imovel: [
+      {
+        apto: "2",
+        inquilino: "LUIS",
+        aluguel: 690.63,
+        desconto: null,
+        aluguel_com_desconto: 690.63,
+        garagem: 52.32,
+        agua: 67.7,
+        iptu: 1.43,
+        seguro_incendio: null,
+        total: 951.91,
+        comissao: 66.63,
+        repasse: 885.28,
+        vencimento: "10",
+        observacao: "SEGURO (1/1).",
+        confianca: 1,
+      },
+      {
+        apto: "5",
+        inquilino: "CRISTINA",
+        aluguel: 617.92,
+        desconto: null,
+        aluguel_com_desconto: 617.92,
+        garagem: 50,
+        agua: 67.7,
+        iptu: 1.43,
+        seguro_incendio: null,
+        total: 737.05,
+        comissao: 51.59,
+        repasse: 685.46,
+        vencimento: "10",
+        observacao: null,
+        confianca: 1,
+      },
+    ],
+  })
+
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+  const check = result.rechecks.find((item) => item.id === "linhas_componentes")
+
+  assert.ok(check)
+  assert.equal(check.status, "warning")
+  assert.match(check.message, /apto 2/i)
+  assert.match(check.message, /139,83/)
+  assert.doesNotMatch(check.message, /apto 5/i)
+  // Alerta de qualidade de leitura: nunca entra como bloqueio.
+  assert.ok(result.rechecks.filter((item) => item.status === "failed").every((item) => item.id !== "linhas_componentes"))
+})
+
+test("componentes acima do total (IPTU de passagem anulado) nao geram alerta", () => {
+  const prestacao = createPrestacao({
+    receitas_por_imovel: [
+      {
+        apto: "0002526",
+        inquilino: "LOCATARIO",
+        aluguel: 6896.75,
+        desconto: null,
+        aluguel_com_desconto: 6896.75,
+        garagem: null,
+        agua: null,
+        iptu: 193.02,
+        seguro_incendio: null,
+        total: 6896.75,
+        comissao: 344.84,
+        repasse: 6358.89,
+        vencimento: null,
+        observacao: "IPTU de passagem cobrado e repassado.",
+        confianca: 1,
+      },
+    ],
+  })
+
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+  const check = result.rechecks.find((item) => item.id === "linhas_componentes")
+
+  assert.ok(check)
+  assert.equal(check.status, "passed")
+})
+
+// Coluna desconhecida no cabecalho + totais que nao fecham = dinheiro real nao
+// lido: bloqueia e nomeia a coluna. Coluna desconhecida com totais fechando
+// (numero que nao e receita) fica em alerta.
+test("bloqueia quando o parser reporta coluna nao lida e o total da linha nao fecha", () => {
+  const prestacao = createPrestacao({
+    plano_extracao: {
+      documento_lido_integralmente: true,
+      secoes_identificadas: ["receitas"],
+      estrategia: ["planilha"],
+      alertas: ['Coluna "TAXA EXTRA" com 1 linha(s) e R$ 20.00 não é lida pelo parser.'],
+      colunas_nao_lidas: [{ coluna: "TAXA EXTRA", total: 20, linhas: 1 }],
+    },
+    receitas_por_imovel: [
+      {
+        apto: "201",
+        inquilino: "JOSE",
+        aluguel: 154.84,
+        desconto: null,
+        aluguel_com_desconto: 154.84,
+        garagem: null,
+        agua: null,
+        iptu: 3.35,
+        seguro_incendio: 89.57,
+        outros_recebimentos: 15.7,
+        total: 283.46,
+        comissao: 19.84,
+        repasse: 263.62,
+        vencimento: "10",
+        observacao: null,
+        confianca: 1,
+      },
+    ],
+  })
+
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+  const check = result.rechecks.find((item) => item.id === "linhas_componentes")
+
+  assert.ok(check)
+  assert.equal(check.status, "failed")
+  assert.match(check.message, /TAXA EXTRA/)
+  assert.match(check.message, /apto 201 \(R\$\s?20,00\)/)
+})
+
+test("coluna nao lida com totais fechando fica em alerta e outros_recebimentos conta como componente", () => {
+  const prestacao = createPrestacao({
+    plano_extracao: {
+      documento_lido_integralmente: true,
+      secoes_identificadas: ["receitas"],
+      estrategia: ["planilha"],
+      alertas: ["Coluna \"INDICE\" com 1 linha(s) e R$ 3.00 não é lida pelo parser."],
+      colunas_nao_lidas: [{ coluna: "INDICE", total: 3, linhas: 1 }],
+    },
+    receitas_por_imovel: [
+      {
+        apto: "201",
+        inquilino: "JOSE",
+        aluguel: 154.84,
+        desconto: null,
+        aluguel_com_desconto: 154.84,
+        garagem: null,
+        agua: null,
+        iptu: 3.35,
+        seguro_incendio: 89.57,
+        outros_recebimentos: 15.7,
+        total: 263.46,
+        comissao: 18.44,
+        repasse: 245.02,
+        vencimento: "10",
+        observacao: null,
+        confianca: 1,
+      },
+    ],
+  })
+
+  const result = validatePackage({ documents: requiredDocuments, prestacao, repasse: null, despesas: null, reajuste: null })
+  const check = result.rechecks.find((item) => item.id === "linhas_componentes")
+
+  assert.ok(check)
+  assert.equal(check.status, "warning")
+  assert.match(check.message, /INDICE/)
+})
