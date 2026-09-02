@@ -80,6 +80,10 @@ export interface IndicadoresSnapshotRow {
   quantidade_linhas: number
   origem: IndicadoresSnapshotOrigin
   qualidade: IndicadoresSnapshotQuality
+  // Observação consolidada das linhas da unidade (texto do documento). O mapa
+  // de riscos explica a célula com ela: proporcional da rescisão, acordo,
+  // inadimplência. Migration 202609020001.
+  observacao?: string | null
   calculo_versao: string
   checksum: string
 }
@@ -528,6 +532,7 @@ function buildSnapshotRow(input: {
     competencia_recebimento: receiptCompetence,
     dia_vencimento: dayDue,
     modelo_receita: revenueModel,
+    observacao: observation,
     status_mensal_explicito: statusExplicit ? status : null,
     quantidade_linhas: propertyLines.length,
     origem: input.origem,

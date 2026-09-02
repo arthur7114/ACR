@@ -110,6 +110,8 @@ const snapshotRowsSchema = z.array(
     aluguel_recebido: databaseMoneySchema,
     aluguel_competencia: databaseMoneySchema.optional(),
     atrasos_recuperados: databaseMoneySchema.optional(),
+    atrasos_competencia_origem: z.string().nullable().optional(),
+    observacao: z.string().nullable().optional(),
     outros_recebimentos: databaseMoneySchema.optional(),
     entradas_passagem: databaseMoneySchema.optional(),
     saidas_passagem: databaseMoneySchema.optional(),
@@ -262,7 +264,18 @@ const calculationAnalysisSchema = z
           )
           .optional(),
         inadimplencias_acumuladas: z
-          .array(z.object({ valor: z.number() }).passthrough())
+          .array(
+            z
+              .object({
+                valor: z.number(),
+                apto: z.string().nullable().optional(),
+                inquilino: z.string().nullable().optional(),
+                condicao: z.string().nullable().optional(),
+                observacao: z.string().nullable().optional(),
+                competencia_original: z.string().nullable().optional(),
+              })
+              .passthrough(),
+          )
           .optional(),
         resumo_financeiro: z
           .object({
@@ -419,7 +432,7 @@ async function loadSnapshotRows(
         `imovel_id, fechamento_id, competencia, status_ocupacao, status_origem,
          inquilino_nome, aluguel_esperado, cobranca_esperada, eventos,
          garagem_recebida, aluguel_recebido, aluguel_competencia,
-         atrasos_recuperados, outros_recebimentos, entradas_passagem, saidas_passagem,
+         atrasos_recuperados, atrasos_competencia_origem, outros_recebimentos, entradas_passagem, saidas_passagem, observacao,
          receita_total, desconto, comissao_administracao, repasse_apurado,
          vencimento_referencia, competencia_original, competencia_recebimento,
          dia_vencimento, modelo_receita, status_mensal_explicito, origem,
@@ -537,6 +550,9 @@ function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): Indicador
     aluguelRecebido: nullableMoney(row.aluguel_recebido),
     aluguelRecebidoCompetencia: nullableOptionalMoney(row.aluguel_competencia),
     atrasosRecuperados: nullableOptionalMoney(row.atrasos_recuperados),
+    atrasosCompetenciaOrigem: row.atrasos_competencia_origem
+      ? normalizeCompetence(row.atrasos_competencia_origem)
+      : null,
     outrosRecebimentos: nullableOptionalMoney(row.outros_recebimentos),
     entradasPassagem: nullableOptionalMoney(row.entradas_passagem),
     saidasPassagem: nullableOptionalMoney(row.saidas_passagem),
@@ -554,6 +570,7 @@ function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): Indicador
     diaVencimento: row.dia_vencimento ?? null,
     modeloReceita: row.modelo_receita ?? "fixo",
     statusMensalExplicito: row.status_mensal_explicito ?? null,
+    observacao: row.observacao ?? null,
     origem: row.origem,
     qualidade: row.qualidade,
   }
@@ -647,7 +664,14 @@ function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | nu
           acordos_rescisoes_recebidos:
             prestacao.acordos_rescisoes_recebidos?.map(mapAcordoRecebidoParaAgregacao) ?? null,
           inadimplencias_acumuladas:
-            prestacao.inadimplencias_acumuladas?.map((item) => ({ valor: item.valor })) ?? null,
+            prestacao.inadimplencias_acumuladas?.map((item) => ({
+              valor: item.valor,
+              apto: item.apto ?? null,
+              inquilino: item.inquilino ?? null,
+              condicao: item.condicao ?? null,
+              observacao: item.observacao ?? null,
+              competencia_original: item.competencia_original ?? null,
+            })) ?? null,
           outras_comissoes_despesas:
             prestacao.resumo_financeiro?.outras_comissoes_despesas?.map((item) => ({
               descricao: item.descricao,

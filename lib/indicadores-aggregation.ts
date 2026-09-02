@@ -1,3 +1,4 @@
+import { normalizeCodigoImovel } from "./codigo-imovel"
 import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
@@ -9,6 +10,7 @@ import type {
   IndicadoresFinancialBridge,
   IndicadoresFiltroOption,
   IndicadoresHeatCell,
+  IndicadoresHeatDivida,
   IndicadoresOccupancy,
   IndicadoresPropertyRevenue,
   IndicadoresRevenueModel,
@@ -130,7 +132,14 @@ export interface IndicadoresAnalysisInput {
       competencia_original?: string | null
       competencia_recebimento?: string | null
     }> | null
-    inadimplencias_acumuladas: Array<{ valor: number }> | null
+    inadimplencias_acumuladas: Array<{
+      valor: number
+      apto?: string | null
+      inquilino?: string | null
+      condicao?: string | null
+      observacao?: string | null
+      competencia_original?: string | null
+    }> | null
     outras_comissoes_despesas?: Array<{ descricao: string; valor: number }> | null
   } | null
 }
@@ -163,6 +172,9 @@ export interface IndicadoresSnapshotInput {
   vencimentoReferencia?: string | null
   aluguelRecebidoCompetencia?: number | null
   atrasosRecuperados?: number | null
+  // Competência ("YYYY-MM-01") do mês anterior que o atraso recuperado quita.
+  // Nula quando o documento não informa ou quando há mais de uma origem.
+  atrasosCompetenciaOrigem?: string | null
   outrosRecebimentos?: number | null
   entradasPassagem?: number | null
   saidasPassagem?: number | null
@@ -171,6 +183,7 @@ export interface IndicadoresSnapshotInput {
   diaVencimento?: number | null
   modeloReceita?: IndicadoresRevenueModel
   statusMensalExplicito?: OccupancyStatus | null
+  observacao?: string | null
   origem: IndicadoresSnapshotOrigin
   qualidade: IndicadoresSnapshotQuality
 }
@@ -309,7 +322,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     realizacaoAluguel: realization,
     serieMensal: buildMonthlySeries(input, scope),
     rankingAtencao: buildAttentionRanking(scope.properties, currentSnapshots),
-    heat: buildHeat(scope.properties, relevantSnapshots),
+    heat: buildHeat(scope.properties, relevantSnapshots, scope.closings),
     receitasPorImovel: buildPropertyRevenues(scope.properties, currentSnapshots),
     filtros: buildFilters(input),
   }
@@ -1178,11 +1191,22 @@ function buildAttentionRanking(
 function buildHeat(
   properties: IndicadoresPropertyInput[],
   snapshots: IndicadoresSnapshotInput[],
+  closings: IndicadoresClosingInput[] = [],
 ): IndicadoresData["heat"] {
   const months = uniqueSorted(snapshots.map((snapshot) => snapshot.competencia))
+  // Fechamentos alem do ultimo mes exibido nao entram: o mapa encerra na
+  // competencia selecionada, e a divida tambem.
+  const ultimoMes = months.at(-1) ?? null
+  const closingsNoPeriodo = ultimoMes === null ? [] : closings.filter((closing) => closing.competencia <= ultimoMes)
   const snapshotByPropertyMonth = new Map(
     snapshots.map((snapshot) => [`${snapshot.imovelId}::${snapshot.competencia}`, snapshot]),
   )
+  const snapshotsByProperty = new Map<string, IndicadoresSnapshotInput[]>()
+  for (const snapshot of snapshots) {
+    const list = snapshotsByProperty.get(snapshot.imovelId) ?? []
+    list.push(snapshot)
+    snapshotsByProperty.set(snapshot.imovelId, list)
+  }
   const sortedProperties = [...properties].sort(compareProperties)
 
   return {
@@ -1191,8 +1215,17 @@ function buildHeat(
       label: formatCompetence(competencia, "short"),
     })),
     linhas: sortedProperties.map((property) => {
+      const historico = snapshotsByProperty.get(property.id) ?? []
+      const ledger = buildPropertyLedger(property, closingsNoPeriodo)
       const celulas = months.map((competencia) =>
-        buildHeatCell(snapshotByPropertyMonth.get(`${property.id}::${competencia}`), competencia),
+        applyDivida(
+          buildHeatCell(
+            snapshotByPropertyMonth.get(`${property.id}::${competencia}`),
+            competencia,
+            resolveQuitacao(historico, competencia),
+          ),
+          resolveDivida(ledger, competencia),
+        ),
       )
       return {
         imovelId: property.id,
@@ -1223,9 +1256,213 @@ function resolveCurrentTenant(
   return maisRecente?.inquilinoNome ?? property.inquilinoNome
 }
 
+// ---------------------------------------------------------------------------
+// "Massa falida": a divida que a secao Inadimplencia acumulada de fechamentos
+// POSTERIORES atribui a uma competencia da unidade. Caso Grand Maracanau 202:
+// o documento de maio nao listou a unidade; o de junho registrou a rescisao,
+// a primeira metade da multa paga e "VALOR DA RESCISAO (MAIO, JUNHO E SEGUNDA
+// METADE DA MULTA) ... R$ 893,33"; o de julho repetiu o saldo. Sem isto, maio
+// ficava "desconhecido" e a divida nao aparecia em lugar nenhum do historico.
+//
+// Cada fechamento reafirma (e pode corrigir) o saldo: o valor exibido e o do
+// ultimo fechamento que lista a divida. Quando um fechamento posterior deixa de
+// lista-la, esta quitada. Pagamentos sao acordos/rescisoes/atrasos recebidos
+// para a unidade em fechamentos posteriores a competencia.
+// ---------------------------------------------------------------------------
+
+interface LedgerItem {
+  fechamentoCompetencia: string
+  inquilino: string | null
+  inquilinoKey: string
+  valor: number
+  condicao: string | null
+  competencias: string[]
+}
+
+interface LedgerPagamento {
+  fechamentoCompetencia: string
+  inquilinoKey: string
+  valor: number
+  descricao: string | null
+}
+
+interface PropertyLedger {
+  itens: LedgerItem[]
+  pagamentos: LedgerPagamento[]
+  /** Competencias dos fechamentos do par no periodo, ordenadas. */
+  fechamentos: string[]
+}
+
+const MESES_POR_EXTENSO: Record<string, number> = {
+  janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+}
+
+// Competencias que um item de divida acumulada descreve. Prioridade: campo
+// estruturado; texto com ano ("VIGENCIA DE MAIO 2025", "05/2026"); por fim
+// meses por extenso sem ano ("MAIO, JUNHO"), que so podem ser do proprio ano
+// do fechamento ou do anterior — mes maior que o do fechamento e do ano
+// anterior. Sem mes nenhum ("MULTA POR RESCISAO") a divida nao se ancora.
+export function inferirCompetenciasDaDivida(
+  item: { condicao?: string | null; observacao?: string | null; competencia_original?: string | null },
+  fechamentoCompetencia: string,
+): string[] {
+  const estruturada = competenciaMesToDatabase(item.competencia_original)
+  if (estruturada) return [estruturada]
+
+  const texto = normalizePropertyKeyPart([item.condicao, item.observacao].filter(Boolean).join(" "))
+  if (!texto) return []
+  const [anoFechamento, mesFechamento] = fechamentoCompetencia.slice(0, 7).split("-").map(Number)
+  const encontradas = new Set<string>()
+
+  for (const match of texto.matchAll(/\b(\d{1,2})\/(\d{4})\b/g)) {
+    const competencia = competenciaMesToDatabase(`${match[1]}/${match[2]}`)
+    if (competencia) encontradas.add(competencia)
+  }
+  for (const match of texto.matchAll(
+    /\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b(?:\s*(?:de|\/)?\s*(\d{4})\b)?/g,
+  )) {
+    const mes = MESES_POR_EXTENSO[match[1]]
+    const ano = match[2] ? Number(match[2]) : mes <= mesFechamento ? anoFechamento : anoFechamento - 1
+    encontradas.add(`${ano}-${String(mes).padStart(2, "0")}-01`)
+  }
+  return [...encontradas].sort()
+}
+
+function buildPropertyLedger(
+  property: IndicadoresPropertyInput,
+  closings: IndicadoresClosingInput[],
+): PropertyLedger {
+  const unidadeKey = normalizeCodigoImovel(property.unidade)
+  const doPar = closings
+    .filter(
+      (closing) =>
+        closing.imobiliariaId === property.imobiliariaId
+        && closing.empreendimentoId === property.empreendimentoId,
+    )
+    .sort((a, b) => a.competencia.localeCompare(b.competencia))
+  const itens: LedgerItem[] = []
+  const pagamentos: LedgerPagamento[] = []
+
+  for (const closing of doPar) {
+    const prestacao = closing.analiseCompleta?.prestacao
+    for (const item of prestacao?.inadimplencias_acumuladas ?? []) {
+      if (normalizeCodigoImovel(item.apto ?? "") !== unidadeKey) continue
+      itens.push({
+        fechamentoCompetencia: closing.competencia,
+        inquilino: item.inquilino?.trim() || null,
+        inquilinoKey: normalizePropertyKeyPart(item.inquilino ?? ""),
+        valor: item.valor,
+        condicao: item.condicao?.trim() || item.observacao?.trim() || null,
+        competencias: inferirCompetenciasDaDivida(item, closing.competencia),
+      })
+    }
+    for (const recebido of prestacao?.acordos_rescisoes_recebidos ?? []) {
+      if (recebido.tipo === "intermediacao") continue
+      if (normalizeCodigoImovel(recebido.apto ?? "") !== unidadeKey) continue
+      const valor = recebido.total_recebido ?? recebido.valor
+      if (valor === null || valor === undefined || valor <= 0) continue
+      pagamentos.push({
+        fechamentoCompetencia: closing.competencia,
+        inquilinoKey: normalizePropertyKeyPart(recebido.inquilino ?? ""),
+        valor,
+        descricao: recebido.observacao?.trim() || null,
+      })
+    }
+  }
+
+  return { itens, pagamentos, fechamentos: doPar.map((closing) => closing.competencia) }
+}
+
+function resolveDivida(ledger: PropertyLedger, competencia: string): IndicadoresHeatDivida | null {
+  // `>=`: o fechamento do proprio mes pode registrar a divida do mes (junho
+  // listou "MAIO, JUNHO" no documento de junho).
+  const registros = ledger.itens.filter(
+    (item) => item.fechamentoCompetencia >= competencia && item.competencias.includes(competencia),
+  )
+  if (registros.length === 0) return null
+  const primeiro = registros[0]
+  // A mesma divida reaparece nos fechamentos seguintes (mesmo inquilino), as
+  // vezes com o texto reescrito e o valor corrigido: acompanha pelo inquilino.
+  const daMesmaDivida = ledger.itens.filter(
+    (item) =>
+      item.fechamentoCompetencia >= primeiro.fechamentoCompetencia
+      && (item.competencias.includes(competencia) || (primeiro.inquilinoKey !== "" && item.inquilinoKey === primeiro.inquilinoKey)),
+  )
+  const saldoEm = daMesmaDivida.map((item) => item.fechamentoCompetencia).sort().at(-1) as string
+  const saldo = roundMoney(
+    daMesmaDivida
+      .filter((item) => item.fechamentoCompetencia === saldoEm)
+      .reduce((total, item) => total + item.valor, 0),
+  )
+  const ultimoFechamento = ledger.fechamentos.at(-1) ?? saldoEm
+  const pagamentos = ledger.pagamentos
+    .filter(
+      (pagamento) =>
+        pagamento.fechamentoCompetencia >= competencia
+        && (primeiro.inquilinoKey === "" || pagamento.inquilinoKey === "" || pagamento.inquilinoKey === primeiro.inquilinoKey),
+    )
+    .map((pagamento) => ({
+      competencia: pagamento.fechamentoCompetencia,
+      valor: pagamento.valor,
+      descricao: pagamento.descricao,
+    }))
+
+  return {
+    registradaEm: primeiro.fechamentoCompetencia,
+    inquilino: primeiro.inquilino,
+    condicao: primeiro.condicao,
+    saldo,
+    saldoEm,
+    pagamentos,
+    quitada: ultimoFechamento > saldoEm,
+    retroativa: false,
+  }
+}
+
+// A divida so muda o STATUS quando o snapshot nao tinha evidencia propria
+// (sem linha ou "desconhecido"): documento posterior dizendo que o mes ficou
+// devendo e evidencia melhor que nenhuma. Status com evidencia (vago por
+// rescisao, ocupado) fica; a divida vai para o hover.
+function applyDivida(cell: IndicadoresHeatCell, divida: IndicadoresHeatDivida | null): IndicadoresHeatCell {
+  if (divida === null) return cell
+  const semEvidencia = cell.statusOcupacao === null || cell.statusOcupacao === "desconhecido"
+  if (!semEvidencia) return { ...cell, divida }
+  return {
+    ...cell,
+    statusOcupacao: "inadimplente",
+    inquilinoNome: cell.inquilinoNome ?? divida.inquilino,
+    divida: { ...divida, retroativa: true },
+  }
+}
+
+// A inadimplência de uma competência é quitada quando um mês POSTERIOR da mesma
+// unidade registra atraso recuperado apontando para ela (Izabel, 105 Grand
+// Castelão I: junho em aberto, pago em julho como acordo de 2026-06). O mapa
+// mostra a competência verde com o sinal de quitação e o detalhe no hover, em
+// vez de apagar que a inadimplência existiu. Sem origem informada não há como
+// atribuir o valor a um mês: fica sem quitação, nunca chutada.
+function resolveQuitacao(
+  historico: IndicadoresSnapshotInput[],
+  competencia: string,
+): IndicadoresHeatCell["quitacao"] {
+  const recuperacoes = historico.filter(
+    (snapshot) =>
+      snapshot.competencia > competencia
+      && snapshot.atrasosCompetenciaOrigem === competencia
+      && (snapshot.atrasosRecuperados ?? 0) > 0,
+  )
+  if (recuperacoes.length === 0) return null
+  return {
+    competencia: recuperacoes.map((snapshot) => snapshot.competencia).sort().at(-1) as string,
+    valor: roundMoney(recuperacoes.reduce((total, snapshot) => total + (snapshot.atrasosRecuperados ?? 0), 0)),
+  }
+}
+
 function buildHeatCell(
   snapshot: IndicadoresSnapshotInput | undefined,
   competencia: string,
+  quitacao: IndicadoresHeatCell["quitacao"] = null,
 ): IndicadoresHeatCell {
   if (!snapshot) {
     return {
@@ -1237,6 +1474,10 @@ function buildHeatCell(
       vacanciaPercentual: null,
       origem: null,
       qualidade: null,
+      quitacao,
+      eventos: null,
+      observacao: null,
+      aluguelRecebido: null,
     }
   }
 
@@ -1269,6 +1510,10 @@ function buildHeatCell(
     vacanciaPercentual: hasKnownStatus ? (snapshot.statusOcupacao === "vago" ? 100 : 0) : null,
     origem: snapshot.origem,
     qualidade: snapshot.qualidade,
+    quitacao,
+    eventos: snapshot.eventos ?? null,
+    observacao: snapshot.observacao ?? null,
+    aluguelRecebido: snapshot.aluguelRecebido,
   }
 }
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { aggregateIndicadores } from "./indicadores-aggregation.ts"
+import { aggregateIndicadores, inferirCompetenciasDaDivida } from "./indicadores-aggregation.ts"
 
 const COMPETENCIA = "2026-05-01"
 const ATUALIZADO_EM = "2026-07-13T12:00:00.000Z"
@@ -54,7 +54,14 @@ interface PrestacaoFixture {
     confianca?: number
     competencia_original?: string | null
   }>
-  inadimplencias_acumuladas: Array<{ valor: number }>
+  inadimplencias_acumuladas: Array<{
+    valor: number
+    apto?: string | null
+    inquilino?: string | null
+    condicao?: string | null
+    observacao?: string | null
+    competencia_original?: string | null
+  }>
   outras_comissoes_despesas?: Array<{ descricao: string; valor: number }>
 }
 
@@ -98,6 +105,7 @@ interface SnapshotFixture {
   aluguelEsperado: number | null
   cobrancaEsperada?: number | null
   garagemRecebida?: number | null
+  eventos?: string[] | null
   aluguelRecebido: number | null
   receitaTotal: number | null
   desconto: number | null
@@ -1853,4 +1861,114 @@ test("historico sem separar aluguel da competencia nao permite derivar a acumula
 
   assert.equal(result.resumo.inadimplenciaAcumulada, null)
   assert.equal(result.cobertura.lacunas.some((l) => l.codigo === "inadimplencia_nao_extraida"), true)
+})
+
+// "Massa falida" — Grand Maracanaú 202: maio sem linha no documento; junho
+// registra rescisão, primeira metade da multa paga e a dívida "MAIO, JUNHO E
+// SEGUNDA METADE DA MULTA" R$ 893,33; julho repete o saldo com inquilino novo.
+function makeMassaFalidaInput(overrides: { agostoQuita?: boolean } = {}) {
+  const DIVIDA_BRUNO = {
+    apto: "202",
+    inquilino: "BRUNO EDUARDO DA SILVA",
+    valor: 893.33,
+    condicao: "VALOR DA RESCISÃO (MAIO, JUNHO E SEGUNDA METADE DA MULTA) A SER PAGO EM 02 PARCELAS DE R$ 446,66.",
+  }
+  const fechamentos: ClosingFixture[] = [
+    makeClosing({ id: "f-mai", competencia: "2026-05-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+    makeClosing({
+      id: "f-jun",
+      competencia: "2026-06-01",
+      analiseCompleta: makeAnalysis({
+        receitas: [{ apto: "202", inquilino: "BRUNO EDUARDO DA SILVA", aluguel: 13.33, aluguel_com_desconto: null, desconto: null, total: 13.33 }],
+        intermediacoes: [
+          { tipo: "rescisao", apto: "202", inquilino: "BRUNO EDUARDO DA SILVA", valor: 480, total_recebido: 480, comissao: 33.6 },
+        ],
+        inadimplencias: [DIVIDA_BRUNO],
+      }),
+    }),
+    makeClosing({
+      id: "f-jul",
+      competencia: "2026-07-01",
+      analiseCompleta: makeAnalysis({
+        receitas: [{ apto: "202", inquilino: "JOSÉ LUCAS", aluguel: 154.84, aluguel_com_desconto: null, desconto: null, total: 154.84 }],
+        intermediacoes: [],
+        inadimplencias: [DIVIDA_BRUNO],
+      }),
+    }),
+  ]
+  const snapshots: SnapshotFixture[] = [
+    makeSnapshot({ fechamentoId: "f-mai", competencia: "2026-05-01", statusOcupacao: "desconhecido", statusOrigem: "sem_linha", aluguelRecebido: null, aluguelEsperado: null, receitaTotal: null, qualidade: "sem_linha" }),
+    makeSnapshot({ fechamentoId: "f-jun", competencia: "2026-06-01", statusOcupacao: "vago", statusOrigem: "prestacao_rescisao", eventos: ["rescisao"], aluguelRecebido: 13.33, inquilinoNome: "BRUNO EDUARDO DA SILVA" }),
+    makeSnapshot({ fechamentoId: "f-jul", competencia: "2026-07-01", statusOcupacao: "ocupado", statusOrigem: "aluguel_positivo", aluguelRecebido: 154.84, inquilinoNome: "JOSÉ LUCAS" }),
+  ]
+  if (overrides.agostoQuita) {
+    fechamentos.push(
+      makeClosing({ id: "f-ago", competencia: "2026-08-01", analiseCompleta: makeAnalysis({ receitas: [], intermediacoes: [], inadimplencias: [] }) }),
+    )
+    snapshots.push(
+      makeSnapshot({ fechamentoId: "f-ago", competencia: "2026-08-01", statusOcupacao: "ocupado", statusOrigem: "aluguel_positivo", inquilinoNome: "JOSÉ LUCAS" }),
+    )
+  }
+  return makeInput({
+    competencia: overrides.agostoQuita ? "2026-08-01" : "2026-07-01",
+    imoveisAtivos: [makeProperty({ unidade: "202", inquilinoNome: "JOSÉ LUCAS" })],
+    fechamentos,
+    snapshots,
+  })
+}
+
+test("massa falida: acumulada de fechamento posterior marca o mês sem evidência como inadimplente, com saldo e pagamentos", () => {
+  const data = aggregateIndicadores(makeMassaFalidaInput())
+  const row = data.heat.linhas.find((linha) => linha.unidade === "202")
+  const maio = row?.celulas.find((cell) => cell.competencia === "2026-05-01")
+  const junho = row?.celulas.find((cell) => cell.competencia === "2026-06-01")
+  const julho = row?.celulas.find((cell) => cell.competencia === "2026-07-01")
+
+  assert.equal(maio?.statusOcupacao, "inadimplente")
+  assert.equal(maio?.inquilinoNome, "BRUNO EDUARDO DA SILVA")
+  assert.equal(maio?.divida?.retroativa, true)
+  assert.equal(maio?.divida?.registradaEm, "2026-06-01")
+  // O saldo é o do ÚLTIMO fechamento que lista a dívida (julho reafirmou).
+  assert.equal(maio?.divida?.saldo, 893.33)
+  assert.equal(maio?.divida?.saldoEm, "2026-07-01")
+  assert.deepEqual(
+    maio?.divida?.pagamentos.map((pagamento) => `${pagamento.competencia}:${pagamento.valor}`),
+    ["2026-06-01:480"],
+  )
+  assert.equal(maio?.divida?.quitada, false)
+
+  // Junho tem evidência própria (rescisão → vago): o status fica, a dívida vai
+  // para o hover — registrada no próprio fechamento de junho.
+  assert.equal(junho?.statusOcupacao, "vago")
+  assert.deepEqual(junho?.eventos, ["rescisao"])
+  assert.equal(junho?.divida?.retroativa, false)
+  assert.equal(junho?.divida?.registradaEm, "2026-06-01")
+
+  // Julho não é competência devida: inquilino novo, sem dívida anexada.
+  assert.equal(julho?.statusOcupacao, "ocupado")
+  assert.equal(julho?.divida ?? null, null)
+})
+
+test("massa falida: quando um fechamento posterior deixa de listar a dívida, ela está quitada", () => {
+  const data = aggregateIndicadores(makeMassaFalidaInput({ agostoQuita: true }))
+  const maio = data.heat.linhas
+    .find((linha) => linha.unidade === "202")
+    ?.celulas.find((cell) => cell.competencia === "2026-05-01")
+  assert.equal(maio?.statusOcupacao, "inadimplente")
+  assert.equal(maio?.divida?.quitada, true)
+  assert.equal(maio?.divida?.saldoEm, "2026-07-01")
+})
+
+test("inferirCompetenciasDaDivida: campo estruturado, texto com ano, meses por extenso sem ano", () => {
+  assert.deepEqual(inferirCompetenciasDaDivida({ competencia_original: "2026-06" }, "2026-07-01"), ["2026-06-01"])
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "VIGÊNCIA DE MAIO 2025" }, "2026-06-01"), ["2025-05-01"])
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "VIGÊNCIA DE NOVEMBRO 2025. SEGURO QUITADO." }, "2026-07-01"), ["2025-11-01"])
+  assert.deepEqual(
+    inferirCompetenciasDaDivida({ condicao: "VALOR DA RESCISÃO (MAIO, JUNHO E SEGUNDA METADE DA MULTA)" }, "2026-06-01"),
+    ["2026-05-01", "2026-06-01"],
+  )
+  // Mês maior que o do fechamento só pode ser do ano anterior.
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "REFERENTE A DEZEMBRO" }, "2026-02-01"), ["2025-12-01"])
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "ALUGUEL 04/2026" }, "2026-07-01"), ["2026-04-01"])
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "MULTA POR RESCISÃO ANTES DO PRAZO." }, "2026-07-01"), [])
 })

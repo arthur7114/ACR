@@ -250,6 +250,16 @@ export interface IndicadoresAttentionItem {
   statusOcupacao: OccupancyStatus
 }
 
+/**
+ * Recuperação posterior da inadimplência desta competência: atraso recuperado
+ * em mês seguinte cuja `atrasos_competencia_origem` aponta para cá. O mês é o
+ * último em que houve recuperação; o valor soma todas elas.
+ */
+export interface IndicadoresHeatQuitacao {
+  competencia: string
+  valor: number
+}
+
 export interface IndicadoresHeatCell {
   competencia: string
   inquilinoNome: string | null
@@ -259,6 +269,37 @@ export interface IndicadoresHeatCell {
   vacanciaPercentual: number | null
   origem: IndicadoresSnapshotOrigin | null
   qualidade: IndicadoresSnapshotQuality | null
+  quitacao: IndicadoresHeatQuitacao | null
+  /** Eventos do mês (ex.: "rescisao"): o status diz como terminou, o evento o que aconteceu. */
+  eventos?: string[] | null
+  /** Observação consolidada das linhas do documento — explica a célula no hover. */
+  observacao?: string | null
+  aluguelRecebido?: number | null
+  /** Dívida registrada por fechamento posterior apontando para esta competência. */
+  divida?: IndicadoresHeatDivida | null
+}
+
+/**
+ * "Massa falida" de um inquilino: a seção Inadimplência acumulada de um
+ * fechamento posterior nomeia a competência em aberto. Cada fechamento seguinte
+ * reafirma (e pode corrigir) o saldo; quando a dívida deixa de constar, está
+ * quitada. Pagamentos são acordos/rescisões/atrasos recebidos para a unidade
+ * depois da competência.
+ */
+export interface IndicadoresHeatDivida {
+  /** Competência do fechamento que registrou a dívida. */
+  registradaEm: string
+  inquilino: string | null
+  condicao: string | null
+  /** Saldo no último fechamento do escopo que lista a dívida. */
+  saldo: number
+  /** Competência do fechamento em que o saldo foi lido. */
+  saldoEm: string
+  pagamentos: Array<{ competencia: string; valor: number; descricao: string | null }>
+  /** Verdadeiro quando um fechamento posterior ao `saldoEm` já não lista a dívida. */
+  quitada: boolean
+  /** Status da célula veio desta dívida (o snapshot não tinha evidência própria). */
+  retroativa: boolean
 }
 
 export interface IndicadoresHeatRow {

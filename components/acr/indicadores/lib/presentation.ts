@@ -1,6 +1,7 @@
 import type {
   IndicadoresAccumulatedCoverage,
   IndicadoresData,
+  IndicadoresHeatCell,
   IndicadoresHeatRow,
 } from "@/lib/indicadores-types"
 
@@ -280,13 +281,54 @@ export function describeConference(input: {
   return { label: confidenceLabel(status), tone: "neutral" }
 }
 
+export interface HeatGroupDetalhe {
+  imovelId: string
+  unidade: string
+  inquilino: string | null
+  valor: number | null
+  quitacao: IndicadoresHeatCell["quitacao"]
+  /** Saldo da dívida registrada pela acumulada de fechamentos posteriores (ver IndicadoresHeatDivida). */
+  saldoDivida: number | null
+  quitada: boolean
+}
+
 export interface HeatGroupCell {
   competencia: string
+  /** Unidades em risco que seguem em aberto (inadimplência quitada depois não conta). */
   unidadesEmRisco: number
   unidadesComDado: number
+  /** Inadimplências da competência quitadas em mês posterior (só no modo inadimplência). */
+  unidadesQuitadas: number
   valor: number | null
   /** Share das unidades com dado que estão em risco; alimenta a cor da célula. */
   percentual: number | null
+  /** Uma entrada por unidade inadimplente no mês, quitada ou não — alimenta o hover. */
+  detalhes: HeatGroupDetalhe[]
+}
+
+// Inadimplência quitada: houve recuperação posterior apontando para a
+// competência e ela cobre o valor em aberto (ou o valor em aberto é
+// desconhecido — a recuperação é a única evidência e vale). Recuperação
+// parcial mantém a unidade em risco, com o detalhe no hover.
+export function isInadimplenciaQuitada(cell: Pick<IndicadoresHeatCell, "statusOcupacao" | "valor" | "quitacao" | "divida">): boolean {
+  if (cell.statusOcupacao !== "inadimplente") return false
+  // Dívida registrada pela acumulada que deixou de constar em fechamento
+  // posterior está quitada, mesmo sem atraso recuperado apontando para cá.
+  if (cell.divida?.quitada) return true
+  // `!cell.quitacao` (e não `=== null`): payloads anteriores ao campo chegam sem ele.
+  if (!cell.quitacao) return false
+  return cell.valor === null || cell.quitacao.valor + 0.01 >= cell.valor
+}
+
+// Mesmo rótulo curto dos cabeçalhos do mapa ("jul. de 2026"), para meses que
+// podem estar fora do período exibido (a quitação pode ter vindo depois).
+export function formatCompetenciaCurta(competencia: string): string {
+  const match = competencia.match(/^(\d{4})-(\d{2})/)
+  if (!match) return competencia
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1).toLocaleDateString("pt-BR", {
+    month: "short",
+    year: "numeric",
+  })
 }
 
 export interface HeatGroup {
@@ -320,18 +362,39 @@ export function buildHeatGroups(input: {
 
   for (const [empreendimentoId, linhas] of groups) {
     const celulas = input.meses.map((month) => {
-      const cells = linhas
-        .map((row) => row.celulas.find((cell) => cell.competencia === month.competencia) ?? null)
-        .filter((cell): cell is NonNullable<typeof cell> => cell !== null && cell.statusOcupacao !== null)
-      const emRisco = cells.filter((cell) => cell.statusOcupacao === riskStatus)
+      const porLinha = linhas
+        .map((row) => ({ row, cell: row.celulas.find((cell) => cell.competencia === month.competencia) ?? null }))
+        .filter((item): item is { row: IndicadoresHeatRow; cell: IndicadoresHeatCell } =>
+          item.cell !== null && item.cell.statusOcupacao !== null,
+        )
+      const cells = porLinha.map((item) => item.cell)
+      // Inadimplência quitada em mês posterior sai do risco do mês (o histórico
+      // é atualizado quando a dívida é paga), mas continua listada no detalhe.
+      const emRisco = cells.filter((cell) => cell.statusOcupacao === riskStatus && !isInadimplenciaQuitada(cell))
       const valores = emRisco.map((cell) => cell.valor)
+      const detalhes: HeatGroupDetalhe[] =
+        input.metric === "inad"
+          ? porLinha
+              .filter((item) => item.cell.statusOcupacao === "inadimplente")
+              .map((item) => ({
+                imovelId: item.row.imovelId,
+                unidade: item.row.unidade,
+                inquilino: item.cell.inquilinoNome ?? item.row.inquilinoAtual,
+                valor: item.cell.valor,
+                quitacao: item.cell.quitacao,
+                saldoDivida: item.cell.divida?.saldo ?? null,
+                quitada: isInadimplenciaQuitada(item.cell),
+              }))
+          : []
 
       return {
         competencia: month.competencia,
         unidadesEmRisco: emRisco.length,
         unidadesComDado: cells.length,
+        unidadesQuitadas: detalhes.filter((detalhe) => detalhe.quitada).length,
         valor: valores.length === 0 ? null : sumKnownValues(valores),
         percentual: cells.length === 0 ? null : (emRisco.length / cells.length) * 100,
+        detalhes,
       }
     })
 
@@ -403,10 +466,11 @@ export function buildDelinquencySummary(input: {
 
   for (const row of input.linhas) {
     const celulaAtual = row.celulas.find((cell) => cell.competencia === input.competenciaAtual)
-    if (celulaAtual?.statusOcupacao !== "inadimplente") continue
+    // Quem quitou a competência depois não está "em aberto" nela.
+    if (celulaAtual?.statusOcupacao !== "inadimplente" || isInadimplenciaQuitada(celulaAtual)) continue
     valoresMesAtual.push(celulaAtual.valor)
     const meses = row.celulas
-      .filter((cell) => cell.statusOcupacao === "inadimplente")
+      .filter((cell) => cell.statusOcupacao === "inadimplente" && !isInadimplenciaQuitada(cell))
       .map((cell) => ({
         competencia: cell.competencia,
         label: labelByCompetencia.get(cell.competencia) ?? cell.competencia,

@@ -24,9 +24,7 @@ import {
   formatAcumuladaCobertura,
   formatCount,
   describeConference,
-  formatDivergenciaCadastro,
   formatCurrency,
-  formatHojeSincronizado,
   formatPercent,
   formatPortfolioContractedRent,
   getConfidenceStatus,
@@ -209,12 +207,11 @@ export function ViewGeral({
             </p>
           </Metric>
           <div className="mt-5 space-y-4">
+            {/* A barra "Hoje" (status do cadastro) saiu em 2026-09-02: o cadastro
+                é sincronizado à mão, trata locação por app como "Ocupado" e
+                divergia do último fechamento (94,1% × 87,2% em jul/26), o que
+                lia como erro. Quem quer o mais atual escolhe a competência. */}
             <OccupancyDistribution label={data.meta.competenciaLabel} occupancy={resumo.ocupacaoCompetencia} />
-            <OccupancyDistribution
-              label={formatHojeSincronizado(data.meta.cadastroAtualizadoEm)}
-              occupancy={resumo.ocupacaoHoje}
-              note={formatDivergenciaCadastro(resumo.divergenciaCadastroCompetencia)}
-            />
           </div>
         </Panel>
       </div>
@@ -288,9 +285,9 @@ export function ViewGeral({
           help={metric === "valor" ? {
             short: "Quanto do aluguel contratado foi realizado em cada mês.",
             title: "Realização do aluguel, mês a mês",
-            definition: "O aluguel contratado é o teto do mês; o recebido da competência é o que entrou por ele; vacância e inadimplência são as duas perdas que explicam a distância entre os dois. A conta escrita sob a legenda fecha a identidade, incluindo descontos e ajustes quando existem.",
+            definition: "A linha é o aluguel contratado, teto do mês; as barras são o recebido da competência e as duas perdas, vacância e inadimplência, que explicam a distância até o teto. Passe o mouse sobre um mês para ver os valores.",
             source: "Vigências para o contratado; histórico mensal por imóvel para o recebido e as perdas.",
-            limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor: aparece como nota abaixo da legenda, para o número continuar batendo com o documento.",
+            limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor do mês.",
           } : {
             short: "Ocupação e inadimplência do histórico mês a mês.",
             title: "Evolução mensal em percentual",

@@ -104,10 +104,11 @@ export function classifyOccupancy(evidence: OccupancyEvidence): OccupancyStatus 
   )
   if (context.includes("airbnb") || (evidence.rentReceived ?? 0) > 0) return "ocupado"
   if (evidence.hasVacancy) return "vago"
-  // Vacância inferida exige aluguel contratado conhecido. Com contrato ativo e
-  // aluguel cadastrado como zero (canário Grand Maracanaú 101) o estado é
-  // desconhecido: falha de cadastro não é vacância.
-  if (evidence.hasBlankTenancy && evidence.expectedRentIsKnown !== false) return "vago"
+  // Vacância inferida: a prestação listou a unidade sem inquilino e sem aluguel.
+  // Decisão do cliente (2026-09-02, Grand Maracanaú 101): isso É vago, mesmo
+  // com aluguel cadastrado como zero — a falha de cadastro não muda o que o
+  // documento diz da unidade. Antes o caso caía em "desconhecido".
+  if (evidence.hasBlankTenancy) return "vago"
   // Inquilino nomeado na prestação é ocupação: a unidade não está vaga nem é
   // desconhecida. O aluguel do mês pode estar ausente porque o inquilino paga
   // atrasado (o recebimento do mês é atraso de competência anterior) — isso

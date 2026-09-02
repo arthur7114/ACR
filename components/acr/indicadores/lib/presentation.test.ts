@@ -6,6 +6,7 @@ import {
   buildDelinquencySummary,
   buildHeatGroups,
   describeHeatCellDetail,
+  formatCompetenciaCurta,
   formatContractedRent,
   formatCurrency,
   formatHistoryCoverage,
@@ -13,6 +14,7 @@ import {
   formatReference,
   filterMonthlySeriesPeriod,
   getFinancialReferences,
+  isInadimplenciaQuitada,
 } from "./presentation.ts"
 
 const MESES = [
@@ -58,6 +60,7 @@ function makeRow(overrides: Partial<IndicadoresHeatRow> & { imovelId: string }):
       vacanciaPercentual: null,
       origem: null,
       qualidade: null,
+      quitacao: null,
     })),
     ...overrides,
   }
@@ -68,27 +71,27 @@ test("resume inadimplência do mês, acumulada e total, listando só quem está 
     imovelId: "apto-7",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 700, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 810.44, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 700, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 810.44, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
     ],
   })
   const quitouNoPassado = makeRow({
     imovelId: "apto-3",
     hoje: "ocupado",
     celulas: [
-      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 300, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 300, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
     ],
   })
   const inadimplenteAgoraSoAgora = makeRow({
     imovelId: "apto-9",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
-      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 200, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: "ocupado", valor: 0, inadimplenciaPercentual: 0, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: 200, inadimplenciaPercentual: 100, vacanciaPercentual: 0, origem: "processamento", qualidade: "completo", quitacao: null },
     ],
   })
 
@@ -122,9 +125,9 @@ test("mês atual fica indisponível (não zero) quando falta o valor esperado de
     imovelId: "apto-12",
     hoje: "inadimplente",
     celulas: [
-      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
-      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null },
-      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: null, inadimplenciaPercentual: null, vacanciaPercentual: 0, origem: "processamento", qualidade: "parcial" },
+      { competencia: "2026-04-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null, quitacao: null },
+      { competencia: "2026-05-01", inquilinoNome: null, statusOcupacao: null, valor: null, inadimplenciaPercentual: null, vacanciaPercentual: null, origem: null, qualidade: null, quitacao: null },
+      { competencia: "2026-06-01", inquilinoNome: null, statusOcupacao: "inadimplente", valor: null, inadimplenciaPercentual: null, vacanciaPercentual: 0, origem: "processamento", qualidade: "parcial", quitacao: null },
     ],
   })
 
@@ -201,6 +204,7 @@ function junhoCell(
     vacanciaPercentual: null,
     origem: null,
     qualidade: null,
+    quitacao: null,
   }
 }
 
@@ -532,4 +536,73 @@ test("nota de reatribuicao declara o sentido do deslocamento", async () => {
   assert.match(reallocationNote(base) ?? "", /recebidos em outros meses/)
   assert.match(reallocationNote({ ...base, competenciaAjusteAluguel: -787.96 }) ?? "", /pertencem a competências anteriores/)
   assert.equal(reallocationNote({ ...base, competenciaAjusteAluguel: 0 }), null)
+})
+
+test("inadimplência quitada em mês posterior sai do risco do mês, mas fica no detalhe do hover", () => {
+  // Izabel, 105 Grand Castelão I: junho em aberto (R$ 678,87), pago em julho
+  // como acordo de 2026-06 (R$ 837,35). Junho volta a verde com o sinal de
+  // quitação; o histórico não apaga que a inadimplência existiu.
+  const groups = buildHeatGroups({
+    meses: JUNHO,
+    linhas: [
+      makeRow({
+        imovelId: "izabel",
+        unidade: "105",
+        inquilinoAtual: "IZABEL",
+        celulas: [{ ...junhoCell("inadimplente", 678.87), quitacao: { competencia: "2026-07-01", valor: 837.35 } }],
+      }),
+      makeRow({ imovelId: "luana", unidade: "7", inquilinoAtual: "LUANA", celulas: [junhoCell("inadimplente", 716.31)] }),
+      makeRow({ imovelId: "c", unidade: "1", celulas: [junhoCell("ocupado", 0)] }),
+    ],
+    metric: "inad",
+  })
+
+  const cell = groups[0].celulas[0]
+  assert.equal(cell.unidadesEmRisco, 1)
+  assert.equal(cell.unidadesQuitadas, 1)
+  assert.equal(cell.unidadesComDado, 3)
+  assert.equal(cell.valor, 716.31)
+  assert.deepEqual(
+    cell.detalhes.map((detalhe) => `${detalhe.unidade}:${detalhe.quitada}`),
+    ["105:true", "7:false"],
+  )
+})
+
+test("recuperação parcial mantém a unidade em risco", () => {
+  assert.equal(
+    isInadimplenciaQuitada({ statusOcupacao: "inadimplente", valor: 700, quitacao: { competencia: "2026-07-01", valor: 300 } }),
+    false,
+  )
+  assert.equal(
+    isInadimplenciaQuitada({ statusOcupacao: "inadimplente", valor: 700, quitacao: { competencia: "2026-07-01", valor: 700 } }),
+    true,
+  )
+  // Sem valor em aberto conhecido, a recuperação é a única evidência e vale.
+  assert.equal(
+    isInadimplenciaQuitada({ statusOcupacao: "inadimplente", valor: null, quitacao: { competencia: "2026-07-01", valor: 50 } }),
+    true,
+  )
+  assert.equal(isInadimplenciaQuitada({ statusOcupacao: "ocupado", valor: 0, quitacao: { competencia: "2026-07-01", valor: 50 } }), false)
+})
+
+test("unidade que quitou a competência não aparece em aberto no painel de inadimplência", () => {
+  const summary = buildDelinquencySummary({
+    competenciaAtual: "2026-06-01",
+    meses: JUNHO,
+    linhas: [
+      makeRow({
+        imovelId: "izabel",
+        unidade: "105",
+        celulas: [{ ...junhoCell("inadimplente", 678.87), quitacao: { competencia: "2026-07-01", valor: 837.35 } }],
+      }),
+    ],
+    inadimplenciaAcumulada: null,
+  })
+  assert.deepEqual(summary.unidades, [])
+  // Ninguém em aberto na competência: zero confirmado, como no caso sem pendência.
+  assert.equal(summary.mesAtual, 0)
+})
+
+test("formatCompetenciaCurta segue o rótulo dos cabeçalhos do mapa", () => {
+  assert.equal(formatCompetenciaCurta("2026-07-01"), "jul. de 2026")
 })

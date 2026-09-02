@@ -13,18 +13,21 @@
 //   histórico permanece porque identifica quem ocupava a unidade em cada mês.
 
 import { Fragment, useState } from "react"
-import { ChevronRight } from "lucide-react"
-import type { IndicadoresData, IndicadoresHeatCell } from "@/lib/indicadores-types"
+import { Check, ChevronRight } from "lucide-react"
+import type { IndicadoresData, IndicadoresHeatCell, IndicadoresHeatDivida } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
+import { Hint } from "@/components/acr/hint-tooltip"
 import {
   buildDelinquencySummary,
   buildHeatGroups,
-  describeHeatCellDetail,
+  formatCompetenciaCurta,
   formatCount,
   formatCurrency,
+  isInadimplenciaQuitada,
   occupancyLabel,
   type HeatGroup,
   type HeatGroupCell,
+  type HeatGroupDetalhe,
   type HeatMetric,
 } from "../lib/presentation"
 import { EmptyState, Metric, Panel, PanelHeader, ToggleButton } from "../primitives/dashboard-ui"
@@ -42,6 +45,7 @@ export function ViewMapa({
 }) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const groups = buildHeatGroups({ meses: data.heat.meses, linhas: data.heat.linhas, metric: heatMetric })
+  const labelDoMes = new Map(data.heat.meses.map((month) => [month.competencia, month.label]))
 
   function toggleGroup(empreendimentoId: string) {
     setExpanded((current) => {
@@ -126,6 +130,7 @@ export function ViewMapa({
                               key={cell.competencia}
                               cell={cell}
                               tenantName={inquilinoDaUnicaUnidade(group, cell.competencia)}
+                              monthLabel={labelDoMes.get(cell.competencia) ?? cell.competencia}
                             />
                           ))}
                         </tr>
@@ -149,6 +154,7 @@ export function ViewMapa({
                                 metric={heatMetric}
                                 month={month.label}
                                 unit={row.unidade}
+                                fallbackTenant={row.inquilinoAtual}
                               />
                             ))}
                           </tr>
@@ -159,7 +165,7 @@ export function ViewMapa({
                 </tbody>
               </table>
             </div>
-            <HeatLegend />
+            <HeatLegend metric={heatMetric} />
           </>
         ) : (
           <EmptyState
@@ -255,17 +261,45 @@ function DelinquencyPanel({ data }: { data: IndicadoresData }) {
 // nenhum, em vez de nomear quem morava ali ao lado de "Vago".
 function inquilinoDaUnicaUnidade(group: HeatGroup, competencia: string) {
   if (group.linhas.length !== 1) return undefined
-  const celula = group.linhas[0].celulas.find((candidate) => candidate.competencia === competencia)
+  const row = group.linhas[0]
+  const celula = row.celulas.find((candidate) => candidate.competencia === competencia)
   if (!celula || celula.statusOcupacao === "vago") return undefined
-  return celula.inquilinoNome ?? null
+  return celula.inquilinoNome ?? row.inquilinoAtual
+}
+
+// Hover do grupo: uma linha por unidade inadimplente no mes, quitada ou nao.
+// A primeira linha resume; as demais dizem quem, quanto e — quando houve
+// pagamento posterior — em que competencia e quanto foi pago.
+function descreverDetalhes(cell: HeatGroupCell, monthLabel: string): string[] {
+  if (cell.detalhes.length === 0) return []
+  const emAberto = cell.detalhes.length - cell.unidadesQuitadas
+  const quitadas = `${formatCount(cell.unidadesQuitadas)} ${cell.unidadesQuitadas === 1 ? "quitada" : "quitadas"}`
+  return [`${monthLabel}: ${formatCount(emAberto)} em aberto · ${quitadas}`, ...cell.detalhes.map(descreverDetalhe)]
+}
+
+function descreverDetalhe(detalhe: HeatGroupDetalhe): string {
+  const quem = `${detalhe.unidade} · ${detalhe.inquilino?.trim() || "inquilino não informado"}`
+  const valor =
+    detalhe.valor !== null
+      ? formatCurrency(detalhe.valor)
+      : detalhe.saldoDivida !== null
+        ? `saldo ${formatCurrency(detalhe.saldoDivida)}`
+        : "valor não apurado"
+  if (detalhe.quitacao === null) return `${quem} — ${valor}, ${detalhe.quitada ? "quitada" : "em aberto"}`
+  const pagamento = `${formatCurrency(detalhe.quitacao.valor)} em ${formatCompetenciaCurta(detalhe.quitacao.competencia)}`
+  if (detalhe.quitada) return `${quem} — ${valor}, quitada: ${pagamento}`
+  const saldo = detalhe.valor === null ? null : Math.max(0, detalhe.valor - detalhe.quitacao.valor)
+  return `${quem} — ${valor}, pago ${pagamento}${saldo === null ? "" : ` · em aberto ${formatCurrency(saldo)}`}`
 }
 
 function GroupCell({
   cell,
   tenantName,
+  monthLabel,
 }: {
   cell: HeatGroupCell
   tenantName?: string | null
+  monthLabel: string
 }) {
   if (cell.unidadesComDado === 0) {
     return (
@@ -275,68 +309,210 @@ function GroupCell({
     )
   }
 
+  const quitadasAria = cell.unidadesQuitadas > 0 ? `, ${formatCount(cell.unidadesQuitadas)} quitadas depois` : ""
   return (
     <td
-      aria-label={`${formatCount(cell.unidadesEmRisco)} de ${formatCount(cell.unidadesComDado)} unidades em risco${tenantName === undefined ? "" : `, ${tenantAriaLabel(tenantName)}`}${cell.valor === null ? "" : `, ${formatCurrency(cell.valor)}`}`}
-      className={cn("min-w-32 max-w-32 border-b border-white/70 px-2 py-3 text-center align-middle tabular-nums", heatTone(cell.percentual))}
+      aria-label={`${formatCount(cell.unidadesEmRisco)} de ${formatCount(cell.unidadesComDado)} unidades em risco${quitadasAria}${tenantName === undefined ? "" : `, ${tenantAriaLabel(tenantName)}`}${cell.valor === null ? "" : `, ${formatCurrency(cell.valor)}`}`}
+      className={cn("min-w-32 max-w-32 border-b border-white/70 p-0 text-center align-middle tabular-nums", heatTone(cell.percentual))}
     >
-      <span className="block text-sm font-bold">
-        {formatCount(cell.unidadesEmRisco)}
-        <span className="font-normal"> / {formatCount(cell.unidadesComDado)}</span>
-      </span>
-      {cell.valor !== null && cell.valor > 0 && (
-        <span className="mt-0.5 block text-[10px] font-semibold">{formatCurrency(cell.valor)}</span>
-      )}
-      {tenantName !== undefined && <TenantName name={tenantName} />}
+      <Hint lines={descreverDetalhes(cell, monthLabel)} side="bottom" className="px-2 py-3 text-center">
+        <span className="block text-sm font-bold">
+          {formatCount(cell.unidadesEmRisco)}
+          <span className="font-normal"> / {formatCount(cell.unidadesComDado)}</span>
+          {cell.unidadesQuitadas > 0 && <Check aria-hidden className="ml-1 inline size-3.5 align-[-2px]" />}
+        </span>
+        {cell.valor !== null && cell.valor > 0 && (
+          <span className="mt-0.5 block text-[10px] font-semibold">{formatCurrency(cell.valor)}</span>
+        )}
+        {tenantName !== undefined && <TenantName name={tenantName} />}
+      </Hint>
     </td>
   )
 }
+
+const UNIT_CELL_BASE = "min-w-32 max-w-32 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums"
 
 function UnitCell({
   cell,
   metric,
   month,
   unit,
+  fallbackTenant,
 }: {
   cell: IndicadoresHeatCell | null
   metric: HeatMetric
   month: string
   unit: string
+  /** Inquilino atual da linha: cobre a celula cujo snapshot veio sem nome. */
+  fallbackTenant: string | null
 }) {
   const status = cell?.statusOcupacao ?? null
 
   if (cell === null || status === null) {
     return (
-      <td aria-label={`${unit}, ${month}: sem dado`} className="min-w-32 max-w-32 border-b border-white/70 bg-[#f4f6f4] px-2 py-2.5 text-center align-middle text-acr-muted-2">
+      <td aria-label={`${unit}, ${month}: sem dado`} className={cn(UNIT_CELL_BASE, "bg-[#f4f6f4] text-acr-muted-2")}>
         —
       </td>
     )
   }
 
-  const percentage = metric === "inad" ? cell.inadimplenciaPercentual : cell.vacanciaPercentual
-  // describeHeatCellDetail já decide quando um número acrescenta informação
-  // (0% de inadimplência é dupla negativa; vacância é binária). A célula mostra
-  // só a moeda; a frase completa vai para o rótulo acessível.
-  const detail = describeHeatCellDetail({ metric, percentage, valor: cell.valor })
+  if (metric === "vac") {
+    // Modo vacancia: status escrito + inquilino, como antes. Vacancia e binaria
+    // e a cor ja carrega o 0/100.
+    return (
+      <td
+        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${status === "vago" ? "" : `, ${tenantAriaLabel(cell.inquilinoNome ?? fallbackTenant)}`}`}
+        className={cn(UNIT_CELL_BASE, heatTone(cell.vacanciaPercentual))}
+      >
+        <span className="block font-semibold">{occupancyLabel(status)}</span>
+        {status !== "vago" && <TenantName name={cell.inquilinoNome ?? fallbackTenant} />}
+      </td>
+    )
+  }
+
+  // Modo inadimplencia (regra do cliente, 2026-09-02): a celula mostra so o
+  // inquilino e a cor diz o estado. Vago fica branco e escrito; desconhecido
+  // continua escrito porque nao ha inquilino a mostrar.
+  const dividaLinhas = cell.divida ? descreverDivida(cell.divida, month) : []
+  if (status === "vago") {
+    // Rescisao no mes: a unidade terminou vaga, mas o que aconteceu foi uma
+    // saida com proporcional. A celula diz "Rescisao" e o hover traz o
+    // recebido e a observacao do documento (dias, periodo).
+    const rescisao = cell.eventos?.includes("rescisao") ?? false
+    const linhas = rescisao
+      ? [
+          `Rescisão em ${month}`,
+          cell.aluguelRecebido !== null && cell.aluguelRecebido !== undefined
+            ? `Recebido proporcional: ${formatCurrency(cell.aluguelRecebido)}`
+            : null,
+          cell.observacao,
+          ...dividaLinhas,
+        ]
+      : dividaLinhas
+    return (
+      <td
+        aria-label={`${unit}, ${month}: ${rescisao ? "Rescisão" : "Vago"}${linhas.filter(Boolean).slice(1).map((linha) => `, ${linha}`).join("")}`}
+        className={cn(UNIT_CELL_BASE, "p-0 bg-white text-acr-muted-2 ring-1 ring-inset ring-acr-line")}
+      >
+        <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
+          <span className="block font-semibold">{rescisao ? "Rescisão" : "Vago"}</span>
+          {rescisao && <TenantName name={inquilinoOuAtual(cell, fallbackTenant)} />}
+        </Hint>
+      </td>
+    )
+  }
+  if (status === "desconhecido") {
+    return (
+      <td aria-label={`${unit}, ${month}: Desconhecido`} className={cn(UNIT_CELL_BASE, "bg-[#f4f6f4] text-acr-muted-2")}>
+        <span className="block font-semibold">Desconhecido</span>
+      </td>
+    )
+  }
+
+  // O snapshot pode vir sem nome (Plural jun/jul deixou o campo vazio no
+  // Galpao Jose Walter); o inquilino atual da linha e a melhor evidencia.
+  const inquilino = inquilinoOuAtual(cell, fallbackTenant)
+
+  if (status !== "inadimplente") {
+    return (
+      <td
+        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}, ${tenantAriaLabel(inquilino)}${dividaLinhas.map((linha) => `, ${linha}`).join("")}`}
+        className={cn(UNIT_CELL_BASE, dividaLinhas.length > 0 && "p-0", heatTone(cell.inadimplenciaPercentual))}
+      >
+        {dividaLinhas.length > 0 ? (
+          <Hint lines={dividaLinhas} side="bottom" className="px-2 py-2.5 text-center">
+            <TenantName name={inquilino} emphasis />
+          </Hint>
+        ) : (
+          <TenantName name={inquilino} emphasis />
+        )}
+      </td>
+    )
+  }
+
+  // Inadimplente: vermelho enquanto em aberto; verde com o sinal de quitacao
+  // quando um mes posterior recuperou o atraso desta competencia. O historico
+  // nao apaga que a inadimplencia existiu — o hover conta quanto e quando.
+  const quitada = isInadimplenciaQuitada(cell)
+  const valorLabel = cell.valor === null ? "valor não apurado" : formatCurrency(cell.valor)
+  const quitacaoLinhas =
+    !cell.quitacao
+      ? []
+      : [
+          `Inadimplência de ${month}: ${valorLabel}`,
+          quitada
+            ? `Quitada em ${formatCompetenciaCurta(cell.quitacao.competencia)}: ${formatCurrency(cell.quitacao.valor)}`
+            : `Pago ${formatCurrency(cell.quitacao.valor)} em ${formatCompetenciaCurta(cell.quitacao.competencia)}${
+                cell.valor === null ? "" : ` · em aberto ${formatCurrency(Math.max(0, cell.valor - cell.quitacao.valor))}`
+              }`,
+        ]
+  const linhas = [...quitacaoLinhas, ...dividaLinhas]
+  // Sem valor do mes, a celula mostra o saldo da divida registrada depois.
+  const valorCelula = cell.valor ?? cell.divida?.saldo ?? null
 
   return (
     <td
-      aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${status === "vago" ? "" : `, ${tenantAriaLabel(cell.inquilinoNome)}`}${detail.kind === "detalhado" ? `, ${detail.valorLabel}` : ""}`}
-      className={cn("min-w-32 max-w-32 border-b border-white/70 px-2 py-2.5 text-center align-middle tabular-nums", heatTone(percentage))}
+      aria-label={`${unit}, ${month}: ${quitada ? "inadimplência quitada" : "Inadimplente"}, ${tenantAriaLabel(inquilino)}${
+        cell.valor === null ? "" : `, ${valorLabel}`
+      }${linhas.slice(1).map((linha) => `, ${linha}`).join("")}`}
+      className={cn(UNIT_CELL_BASE, "p-0", quitada ? "acr-heat-q0" : "acr-heat-q5")}
     >
-      <span className="block font-semibold">{occupancyLabel(status)}</span>
-      {/* Unidade vaga nao tem inquilino: imprimir o nome de quem morava ao lado
-          de "Vago" descrevia duas coisas contraditorias na mesma celula. */}
-      {status !== "vago" && <TenantName name={cell.inquilinoNome} />}
-      {detail.kind === "detalhado" && <span className="mt-0.5 block text-[10px]">{formatCurrency(cell.valor)}</span>}
+      <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
+        <span className="flex items-center justify-center gap-1 text-[11px] font-semibold leading-tight">
+          <span className="truncate" title={inquilino?.trim() || undefined}>
+            {inquilino?.trim() || "Inquilino não informado"}
+          </span>
+          {quitada && <Check aria-hidden className="size-3.5 shrink-0" />}
+        </span>
+        {!quitada && valorCelula !== null && valorCelula > 0 && (
+          <span className="mt-0.5 block text-[10px]">
+            {cell.valor === null ? "saldo " : ""}
+            {formatCurrency(valorCelula)}
+          </span>
+        )}
+      </Hint>
     </td>
   )
 }
 
-function TenantName({ name }: { name: string | null }) {
+// `emphasis`: o inquilino e o unico texto da celula (modo inadimplencia) e
+// ocupa o lugar que era do status.
+function inquilinoOuAtual(cell: IndicadoresHeatCell, fallbackTenant: string | null) {
+  return cell.inquilinoNome ?? fallbackTenant
+}
+
+// Linhas do hover para a divida registrada pela acumulada de fechamentos
+// posteriores: de onde veio, saldo mais recente (o documento reafirma e
+// corrige o valor todo mes), pagamentos e quitacao.
+function descreverDivida(divida: IndicadoresHeatDivida, month: string): string[] {
+  const linhas: Array<string | null> = [
+    divida.retroativa
+      ? `Inadimplência de ${month} registrada no fechamento de ${formatCompetenciaCurta(divida.registradaEm)}`
+      : null,
+    `${divida.inquilino ?? "Inquilino não informado"}: saldo ${formatCurrency(divida.saldo)} em ${formatCompetenciaCurta(divida.saldoEm)}${
+      divida.condicao ? ` — ${divida.condicao}` : ""
+    }`,
+    ...divida.pagamentos.map(
+      (pagamento) =>
+        `Pago em ${formatCompetenciaCurta(pagamento.competencia)}: ${formatCurrency(pagamento.valor)}${
+          pagamento.descricao ? ` — ${pagamento.descricao}` : ""
+        }`,
+    ),
+    divida.quitada ? `Quitada: não consta mais no fechamento seguinte a ${formatCompetenciaCurta(divida.saldoEm)}` : null,
+  ]
+  return linhas.filter((linha): linha is string => Boolean(linha))
+}
+
+function TenantName({ name, emphasis = false }: { name: string | null; emphasis?: boolean }) {
   const label = name?.trim() || "Inquilino não informado"
   return (
-    <span className="mt-0.5 block truncate text-[10px] font-normal leading-tight" title={name?.trim() || undefined}>
+    <span
+      className={cn(
+        "block truncate leading-tight",
+        emphasis ? "text-[11px] font-semibold" : "mt-0.5 text-[10px] font-normal",
+      )}
+      title={name?.trim() || undefined}
+    >
       {label}
     </span>
   )
@@ -356,7 +532,7 @@ function heatTone(value: number | null): string {
   return "acr-heat-q5"
 }
 
-function HeatLegend() {
+function HeatLegend({ metric }: { metric: HeatMetric }) {
   const ranges = ["0–1%", "1–10%", "10–25%", "25–50%", "50–75%", "75%+"]
 
   return (
@@ -366,6 +542,19 @@ function HeatLegend() {
           <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
         </span>
       ))}
+      {metric === "inad" && (
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="size-3 rounded-sm bg-white ring-1 ring-inset ring-acr-line" /> vago
+        </span>
+      )}
+      {metric === "inad" && (
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-flex size-3 items-center justify-center rounded-sm acr-heat-q0">
+            <Check className="size-2.5" />
+          </span>{" "}
+          inadimplência quitada depois
+        </span>
+      )}
       <span className="inline-flex items-center gap-1.5">
         <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> sem dado
       </span>

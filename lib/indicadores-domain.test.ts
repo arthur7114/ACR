@@ -62,10 +62,10 @@ test("rescisao com aluguel proporcional recebido termina a competencia vaga", ()
   )
 })
 
-test("aluguel contratado zerado sem inquilino e desconhecido, nunca vacancia", () => {
-  // Canário Grand Maracanaú apto 101: contrato ativo com aluguel cadastrado
-  // como zero. Zero não é aluguel contratado conhecido — sem ele não há como
-  // distinguir unidade vazia de falha de cadastro.
+test("sem inquilino e sem aluguel na prestacao e vago, mesmo com aluguel cadastrado zerado", () => {
+  // Canário Grand Maracanaú apto 101 (decisão do cliente em 2026-09-02): a
+  // prestação lista a unidade sem inquilino e sem aluguel — está vaga. O aluguel
+  // cadastrado como zero é falha de cadastro e não muda o que o documento diz.
   assert.equal(
     classifyOccupancy({
       tenantName: null,
@@ -77,7 +77,7 @@ test("aluguel contratado zerado sem inquilino e desconhecido, nunca vacancia", (
       hasBlankTenancy: true,
       expectedRentIsKnown: false,
     }),
-    "desconhecido",
+    "vago",
   )
 })
 
