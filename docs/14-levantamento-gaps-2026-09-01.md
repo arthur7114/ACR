@@ -222,3 +222,47 @@ e LOCMAIS. Resultado registrado no roadmap (`docs/12-execution-roadmap.md`).
   prompt atualizados; só uma extração nova confirma.
 - Tela de Revisão não foi aberta no navegador (login obrigatório); cobertura por
   testes unitários, tipos e lint.
+
+## Limpeza do resíduo anterior a maio (2026-09-02)
+
+O script SQL de 2026-08-28 já havia sido executado: fechamentos, snapshots,
+movimentações, validações, documentos e eventos não têm nenhuma linha anterior a
+maio, e não há órfão em nenhuma delas. Sobravam dois resíduos, tratados por
+`scripts/limpar-residuo-anterior-a-maio.ts` (dry-run por padrão):
+
+| Resíduo | Antes | Depois |
+|---|---|---|
+| `lancamentos_competencia` anteriores a maio | 718 | 0 |
+| Objetos do Storage sem registro no banco | 129 | 0 |
+
+As 718 linhas eram do backfill de contratos, todas com `fechamento_id` nulo e
+nenhuma lida pela aplicação. As 342 linhas de maio em diante ficaram: são o
+único insumo de `scripts/verify-competencia.ts` para o período válido.
+
+**O que não foi apagado, apesar da data anterior a maio:** 120 vigências ativas,
+108 contratos e 127 valores de contrato cujo *início* é anterior a maio. São
+contratos em vigor, não histórico. Apagá-los destruiria a vigência que cobre
+maio a julho, incluindo as correções deste mesmo dia.
+
+### Quatro referências quebradas, pré-existentes
+
+A conferência do Storage revelou 4 registros apontando para arquivos que não
+existem no bucket. Pertencem a fechamentos ativos (`lancado_egestor`):
+
+- Grand Messejana II jun/2026: prestação e comprovante de repasse
+- LOCMAIS jul/2026: prestação e comprovante de repasse
+
+**Não foram apagados por esta limpeza.** A aritmética prova: o bucket tinha 191
+objetos, 129 eram órfãos e 62 eram referenciados; a lista de exclusão continha
+apenas os 129, e sobraram exatamente 62. Os 4 caminhos nunca estiveram entre os
+objetos listados, ou seja, já não existiam antes da execução.
+
+A guarda original relatava isso como "objetos referenciados sumiram do bucket",
+o que lia como dano causado pelo próprio script. Passou a medir as referências
+quebradas ANTES de apagar e só falha quando o delete quebra alguma nova; as
+pré-existentes são listadas como tal. Uma guarda que confunde condição anterior
+com dano próprio é pior que nenhuma, porque ensina a ignorar o alarme.
+
+Corrigir as 4 exige reenviar os PDFs originais e não foi feito neste ciclo. O
+gate de aprovação por documento-fonte indisponível bloquearia esses fechamentos
+se eles voltassem para aprovação.
