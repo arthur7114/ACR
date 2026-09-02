@@ -161,10 +161,32 @@ R$ 788,22 contratados, exatamente dois meses de uma vez.
 Uma recusa em maio: uma linha do Terreno Castelão sem unidade identificada, que
 o script se nega a adivinhar (fail-closed).
 
-**Nota de método.** A checagem "recebido > contratado" usada neste levantamento é
-um proxy: ela acusa também as quitações de atraso, que são legítimas. Um
-verificador permanente deveria descontar `atrasos_recuperados` antes de comparar.
-Não foi implementado neste ciclo.
+### Verificador permanente
+
+A checagem "recebido > contratado" usada durante o diagnóstico é um proxy ruim:
+acusa junto as quitações de atraso, que são legítimas. `scripts/verify-aluguel-contratado.ts`
+é a versão permanente e desconta `atrasos_recuperados` antes de comparar
+(`aluguel_recebido` já o inclui). Somente leitura, sai com código 1 quando acha
+divergência, e aceita competências como argumento:
+
+```
+node --import tsx scripts/verify-aluguel-contratado.ts
+node --import tsx scripts/verify-aluguel-contratado.ts 2026-07-01
+```
+
+Acusa duas coisas: `contratado_defasado` (a competência recebeu mais que o
+contrato, descontado o atraso) e `contratado_zerado` (contrato ativo com valor
+zero e recebimento no mês). Fica de fora o que não tem aluguel fixo a comparar:
+receita variável, unidade sem vigência e status desconhecido.
+
+A saída informa quantas unidades foram **efetivamente comparadas**, e o script
+falha quando esse número é zero com linhas no período. Sem isso, um verificador
+que parasse de casar as vigências devolveria o mesmo "sem divergência" de um
+banco saudável — silêncio por quebra é indistinguível de silêncio por saúde.
+
+Execução em 2026-09-02, nas três competências existentes: 355 unidades, 312
+comparadas, 39 de receita variável, zero sem vigência, **nenhuma divergência**.
+As 8 unidades que o proxy ingênuo acusava saíram todas, como esperado.
 
 Duas observações registradas e não corrigidas:
 
