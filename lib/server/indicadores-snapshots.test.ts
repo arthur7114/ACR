@@ -1554,6 +1554,37 @@ test("acordo de rescisao nao define origem de atraso", () => {
   assert.equal(row.atrasos_competencia_origem, null)
 })
 
+test("acordo de aluguel de competencia anterior e atraso recuperado, com origem", () => {
+  // Izabel, 105 Grand Castelao I, jul/26: o documento classifica como "acordo"
+  // o aluguel de junho pago em julho ("VIGENCIA DE JUNHO/26"). Sem esta regra
+  // ele caia em outros recebimentos, sem origem, e junho nunca aparecia quitado.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700, competencia_original: "06/2026" },
+      acordos: [{ tipo: "acordo", valor: 751.51, total_recebido: 837.35, competencia_original: "05/2026", confianca: 0.95 }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados, 837.35)
+  assert.equal(row.atrasos_competencia_origem, "2026-05-01")
+  assert.equal(row.outros_recebimentos ?? 0, 0)
+})
+
+test("acordo sem competencia de origem anterior continua em outros recebimentos", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [{ tipo: "acordo", valor: 480, total_recebido: 480, competencia_original: null, confianca: 0.95 }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_recuperados ?? null, null)
+  assert.equal(row.atrasos_competencia_origem, null)
+  assert.equal(row.outros_recebimentos, 480)
+})
+
 test("le a competencia de origem declarada na observacao quando o campo vem vazio", () => {
   // Caso real: linha de maio cujo campo estruturado veio nulo, mas o texto diz
   // de que mes o valor e. Sem isso o atraso era contado como aluguel do mes.

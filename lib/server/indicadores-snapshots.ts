@@ -21,7 +21,12 @@ import type { createSupabaseAdmin } from "./supabase"
 // descartava eventos, cobranca_esperada e garagem_recebida. O checksum já havia
 // sido persistido, então o reparo passou a responder "unchanged" e as colunas
 // ficaram nulas. Bump de versão invalida os checksums e força a regravação.
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.1"
+// v3.2: `observacao` da linha entra no snapshot (hover do mapa) e acordo de
+// aluguel de competência ANTERIOR conta como atraso recuperado, com origem —
+// antes só `tipo: "atraso"` contava, e o acordo "VIGÊNCIA DE JUNHO/26" da
+// Izabel (105 Grand Castelão I, jul/26) caía em outros recebimentos, sem
+// origem, e junho nunca aparecia quitado. Bump força a regravação.
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.2"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -381,7 +386,7 @@ function buildSnapshotRow(input: {
   const agreementsResolvidos = resolverRecebimentosLegados(input.agreements)
   const recoveredFromAgreements = sumKnownMoney(
     agreementsResolvidos
-      .filter(({ item }) => item.tipo === "atraso")
+      .filter(({ item }) => isRecuperacaoDeAtraso(item, input.competencia))
       .map(({ financeiro }) => financeiro.totalRecebido),
   )
   const recoveredLate = sumNullableMoney(recoveredFromLines, recoveredFromAgreements)
@@ -399,7 +404,7 @@ function buildSnapshotRow(input: {
     if (origem) recoveredOrigins.add(origem)
   }
   for (const { item } of agreementsResolvidos) {
-    if (item.tipo !== "atraso") continue
+    if (!isRecuperacaoDeAtraso(item, input.competencia)) continue
     const origem = normalizeOptionalCompetence(item.competencia_original)
     if (origem) recoveredOrigins.add(origem)
   }
@@ -419,7 +424,7 @@ function buildSnapshotRow(input: {
   )
   const otherFromAgreements = sumKnownMoney(
     agreementsResolvidos
-      .filter(({ item }) => item.tipo !== "atraso")
+      .filter(({ item }) => !isRecuperacaoDeAtraso(item, input.competencia))
       .map(({ financeiro }) => financeiro.totalRecebido),
   )
   const otherReceipts = sumNullableMoney(otherFromLines, otherFromAgreements)
@@ -629,6 +634,20 @@ function groupAgreements(
     groups.set(key, [...(groups.get(key) ?? []), item])
   }
   return groups
+}
+
+// Recuperação de aluguel atrasado: o item `atraso`, ou um `acordo` cuja
+// competência de origem é ANTERIOR à do fechamento (aluguel de mês passado pago
+// agora, ex.: "VIGÊNCIA DE JUNHO/26" recebido em julho). Rescisão, intermediação
+// e acordo sem origem anterior continuam em outros recebimentos.
+function isRecuperacaoDeAtraso(
+  item: NonNullable<SnapshotAnalysis["prestacao"]>["acordos_rescisoes_recebidos"][number],
+  competencia: string,
+) {
+  if (item.tipo === "atraso") return true
+  if (item.tipo !== "acordo") return false
+  const origem = normalizeOptionalCompetence(item.competencia_original)
+  return origem !== null && origem < normalizeCompetence(competencia)
 }
 
 function buildTerminationKeys(

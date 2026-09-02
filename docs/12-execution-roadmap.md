@@ -2429,6 +2429,39 @@ reescrito):
 de jun/26 abre "jun. de 2026 · Aluguel contratado (teto) R$ 87.621,97 ·
 Recebido sem dado · Vacância R$ 11.780,37 · Inadimplência R$ 3.807,02".
 
+## 2026-09-02 — Aplicação em produção e ajuste v3.2 dos snapshots
+
+**Rodado no Supabase remoto (pooler `aws-1-us-east-2`, sessão psql):** migration
+`202609020001_snapshot_observacao` (coluna + RPC `persistir_pacote_fechamento_v1`
+regravada; versão registrada em `supabase_migrations.schema_migrations` — as
+migrations de 27 e 28/08 não estavam registradas lá, embora aplicadas);
+`repair-indicadores-confiabilidade --commit` para 2026-06 e 2026-07 (João
+Cordeiro e Pompílio reprocessados pelo parser novo, 0 divergentes); backfill de
+snapshots `--commit` para 2026-05/06/07.
+
+**O que a validação no app mostrou depois disso.** João Cordeiro jul/26:
+inadimplência do mês R$ 788,22 e acumulada de junho R$ 788,22; jun/26 com a
+linha de junho em aberto antes de abril/maio pagos. 202 Grand Maracanaú: maio
+inadimplente retroativo com a dívida do Bruno (saldo R$ 893,33, pago R$ 480,00
+em junho), junho com evento de rescisão. **Dois furos:** (1) Izabel (105 Grand
+Castelão I) seguia sem quitação — o acordo de julho vem tipado `acordo`
+("VIGÊNCIA DE JUNHO/26"), e o builder só contava `tipo: "atraso"` como atraso
+recuperado; caía em outros recebimentos, sem origem. (2) `observacao` do 202 em
+junho ficou nula: o backfill pula linha com checksum igual, e a coluna nova não
+mudava nada no hash quando o resto era igual.
+
+**Ajuste (`lib/server/indicadores-snapshots.ts`):** `isRecuperacaoDeAtraso` —
+`atraso`, ou `acordo` com `competencia_original` anterior à do fechamento, conta
+como atraso recuperado (valor total recebido e origem); rescisão e acordo sem
+origem anterior seguem em outros recebimentos. Versão de cálculo
+`recebimentos-canonicos-v3.2` invalida os checksums e força a regravação com
+`observacao`. Dois testes novos; suíte 576/576. Backfill 05–07 rodado de novo
+após o ajuste.
+
+**Não muda, e é dado:** 101 Grand Maracanaú em mai/26 fica "Desconhecido" porque
+a prestação de maio listou só 15 das 30 unidades — não há linha do 101 no
+documento; jun e jul já saem "Vago".
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:
