@@ -20,7 +20,41 @@ R$ 256,00 e repasse de R$ 3.389,95 foram preservados, com diferença financeira
 zero. O reparador também sincroniza o marcador de repasse embutido no resumo da
 prestação para não reabrir indevidamente o alerta de comprovante.
 
+Em 2026-09-01 o cliente enviou seis vídeos sobre Grand Messejana II jul/26
+(levantamento completo em `docs/14-levantamento-gaps-2026-09-01.md`). Três causas
+estruturais explicam a recorrência dos erros: coluna perdida na leitura sem
+nenhum total divergir (o TOTAL da linha é copiado do documento), definições de
+contagem diferentes das do cliente (inadimplente e intermediação **são**
+alugadas) e números sem fórmula visível (aluguel médio). Correções aplicadas ao
+sistema inteiro: parser de planilha tolera pontuação no cabeçalho (`SEG INC.`),
+novo recheck `linhas_componentes` (alerta quando o total excede a soma dos
+componentes), Alugadas passa a incluir inadimplentes/intermediação/rescisões
+com os demais tiles como subconjuntos, aluguel médio imprime `numerador ÷
+alugadas`, etiquetas Rescisão e Reajuste (coluna REAJUSTE lida do documento),
+colunas de componentes na tabela de acordos e prompt do classificador
+descrevendo o relatório de reajuste da Alive. Os quatro fechamentos Alive de
+julho lidos por planilha (GM II, GM I, Grand Castelão I e LOCMAIS) foram
+reprocessados com status e correções manuais preservados; recebidos, comissão e
+repasse não mudaram; seguro incêndio voltou às linhas (R$ 1.121,33, R$ 140,40 e
+R$ 281,33). Em 2026-09-02 o parser passou a registrar colunas numéricas não
+mapeadas (`plano_extracao.colunas_nao_lidas`), o recheck de componentes nomeia a
+coluna e bloqueia quando o total da linha não fecha, e `ENCARGOS` (Grand
+Maracanaú) mapeia para `outros_recebimentos` no parser e na IA. Suíte 525
+testes, canários 6/6, tipos e lint verdes.
+
 ## Proxima acao recomendada
+
+Reprocessar o relatório de locação (documento 3) dos fechamentos Alive de julho
+com o classificador corrigido, para que `contrato_valores` receba a série
+reajustada: hoje `imovel_competencias` de julho registra aluguel esperado
+defasado (ex.: GM II aptos 2 e 20 em R$ 660,00 com recebido de R$ 690,63), o que
+puxa "Aluguel contratado" e "Cobrança esperada" dos Indicadores para baixo nas
+unidades reajustadas. Alternativa sem IA: registrar as cinco vigências de GM II
+(aptos 2, 19, 20, 21, 25) a partir da seção ATUALIZAÇÃO MONETÁRIA do PDF. Depois
+validar no navegador a Revisão de GM II jul/26: 24 alugadas, 1 inadimplente, 1
+intermediação, 1 rescisão, 5 reajustes, 3 vagos, seguro incêndio R$ 1.121,33 e
+aluguel médio `R$ 12.811,93 ÷ 24`.
+
 
 Com autorização explícita do usuário, corrigir o cadastro de três unidades do
 Grand Maracanaú que têm aluguel zerado em `imoveis.valor_aluguel_esperado` e em
@@ -90,6 +124,9 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - Parecer tecnico pode bloquear quando recheck deterministico divergir acima de R$ 0,01.
 - Tela de processamento deve consumir eventos reais do backend; progresso hardcoded nao e aceito.
 - Tela de revisao nao deve renderizar dados demonstrativos quando nao houver resultado real carregado.
+- Na Revisão, "Alugadas" = unidades com locatário no mês; inadimplentes, intermediação, rescisões e reajustes são subconjuntos, nunca baldes paralelos (cliente, 2026-09-01). Nos Indicadores a rescisão encerra o mês vaga (cliente, 2026-08-18). Cada tela declara a própria definição no texto.
+- Toda métrica derivada exibe a fórmula com os números que o cliente vê na própria tela (ex.: aluguel médio `R$ 12.811,93 ÷ 24 alugadas`).
+- Uma coluna perdida na leitura não altera totais; por isso a soma dos componentes da linha (aluguel, garagem, água, IPTU, seguro) é conferida contra o total impresso como alerta de qualidade de leitura.
 - Extracao da prestacao Alive deve analisar o documento inteiro antes de extrair campos; resumo financeiro final nao pode ser inferido apenas pela soma das linhas por imovel.
 - Warnings principais da revisao devem mostrar apenas divergencias financeiras reais e documentos obrigatorios ausentes; baixa confianca, documentos opcionais e diagnosticos tecnicos nao devem poluir o alerta operacional.
 - Agentes OpenAI do pipeline real devem usar `gpt-5.5` como modelo padrao; `OPENAI_MODEL` pode sobrescrever localmente quando necessario.
@@ -162,6 +199,16 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - `contrato_valores` guarda uma linha por mudanca de aluguel (acompanha reajuste), nao um valor unico por contrato.
 
 ## Historico de ciclos
+
+### 2026-09-01 - Feedback GM II julho: seguro incêndio zerado, contagem de alugadas, aluguel médio, etiquetas e acordos
+
+Status: código aplicado e quatro fechamentos reprocessados no Supabase; UI não validada no navegador (login obrigatório); classificador de documentos alterado só no prompt.
+Job: seis vídeos do cliente sobre Grand Messejana II jul/26 (`docs/14-levantamento-gaps-2026-09-01.md`): seguro incêndio zerado em 8 linhas, 22 alugadas em vez de 24, aluguel médio irreproduzível, ausência de etiquetas de reajuste e rescisão, tabela de acordos sem colunas de componentes. Pedido explícito: corrigir no sistema inteiro e reprocessar os afetados.
+Outcome entregue: `findColumn` do parser de planilha ignora pontuação final (`SEG INC.`) e lê a coluna REAJUSTE (`reajuste_mes`); item de acordo ganha `seguro_incendio`; schema/prompt da IA acompanham. Novo recheck `linhas_componentes` (alerta) acusa total acima da soma dos componentes — a classe de erro que passava por todos os totais. Revisão: Alugadas inclui inadimplentes/intermediação/rescisões, tiles Rescisões e Reajustes, aluguel médio imprime `numerador ÷ alugadas`, etiquetas Rescisão e Reajuste na tabela, colunas Aluguel/Garagem/Água/IPTU/Seg. inc. nos acordos. Prompt do classificador descreve o relatório de reajuste e o pacote de despesas.
+Validacao: 521 testes, 6 canários, tipos e lint verdes. Dry-run e commit de `scripts/reprocessar-planilha.ts` para GM II, GM I, Grand Castelão I e LOCMAIS: recebidos, comissão, despesas e repasse idênticos; seguro incêndio 1.121,33 / 140,40 / 281,33 / 0,00; recheck `linhas_componentes` passou nos quatro; snapshots de indicadores recalculados com a mesma distribuição (GM II: 22 ocupados, 1 inadimplente, 4 vagos).
+Decisoes: ver "Decisoes registradas" (alugadas inclusivas, fórmula visível, conferência de componentes).
+Arquivos/docs impactados: `lib/server/excel-parser.ts`, `lib/server/package-rechecks.ts`, `lib/prestacao-types.ts`, `lib/server/analyze-prestacao.ts`, agentes `prestacao-alive` e `document-classifier`, `components/acr/views/revisao-view.tsx`, `lib/fechamento-operacional.ts`, `scripts/reprocessar-planilha.ts`, testes, `CONTEXT.md`, docs `12` e `14`.
+Proxima acao: reprocessar o relatório de locação (documento 3) dos fechamentos Alive de julho para atualizar `contrato_valores` das unidades reajustadas (aluguel esperado defasado nos Indicadores) e validar a Revisão de GM II no navegador.
 
 ### 2026-08-11 - César Rêgo julho: escopo, inadimplência, TED, datas eGestor e manuais repetidos
 

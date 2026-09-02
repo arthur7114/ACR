@@ -80,3 +80,24 @@ locador e não altera receita total, despesa ou repasse.
 Receita cuja linha e movimentação apontam explicitamente para um cadastro de
 imóvel ativo. Coincidência textual de código ou unidade é apenas sugestão; não
 substitui o vínculo persistido.
+
+### Unidade alugada (tela de Revisão)
+Unidade que teve locatário na competência: pagante, inadimplente do mês, em
+intermediação (primeiro mês) ou com rescisão proporcional dentro do mês.
+Inadimplentes, intermediação, rescisões e reajustes são **subconjuntos** de
+Alugadas, nunca baldes paralelos. Vagas e unidades por aplicativo ficam fora.
+*Decidido em 2026-09-01 (GM II jul/26): 27 unidades − 3 vagas = 24 alugadas.*
+Nos Indicadores, a ocupação descreve o fim do mês: a unidade rescindida encerra
+a competência vaga (decisão de 2026-08-18, Grand Maracanaú 214). As duas telas
+declaram a própria definição no texto.
+
+### Aluguel recebido médio
+Coluna Aluguel das unidades alugadas dividida pelo número de unidades alugadas
+(inadimplente e intermediação entram com zero). A fórmula é impressa no tile
+para o operador reproduzir na calculadora.
+
+### Reajuste (atualização monetária)
+Coluna REAJUSTE do documento Alive: mês do reajuste anual do contrato. Quando
+coincide com a competência e a linha não é contrato novo (proporcional), a
+unidade recebe a etiqueta **Reajuste**. Fonte única é o documento; o sistema
+não infere reajuste comparando valores.
