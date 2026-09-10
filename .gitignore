@@ -25,3 +25,9 @@ tsconfig.tsbuildinfo
 
 # Arquivos de trabalho locais (repo publico - nunca versionar dados do cliente)
 tmp/
+
+# Fixtures de fechamento: contêm nome de inquilino, valor de aluguel e registro
+# de inadimplência de pessoas identificadas. Este repositório é PÚBLICO
+# (arthur7114/ACR), então elas ficam fora do versionamento até haver decisão
+# sobre anonimizar. Regenerar com: pnpm fixtures:exportar <AAAA-MM-DD>
+tests/fixtures/

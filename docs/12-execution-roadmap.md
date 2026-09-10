@@ -49,6 +49,42 @@ verdes.
 
 ## Proxima acao recomendada
 
+A migration `202609100001` ja esta aplicada no remoto: as duas vias de gravacao
+do snapshot voltaram a paridade com o builder, e um par (imovel, competencia)
+inedito ja nasce com `garagem_recebida`.
+
+A checagem de 2026-09-10 deixou quatro leituras do dashboard em
+aberto, todas confirmadas contra o banco e nenhuma corrigida ainda:
+
+1. O balde `valoresSemClassificacao` cresceu de 0,29% para 4,45% do aluguel
+   contratado entre maio e julho (R$ 3.945,36 em julho). Decomposicao exata:
+   R$ 2.031,98 de tres imoveis "Ocupado" com inquilino nomeado e zero recebido,
+   R$ 2.334,49 de ocupados que pagaram menos que o esperado e -R$ 401,11 de
+   quatro imoveis "Vago" que receberam. A aba Conciliacao nomeia o balde; a
+   Visao geral, nao.
+2. Inadimplencia do mes conta so `status_ocupacao = inadimplente`. Os tres
+   ocupados com zero recebido ficam de fora: seriam R$ 8.242,17 em vez de
+   R$ 6.210,19.
+3. `declarouInadimplenciaAusente` decide pelo NOME da secao. O layout Cesar Rego
+   declara `["relacao de imoveis","lancamentos efetuados","resumo"]`, entao a
+   inadimplencia inferida da Relacao (o que o parser foi feito para produzir) e
+   descartada e o fechamento e contado como sem dado. Sao R$ 788,22 fora do KPI,
+   e a legenda diz "5 de 8" quando 7 de 8 tem a secao.
+4. O mesmo registro (apto 0002521, R$ 788,22, origem 06/2026) esta gravado nos
+   fechamentos de Joao Cordeiro e de Galpao Pompilio Gomes; a unidade e do Joao
+   Cordeiro. Corrigir o item 3 sem deduplicar transformaria isso em contagem
+   dobrada. Dentro do KPI ja ha R$ 3.990,83 de registros repetidos
+   indistinguiveis (mesmo apto, mesmo valor, sem competencia de origem).
+
+Pendencia menor: `scripts/verify-indicadores-snapshots.ts` reporta `ok: false`
+com 317 de 355 checksums invalidos, todos falsos positivos —
+`loadExistingSnapshots` nao seleciona `observacao` e
+`calculatePersistedSnapshotChecksum` nao a inclui, entao nenhuma linha com
+observacao pode bater. O replay das fixtures confirma que os 355 snapshots estao
+integros. Um alarme que dispara em 89% das linhas nao detecta mais nada.
+
+### Pendencia anterior (mantida)
+
 Reprocessar o relatório de locação (documento 3) dos fechamentos Alive de julho
 com o classificador corrigido, para que `contrato_valores` receba a série
 reajustada: hoje `imovel_competencias` de julho registra aluguel esperado
@@ -204,6 +240,18 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - `contrato_valores` guarda uma linha por mudanca de aluguel (acompanha reajuste), nao um valor unico por contrato.
 
 ## Historico de ciclos
+
+### 2026-09-10 - Paridade das duas RPCs de snapshot e fixtures congeladas de mai-jul/26
+
+Status: correcao, fixtures e migration aplicada no Supabase remoto em 2026-09-10, com autorizacao explicita.
+Job: checagem completa para responder se os fechamentos novos alimentam os indicadores corretamente, e preparo do replay em banco limpo proposto pelo socio (zerar banco, reprocessar a ultima alimentacao, conferir se bate).
+Achado principal: `202609020001` recriou `persistir_pacote_fechamento_v1` a partir da versao ANTERIOR a `202608270003` e trocou `garagem_recebida` por `observacao`. O espelho existia do outro lado: `aplicar_reparo_indicadores_v4` nunca recebeu `observacao`. O `on conflict do update` mascarava os dois — linha ja existente conserva o valor antigo da coluna esquecida, entao a perda so apareceria no INSERT de uma competencia inedita, isto e, no proximo fechamento. Sem `garagem_recebida`, o gap de inadimplencia por componentes cai no fallback por aluguel.
+Outcome entregue: migration `202609100001_rpc_snapshot_colunas_completas.sql` devolve `garagem_recebida` a via de processamento e acrescenta `observacao` a via de reparo (corpos gerados a partir das duas definicoes vigentes, diff de 3 linhas em cada funcao, nenhuma mudanca de assinatura ou semantica). Guarda permanente em `lib/server/indicadores-snapshots-rpc.test.ts`: a lista de colunas nao e escrita a mao, sai das chaves que o proprio builder produz, e o teste cobre lista do INSERT, lista do `on conflict` e aridade coluna/valor das duas RPCs. Seam nova `mapIndicadoresProperties` separa a traducao (imoveis, vigencias) -> propriedades da consulta, para o replay usar a regra real em vez de uma copia. `scripts/exportar-fixtures-fechamento.ts` congela por competencia a `analise_completa`, imoveis, vigencias aplicaveis e snapshots; 25 fixtures de 2026-05/06/07 em `tests/fixtures/fechamentos/`.
+Validacao: suite 609/609 (era 576; +7 da guarda de RPC, +26 do replay), 6 canarios, lint e typecheck verdes. A guarda foi testada contra o estado sem a correcao e falha nas quatro asserções certas, com a coluna nomeada. O replay reproduz os 355 snapshots congelados campo a campo, checksum incluso. Exportacao idempotente: re-exportar dado igual so mexe no carimbo do `index.json`.
+Aplicacao no remoto (pooler `aws-1-us-east-2`, sessao psql): o estado ANTES foi inspecionado por `pg_get_functiondef` e confirmou o diagnostico — `persistir_pacote_fechamento_v1` sem `garagem_recebida`, `aplicar_reparo_indicadores_v4` sem `observacao`. As duas definicoes anteriores foram salvas como rollback antes da escrita. Migration aplicada em transacao unica (2 CREATE FUNCTION, 2 REVOKE, 2 GRANT); depois, as duas funcoes gravam e reaplicam as duas colunas. Dados intactos: 355 linhas, 323 com garagem, 317 com observacao, iguais ao baseline. Permissoes preservadas (`postgres` e `service_role`, sem anon/authenticated). Versao registrada em `supabase_migrations.schema_migrations`. Prova de ponta a ponta: chamada real da RPC para um par (imovel, competencia) inedito — 0002521 em 2026-08-01 — dentro de `begin/rollback`, gravou `garagem_recebida = 77.77` e `observacao`; antes da correcao a coluna nasceria nula. Apos o rollback: 0 linhas em 2026-08-01, contagens de volta a 355/323/317, movimentacoes do fechamento preservadas. `audit-indicadores` pos-migration devolve os mesmos KPIs de julho.
+Decisoes: o replay prova LOGICA, nao correcao — `snapshotsNoBancoEm` e deteccao de mudanca, e o gabarito de correcao continua sendo a conferencia manual do cliente. A extracao por LLM nao tem `temperature` nem `seed` fixados, entao congelar `analise_completa` e o que torna o replay atribuivel.
+Arquivos/docs impactados: `supabase/migrations/202609100001_rpc_snapshot_colunas_completas.sql`, `lib/server/indicadores-snapshots.ts`, `lib/server/indicadores-snapshots-rpc.test.ts`, `scripts/exportar-fixtures-fechamento.ts`, `tests/replay/fixtures-fechamento.test.ts`, `tests/fixtures/fechamentos/**`, `package.json`, doc `12`.
+Proxima acao: os achados de leitura do dashboard listados em "Proxima acao recomendada" — nenhum corrigido ainda.
 
 ### 2026-09-01 - Feedback GM II julho: seguro incêndio zerado, contagem de alugadas, aluguel médio, etiquetas e acordos
 

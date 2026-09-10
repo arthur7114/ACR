@@ -207,6 +207,8 @@ export function buildIndicadoresSnapshotRows(input: BuildIndicadoresSnapshotRows
   }
 }
 
+type SnapshotVigencyRow = z.infer<typeof snapshotVigencyRowSchema>
+
 export async function loadActiveIndicadoresProperties(input: {
   supabase: SupabaseAdmin
   imobiliariaId: string
@@ -219,9 +221,6 @@ export async function loadActiveIndicadoresProperties(input: {
   const vigencies = competence
     ? await loadSnapshotVigencies(input, competence)
     : []
-  const vigencyByProperty = new Map(
-    vigencies.map((vigency) => [vigency.imovel_id, vigency]),
-  )
   let query = input.supabase
     .from("imoveis")
     .select(
@@ -237,7 +236,26 @@ export async function loadActiveIndicadoresProperties(input: {
 
   if (error) throw error
 
-  return z.array(propertyRowSchema).parse(data ?? []).map((property) => {
+  return mapIndicadoresProperties({ propertyRows: data ?? [], vigencies })
+}
+
+/**
+ * Traducao pura de (imoveis, vigencias) para as propriedades que o builder
+ * consome. Separada da consulta para que um replay a partir de fixtures use
+ * exatamente esta regra, e nao uma copia dela no teste — a copia envelhece
+ * sozinha e o replay para de provar o que diz provar.
+ *
+ * A selecao das linhas continua na consulta: com vigencias, sao os imoveis
+ * delas; sem vigencias, os ativos.
+ */
+export function mapIndicadoresProperties(input: {
+  propertyRows: unknown
+  vigencies: SnapshotVigencyRow[]
+}): IndicadoresSnapshotProperty[] {
+  const vigencyByProperty = new Map(
+    input.vigencies.map((vigency) => [vigency.imovel_id, vigency]),
+  )
+  return z.array(propertyRowSchema).parse(input.propertyRows).map((property) => {
     const vigency = vigencyByProperty.get(property.id)
     const revenueModel = vigency?.modelo_receita ?? "fixo"
     return {
