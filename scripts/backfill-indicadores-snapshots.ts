@@ -298,6 +298,7 @@ interface DatabaseSnapshotRow {
   qualidade: IndicadoresSnapshotRow["qualidade"]
   calculo_versao: string
   checksum: string
+  observacao?: string | null
 }
 
 type SupabaseAdmin = ReturnType<typeof import("../lib/server/supabase")["createSupabaseAdmin"]>
@@ -364,7 +365,8 @@ async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillO
        aluguel_competencia,atrasos_recuperados,atrasos_competencia_origem,outros_recebimentos,entradas_passagem,
        saidas_passagem,comissao_administracao,repasse_apurado,vencimento_referencia,
        competencia_original,competencia_recebimento,dia_vencimento,modelo_receita,
-       status_mensal_explicito,quantidade_linhas,origem,qualidade,calculo_versao,checksum`,
+       status_mensal_explicito,quantidade_linhas,origem,qualidade,calculo_versao,checksum,
+       observacao`,
     )
     .order("competencia")
     .order("imovel_id")
@@ -456,6 +458,12 @@ function calculatePersistedSnapshotChecksum(snapshot: DatabaseSnapshotRow) {
     origem: snapshot.origem,
     qualidade: snapshot.qualidade,
     calculo_versao: snapshot.calculo_versao,
+    // Sem `observacao` aqui, nenhuma linha que a tenha consegue reproduzir o
+    // proprio hash: o checksum gravado nasce do row completo do builder. Era
+    // por isso que o verificador acusava 317 de 355 checksums invalidos, todos
+    // falsos positivos — e um alarme que dispara em 89% das linhas nao detecta
+    // mais corrupcao nenhuma.
+    observacao: snapshot.observacao ?? null,
   })
 }
 
