@@ -16,6 +16,7 @@ import { calcularResumoComissaoFechamento } from "@/lib/fechamento-operacional"
 import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import { pathToFileURL } from "node:url"
+import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 
 export interface ParMetrica {
   rotulo: string
@@ -64,7 +65,7 @@ async function varrerCompetencia(
 ): Promise<DivergenciaCompetencia[]> {
   const { data: fechamentos, error } = await supabase
     .from("fechamentos")
-    .select("id,imobiliaria_id,empreendimento_id,analise_completa,empreendimentos(nome)")
+    .select("id,imobiliaria_id,empreendimento_id,analise_completa,empreendimentos(nome),imobiliarias(nome)")
     .eq("competencia", competencia)
   if (error) throw error
 
@@ -109,10 +110,24 @@ async function varrerCompetencia(
       { rotulo: "repasse declarado", revisao: resumo.total_a_repassar ?? null, indicadores: indicadores.ponteFinanceira.repasseDeclarado },
       { rotulo: "inadimplencia do mes", revisao: inadimplenciaMes.valor, indicadores: indicadores.realizacaoAluguel.inadimplenciaMes },
     ]
-    if (prestacao.inadimplencias_acumuladas.length > 0) {
+    // A Revisao aplica a guarda de escopo antes de exibir (revisao-view.tsx):
+    // o extrato Cesar Rego cobre a imobiliaria inteira e vira dois
+    // fechamentos. Sem repetir a guarda aqui, o verificador compara o que a
+    // tela NAO mostra e acusa divergencia onde nao ha.
+    const imobiliariaNome =
+      (fechamento as { imobiliarias?: { nome?: string } | null }).imobiliarias?.nome ?? ""
+    const acumuladasNoEscopo = prestacao.inadimplencias_acumuladas.filter(
+      (item) =>
+        findCesarRegoPropertyScopeConflict({
+          agencyName: imobiliariaNome,
+          developmentName: nome,
+          propertyCode: item.apto ?? "",
+        }) === null,
+    )
+    if (acumuladasNoEscopo.length > 0) {
       pares.push({
         rotulo: "inadimplencia acumulada",
-        revisao: prestacao.inadimplencias_acumuladas.reduce((total, item) => total + item.valor, 0),
+        revisao: acumuladasNoEscopo.reduce((total, item) => total + item.valor, 0),
         indicadores: indicadores.resumo.inadimplenciaAcumulada,
       })
     }

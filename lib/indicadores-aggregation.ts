@@ -1885,6 +1885,13 @@ function declarouInadimplencia(analysis: IndicadoresAnalysisInput) {
 
 function declarouInadimplenciaAusente(analysis: IndicadoresAnalysisInput) {
   if ((analysis.camposAusentes ?? []).includes(CAMPO_INADIMPLENCIA_ACUMULADA)) return true
+  // Registro presente prova que a informacao existe, qualquer que seja o nome
+  // que o layout de origem da a secao. O extrato Cesar Rego declara
+  // ["relacao de imoveis","lancamentos efetuados","resumo"] e infere a divida
+  // da Relacao de Imoveis (buildInadimplenciasAcumuladas): pela regra de nome
+  // abaixo, jul/26 descartava R$ 788,22 que estavam no dado e ainda contava o
+  // fechamento como "sem a secao".
+  if ((analysis.prestacao?.inadimplencias_acumuladas ?? []).length > 0) return false
   // Analises ja persistidas nao trazem campos_ausentes; a lista de secoes
   // identificadas resolve o caso sem exigir reprocessamento. Lista vazia ou
   // ausente nao afirma nada e nao dispara o bloqueio.

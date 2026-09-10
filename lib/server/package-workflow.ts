@@ -21,6 +21,7 @@ import { loadHistoricalAgreementKeys } from "./historical-agreements"
 import { calculateDocumentSha256, persistPackage, type PackageFileForPersistence } from "./persist-package"
 import { getCommercialRuleForValidation } from "./regras-comerciais"
 import { createSupabaseAdmin } from "./supabase"
+import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024
 
@@ -488,11 +489,31 @@ function applyFechamentoContextToPrestacao(
   competencia: string,
   fechamentoContext: FechamentoContext | null,
 ): PrestacaoAnalysis {
+  const imobiliaria = fechamentoContext?.imobiliariaNome ?? prestacao.imobiliaria
+  const empreendimento = fechamentoContext?.empreendimentoNome ?? prestacao.empreendimento
+  // Guarda de escopo. O extrato Cesar Rego cobre a imobiliaria inteira e o
+  // sistema o divide em dois fechamentos; a inadimplencia inferida da Relacao
+  // de Imoveis (buildInadimplenciasAcumuladas) nao sabe dessa divisao e
+  // entrava IGUAL nos dois. Em jul/26 a divida da unidade 0002521 (Joao
+  // Cordeiro) ficou gravada tambem no fechamento do Galpao Pompilio Gomes, que
+  // nao tem essa unidade — a mesma dividida aparecendo em dois lugares. Aqui e
+  // o ponto em que o empreendimento do fechamento passa a ser conhecido.
+  // Codigo que nao mapeia para nenhum empreendimento conhecido permanece: a
+  // guarda remove o que pertence comprovadamente a OUTRO, nunca o desconhecido.
+  const inadimplenciasNoEscopo = prestacao.inadimplencias_acumuladas?.filter(
+    (item) =>
+      findCesarRegoPropertyScopeConflict({
+        agencyName: imobiliaria,
+        developmentName: empreendimento,
+        propertyCode: item.apto ?? "",
+      }) === null,
+  )
   return {
     ...prestacao,
-    imobiliaria: fechamentoContext?.imobiliariaNome ?? prestacao.imobiliaria,
-    empreendimento: fechamentoContext?.empreendimentoNome ?? prestacao.empreendimento,
+    imobiliaria,
+    empreendimento,
     competencia,
+    ...(inadimplenciasNoEscopo ? { inadimplencias_acumuladas: inadimplenciasNoEscopo } : {}),
   }
 }
 

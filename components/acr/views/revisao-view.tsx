@@ -60,6 +60,7 @@ import { FechamentoVinculosDrawer } from "@/components/acr/fechamento-vinculos-d
 import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
+import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 
 type StatusEvento = {
   id: string
@@ -837,7 +838,20 @@ export function RevisaoView({
   })()
   // Vagas de garagem informadas dentro dos acordos/rescisoes (ex.: "GARAGEM MOTO + GARAGEM CARRO").
   const vagasAcordos = acordosRescisoesRecebidos.reduce((sum, item) => sum + vagasDoAcordo(item), 0)
-  const inadimplenciasAcumuladas = prestacao?.inadimplencias_acumuladas ?? []
+  // Guarda de escopo, mesma funcao canonica do vinculo de imovel e dos
+  // indicadores. O extrato Cesar Rego cobre a imobiliaria inteira e vira dois
+  // fechamentos; a divida inferida da Relacao de Imoveis entrava igual nos
+  // dois. Em jul/26 a Revisao do Galpao Pompilio Gomes exibia R$ 788,22 da
+  // unidade 0002521, que e do Joao Cordeiro. Codigo sem empreendimento
+  // conhecido permanece: remove-se o que e comprovadamente de OUTRO.
+  const inadimplenciasAcumuladas = (prestacao?.inadimplencias_acumuladas ?? []).filter(
+    (item) =>
+      findCesarRegoPropertyScopeConflict({
+        agencyName: imobiliariaNome,
+        developmentName: empreendimentoNome,
+        propertyCode: item.apto ?? "",
+      }) === null,
+  )
   const totalInadimplenciaAcumulada = inadimplenciasAcumuladas.reduce((sum, item) => sum + item.valor, 0)
   // Unidades marcadas como inadimplentes que nao puderam ser apuradas. Ficam
   // visiveis em vez de somarem zero: a metrica falha fechada (`-`) quando

@@ -15,6 +15,7 @@ import {
   type OccupancyStatus,
 } from "@/lib/indicadores-domain"
 import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
+import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 import {
   IndicadoresQueryValidationError,
   type IndicadoresQuery,
@@ -524,14 +525,18 @@ function mapClosing(
   row: ClosingRow,
   accountById: Map<string, AccountRow>,
 ): IndicadoresClosingInput {
+  const pair = mapPair(row, accountById)
   return {
-    ...mapPair(row, accountById),
+    ...pair,
     id: row.id,
     competencia: normalizeCompetence(row.competencia),
     status: row.status,
     arquivado: row.arquivado,
     processamentoStatus: row.processamento_status,
-    analiseCompleta: parseCalculationAnalysis(row.analise_completa),
+    analiseCompleta: parseCalculationAnalysis(row.analise_completa, {
+      imobiliariaNome: pair.imobiliariaNome ?? "",
+      empreendimentoNome: pair.empreendimentoNome ?? "",
+    }),
   }
 }
 
@@ -623,7 +628,10 @@ function resolveCompany(
   return { id: tag, label: account?.nome ? `${tag} · ${account.nome}` : tag }
 }
 
-function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | null {
+function parseCalculationAnalysis(
+  value: unknown,
+  escopo: { imobiliariaNome: string; empreendimentoNome: string },
+): IndicadoresAnalysisInput | null {
   const parsed = calculationAnalysisSchema.safeParse(value)
   if (!parsed.success) return null
   const { totals, prestacao } = parsed.data
@@ -663,15 +671,30 @@ function parseCalculationAnalysis(value: unknown): IndicadoresAnalysisInput | nu
           })),
           acordos_rescisoes_recebidos:
             prestacao.acordos_rescisoes_recebidos?.map(mapAcordoRecebidoParaAgregacao) ?? null,
+          // Guarda de escopo: o extrato Cesar Rego cobre a imobiliaria inteira,
+          // e a inadimplencia inferida da Relacao de Imoveis entrava IGUAL nos
+          // dois fechamentos derivados dele. Em jul/26 a divida da unidade
+          // 0002521 (Joao Cordeiro) estava gravada tambem no fechamento do
+          // Galpao Pompilio Gomes, que nao tem essa unidade. Mesma funcao
+          // canonica que ja guarda o vinculo de imovel.
           inadimplencias_acumuladas:
-            prestacao.inadimplencias_acumuladas?.map((item) => ({
-              valor: item.valor,
-              apto: item.apto ?? null,
-              inquilino: item.inquilino ?? null,
-              condicao: item.condicao ?? null,
-              observacao: item.observacao ?? null,
-              competencia_original: item.competencia_original ?? null,
-            })) ?? null,
+            prestacao.inadimplencias_acumuladas
+              ?.filter(
+                (item) =>
+                  findCesarRegoPropertyScopeConflict({
+                    agencyName: escopo.imobiliariaNome,
+                    developmentName: escopo.empreendimentoNome,
+                    propertyCode: item.apto ?? "",
+                  }) === null,
+              )
+              .map((item) => ({
+                valor: item.valor,
+                apto: item.apto ?? null,
+                inquilino: item.inquilino ?? null,
+                condicao: item.condicao ?? null,
+                observacao: item.observacao ?? null,
+                competencia_original: item.competencia_original ?? null,
+              })) ?? null,
           outras_comissoes_despesas:
             prestacao.resumo_financeiro?.outras_comissoes_despesas?.map((item) => ({
               descricao: item.descricao,

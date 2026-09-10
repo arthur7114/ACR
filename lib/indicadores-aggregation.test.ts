@@ -2021,3 +2021,58 @@ test("a decomposicao explica o resto sem classificacao e nao o substitui", () =>
   )
   assert.equal(r.outrosAjustes, r.valoresSemClassificacao)
 })
+
+test("divida existente conta mesmo quando o layout nao tem secao chamada inadimplencia", () => {
+  // Layout Cesar Rego: o extrato nao tem secao de inadimplencia — a divida e
+  // INFERIDA da Relacao de Imoveis (buildInadimplenciasAcumuladas). A regra
+  // antiga olhava o NOME da secao, entao descartava o valor que estava no dado
+  // e ainda contava o fechamento como "sem a secao". Em jul/26 isso tirou
+  // R$ 788,22 do KPI e fez a legenda dizer 5 de 8 com 7 de 8 tendo o dado.
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [
+      makeClosing({
+        analiseCompleta: makeAnalysis({
+          secoesIdentificadas: ["relacao de imoveis", "lancamentos efetuados", "resumo"],
+          inadimplencias: [{ valor: 788.22 }],
+        }),
+      }),
+    ],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 788.22)
+  assert.deepEqual(result.resumo.inadimplenciaAcumuladaCobertura, {
+    declarados: 1,
+    total: 1,
+    origem: "documento",
+  })
+  assert.equal(
+    result.cobertura.lacunas.find((l) => l.codigo === "inadimplencia_nao_extraida"),
+    undefined,
+  )
+})
+
+test("layout sem secao e sem registro segue sendo lacuna, nao zero confirmado", () => {
+  // O contraponto do teste acima: sem registro, o nome da secao continua
+  // valendo. Extrato agrupado por contrato (Plural) nao fala de divida, e
+  // afirmar zero ali seria inventar (CA-IND22).
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [
+      makeClosing({
+        analiseCompleta: makeAnalysis({
+          secoesIdentificadas: ["Layout B - Extrato agrupado por contrato", "Total do extrato"],
+          inadimplencias: [],
+        }),
+      }),
+      makeClosing({
+        id: "fechamento-declarante",
+        analiseCompleta: makeAnalysis({ inadimplencias: [{ valor: 500 }] }),
+      }),
+    ],
+  }))
+
+  assert.equal(result.resumo.inadimplenciaAcumulada, 500)
+  assert.equal(
+    result.cobertura.lacunas.find((l) => l.codigo === "inadimplencia_nao_extraida")?.quantidade,
+    1,
+  )
+})
