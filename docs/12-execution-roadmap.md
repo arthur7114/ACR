@@ -49,39 +49,34 @@ verdes.
 
 ## Proxima acao recomendada
 
-A migration `202609100001` ja esta aplicada no remoto: as duas vias de gravacao
-do snapshot voltaram a paridade com o builder, e um par (imovel, competencia)
-inedito ja nasce com `garagem_recebida`.
+O ciclo de 2026-09-10 fechou a migration `202609100001` no remoto e corrigiu
+quatro dos cinco achados da checagem. Continua aberto:
 
-A checagem de 2026-09-10 deixou quatro leituras do dashboard em
-aberto, todas confirmadas contra o banco e nenhuma corrigida ainda:
-
-1. O balde `valoresSemClassificacao` cresceu de 0,29% para 4,45% do aluguel
-   contratado entre maio e julho (R$ 3.945,36 em julho). Decomposicao exata:
-   R$ 2.031,98 de tres imoveis "Ocupado" com inquilino nomeado e zero recebido,
-   R$ 2.334,49 de ocupados que pagaram menos que o esperado e -R$ 401,11 de
-   quatro imoveis "Vago" que receberam. A aba Conciliacao nomeia o balde; a
-   Visao geral, nao.
-2. Inadimplencia do mes conta so `status_ocupacao = inadimplente`. Os tres
-   ocupados com zero recebido ficam de fora: seriam R$ 8.242,17 em vez de
-   R$ 6.210,19.
-3. `declarouInadimplenciaAusente` decide pelo NOME da secao. O layout Cesar Rego
-   declara `["relacao de imoveis","lancamentos efetuados","resumo"]`, entao a
-   inadimplencia inferida da Relacao (o que o parser foi feito para produzir) e
-   descartada e o fechamento e contado como sem dado. Sao R$ 788,22 fora do KPI,
-   e a legenda diz "5 de 8" quando 7 de 8 tem a secao.
-4. O mesmo registro (apto 0002521, R$ 788,22, origem 06/2026) esta gravado nos
-   fechamentos de Joao Cordeiro e de Galpao Pompilio Gomes; a unidade e do Joao
-   Cordeiro. Corrigir o item 3 sem deduplicar transformaria isso em contagem
-   dobrada. Dentro do KPI ja ha R$ 3.990,83 de registros repetidos
-   indistinguiveis (mesmo apto, mesmo valor, sem competencia de origem).
-
-Pendencia menor: `scripts/verify-indicadores-snapshots.ts` reporta `ok: false`
-com 317 de 355 checksums invalidos, todos falsos positivos —
-`loadExistingSnapshots` nao seleciona `observacao` e
-`calculatePersistedSnapshotChecksum` nao a inclui, entao nenhuma linha com
-observacao pode bater. O replay das fixtures confirma que os 355 snapshots estao
-integros. Um alarme que dispara em 89% das linhas nao detecta mais nada.
+1. **Repetidos dentro da acumulada (R$ 3.990,83).** Registros com mesmo apto,
+   mesmo valor e sem competencia de origem, somados como dividas distintas:
+   Messejana I apto 20 (564,36 x5), apto 3 (200 x3), apto 15 (315,98 x3),
+   Messejana II apto 17 (300 x2), Maracanau apto 104 (401,43 x2). NAO foram
+   deduplicados de proposito — sem competencia de origem nao da para distinguir
+   cinco meses de divida de cinco leituras do mesmo mes, e apagar dividas reais
+   seria pior que soma-las. O apto 104 do Maracanau e o caso mais suspeito: as
+   duas leituras tem confianca diferente (0,78 e 0,70), o que sugere extracao
+   dobrada. Decidir com o cliente antes de mexer.
+2. **Confianca sem piso.** R$ 6.084,13 da acumulada vem de registros com
+   confianca < 0,80 e entram na soma com o mesmo peso dos de confianca 1,00.
+3. **Dado gravado do Pompilio.** A analise persistida ainda carrega o registro
+   da unidade 0002521, que e do Joao Cordeiro. As duas leituras (Indicadores e
+   Revisao) ja filtram, mas limpar a origem exige reprocessar os dois
+   fechamentos Cesar Rego — escrita em producao, pendente de decisao.
+4. **Ocupado sem recebimento nao entra na inadimplencia do mes.** Os tres
+   imoveis com inquilino nomeado e R$ 0,00 recebido em jul/26 (R$ 2.031,98)
+   agora aparecem nomeados na Conciliacao, mas o KPI "Inadimplencia do mes"
+   segue contando so `status_ocupacao = inadimplente` (R$ 6.210,19; seriam
+   R$ 8.242,17). `status_ocupacao` descreve ocupacao e nao pagamento, e essa
+   separacao esta certa — mudar o que o KPI conta e definicao de negocio, do
+   cliente.
+5. **"Confere com o banco" no hero de R$ 72.737,55.** So R$ 56.588,89 (78%) tem
+   comprovante; R$ 16.148,65 e apenas informado no extrato. A aba Conciliacao
+   mostra a distincao, a Visao geral nao.
 
 ### Pendencia anterior (mantida)
 
@@ -240,6 +235,48 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 - `contrato_valores` guarda uma linha por mudanca de aluguel (acompanha reajuste), nao um valor unico por contrato.
 
 ## Historico de ciclos
+
+### 2026-09-10 (2) - Esteira: verificador cego, decomposicao do resto e divida inferida
+
+Status: aplicado no repositorio; nenhuma escrita de dado em producao alem da migration do ciclo anterior.
+Job: seguir a checagem do dia em esteira — corrigir o verificador cego (#6), a leitura do balde sem nome (1 e 2) e o descarte da divida inferida (3 e 4).
+
+Verificador de snapshots. `loadExistingSnapshots` nao selecionava `observacao` e
+`calculatePersistedSnapshotChecksum` nao a incluia, entao nenhuma linha com
+observacao reproduzia o proprio hash: 317 de 355 checksums "invalidos", todos
+falsos positivos, e 317 era exatamente o numero de linhas com observacao. Contra
+o banco agora: ok:true, 355/355, zero invalido.
+
+Decomposicao do resto. A ponte chamava de "valores sem documento" tudo o que
+sobrava, e a sobra foi de 0,29% para 4,45% do contratado entre maio e julho. Tres
+causas explicam o desvio inteiro: ocupado sem recebimento (R$ 2.031,98 em jul),
+ocupado com recebimento parcial (R$ 2.314,49) e recebido em imovel vago
+(-R$ 401,11). Fecha em zero em 2026-05 e 2026-07, deixa R$ 0,26 em 2026-06. A
+decomposicao e ADITIVA: `valoresSemClassificacao` continua fechando a identidade
+da ponte e armando o bloqueio de confirmacao — a primeira versao substituia o
+campo e zerava o portao, o que teria desarmado um controle ao inves de explicar
+o numero. Identidade canonica nova e a cadeia da Conciliacao agora fecha na tela.
+
+Divida inferida. Dois defeitos acoplados, e corrigir so o primeiro dobraria o
+valor. (a) `declarouInadimplenciaAusente` decidia pelo NOME da secao; o layout
+Cesar Rego infere a divida da Relacao de Imoveis e declara secoes com outros
+nomes, entao R$ 788,22 eram descartados e o fechamento contado como sem dado.
+Agora registro presente prova que a informacao existe; sem registro, a regra de
+nome continua valendo, para nao afirmar zero onde o layout nao fala de divida.
+(b) O extrato Cesar Rego cobre a imobiliaria inteira e vira dois fechamentos, e a
+inferencia gravava o MESMO registro nos dois: a divida de 0002521 (Joao Cordeiro)
+estava tambem no fechamento do Pompilio Gomes. Guarda aplicada com
+`findCesarRegoPropertyScopeConflict` na escrita, na leitura dos indicadores e na
+Revisao.
+
+Efeito medido em julho: acumulada 56.199,25 -> 56.987,47 (+788,22, uma unica
+vez), cobertura "5 de 8" -> "6 de 8", lacuna de 3 para 2, e
+verify-consistencia-telas de 2 divergencias para ZERO nas tres competencias.
+
+Validacao: suite 612/612 (era 609), 6 canarios, 26 replays, 42 identidades em 3
+competencias, snapshots ok:true, lint e typecheck verdes.
+Arquivos/docs impactados: `lib/indicadores-aggregation.ts`, `lib/indicadores-types.ts`, `lib/indicadores-identidades.ts`, `lib/server/indicadores.ts`, `lib/server/package-workflow.ts`, `components/acr/indicadores/tabs/view-receita.tsx`, `components/acr/views/revisao-view.tsx`, `scripts/backfill-indicadores-snapshots.ts`, `scripts/verify-indicadores-identidades.ts`, `scripts/verify-consistencia-telas.ts`, testes, doc `12`.
+Proxima acao: os cinco itens em "Proxima acao recomendada".
 
 ### 2026-09-10 - Paridade das duas RPCs de snapshot e fixtures congeladas de mai-jul/26
 
