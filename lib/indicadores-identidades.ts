@@ -106,6 +106,20 @@ export const IDENTIDADES_INDICADORES: IdentidadeKpi[] = [
     }),
   },
   {
+    id: "realizacao_decomposicao_do_resto",
+    descricao:
+      "realização: −ocupado sem recebimento − ocupado parcial + recebido em vago + resto não explicado = valores sem classificação",
+    avaliar: ({ realizacaoAluguel: r }) => ({
+      esperado: somaEstrita([
+        r.ocupadoSemRecebimento === null ? null : -r.ocupadoSemRecebimento,
+        r.ocupadoRecebimentoParcial === null ? null : -r.ocupadoRecebimentoParcial,
+        r.recebidoEmVago,
+        r.restoNaoExplicado,
+      ]),
+      obtido: r.valoresSemClassificacao,
+    }),
+  },
+  {
     id: "realizacao_alugueis_do_mes",
     descricao: "realização: recebido da competência + atrasos recuperados = aluguéis recebidos no mês",
     avaliar: ({ realizacaoAluguel: r }) => ({

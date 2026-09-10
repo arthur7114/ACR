@@ -903,6 +903,41 @@ function buildRentRealization(
     (value) => value !== null,
   )
 
+  // A ponte tratava como "sem documento" tudo o que sobrava, e a sobra cresceu
+  // de 0,29% para 4,45% do contratado entre maio e julho de 2026. Nada disso
+  // era desconhecido: sao tres causas nomeaveis, e a soma delas reproduz o
+  // resto exato nas tres competencias.
+  //
+  // `status_ocupacao` descreve OCUPACAO, nao pagamento (ver classifyOccupancy):
+  // inquilino nomeado que nao pagou o mes segue "ocupado", e a unidade some das
+  // duas contas — nao e vacancia nem inadimplencia. O deficit dela precisa de
+  // nome proprio. Rescisao fica de fora porque ja vive em `ajustesClassificados`.
+  const naoOcupados = new Set<OccupancyStatus>(["vago", "inadimplente", "em_rescisao"])
+  const ocupados = snapshots.filter((snapshot) => !naoOcupados.has(snapshot.statusOcupacao))
+  const deficitOcupado = (apenasSemRecebimento: boolean) =>
+    ocupados.reduce((total, snapshot) => {
+      const esperado = snapshot.aluguelEsperado
+      if (esperado === null) return total
+      const recebido = currentRent(snapshot) ?? 0
+      if (apenasSemRecebimento ? recebido !== 0 : recebido === 0) return total
+      return total + Math.max(0, esperado - recebido - (snapshot.desconto ?? 0))
+    }, 0)
+
+  const ocupadoSemRecebimento = snapshots.length === 0 ? null : roundMoney(deficitOcupado(true))
+  const ocupadoRecebimentoParcial = snapshots.length === 0 ? null : roundMoney(deficitOcupado(false))
+  const recebidoEmVago =
+    snapshots.length === 0
+      ? null
+      : roundMoney(
+          snapshots
+            .filter((snapshot) => snapshot.statusOcupacao === "vago")
+            .reduce((total, snapshot) => total + (currentRent(snapshot) ?? 0), 0),
+        )
+
+  // `valoresSemClassificacao` NAO muda: continua sendo o resto que fecha a
+  // identidade da ponte e que arma o bloqueio de confirmacao. As tres causas
+  // acima sao uma DECOMPOSICAO dele, aditiva — nomear o dinheiro nao pode
+  // desarmar o portao que existe justamente para barra-lo.
   const unclassifiedValues = canReconcile
     ? roundMoney(
         received! -
@@ -913,6 +948,17 @@ function buildRentRealization(
             (classifiedAdjustments ?? 0)),
       )
     : null
+  // Parte do resto que as tres causas nomeadas NAO explicam. Zero em 2026-05 e
+  // 2026-07, R$ 0,26 em 2026-06; valor material aqui significa causa nova.
+  const restoNaoExplicado =
+    unclassifiedValues === null
+      ? null
+      : roundMoney(
+          unclassifiedValues +
+            (ocupadoSemRecebimento ?? 0) +
+            (ocupadoRecebimentoParcial ?? 0) -
+            (recebidoEmVago ?? 0),
+        )
   const rentsReceivedInMonth = sumNullableMoney(received, recoveredLate)
 
   return {
@@ -923,6 +969,10 @@ function buildRentRealization(
     inadimplenciaMes: delinquency,
     descontos: discounts,
     ajustesClassificados: classifiedAdjustments,
+    ocupadoSemRecebimento,
+    ocupadoRecebimentoParcial,
+    recebidoEmVago,
+    restoNaoExplicado,
     valoresSemClassificacao: unclassifiedValues,
     recebidoCompetencia: received,
     atrasosRecuperados: recoveredLate,

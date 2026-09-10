@@ -51,6 +51,12 @@ function dados(overrides: Partial<IndicadoresData> = {}): IndicadoresData {
       inadimplenciaMes: 6210.19,
       descontos: 20,
       ajustesClassificados: 0,
+      // Decomposicao real de julho/2026: os R$ 3.945,36 que a ponte chamava de
+      // "sem documento" sao tres causas nomeaveis, e elas fecham em zero.
+      ocupadoSemRecebimento: 2031.98,
+      ocupadoRecebimentoParcial: 2314.49,
+      recebidoEmVago: 401.11,
+      restoNaoExplicado: 0,
       valoresSemClassificacao: -3945.36,
       recebidoCompetencia: 67484.3,
       recebido: 67484.3,

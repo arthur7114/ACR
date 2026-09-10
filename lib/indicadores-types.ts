@@ -197,6 +197,24 @@ export interface IndicadoresRentRealization {
   inadimplenciaMes: number | null
   descontos: number | null
   ajustesClassificados: number | null
+  /**
+   * Deficit de unidades OCUPADAS que nao receberam nada na competencia.
+   * `status_ocupacao` descreve ocupacao, nao pagamento: inquilino nomeado que
+   * nao pagou segue "ocupado" e nao entra nem em vacancia nem em
+   * inadimplencia. Sem este campo o valor sumia no resto sem nome.
+   */
+  ocupadoSemRecebimento: number | null
+  /** Deficit de unidades ocupadas que receberam menos que o esperado, ja liquido de desconto. */
+  ocupadoRecebimentoParcial: number | null
+  /** Dinheiro recebido em unidade classificada como vaga (rescisao no meio do mes, proporcional). */
+  recebidoEmVago: number | null
+  /** Parte do resto que as tres causas acima nao explicam. Zero em 2026-05 e 2026-07. */
+  restoNaoExplicado: number | null
+  /**
+   * Resto que fecha a identidade da ponte e arma o bloqueio de confirmacao.
+   * Os tres campos acima o DECOMPOEM; nao o substituem. Nomear o dinheiro nao
+   * pode desarmar o portao que existe para barra-lo.
+   */
   valoresSemClassificacao: number | null
   recebidoCompetencia: number | null
   atrasosRecuperados: number | null

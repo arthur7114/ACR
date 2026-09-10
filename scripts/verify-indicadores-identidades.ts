@@ -21,8 +21,28 @@
 //   node --import tsx scripts/verify-indicadores-identidades.ts               # todas as competências
 //   node --import tsx scripts/verify-indicadores-identidades.ts 2026-07-01    # uma ou mais
 import { pathToFileURL } from "node:url"
+import { readFileSync, existsSync } from "node:fs"
+import { join } from "node:path"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { getIndicadores } from "@/lib/server/indicadores"
+
+// Sem isto o verificador permanente nao roda fora do Next: os outros scripts
+// desta pasta ja carregam o .env.local, este nunca carregou e morria em
+// "Missing required environment variable" antes da primeira consulta.
+function loadEnvLocal() {
+  const caminho = join(process.cwd(), ".env.local")
+  if (!existsSync(caminho)) return
+  for (const bruta of readFileSync(caminho, "utf-8").split("\n")) {
+    const linha = bruta.trim()
+    if (!linha || linha.startsWith("#")) continue
+    const igual = linha.indexOf("=")
+    if (igual < 0) continue
+    const chave = linha.slice(0, igual).trim()
+    if (!(chave in process.env)) {
+      process.env[chave] = linha.slice(igual + 1).trim().replace(/^["']|["']$/g, "")
+    }
+  }
+}
 import {
   decomporResiduoRealizacao,
   verificarIdentidades,
@@ -53,6 +73,7 @@ function compararAgregados(agregados: Agregado[]): DivergenciaIdentidade[] {
 }
 
 async function main() {
+  loadEnvLocal()
   const argumentos = process.argv.slice(2)
   const supabase = createSupabaseAdmin()
   const { data: fechamentos, error } = await supabase

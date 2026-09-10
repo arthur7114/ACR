@@ -9,7 +9,8 @@
 //   Entradas/Saídas de passagem     -> IPTU recebido / IPTU pago
 //   Diferença não explicada         -> Diferença
 //   Ajustes classificados           -> Ajustes documentados
-//   Valores ainda sem classificação -> Valores sem documento
+//   Valores ainda sem classificação -> selo "fora do previsto" (agregado)
+//   Resto após as causas nomeadas   -> Sem explicação
 // D25 — o antigo bloco de repasse com evidências (três repasses de rótulo
 // burocrático mais a diferença no universo comprovado) virou uma conferência: o
 // número que o banco confirma na frente, o par comparável ao lado, veredito no selo.
@@ -59,6 +60,11 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
     realization.outrosAjustes,
   )
   const hasUndocumented = valoresSemDocumento !== null && Math.abs(valoresSemDocumento) > 0.01
+  // A cadeia acima nomeia as tres causas do desvio; o que sobra depois delas e
+  // o unico valor que continua sem explicacao. `valoresSemClassificacao` segue
+  // intacto no dado e no bloqueio de confirmacao — aqui e so leitura.
+  const restoNaoExplicado = resolveMetricValue(realization.restoNaoExplicado)
+  const hasUnexplained = restoNaoExplicado !== null && Math.abs(restoNaoExplicado) > 0.01
   const conference = describeConference({
     comprovado: summary.repasseCalculadoComprovado,
     banco: resolveMetricValue(summary.repasseConfirmadoBanco, summary.repasseComprovado),
@@ -162,7 +168,8 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
               short: "Por que o aluguel contratado não entrou inteiro.",
               title: "Do contrato ao recebido",
               definition: "Mostra o que separou o aluguel previsto nos contratos do que efetivamente entrou.",
-              formula: "contratado − vacância − inadimplência − descontos ± ajustes documentados = recebido da competência",
+              formula:
+                "contratado − vacância − inadimplência − descontos ± ajustes documentados − ocupado sem recebimento − ocupado parcial + recebido em vago = recebido da competência",
               limitation: "Contratos de receita variável não entram no aluguel contratado.",
             }}
             action={<UndocumentedState value={valoresSemDocumento} flagged={hasUndocumented} />}
@@ -189,10 +196,28 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             />
             <FinancialRow label="Descontos documentados" value={realization.descontos} operation="−" />
             <FinancialRow label="Ajustes documentados" value={resolveMetricValue(realization.ajustesClassificados)} operation="±" />
+            <FinancialRow
+              label="Ocupado sem recebimento"
+              value={realization.ocupadoSemRecebimento}
+              operation="−"
+              note="Inquilino nomeado que não pagou o mês. Não é vacância nem inadimplência declarada."
+            />
+            <FinancialRow
+              label="Ocupado com recebimento parcial"
+              value={realization.ocupadoRecebimentoParcial}
+              operation="−"
+              note="Pagou menos que o esperado, já descontado o desconto documentado."
+            />
+            <FinancialRow
+              label="Recebido em imóvel vago"
+              value={realization.recebidoEmVago}
+              operation="+"
+              note="Rescisão no meio do mês: a vacância desconta o mês cheio, mas entrou o proporcional."
+            />
             <FinancialRow label="Recebido da competência" value={resolveMetricValue(realization.recebidoCompetencia, realization.recebido)} operation="=" strong result />
             <FinancialRow label="Atrasos recuperados" value={resolveMetricValue(realization.atrasosRecuperados)} operation="+" />
             <FinancialRow label="Recebido no mês" value={resolveMetricValue(realization.alugueisRecebidosMes, realization.recebido)} operation="=" strong result />
-            <FinancialRow label="Valores sem documento" value={valoresSemDocumento} operation="Δ" danger={hasUndocumented} />
+            <FinancialRow label="Sem explicação" value={restoNaoExplicado} operation="Δ" danger={hasUnexplained} />
           </div>
         </Panel>
       </div>
@@ -272,9 +297,9 @@ function BridgeState({ reconciled, alert }: { reconciled: boolean | null; alert:
 function UndocumentedState({ value, flagged }: { value: number | null; flagged: boolean }) {
   // Magnitude, não sinal: o selo sinaliza que existe valor sem documento; a
   // linha "Valores sem documento" abaixo mostra o sinal, que é onde ele importa.
-  if (flagged) return <StateChip label={`${formatCurrency(Math.abs(value ?? 0))} sem documento`} tone="warning" />
+  if (flagged) return <StateChip label={`${formatCurrency(Math.abs(value ?? 0))} fora do previsto`} tone="warning" />
   if (value === null) return <StateChip label="Sem dados para fechar" tone="neutral" />
-  return <StateChip label="Tudo documentado" tone="positive" />
+  return <StateChip label="Entrou como previsto" tone="positive" />
 }
 
 function FinancialRow({

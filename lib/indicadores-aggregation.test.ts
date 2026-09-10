@@ -561,6 +561,11 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     inadimplenciaFinanceira: 500,
     descontos: 50,
     ajustesClassificados: 0,
+    // Ocupado esperava 1.000, recebeu 900 com 50 de desconto: 50 de deficit.
+    ocupadoSemRecebimento: 0,
+    ocupadoRecebimentoParcial: 50,
+    recebidoEmVago: 0,
+    restoNaoExplicado: 0,
     valoresSemClassificacao: -50,
     recebidoCompetencia: 1_000,
     atrasosRecuperados: null,
@@ -1971,4 +1976,48 @@ test("inferirCompetenciasDaDivida: campo estruturado, texto com ano, meses por e
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "REFERENTE A DEZEMBRO" }, "2026-02-01"), ["2025-12-01"])
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "ALUGUEL 04/2026" }, "2026-07-01"), ["2026-04-01"])
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "MULTA POR RESCISÃO ANTES DO PRAZO." }, "2026-07-01"), [])
+})
+
+test("a decomposicao explica o resto sem classificacao e nao o substitui", () => {
+  const properties = [
+    makeProperty({ id: "ocupado-zero", unidade: "201", aluguelEsperadoAtual: 700 }),
+    makeProperty({ id: "ocupado-parcial", unidade: "202", aluguelEsperadoAtual: 900 }),
+    makeProperty({ id: "vago-recebeu", unidade: "203", aluguelEsperadoAtual: 800 }),
+  ]
+  const snapshots = [
+    // Inquilino nomeado que nao pagou nada: segue "ocupado" porque o status
+    // descreve ocupacao, nao pagamento — e some das duas contas da ponte.
+    makeSnapshot({
+      imovelId: "ocupado-zero", statusOcupacao: "ocupado", inquilinoNome: "FULANO",
+      aluguelEsperado: 700, aluguelRecebido: 0, aluguelRecebidoCompetencia: 0, desconto: 0,
+    }),
+    makeSnapshot({
+      imovelId: "ocupado-parcial", statusOcupacao: "ocupado", inquilinoNome: "BELTRANO",
+      aluguelEsperado: 900, aluguelRecebido: 600, aluguelRecebidoCompetencia: 600, desconto: 0,
+    }),
+    // Rescisao no meio do mes: a vacancia desconta o esperado cheio, mas
+    // entrou dinheiro — o proporcional volta pela decomposicao.
+    makeSnapshot({
+      imovelId: "vago-recebeu", statusOcupacao: "vago",
+      aluguelEsperado: 800, aluguelRecebido: 120, aluguelRecebidoCompetencia: 120, desconto: 0,
+    }),
+  ]
+
+  const { realizacaoAluguel: r } = aggregateIndicadores(
+    makeInput({ imoveisAtivos: properties, snapshots }),
+  )
+
+  assert.equal(r.ocupadoSemRecebimento, 700)
+  assert.equal(r.ocupadoRecebimentoParcial, 300)
+  assert.equal(r.recebidoEmVago, 120)
+  assert.equal(r.restoNaoExplicado, 0)
+
+  // A identidade da ponte segue fechando com o campo ORIGINAL, intacto: a
+  // decomposicao e aditiva. Se ela substituisse o resto, o bloqueio de
+  // confirmacao pararia de disparar justamente quando ha dinheiro a explicar.
+  assert.equal(
+    r.valoresSemClassificacao,
+    -(r.ocupadoSemRecebimento ?? 0) - (r.ocupadoRecebimentoParcial ?? 0) + (r.recebidoEmVago ?? 0),
+  )
+  assert.equal(r.outrosAjustes, r.valoresSemClassificacao)
 })
