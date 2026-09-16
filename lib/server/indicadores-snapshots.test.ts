@@ -1828,3 +1828,45 @@ test("checksum e canonico: independe da ordem das chaves e de campo opcional aus
     createIndicadoresSnapshotChecksum(base),
   )
 })
+
+
+test("desconto em aluguel de competencia anterior nao vira desconto do mes", () => {
+  // Joao Cordeiro 0002521, jun/2026: junho em aberto, e no mesmo documento dois
+  // alugueis atrasados quitados — maio a 787,96 em vez de 788,22. Os R$ 0,26
+  // sao abatimento do atraso, ja dentro do valor recuperado. Contados tambem
+  // como desconto do mes, a ponte subtraia duas vezes e sobrava sem explicacao.
+  const linha = (extra: Record<string, unknown>) => ({
+    apto: "0002521", inquilino: "Inquilino", garagem: null, vagas_garagem: null, agua: null,
+    iptu: null, seguro_incendio: null, comissao: 40, vencimento: null, confianca: 0.95, ...extra,
+  })
+  const analysis = {
+    prestacao: {
+      tipo_documento: "prestacao_contas", imobiliaria: "Cesar Rego", empreendimento: "Joao Cordeiro",
+      competencia: "2026-06",
+      plano_extracao: { documento_lido_integralmente: true, secoes_identificadas: ["receitas"], estrategia: [], alertas: [] },
+      receitas_por_imovel: [
+        linha({ aluguel: null, desconto: null, aluguel_com_desconto: null, total: 0, repasse: 0,
+          observacao: "INADIMPLENCIA. Sem lancamento de ALUGUEL de 06/2026." }),
+        linha({ aluguel: 788.22, desconto: null, aluguel_com_desconto: null, total: 788.22, repasse: 748.22,
+          competencia_original: "2026-04", observacao: "" }),
+        linha({ aluguel: 788.22, desconto: 0.26, aluguel_com_desconto: 787.96, total: 787.96, repasse: 747.96,
+          competencia_original: "2026-05", observacao: "" }),
+      ],
+      acordos_rescisoes_recebidos: [], inadimplencias_acumuladas: [],
+      resumo_financeiro: { total_linhas_receitas: 1576.18, total_linhas_comissoes: 80, total_linhas_repasse: 1496.18,
+        comissao_administracao: 80, outras_comissoes_despesas: [], total_outras_comissoes_despesas: 0,
+        total_comissao_despesas: 80, recebidos_em_nome_locador: 1576.18, total_a_repassar: 1496.18, confianca: 1 },
+      totais: { total_receitas: 1576.18, total_comissoes: 80, total_repassar: 1496.18 },
+      campos_ausentes: [], observacoes: [], confianca_geral: 1,
+    },
+  } as unknown as PackageAnalysis
+
+  const { rows } = buildIndicadoresSnapshotRows({
+    properties: [{ id: "im", unit: "0002521", expectedRent: 788.22, realEstateAgencyName: "Cesar Rego", developmentName: "Joao Cordeiro" }],
+    fechamentoId: "f", competencia: "2026-06", analysis,
+  })
+
+  assert.equal(rows[0].desconto, null)
+  assert.equal(rows[0].atrasos_recuperados, 1576.18)
+  assert.equal(rows[0].aluguel_competencia, null)
+})

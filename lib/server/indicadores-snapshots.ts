@@ -26,7 +26,12 @@ import type { createSupabaseAdmin } from "./supabase"
 // antes só `tipo: "atraso"` contava, e o acordo "VIGÊNCIA DE JUNHO/26" da
 // Izabel (105 Grand Castelão I, jul/26) caía em outros recebimentos, sem
 // origem, e junho nunca aparecia quitado. Bump força a regravação.
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.2"
+// v3.3: `desconto` passa a somar so as linhas da PROPRIA competencia. Desconto
+// em linha de competencia anterior (atraso recuperado com abatimento) ja esta
+// dentro do valor recuperado; conta-lo de novo como desconto do mes fazia a
+// ponte subtrair R$ 0,26 duas vezes (Joao Cordeiro 0002521, jun/26: dois
+// alugueis atrasados quitados, um deles a 787,96 em vez de 788,22).
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.3"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -547,7 +552,13 @@ function buildSnapshotRow(input: {
     entradas_passagem: passageEntries,
     saidas_passagem: passageExits,
     receita_total: amounts.revenueTotal,
-    desconto: amounts.discount,
+    // So o desconto do aluguel DESTE mes. O de linha anterior ja vive no atraso
+    // recuperado (que usa aluguel_com_desconto) e nao pode entrar duas vezes.
+    desconto: sumKnownMoney(
+      propertyLines
+        .filter((line) => belongsToCurrentCompetence(line, input.competencia))
+        .map((line) => line.desconto),
+    ),
     comissao_administracao: amounts.administrationCommission,
     repasse_apurado: amounts.assessedTransfer,
     vencimento_referencia: selectStableText(propertyLines.map((line) => line.vencimento)),

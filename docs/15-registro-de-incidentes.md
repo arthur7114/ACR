@@ -22,6 +22,7 @@ acusar, adicione uma linha. Classifique pela causa, não pelo sintoma.
 | 9 | 2026-09-16 | "Com divergência" aceso em 16 de 27 fechamentos | D | **reclamação do cliente** | gatilho passa a olhar o resto não explicado |
 | 10 | 2026-09-16 | Agosto: teto da carteira inteira contra recebido de 2 fechamentos (R$ 79.327,25 de resíduo) | H | `verify-indicadores-identidades` | teto limitado aos pares com fechamento na competência |
 | 11 | 2026-09-16 | Comissão calculada sem os encargos por atraso (R$ 140,66 em vez de R$ 149,47) | C | **vídeo do cliente** | `outros_recebimentos` entra na base |
+| 12 | 2026-09-16 | R$ 0,26 sem explicação em junho: desconto de aluguel atrasado contado como desconto do mês | D | identidade da decomposição | `desconto` do snapshot só soma linhas da própria competência (v3.3) |
 
 ## Classes de causa
 
@@ -41,7 +42,9 @@ Cadastro migrado trouxe aluguel 0 como placeholder. A cobertura só conta
 **D — Decisão tomada sobre um proxy, não sobre a coisa.**
 "Existe seção chamada inadimplência?" em vez de "existe valor de dívida?".
 "Existe diferença?" em vez de "existe diferença sem causa conhecida?".
-Reincidências: 2.
+"Desconto na linha" em vez de "desconto no aluguel deste mês" — o abatimento de um
+atraso quitado já vive no valor recuperado e entrava de novo na ponte.
+Reincidências: 3.
 
 **E — Dado com escopo aplicado na leitura, não na escrita.**
 Um documento cobre a imobiliária inteira e vira dois fechamentos; sem filtro no
