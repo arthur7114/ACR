@@ -44,8 +44,11 @@ test("sem historico e sem aluguel esperado -> desconhecido, nunca zero", () => {
   assert.equal(receitaEsperadaInadimplente([], null), null)
 })
 
-test("aluguel esperado zerado continua sendo zero confirmado", () => {
-  assert.equal(receitaEsperadaInadimplente([], 0), 0)
+test("aluguel esperado zerado NAO e zero confirmado: e ausencia de dado", () => {
+  // Invertido em 2026-09-16 (classe C do registro de incidentes). Zero no
+  // cadastro veio da migracao como placeholder; afirmar que a unidade
+  // inadimplente devia R$ 0,00 escondia que ninguem sabe o aluguel dela.
+  assert.equal(receitaEsperadaInadimplente([], 0), null)
 })
 
 test("cobranca esperada tem precedencia sobre o proxy de receita paga", async () => {
@@ -58,4 +61,14 @@ test("cobranca esperada tem precedencia sobre o proxy de receita paga", async ()
   assert.equal(receitaEsperadaInadimplente(snapshots, 414.86, 466.93), 466.93)
   // Sem cobrança esperada, mantém o comportamento anterior (proxy do último pago).
   assert.equal(receitaEsperadaInadimplente(snapshots, 414.86, null), 810.44)
+})
+
+
+test("aluguel de cadastro em zero nao vira inadimplencia de R$ 0,00: fica desconhecida", () => {
+  // TERRENO CASTELAO mai/2026: cadastro migrado com zero, sem cobranca esperada
+  // e sem receita anterior. Zero e placeholder; a divida do mes e desconhecida.
+  assert.equal(receitaEsperadaInadimplente([], 0), null)
+  // Cobranca esperada em zero (vigencia migrada) e o mesmo placeholder.
+  assert.equal(receitaEsperadaInadimplente([], 500, 0), 500)
+  assert.equal(receitaEsperadaInadimplente([], 0, 0), null)
 })

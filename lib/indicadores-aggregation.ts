@@ -2170,15 +2170,12 @@ function contractedRentAtCompetence(
     ]),
   )
   const vigencies = noEscopo.map((property) => vigencyByProperty.get(property.id))
-  if (
-    vigencies.some(
-      (vigency) =>
-        !vigency ||
-        (vigency.modeloReceita === "fixo" && vigency.aluguelContratado === null),
-    )
-  ) {
-    return null
-  }
+  // Imovel sem vigencia nenhuma na competencia e lacuna estrutural: o teto nao
+  // sabe do que fala e fica desconhecido. Vigencia fixa SEM aluguel (antigo
+  // zero-placeholder) e outra coisa: o imovel existe, so o valor falta. Ele sai
+  // da soma e entra em `cobertura.contratos.ausentes`, que a tela mostra ao
+  // lado do numero (regra B: parcial marcado, nunca "—" escondendo os outros).
+  if (vigencies.some((vigency) => !vigency)) return null
   return sumKnown(
     vigencies.map((vigency) =>
       vigency?.modeloReceita === "fixo" ? vigency.aluguelContratado : null,

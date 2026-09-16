@@ -40,13 +40,17 @@ export function receitaEsperadaInadimplente(
   aluguelEsperado: number | null,
   cobrancaEsperada: number | null = null,
 ): number | null {
-  if (cobrancaEsperada !== null) return Number(cobrancaEsperada.toFixed(2))
+  if (cobrancaEsperada !== null && cobrancaEsperada !== 0) return Number(cobrancaEsperada.toFixed(2))
   const pagos = snapshots
     .filter((s) => (s.aluguel_recebido ?? 0) > 0 && s.status_ocupacao !== "inadimplente")
     .filter((s) => (s.receita_total ?? 0) > 0)
     .sort((a, b) => b.competencia.localeCompare(a.competencia))
 
   if (pagos.length > 0) return Number((pagos[0].receita_total ?? 0).toFixed(2))
-  if (aluguelEsperado === null) return null
+  // Zero no cadastro e placeholder de migracao, nao aluguel (classe C do
+  // registro de incidentes): a divida do mes fica desconhecida, nunca R$ 0,00.
+  // Indicadores ja tratam assim; sem isto as duas telas divergiam (TERRENO
+  // CASTELAO mai/26: Revisao 0, Indicadores —).
+  if (aluguelEsperado === null || aluguelEsperado === 0) return null
   return Number(aluguelEsperado.toFixed(2))
 }

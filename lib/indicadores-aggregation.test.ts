@@ -2280,3 +2280,25 @@ test("ocupacao acumulada e proporcao de unidade-mes, nao media de percentuais", 
   assert.equal(acc.janela.inicio, "2026-04-01")
   assert.equal(acc.valorContratado, 400)
 })
+
+
+test("vigencia fixa sem aluguel sai da soma e entra na cobertura, sem anular o teto", () => {
+  // Classe C do registro: o antigo zero-placeholder chega como null. Antes, um
+  // unico imovel assim anulava o aluguel contratado da carteira inteira ("—"),
+  // escondendo o que os outros 118 dizem. Agora o valor e a soma do conhecido e
+  // a cobertura nomeia quantos faltam.
+  const vig = (id: string, imovelId: string, valor: number | null) => ({
+    ...PAIR_A, id, imovelId, vigenciaInicio: "2026-01-01", vigenciaFim: null,
+    modeloReceita: "fixo" as const, aluguelContratado: valor, fonte: "t", ativo: true,
+  })
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: true,
+    imoveisAtivos: [makeProperty({ id: "a", unidade: "1" }), makeProperty({ id: "b", unidade: "2" })],
+    vigencias: [vig("va", "a", 1_000), vig("vb", "b", null)],
+    snapshots: [makeSnapshot({ imovelId: "a" }), makeSnapshot({ imovelId: "b", aluguelEsperado: null })],
+  }))
+  assert.equal(result.realizacaoAluguel.contratado, 1_000)
+  assert.equal(result.cobertura.contratos.ausentes, 1)
+  assert.equal(result.cobertura.lacunas.find((l) => l.codigo === "contrato_ausente")?.quantidade, 1)
+})

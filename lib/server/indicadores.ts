@@ -519,7 +519,14 @@ function mapVigency(
     vigenciaInicio: normalizeCompetence(row.vigencia_inicio),
     vigenciaFim: row.vigencia_fim ? normalizeCompetence(row.vigencia_fim) : null,
     modeloReceita: row.modelo_receita,
-    aluguelContratado: nullableMoney(row.aluguel_contratado),
+    // Zero em aluguel fixo e placeholder do cadastro migrado, nao valor: vira
+    // desconhecido tambem na leitura (classe C do registro de incidentes). O
+    // banco ja recusa zero novo; as tres vigencias antigas em zero ficam NOT
+    // VALID e chegam aqui como null, contadas em `contratos.ausentes`.
+    aluguelContratado:
+      row.modelo_receita === "fixo" && Number(row.aluguel_contratado) === 0
+        ? null
+        : nullableMoney(row.aluguel_contratado),
     fonte: row.fonte,
     ativo: row.ativo,
   }

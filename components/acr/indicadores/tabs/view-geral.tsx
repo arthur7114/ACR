@@ -243,13 +243,22 @@ export function ViewGeral({
             label="Aluguel contratado"
             value={formatPortfolioContractedRent(resumo.aluguelContratado, data.cobertura.contratos)}
             rank="compact"
+            tone={data.cobertura.contratos.ausentes > 0 ? "warning" : "default"}
             help={{
               short: "Aluguel fixo previsto nos contratos vigentes.",
               title: "Aluguel contratado",
               definition: "Soma do aluguel fixo previsto nos contratos vigentes na competência.",
-              limitation: "Contratos de receita variável não entram na soma.",
+              limitation:
+                "Contratos de receita variável não entram na soma. Imóvel com contrato fixo sem valor conhecido também fica fora — e a linha abaixo diz quantos são, porque somar zero por ele faria o número parecer completo.",
             }}
-          />
+          >
+            {data.cobertura.contratos.ausentes > 0 && (
+              <p className="mt-2 text-xs tabular-nums text-[#72500f]">
+                ⚠ {formatCount(data.cobertura.contratos.ausentes)}{" "}
+                {data.cobertura.contratos.ausentes === 1 ? "imóvel sem aluguel contratado" : "imóveis sem aluguel contratado"}
+              </p>
+            )}
+          </Metric>
           <Metric
             label="Aluguel recebido"
             value={formatCurrency(resumo.aluguelRecebidoCompetencia)}
