@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { PackageAnalysis } from "@/lib/prestacao-types"
 import {
-  createIndicadoresSnapshotChecksum, buildIndicadoresSnapshotRows } from "./indicadores-snapshots.ts"
+  createIndicadoresSnapshotChecksum, buildIndicadoresSnapshotRows, mapIndicadoresProperties } from "./indicadores-snapshots.ts"
 
 test("agrupa aluguel e multa da mesma unidade sem trocar receita por aluguel", () => {
   const analysis = {
@@ -1869,4 +1869,20 @@ test("desconto em aluguel de competencia anterior nao vira desconto do mes", () 
   assert.equal(rows[0].desconto, null)
   assert.equal(rows[0].atrasos_recuperados, 1576.18)
   assert.equal(rows[0].aluguel_competencia, null)
+})
+
+
+test("aluguel fixo em zero e desconhecido, nao valor", () => {
+  // Grand Maracanau 101, jun-ago/2026: cadastro migrado com zero; a unidade
+  // vaga contribuia R$ 0,00 para a vacancia e a cobertura dizia "tudo tem
+  // aluguel". Zero em modelo fixo vira null e a cobertura passa a acusar.
+  const props = mapIndicadoresProperties({
+    propertyRows: [
+      { id: "zero", unidade: "101", valor_aluguel_esperado: 0, imobiliarias: null, empreendimentos: null },
+      { id: "ok", unidade: "102", valor_aluguel_esperado: 400, imobiliarias: null, empreendimentos: null },
+    ],
+    vigencies: [],
+  })
+  assert.equal(props[0].expectedRent, null)
+  assert.equal(props[1].expectedRent, 400)
 })

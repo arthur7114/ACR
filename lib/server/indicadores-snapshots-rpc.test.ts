@@ -139,41 +139,32 @@ test("a fixture do builder cobre as colunas opcionais que ja sumiram uma vez", (
   }
 })
 
+const RPC_UNICA = "gravar_snapshots_indicadores"
+
+// A partir de 202609160001 nenhuma RPC enumera coluna: as duas delegam a uma
+// funcao unica que le o catalogo. Estes testes fixam isso — a volta de um
+// `insert into public.imovel_competencias (` numa RPC e a regressao inteira.
 for (const rpc of RPCS) {
-  test(`${rpc} grava toda coluna que o builder produz`, () => {
-    const { colunas } = blocoDeInsercao(ultimaDefinicao(rpc))
-    const faltando = colunasDoBuilder().filter(
-      (coluna) => !DO_ARGUMENTO.has(coluna) && !colunas.includes(coluna),
-    )
-    assert.deepEqual(
-      faltando,
-      [],
-      `${rpc} nao grava ${faltando.join(", ")} — o INSERT de uma competencia inedita gravaria nulo`,
-    )
-  })
-
-  test(`${rpc} reaplica toda coluna no on conflict`, () => {
-    const { atualizadas } = blocoDeInsercao(ultimaDefinicao(rpc))
-    const faltando = colunasDoBuilder().filter(
-      (coluna) =>
-        !DO_ARGUMENTO.has(coluna) &&
-        coluna !== "imovel_id" &&
-        coluna !== "competencia" &&
-        !atualizadas.has(coluna),
-    )
-    assert.deepEqual(
-      faltando,
-      [],
-      `${rpc} deixa ${faltando.join(", ")} com o valor antigo no reprocessamento`,
-    )
-  })
-
-  test(`${rpc} tem a mesma aridade entre colunas e valores`, () => {
-    const { colunas, valoresBruto } = blocoDeInsercao(ultimaDefinicao(rpc))
-    assert.equal(
-      contarValores(valoresBruto),
-      colunas.length,
-      `${rpc}: ${colunas.length} colunas para ${contarValores(valoresBruto)} valores`,
+  test(`${rpc} delega a gravacao do snapshot a via unica`, () => {
+    const corpo = ultimaDefinicao(rpc)
+    assert.ok(corpo.includes(`${RPC_UNICA}(p_fechamento_id, p_snapshots)`), `${rpc} nao chama ${RPC_UNICA}`)
+    assert.ok(
+      !corpo.includes("insert into public.imovel_competencias"),
+      `${rpc} voltou a enumerar colunas de imovel_competencias — e assim que uma coluna se perde`,
     )
   })
 }
+
+test("a via unica nao enumera colunas e recusa chave sem coluna", () => {
+  const corpo = ultimaDefinicao(RPC_UNICA)
+  assert.ok(corpo.includes("jsonb_populate_record(null::public.imovel_competencias"), "sem populate_record, volta a lista a mao")
+  assert.ok(corpo.includes("information_schema.columns"), "SET do upsert precisa vir do catalogo")
+  assert.ok(/raise exception 'Snapshot com chave\(s\) sem coluna/.test(corpo), "chave desconhecida tem de ser erro, nao descarte")
+  assert.ok(!/insert into public\.imovel_competencias\s*\(/.test(corpo), "insert com lista de colunas")
+})
+
+test("a via TypeScript tambem passa pela RPC unica", () => {
+  const fonte = readFileSync(join(process.cwd(), "lib", "server", "indicadores-snapshots.ts"), "utf-8")
+  assert.ok(fonte.includes(`rpc("${RPC_UNICA}"`), "upsertIndicadoresSnapshotRows deixou de chamar a RPC unica")
+  assert.ok(!/from\("imovel_competencias"\)\s*\.upsert\(/.test(fonte), "upsert direto em imovel_competencias e um terceiro caminho de escrita")
+})

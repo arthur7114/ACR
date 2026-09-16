@@ -266,10 +266,13 @@ export function mapIndicadoresProperties(input: {
     return {
       id: property.id,
       unit: property.unidade,
+      // Zero em aluguel fixo e placeholder (cadastro migrado), nao valor: vira
+      // desconhecido e a cobertura o conta em `semAluguelEsperado`. O banco
+      // tambem recusa zero novo (constraint em 202609160001).
       expectedRent:
         revenueModel === "fixo"
-          ? toNullableMoney(
-              vigency?.aluguel_contratado ?? property.valor_aluguel_esperado,
+          ? nonZeroMoney(
+              toNullableMoney(vigency?.aluguel_contratado ?? property.valor_aluguel_esperado),
             )
           : null,
       garagemContratada:
@@ -288,11 +291,20 @@ export async function upsertIndicadoresSnapshotRows(
 ) {
   if (rows.length === 0) return
 
-  const { error } = await supabase
-    .from("imovel_competencias")
-    .upsert(rows, { onConflict: "imovel_id,competencia" })
-
-  if (error) throw error
+  // Mesma via das duas RPCs: uma unica funcao SQL grava o snapshot, sem lista
+  // de colunas escrita a mao. Antes este upsert direto era o terceiro caminho
+  // de escrita (classe A do registro de incidentes).
+  const porFechamento = new Map<string, IndicadoresSnapshotRow[]>()
+  for (const row of rows) {
+    porFechamento.set(row.fechamento_id, [...(porFechamento.get(row.fechamento_id) ?? []), row])
+  }
+  for (const [fechamentoId, lote] of porFechamento) {
+    const { error } = await supabase.rpc("gravar_snapshots_indicadores", {
+      p_fechamento_id: fechamentoId,
+      p_snapshots: lote,
+    })
+    if (error) throw error
+  }
 }
 
 async function loadSnapshotVigencies(
@@ -792,6 +804,10 @@ function normalizeCompetence(value: string) {
   const month = Number(match[2])
   if (month < 1 || month > 12) throw new Error(`Competencia invalida para snapshot: ${value}.`)
   return `${match[1]}-${match[2]}-01`
+}
+
+function nonZeroMoney(value: number | null) {
+  return value === null || value === 0 ? null : value
 }
 
 function toNullableMoney(value: number | string | null) {

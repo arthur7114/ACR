@@ -29,7 +29,7 @@ acusar, adicione uma linha. Classifique pela causa, não pelo sintoma.
 **A — Mais de um caminho de escrita para a mesma tabela.**
 Hoje três escrevem `imovel_competencias`: a RPC de processamento, a RPC de reparo
 e um upsert direto em TypeScript (`/corrigir`). Toda coluna nova precisa entrar
-nos três. Reincidências: 2.
+nos três. Reincidências: 2. Prevenção estrutural em 2026-09-16.
 
 **B — Leitor e escritor mantêm listas de campos independentes.**
 O checksum nasce do row completo do builder; o verificador recompunha a partir do
@@ -67,9 +67,9 @@ que sempre existiu.
 
 | Classe | Mecanismo | Estado |
 |---|---|---|
-| A | teste estrutural que deriva a lista de colunas do próprio builder | **parcial** — cobre as 2 RPCs, falta o upsert TS |
+| A | **uma única função SQL grava o snapshot** (`gravar_snapshots_indicadores`, 202609160001): sem lista de colunas — as chaves do JSON são as colunas, o SET vem do catálogo e chave sem coluna é ERRO. As duas RPCs e a via TypeScript delegam a ela; teste estrutural proíbe `insert into imovel_competencias` fora dela | **feito** |
 | B | o verificador recompõe a partir da mesma fonte que grava | feito |
-| C | `0` nunca é placeholder: `null` para desconhecido, e a cobertura conta ambos | **pendente** |
+| C | **constraint no banco**: `aluguel` é NULL ou > 0 em `imoveis` e `imovel_vigencias` (202609160001, NOT VALID para não travar 3 vigências antigas em zero: TERRENO CASTELÃO, Grand Messejana II 3, LOCMAIS SALA 05). 13 Airbnb em zero viraram NULL. No TypeScript, zero em aluguel fixo vira desconhecido ao montar a propriedade | **feito na escrita**; leitura de vigência antiga em zero ainda a fechar |
 | D | identidade canônica por métrica, em `indicadores-identidades.ts` | 42 identidades ativas |
 | E | guarda de escopo no ponto de escrita, com a função canônica única | feito para César Rêgo |
 | F | a fonte que reconcilia a equação tem prioridade; a outra é conferência | feito |
