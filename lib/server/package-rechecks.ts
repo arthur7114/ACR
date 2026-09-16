@@ -922,7 +922,7 @@ function compareAdminCommissionRule(
     message:
       status === "passed"
         ? `Comissao administrativa confere com a taxa de ${formatPercent(commercialRule.taxa_administracao_percent)} sobre o total pago pelo inquilino.`
-        : `A taxa administrativa de ${formatPercent(commercialRule.taxa_administracao_percent)} sobre aluguel, garagem, agua, IPTU e seguro resulta em ${formatBRL(expected)}, mas o documento informa ${formatBRL(actual)}. Verifique manualmente.`,
+        : `A taxa administrativa de ${formatPercent(commercialRule.taxa_administracao_percent)} sobre aluguel, garagem, agua, IPTU, seguro e encargos por atraso resulta em ${formatBRL(expected)}, mas o documento informa ${formatBRL(actual)}. Verifique manualmente.`,
     expected,
     actual,
     difference,

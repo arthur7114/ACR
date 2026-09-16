@@ -50,3 +50,20 @@ test("comissão calculada é nula quando não há taxa cadastrada", () => {
   assert.equal(calculatedAdminCommission(1000, null), null)
   assert.equal(calculatedAdminCommission(1000, undefined), null)
 })
+
+test("encargo financeiro por atraso entra na base da comissao", () => {
+  // Joao Cordeiro jun/2026: a comissao das linhas somava R$ 149,47 e o calculo
+  // dava R$ 140,66 porque os encargos por atraso ficavam fora da base. O
+  // fechamento travava num alerta impossivel de resolver.
+  const linhas = [
+    { apto: "0002520", aluguel: 1237.05, outros_recebimentos: null },
+    { apto: "0002521", aluguel: 788.22, outros_recebimentos: 90.26 },
+    { apto: "0002521", aluguel: 788.22, aluguel_com_desconto: 787.96, outros_recebimentos: 85.84 },
+  ] as never
+
+  const base = commissionBaseComponents(linhas)
+
+  assert.equal(base.totalOutrosRecebimentos, 176.1)
+  assert.equal(base.base, 2989.33)
+  assert.equal(calculatedAdminCommission(base.base, 5), 149.47)
+})

@@ -20,6 +20,8 @@ acusar, adicione uma linha. Classifique pela causa, não pelo sintoma.
 | 7 | 2026-09-16 | Vacância R$ 800 quando era R$ 1.200 | C | **vídeo do cliente** | aluguel do 101 corrigido; 4 imóveis ainda com zero-placeholder |
 | 8 | 2026-09-16 | Taxa de administração retida duas vezes (R$ 267,88) | F | **print do cliente** | consolidado do extrato tem prioridade sobre despesa externa |
 | 9 | 2026-09-16 | "Com divergência" aceso em 16 de 27 fechamentos | D | **reclamação do cliente** | gatilho passa a olhar o resto não explicado |
+| 10 | 2026-09-16 | Agosto: teto da carteira inteira contra recebido de 2 fechamentos (R$ 79.327,25 de resíduo) | H | `verify-indicadores-identidades` | **em aberto** |
+| 11 | 2026-09-16 | Comissão calculada sem os encargos por atraso (R$ 140,66 em vez de R$ 149,47) | C | **vídeo do cliente** | `outros_recebimentos` entra na base |
 
 ## Classes de causa
 
@@ -49,6 +51,11 @@ momento da escrita, o registro de um empreendimento entra no outro.
 A nota fiscal da taxa de administração descreve a MESMA retenção que o extrato
 já deduziu. Ganhou a fonte que não reconcilia o repasse.
 
+**H — Métrica agregando sobre um conjunto diferente do resto da tela.**
+"Aluguel contratado" vem das vigências de toda a carteira; recebido, vacância e
+inadimplência vêm dos fechamentos existentes. Em mês parcialmente coberto
+(agosto: 2 de 9 empreendimentos) a tela compara coisas de escopos diferentes.
+
 **G — Balde residual que absorve tudo.**
 Um campo "resto" sem decomposição esconde erro crescente: ninguém olha um número
 que sempre existiu.
@@ -64,6 +71,7 @@ que sempre existiu.
 | E | guarda de escopo no ponto de escrita, com a função canônica única | feito para César Rêgo |
 | F | a fonte que reconcilia a equação tem prioridade; a outra é conferência | feito |
 | G | todo resto tem decomposição nomeada e identidade que fecha | feito |
+| H | agregado calculado sobre o mesmo conjunto dos demais números da tela | **pendente** |
 
 ## A lição de processo
 
