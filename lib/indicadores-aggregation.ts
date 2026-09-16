@@ -54,6 +54,8 @@ export interface IndicadoresPairInput {
 
 export interface IndicadoresRuleInput extends IndicadoresPairInput {
   ativo: boolean
+  taxaAdministracaoPercent?: number | null
+  taxaIntermediacaoPercent?: number | null
 }
 
 export interface IndicadoresPropertyInput extends IndicadoresPairInput {
@@ -324,7 +326,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     serieMensal: buildMonthlySeries(input, scope),
     rankingAtencao: buildAttentionRanking(scope.properties, currentSnapshots),
     heat: buildHeat(scope.properties, relevantSnapshots, scope.closings),
-    receitasPorImovel: buildPropertyRevenues(scope.properties, currentSnapshots),
+    receitasPorImovel: buildPropertyRevenues(scope.properties, currentSnapshots, scope.vigencies, input.competencia, scope.snapshots),
     filtros: buildFilters(input),
   }
 }
@@ -718,7 +720,80 @@ function buildSummary(
   const recoveredLate = sumKnown(snapshots.map((snapshot) => snapshot.atrasosRecuperados))
   const otherReceipts = sumKnown(snapshots.map((snapshot) => snapshot.outrosRecebimentos))
 
+  // Taxa contratual: unica entre os pares com fechamento elegivel, senao null.
+  const paresCobertos = new Set(eligibleClosings.map(pairKey))
+  const regrasCobertas = input.regrasAtivas.filter((rule) => rule.ativo && paresCobertos.has(pairKey(rule)))
+  const taxaUnica = (pick: (rule: IndicadoresRuleInput) => number | null | undefined) => {
+    const valores = new Set(regrasCobertas.map(pick).filter((v): v is number => typeof v === "number"))
+    return valores.size === 1 ? [...valores][0] : null
+  }
+  const percentual = (parte: number | null, base: number | null) =>
+    parte !== null && base !== null && base > 0 ? Math.round((parte / base) * 10000) / 100 : null
+
+  const recebimentos = byProperty
+    ? []
+    : analyses.flatMap((analysis) =>
+        resolverRecebimentosLegados(analysis.prestacao?.acordos_rescisoes_recebidos ?? []),
+      )
+  const intermediacoes = recebimentos.filter(({ item }) => item.tipo === "intermediacao")
+  const baseIntermediacao = sumKnown(intermediacoes.map(({ financeiro }) => financeiro.baseComissionavel))
+  const contagemValor = (
+    lista: typeof recebimentos,
+  ): { quantidade: number; valor: number } => ({
+    quantidade: lista.length,
+    valor: roundMoney(lista.reduce((total, { financeiro }) => total + financeiro.totalRecebido, 0)),
+  })
+  const semOrigem = recebimentos.filter(
+    ({ item }) =>
+      (item.tipo === "atraso" || item.tipo === "acordo") &&
+      !(item as { competencia_original?: string | null }).competencia_original,
+  )
+
+  const fixos = snapshots.filter((snapshot) => (snapshot.modeloReceita ?? "fixo") === "fixo")
+  const vagasConhecidas = fixos.filter((snapshot) => typeof snapshot.garagemRecebida === "number")
+  const valorOcupacao = sumKnown(
+    snapshots
+      .filter((snapshot) => snapshot.statusOcupacao !== "vago")
+      .map((snapshot) => snapshot.aluguelEsperado),
+  )
+
   return {
+    taxas: {
+      administracao: {
+        contrato: byProperty ? null : taxaUnica((rule) => rule.taxaAdministracaoPercent),
+        efetivo: percentual(administrationCommission, economicRevenue),
+      },
+      intermediacao: {
+        contrato: byProperty ? null : taxaUnica((rule) => rule.taxaIntermediacaoPercent),
+        efetivo: percentual(
+          intermediacoes.length ? roundMoney(intermediacoes.reduce((s, { financeiro }) => s + financeiro.comissao, 0)) : null,
+          baseIntermediacao,
+        ),
+      },
+    },
+    acordosRescisoes: byProperty
+      ? null
+      : {
+          acordos: contagemValor(recebimentos.filter(({ item }) => item.tipo === "acordo")),
+          rescisoes: contagemValor(recebimentos.filter(({ item }) => item.tipo === "rescisao")),
+          intermediacoes: {
+            ...contagemValor(intermediacoes),
+            comissao: roundMoney(intermediacoes.reduce((s, { financeiro }) => s + financeiro.comissao, 0)),
+          },
+          atrasos: contagemValor(recebimentos.filter(({ item }) => item.tipo === "atraso")),
+          semOrigem: contagemValor(semOrigem),
+        },
+    receitaLocacao: {
+      aluguel: receivedCurrent,
+      // So afirma o valor quando TODA unidade fixa tem garagem observada; com
+      // buraco, `null` — e a cobertura diz quantas faltam.
+      vagas:
+        vagasConhecidas.length > 0
+          ? sumKnown(vagasConhecidas.map((snapshot) => snapshot.garagemRecebida))
+          : null,
+      vagasCobertura: { conhecidas: vagasConhecidas.length, total: fixos.length },
+    },
+    valorOcupacao,
     receitasEconomicas: economicRevenue,
     aluguelRecebidoCompetencia: receivedCurrent,
     atrasosRecuperados: recoveredLate,
@@ -1572,7 +1647,35 @@ function buildHeatCell(
 function buildPropertyRevenues(
   properties: IndicadoresPropertyInput[],
   snapshots: IndicadoresSnapshotInput[],
+  vigencies: IndicadoresVigencyInput[],
+  competence: string,
+  allSnapshots: IndicadoresSnapshotInput[],
 ): IndicadoresPropertyRevenue[] {
+  // Inquilino da competencia imediatamente anterior, para separar reajuste
+  // (mesmo inquilino, valor novo) de novo contrato (inquilino novo).
+  const inquilinoAnterior = (imovelId: string) => {
+    const anteriores = allSnapshots
+      .filter((s) => s.imovelId === imovelId && s.competencia < competence)
+      .sort((l, r) => r.competencia.localeCompare(l.competencia))
+    return anteriores.length ? (anteriores[0].inquilinoNome ?? null) : undefined
+  }
+  const porImovel = new Map<string, IndicadoresVigencyInput[]>()
+  for (const vigency of vigencies) {
+    if (!vigency.ativo) continue
+    porImovel.set(vigency.imovelId, [...(porImovel.get(vigency.imovelId) ?? []), vigency])
+  }
+  // Reajuste = vigencia que COMECA nesta competencia com aluguel diferente da
+  // imediatamente anterior. Sem anterior (cadastro migrado) nao ha "de".
+  const reajusteDe = (imovelId: string) => {
+    const lista = (porImovel.get(imovelId) ?? []).sort((l, r) => l.vigenciaInicio.localeCompare(r.vigenciaInicio))
+    const indice = lista.findIndex((v) => v.vigenciaInicio.slice(0, 7) === competence.slice(0, 7))
+    if (indice <= 0) return null
+    const de = lista[indice - 1].aluguelContratado
+    const para = lista[indice].aluguelContratado
+    if (de === null || para === null || Math.abs(de - para) < 0.005) return null
+    return { de, para, percentual: de > 0 ? Math.round(((para - de) / de) * 1000) / 10 : null }
+  }
+  const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase()
   const propertyById = new Map(properties.map((property) => [property.id, property]))
 
   return snapshots
@@ -1606,6 +1709,16 @@ function buildPropertyRevenues(
         vencimentoDia: snapshot.diaVencimento ?? null,
         origem: snapshot.origem,
         qualidade: snapshot.qualidade,
+        reajuste: (() => {
+          const base = reajusteDe(property.id)
+          if (!base) return null
+          const antes = inquilinoAnterior(property.id)
+          const inquilinoMudou =
+            antes === undefined || !antes || !snapshot.inquilinoNome
+              ? null
+              : norm(antes) !== norm(snapshot.inquilinoNome)
+          return { ...base, inquilinoMudou }
+        })(),
       }
     })
     .filter((item): item is IndicadoresPropertyRevenue => item !== null)

@@ -8,6 +8,7 @@ import {
   escapeCsv,
   formatContractedRent,
   formatCurrency,
+  formatPercent,
   getFinancialReferences,
   occupancyLabel,
   qualityLabel,
@@ -109,7 +110,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
       {visible.length > 0 ? (
         <>
           <div className="hidden max-h-[68vh] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-acr-green md:block" tabIndex={0} aria-label="Detalhamento por imóvel com rolagem interna">
-            <table className="min-w-[1680px] w-full border-collapse text-xs">
+            <table className="min-w-[1780px] w-full border-collapse text-xs">
               <caption className="sr-only">Detalhamento por imóvel na competência {data.meta.competenciaLabel}</caption>
               <thead className="sticky top-0 z-10 bg-white">
                 <tr className="border-b border-acr-line-2 text-acr-muted-2">
@@ -117,6 +118,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                   <SortableHeader label="Empreendimento" sortKey="empreendimentoNome" sort={sort} onSort={updateSort} />
                   <th scope="col" className="px-3 py-3 text-left font-semibold">Inquilino / status</th>
                   <SortableHeader label="Aluguel contratado" sortKey="aluguelEsperado" sort={sort} onSort={updateSort} right />
+                  <th scope="col" className="px-3 py-3 text-right font-semibold">Reajuste</th>
                   <SortableHeader label="Recebido da competência" sortKey="aluguelRecebidoCompetencia" sort={sort} onSort={updateSort} right />
                   <th scope="col" className="px-3 py-3 text-right font-semibold">Atrasos recuperados</th>
                   <th scope="col" className="px-3 py-3 text-right font-semibold">Outros recebimentos</th>
@@ -151,6 +153,18 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                         <span className="mt-1 block"><StatusChip status={row.statusOcupacao} /></span>
                       </td>
                       <td className="px-3 py-3 text-right text-acr-ink tabular-nums">{formatContractedRent(row.aluguelEsperado, row.modeloReceita)}</td>
+                      <td
+                        className={`px-3 py-3 text-right tabular-nums ${row.reajuste ? "font-semibold text-[#5B3F97]" : "text-acr-muted/60"}`}
+                        title={row.reajuste ? `de ${formatCurrency(row.reajuste.de)} para ${formatCurrency(row.reajuste.para)}` : undefined}
+                      >
+                        {row.reajuste
+                          ? row.reajuste.inquilinoMudou
+                            ? "novo contrato"
+                            : row.reajuste.percentual !== null
+                              ? `${row.reajuste.percentual >= 0 ? "▲" : "▼"} ${formatPercent(Math.abs(row.reajuste.percentual))}`
+                              : "▲"
+                          : "—"}
+                      </td>
                       <MoneyCell value={row.aluguelRecebidoCompetencia} strong />
                       <MoneyCell value={resolveMetricValue(row.atrasosRecuperados)} />
                       <MoneyCell value={resolveMetricValue(row.outrosRecebimentos)} />

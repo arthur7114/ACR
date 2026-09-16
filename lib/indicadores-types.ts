@@ -148,6 +148,55 @@ export interface IndicadoresSummary {
   // Cobertura da acumulada: quantos fechamentos do escopo declararam a seção de
   // dívidas e de onde veio o número. `null` quando a métrica é desconhecida.
   inadimplenciaAcumuladaCobertura: IndicadoresAccumulatedCoverage | null
+  /**
+   * Taxas em percentual (contrato x). O contratual sozinho e trivial — esta no
+   * cadastro; o que vale e o EFETIVO (comissao ÷ base observada) ao lado dele.
+   * Foi essa comparacao que faltou para pegar a taxa retida duas vezes em
+   * ago/2026. Contrato e `null` quando os pares cobertos tem taxas diferentes:
+   * mostrar uma media seria inventar.
+   */
+  taxas: IndicadoresTaxas
+  /** Acordos, rescisoes, intermediacoes e atrasos, cada um com contagem e valor. */
+  acordosRescisoes: IndicadoresAcordosRescisoes | null
+  /** Receita de locacao separada em aluguel e vagas, com cobertura das vagas. */
+  receitaLocacao: IndicadoresReceitaLocacao
+  /** Aluguel contratado das unidades ocupadas (contratado − vacancia). */
+  valorOcupacao: number | null
+}
+
+export interface IndicadoresTaxaPercent {
+  contrato: number | null
+  efetivo: number | null
+}
+
+export interface IndicadoresTaxas {
+  administracao: IndicadoresTaxaPercent
+  intermediacao: IndicadoresTaxaPercent
+}
+
+export interface IndicadoresContagemValor {
+  quantidade: number
+  valor: number
+}
+
+export interface IndicadoresAcordosRescisoes {
+  acordos: IndicadoresContagemValor
+  rescisoes: IndicadoresContagemValor
+  intermediacoes: IndicadoresContagemValor & { comissao: number }
+  atrasos: IndicadoresContagemValor
+  /** Atraso ou acordo sem competencia de origem: nao abate o saldo da janela. */
+  semOrigem: IndicadoresContagemValor
+}
+
+export interface IndicadoresReceitaLocacao {
+  aluguel: number | null
+  vagas: number | null
+  /**
+   * Quantas unidades com receita fixa tem `garagem_recebida` observada. Com
+   * cobertura parcial, `vagas` e a soma do que foi observado (regra B: parcial
+   * marcado, nunca "—" escondendo o que os outros dizem).
+   */
+  vagasCobertura: { conhecidas: number; total: number }
 }
 
 export interface IndicadoresAccumulatedCoverage {
@@ -357,6 +406,18 @@ export interface IndicadoresPropertyRevenue {
   vencimentoDia: number | null
   origem: IndicadoresSnapshotOrigin
   qualidade: IndicadoresSnapshotQuality
+  /**
+   * Vigencia que comeca nesta competencia com aluguel diferente da anterior.
+   * `null` quando nao houve troca de vigencia no mes ou nao ha anterior para
+   * comparar (cadastro migrado).
+   */
+  reajuste: {
+    de: number
+    para: number
+    percentual: number | null
+    /** Inquilino trocou junto com o valor: e novo contrato, nao reajuste. `null` = sem inquilino anterior para comparar. */
+    inquilinoMudou: boolean | null
+  } | null
 }
 
 export interface IndicadoresFilters {

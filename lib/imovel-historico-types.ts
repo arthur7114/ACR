@@ -10,6 +10,10 @@ export type EventoTipo =
   | "rescisao"
   | "atraso"
   | "intermediacao"
+  // Mudanca do aluguel contratado entre duas vigencias consecutivas. Nao vem
+  // da prestacao: vem de `imovel_vigencias`, e por isso aparece mesmo em mes
+  // sem fechamento.
+  | "reajuste"
 
 export interface EventoImovel {
   competencia: string
@@ -41,6 +45,7 @@ export interface ImovelHistoricoResumo {
   rescisoes: number
   atrasosQuitados: number
   intermediacoes: number
+  reajustes: number
   totalRecebido: number
   situacaoAtual: EventoTipo | null
   inquilinoAtual: string | null

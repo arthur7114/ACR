@@ -11,6 +11,7 @@ import {
   Handshake,
   Loader2,
   Receipt,
+  TrendingUp,
   User,
   X,
 } from "lucide-react"
@@ -38,6 +39,7 @@ const tipoMeta: Record<EventoTipo, { label: string; color: string; bg: string; i
   rescisao: { label: "Rescisão", color: "#9F1239", bg: "#FFF1F2", icon: ArrowLeftRight },
   atraso: { label: "Inadimplência paga", color: "#1D4ED8", bg: "#EFF6FF", icon: CalendarClock },
   intermediacao: { label: "Intermediação", color: "#0F766E", bg: "#F0FDFA", icon: Receipt },
+  reajuste: { label: "Reajuste", color: "#5B3F97", bg: "#F5F3FF", icon: TrendingUp },
 }
 
 export function ImovelHistoricoDrawer({
@@ -198,6 +200,7 @@ export function ImovelHistoricoDrawer({
                   <Metric label="Rescisões" value={resumo.rescisoes} tone="#9F1239" />
                   <Metric label="Inad. pagas" value={resumo.atrasosQuitados} tone="#1D4ED8" />
                   <Metric label="Intermed." value={resumo.intermediacoes} tone="#0F766E" />
+                  <Metric label="Reajustes" value={resumo.reajustes} tone="#5B3F97" />
                 </div>
               )}
 

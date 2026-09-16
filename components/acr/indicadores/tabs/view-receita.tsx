@@ -222,6 +222,39 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
         </Panel>
       </div>
 
+      {summary.acordosRescisoes && (
+        <Panel>
+          <PanelHeader
+            title="Acordos e rescisões"
+            help={{
+              short: "Recebimentos fora do aluguel do mês, separados por natureza.",
+              title: "Acordos e rescisões",
+              definition:
+                "Acordos quitam dívida antiga; rescisões encerram contrato (proporcional e multa); intermediações são comissão de nova locação; atrasos são aluguel de mês anterior pago agora. Contagem e valor total recebido de cada um.",
+              limitation:
+                "Somados num número só não significam nada — dinheiro entrando e inquilino saindo são fatos diferentes. Atraso ou acordo sem competência de origem não abate o saldo em aberto e aparece à parte.",
+            }}
+          />
+          <div className="grid grid-cols-2 gap-x-6 gap-y-5 px-5 py-5 sm:grid-cols-4 sm:px-6">
+            <ContagemValor rotulo="Acordos recebidos" item={summary.acordosRescisoes.acordos} tone="#9A3412" />
+            <ContagemValor rotulo="Rescisões" item={summary.acordosRescisoes.rescisoes} tone="#9F1239" />
+            <ContagemValor
+              rotulo="Intermediações"
+              item={summary.acordosRescisoes.intermediacoes}
+              nota={`comissão ${formatCurrency(summary.acordosRescisoes.intermediacoes.comissao)}`}
+              tone="#0F766E"
+            />
+            <ContagemValor rotulo="Atrasos pagos" item={summary.acordosRescisoes.atrasos} tone="#1D4ED8" />
+          </div>
+          {summary.acordosRescisoes.semOrigem.quantidade > 0 && (
+            <p className="border-t border-acr-line px-5 py-3 text-xs text-[#72500f] sm:px-6">
+              ⚠ {formatCount(summary.acordosRescisoes.semOrigem.quantidade)} sem competência de origem ·{" "}
+              {formatCurrency(summary.acordosRescisoes.semOrigem.valor)} não abatem o saldo em aberto
+            </p>
+          )}
+        </Panel>
+      )}
+
       <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
         <Panel>
           <PanelHeader
@@ -367,6 +400,31 @@ function DetailValue({ label, value, strong = false }: { label: string; value: n
     <div className="flex items-center justify-between gap-3 py-3">
       <dt className={`text-sm ${strong ? "font-bold text-acr-ink" : "text-acr-muted-2"}`}>{label}</dt>
       <dd className="text-sm font-bold text-acr-ink tabular-nums">{formatCurrency(value)}</dd>
+    </div>
+  )
+}
+
+
+function ContagemValor({
+  rotulo,
+  item,
+  nota,
+  tone,
+}: {
+  rotulo: string
+  item: { quantidade: number; valor: number }
+  nota?: string
+  tone: string
+}) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-acr-muted-2">{rotulo}</p>
+      <p className="mt-1 text-lg font-bold tabular-nums text-acr-ink">
+        <span style={{ color: tone }}>{formatCount(item.quantidade)}</span>
+        <span className="text-acr-muted-2"> · </span>
+        {formatCurrency(item.valor)}
+      </p>
+      {nota && <p className="mt-0.5 text-xs text-acr-muted-2 tabular-nums">{nota}</p>}
     </div>
   )
 }

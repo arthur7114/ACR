@@ -56,6 +56,8 @@ const ruleRowsSchema = z.array(
     imobiliaria_id: z.string(),
     empreendimento_id: z.string(),
     ativo: z.boolean(),
+    taxa_administracao_percent: z.union([z.number(), z.string()]).nullable().optional(),
+    taxa_intermediacao_percent: z.union([z.number(), z.string()]).nullable().optional(),
     imobiliarias: relationSchema,
     empreendimentos: relationSchema,
   }),
@@ -370,7 +372,7 @@ async function loadBaseRows(
     supabase
       .from("regras_comerciais")
       .select(
-        `imobiliaria_id, empreendimento_id, ativo,
+        `imobiliaria_id, empreendimento_id, ativo, taxa_administracao_percent, taxa_intermediacao_percent,
          imobiliarias ( nome, ativo ), empreendimentos ( nome, egestor_conta_id, ativo )`,
       )
       .eq("ativo", true),
@@ -477,6 +479,8 @@ function mapRule(row: RuleRow, accountById: Map<string, AccountRow>): Indicadore
   return {
     ...mapPair(row, accountById),
     ativo: row.ativo && agency?.ativo !== false && development?.ativo !== false,
+    taxaAdministracaoPercent: nullableOptionalMoney(row.taxa_administracao_percent),
+    taxaIntermediacaoPercent: nullableOptionalMoney(row.taxa_intermediacao_percent),
   }
 }
 

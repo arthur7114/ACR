@@ -112,8 +112,17 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     }
   }
 
+  // Reajuste = aluguel contratado mudou de uma vigencia para a seguinte. A
+  // prestacao so informa o MES do reajuste anual (reajuste_mes), nunca o valor;
+  // o valor esta na troca de vigencia. Por isso o evento nasce de
+  // `imovel_vigencias`, e existe mesmo em competencia sem fechamento.
+  eventos.push(...(await reajustesDaUnidade(supabase, query.empreendimentoId, alvo)))
+  marcarNovoContrato(eventos)
+
   // Ordena por competencia desc (mais recente primeiro); dentro do mes, receita antes de acordo.
   const ordemTipo: Record<EventoTipo, number> = {
+    // Reajuste vale a partir do primeiro dia: aparece antes do aluguel do mes.
+    reajuste: -1,
     pago: 0,
     inadimplente: 0,
     vago: 0,
@@ -140,6 +149,7 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     rescisoes: eventos.filter((e) => e.tipo === "rescisao").length,
     atrasosQuitados: eventos.filter((e) => e.tipo === "atraso").length,
     intermediacoes: eventos.filter((e) => e.tipo === "intermediacao").length,
+    reajustes: eventos.filter((e) => e.tipo === "reajuste" && !e.observacao?.startsWith("Novo contrato")).length,
     totalRecebido:
       eventos
         .filter((e) => e.tipo === "pago" || e.tipo === "acordo" || e.tipo === "rescisao" || e.tipo === "atraso")
@@ -215,4 +225,91 @@ function derivarInquilinos(eventos: EventoImovel[]): InquilinoPeriodo[] {
       }
     })
     .sort((a, b) => b.ultimaCompetencia.localeCompare(a.ultimaCompetencia))
+}
+
+
+// Uma vigencia nova com aluguel contratado diferente da anterior e um reajuste.
+// Vigencia migrada do cadastro ("Cadastro de imoveis migrado") nao tem
+// anterior, entao nao gera evento — nao ha "de" para comparar.
+async function reajustesDaUnidade(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  empreendimentoId: string,
+  alvo: string,
+): Promise<EventoImovel[]> {
+  const { data: imoveis, error: erroImoveis } = await supabase
+    .from("imoveis")
+    .select("id, unidade")
+    .eq("empreendimento_id", empreendimentoId)
+  if (erroImoveis) throw erroImoveis
+  const imovel = (imoveis ?? []).find((row) => aptoKey(row.unidade) === alvo)
+  if (!imovel) return []
+
+  const { data: vigencias, error } = await supabase
+    .from("imovel_vigencias")
+    .select("vigencia_inicio, aluguel_contratado, garagem_contratada, modelo_receita, fonte")
+    .eq("imovel_id", imovel.id)
+    .order("vigencia_inicio", { ascending: true })
+  if (error) throw error
+
+  const eventos: EventoImovel[] = []
+  let anterior: { aluguel: number | null; garagem: number | null } | null = null
+  for (const v of vigencias ?? []) {
+    const atual = { aluguel: numOrNull(v.aluguel_contratado), garagem: numOrNull(v.garagem_contratada) }
+    if (anterior && v.modelo_receita === "fixo" && atual.aluguel !== null && anterior.aluguel !== null) {
+      const mudouAluguel = Math.abs(atual.aluguel - anterior.aluguel) >= 0.005
+      const mudouGaragem = (atual.garagem ?? 0) !== (anterior.garagem ?? 0)
+      if (mudouAluguel || mudouGaragem) {
+        const competencia = String(v.vigencia_inicio).slice(0, 7) + "-01"
+        const delta = atual.aluguel - anterior.aluguel
+        const pct = anterior.aluguel > 0 ? (delta / anterior.aluguel) * 100 : null
+        const partes = [
+          mudouAluguel
+            ? `Aluguel de ${formatMoeda(anterior.aluguel)} para ${formatMoeda(atual.aluguel)}` +
+              (pct !== null ? ` (${delta >= 0 ? "+" : ""}${pct.toFixed(1).replace(".", ",")}%)` : "")
+            : null,
+          mudouGaragem
+            ? `Garagem de ${formatMoeda(anterior.garagem ?? 0)} para ${formatMoeda(atual.garagem ?? 0)}`
+            : null,
+        ].filter(Boolean)
+        eventos.push({
+          competencia,
+          competenciaLabel: formatCompetenciaLong(competencia),
+          tipo: "reajuste",
+          inquilino: null,
+          aluguel: atual.aluguel,
+          // `total` e o valor que a linha do tempo destaca: o aluguel novo.
+          total: atual.aluguel,
+          comissao: null,
+          repasse: null,
+          vencimento: null,
+          observacao: `${partes.join(" · ")}. Fonte: ${v.fonte}`,
+        })
+      }
+    }
+    anterior = atual
+  }
+  return eventos
+}
+
+function formatMoeda(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+}
+
+// Troca de vigencia com inquilino diferente do mes anterior e NOVO CONTRATO,
+// nao reajuste — o valor mudou porque o contrato e outro. Marca na observacao
+// para a linha do tempo dizer a coisa certa sem inventar um tipo novo.
+function marcarNovoContrato(eventos: EventoImovel[]) {
+  const mensais = eventos.filter((e) => e.tipo === "pago" || e.tipo === "inadimplente" || e.tipo === "vago")
+  const inquilinoEm = (competencia: string) => mensais.find((e) => e.competencia === competencia)?.inquilino ?? null
+  const anteriorA = (competencia: string) =>
+    mensais.filter((e) => e.competencia < competencia).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.inquilino ?? null
+  for (const e of eventos) {
+    if (e.tipo !== "reajuste") continue
+    const depois = inquilinoEm(e.competencia)
+    const antes = anteriorA(e.competencia)
+    if (antes && depois && antes.trim().toLowerCase() !== depois.trim().toLowerCase()) {
+      e.inquilino = depois
+      e.observacao = `Novo contrato · ${e.observacao ?? ""}`
+    }
+  }
 }

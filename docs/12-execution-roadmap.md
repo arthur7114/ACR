@@ -236,6 +236,17 @@ Validar no navegador a revisao do pacote Cesar Rego "Galpao Pompilio Gomes" (imo
 
 ## Historico de ciclos
 
+### 2026-09-16 - Indicadores do contrato: taxas, acordos, reajuste, receita de locacao, comissao e cadastro
+
+Status: codigo no repositorio; dados de cadastro e totais de agosto corrigidos no Supabase com autorizacao; merge em main dos ciclos anteriores do dia.
+Job: (1) tres videos/prints do cliente — vacancia do Grand Maracanau ago/26 em R$ 800 (era 1.200), selo "Com divergencia" no Jose Walter ago/26, comissao do Joao Cordeiro jun/26 sem encargos por atraso; (2) planilha CADASTRO INQUILINOS para ajustar o cadastro; (3) auditoria dos 13 indicadores do contrato e implementacao do que faltava; (4) reajustes na linha do tempo do imovel.
+Achados e correcoes: unidade 101 do Maracanau com aluguel ZERO herdado da migracao (vacancia subestimada desde jun/26) — corrigido para R$ 400; 14 alugueis atualizados pela planilha (preco de anuncio vale para vaga, decisao do cliente) e 1 revertido (Maracanau 208: recebeu 391,68, planilha dizia 374,31 — recebido acima do contratado nao se sustenta); taxa de administracao retida duas vezes no Jose Walter (extrato + NFS-e da propria administradora) — consolidado do extrato passa a ter prioridade; selo de divergencia acendia em 16 de 27 fechamentos por `valoresSemClassificacao` — gatilho passa a `restoNaoExplicado`, sobrou 1 (Joao Cordeiro jun, R$ 0,26, real); comissao ignorava `outros_recebimentos` (encargos por atraso) — 140,66 -> 149,47; teto de agosto somava a carteira inteira com 2 de 9 fechados — limitado aos pares com fechamento.
+Indicadores do contrato: 8 entregues, 4 parciais e 3 ausentes antes. Agora: taxas com % efetivo x contrato, acordos/rescisoes/intermediacoes/atrasos com contagem e valor, valor de ocupacao, % de vacancia, receita de locacao com vagas e cobertura, reajuste por unidade (com distincao de novo contrato) e na linha do tempo do imovel. Rentabilidade fica vazia e declarada: precisa do valor do ativo.
+Validacao: suite 622/622, lint e typecheck verdes. Contra o banco: Jose Walter ago com taxa adm efetivo 8% = contrato 8%; 12 reajustes em jul/26 (Jose Walter GA0002 +4,6%, Pompilio +3,2%, Messejana I 1 +4,6%); linha do tempo do Pompilio 0002526 mostra o reajuste de julho com a fonte; snapshots ok:true; `verify-consistencia-telas` 0 divergencia em 4 competencias.
+Registro de incidentes: `docs/15-registro-de-incidentes.md`, 11 incidentes em 8 classes de causa, com o mecanismo de prevencao de cada uma.
+Arquivos/docs impactados: `lib/comissao.ts`, `lib/server/package-rechecks.ts`, `lib/indicadores-aggregation.ts`, `lib/indicadores-types.ts`, `lib/server/indicadores.ts`, `lib/server/imovel-historico.ts`, `lib/imovel-historico-types.ts`, `components/acr/indicadores/tabs/view-{geral,receita,registro}.tsx`, `components/acr/views/imovel-historico-drawer.tsx`, testes, docs `02`, `12`, `15`.
+Proxima acao: definicoes do cliente — janela de "acumulado", valor do ativo por imovel, aluguel do TERRENO CASTELAO; prevencao das classes A (colapsar 3 vias de escrita) e C (constraint contra zero-placeholder); o R$ 0,26 de junho.
+
 ### 2026-09-10 (2) - Esteira: verificador cego, decomposicao do resto e divida inferida
 
 Status: aplicado no repositorio; nenhuma escrita de dado em producao alem da migration do ciclo anterior.

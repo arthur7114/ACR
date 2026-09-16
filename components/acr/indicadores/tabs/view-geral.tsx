@@ -15,7 +15,7 @@
 // AUSÊNCIA: "—" recua em cor, nunca se confunde com zero confirmado.
 
 import { useEffect, useState } from "react"
-import type { IndicadoresData, IndicadoresOccupancy } from "@/lib/indicadores-types"
+import type { IndicadoresData, IndicadoresOccupancy, IndicadoresTaxaPercent } from "@/lib/indicadores-types"
 import { MonthlySeries } from "../charts/monthly-series"
 import { SegmentedBar, type BarSegment } from "../charts/segmented-bar"
 import {
@@ -184,8 +184,15 @@ export function ViewGeral({
                 short: "Aluguel não gerado por imóvel vago.",
                 title: "Vacância",
                 definition: "Aluguel contratado que a competência não gerou porque o imóvel estava vago.",
+                formula: "vacância ÷ aluguel contratado × 100",
               }}
-            />
+            >
+              {realizacao.vacancia !== null && realizacao.contratado ? (
+                <p className="mt-2 text-xs text-acr-muted-2 tabular-nums">
+                  {formatPercent((realizacao.vacancia / realizacao.contratado) * 100)} do contratado
+                </p>
+              ) : null}
+            </Metric>
           </div>
         </Panel>
 
@@ -204,6 +211,9 @@ export function ViewGeral({
           >
             <p className="mt-2 text-xs text-acr-muted-2 tabular-nums">
               {formatCount(resumo.ocupacaoCompetencia.numerador)} de {formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis
+              {resumo.valorOcupacao !== null && (
+                <> · {formatCurrency(resumo.valorOcupacao)} de aluguel contratado</>
+              )}
             </p>
           </Metric>
           <div className="mt-5 space-y-4">
@@ -217,7 +227,7 @@ export function ViewGeral({
       </div>
 
       <Panel className="px-5 py-5 sm:px-6">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 xl:grid-cols-4">
           <Metric
             label="Aluguel contratado"
             value={formatPortfolioContractedRent(resumo.aluguelContratado, data.cobertura.contratos)}
@@ -241,6 +251,45 @@ export function ViewGeral({
             }}
           />
           <Metric
+            label="Receita de locação"
+            value={formatCurrency(sumKnownValues([resumo.receitaLocacao.aluguel, resumo.receitaLocacao.vagas]))}
+            rank="compact"
+            tone={
+              resumo.receitaLocacao.vagasCobertura.conhecidas < resumo.receitaLocacao.vagasCobertura.total
+                ? "warning"
+                : "default"
+            }
+            help={{
+              short: "Aluguel da competência mais vagas de garagem.",
+              title: "Receita de locação",
+              definition: "Aluguel recebido da competência somado ao valor recebido de vagas de garagem.",
+              limitation:
+                "Vagas somam o que foi observado; quando falta unidade, a linha abaixo diz quantas e o card fica em alerta. Layouts sem coluna de garagem (extrato agrupado) nunca observam vaga. A coluna existe desde ago/2026.",
+            }}
+          >
+            <p className="mt-2 text-xs text-acr-muted-2 tabular-nums">
+              aluguel {formatCurrency(resumo.receitaLocacao.aluguel)} · vagas {formatCurrency(resumo.receitaLocacao.vagas)}
+              {resumo.receitaLocacao.vagasCobertura.conhecidas < resumo.receitaLocacao.vagasCobertura.total && (
+                <> ⚠ {formatCount(resumo.receitaLocacao.vagasCobertura.conhecidas)} de {formatCount(resumo.receitaLocacao.vagasCobertura.total)} observadas</>
+              )}
+            </p>
+          </Metric>
+          <Metric
+            label="Rentabilidade"
+            value="—"
+            rank="compact"
+            tone="warning"
+            help={{
+              short: "Sem valor do imóvel não há rentabilidade.",
+              title: "Rentabilidade",
+              definition: "Retorno sobre o ativo: receita de locação dividida pelo valor do imóvel.",
+              limitation:
+                "O cadastro não tem valor venal nem de aquisição de nenhuma unidade. Sem ele, qualquer número aqui seria repasse sobre aluguel com outro nome. O card fica vazio, declaradamente, até o valor existir.",
+            }}
+          >
+            <p className="mt-2 text-xs text-acr-muted-2">sem valor do imóvel cadastrado</p>
+          </Metric>
+          <Metric
             label="Comissões"
             value={formatCurrency(comissoes)}
             rank="compact"
@@ -248,8 +297,14 @@ export function ViewGeral({
               short: "Administração e intermediação da imobiliária.",
               title: "Comissões",
               definition: "Soma da comissão de administração e da comissão de intermediação.",
+              formula: "efetivo = comissão ÷ receita da competência × 100",
+              limitation:
+                "O percentual de contrato só aparece quando todos os fechamentos do recorte têm a mesma taxa; com taxas diferentes fica “—”, porque uma média inventaria um número. Efetivo acima do contrato é sinal de retenção dobrada.",
             }}
-          />
+          >
+            <TaxaLinha rotulo="adm." taxa={resumo.taxas.administracao} valor={resumo.comissaoAdministracao} />
+            <TaxaLinha rotulo="interm." taxa={resumo.taxas.intermediacao} valor={resumo.comissaoIntermediacao} />
+          </Metric>
           <Metric
             label="Despesas"
             value={formatCurrency(despesas)}
@@ -487,3 +542,29 @@ function OccupancyDistribution({
   )
 }
 
+
+
+// Uma linha por taxa: valor, % efetivo e % de contrato. Acende quando o
+// efetivo passa do contrato acima de meio ponto — foi o sintoma da taxa de
+// administração retida duas vezes em ago/2026.
+function TaxaLinha({
+  rotulo,
+  taxa,
+  valor,
+}: {
+  rotulo: string
+  taxa: IndicadoresTaxaPercent
+  valor: number | null
+}) {
+  if (valor === null && taxa.efetivo === null) return null
+  const acima =
+    taxa.efetivo !== null && taxa.contrato !== null && taxa.efetivo - taxa.contrato > 0.5
+  return (
+    <p className={`mt-1.5 text-xs tabular-nums ${acima ? "text-acr-red" : "text-acr-muted-2"}`}>
+      {rotulo} {formatCurrency(valor)} · {taxa.efetivo !== null ? `${formatPercent(taxa.efetivo)} efetivo` : "efetivo —"}
+      {" · "}
+      {taxa.contrato !== null ? `contrato ${formatPercent(taxa.contrato)}` : "contrato —"}
+      {acima ? " ▲" : ""}
+    </p>
+  )
+}

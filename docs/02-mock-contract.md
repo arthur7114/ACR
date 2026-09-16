@@ -283,6 +283,18 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Consequência aceita: receita sem competência no documento persiste com `data_competencia` nula e segue aprovável; a correção do dado acontece na origem, não na tabela de revisão.
 - Docs atualizados: este contrato, `docs/04-user-flows.md`, `docs/06-acceptance-criteria.md` e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — indicadores do contrato: taxas, acordos, reajuste e receita de locação (2026-09-16)
+
+- Ponto alterado: auditoria dos 13 indicadores do contrato contra `getIndicadores` mostrou 3 ausentes (rentabilidade, reajuste, acordos/rescisões com quantidade e valor) e 4 pela metade (percentual das taxas, vagas na receita, valor de ocupação, % de vacância).
+- Visão geral: Vacância ganha "% do contratado"; Ocupação ganha o aluguel contratado das unidades ocupadas; Comissões ganha uma linha por taxa com valor, % efetivo (comissão ÷ receita) e % de contrato — o efetivo acima do contrato acende, e é o sinal que faltou para a taxa retida duas vezes em ago/2026. Grade de apoio passa de 5 para 4 colunas e recebe dois cards: **Receita de locação** (aluguel + vagas, com cobertura das vagas) e **Rentabilidade**.
+- Rentabilidade fica **declaradamente vazia**: é retorno sobre ativo e o cadastro não tem valor venal nem de aquisição de nenhuma unidade. Sem isso, qualquer número seria repasse ÷ contratado com outro nome. O card existe, mostra "—" e diz por quê no tooltip.
+- Percentual de contrato só aparece quando todos os pares do recorte têm a mesma taxa; com taxas diferentes fica "—". Média de contratos distintos seria número inventado.
+- Conciliação financeira: painel **Acordos e rescisões** com quatro colunas separadas — acordos, rescisões, intermediações (com comissão) e atrasos pagos — cada uma com contagem e valor. Não há total somado: dinheiro entrando e inquilino saindo são fatos diferentes. Atraso ou acordo sem competência de origem aparece à parte, porque não abate o saldo em aberto.
+- Detalhamento por imóvel: coluna **Reajuste**. Reajuste é troca de vigência com aluguel diferente da anterior, na competência em que a vigência começa; quando o inquilino também troca, a célula diz "novo contrato". Vigência migrada do cadastro não tem anterior e não gera reajuste.
+- Histórico por imóvel (drawer): evento **Reajuste** na linha do tempo, derivado de `imovel_vigencias` — não da prestação, que só informa o mês do reajuste anual, nunca o valor. Aparece antes do aluguel do mês. Com inquilino novo, a observação começa por "Novo contrato". Contador "Reajustes" no resumo.
+- Vagas somam o observado (`garagem_recebida`, coluna que existe desde ago/2026); com cobertura parcial o card fica em alerta e a linha diz quantas unidades foram observadas. Regra B, aprovada em 2026-09-16: parcial marcado, nunca "—" escondendo o que os outros dizem.
+- Pendências de definição, do cliente: janela e método de "acumulado" (itens i, iv, viii) e valor do ativo por imóvel (rentabilidade).
+
 ## Fluxo contratado
 
 Fluxo principal do mock:

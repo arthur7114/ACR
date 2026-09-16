@@ -16,6 +16,8 @@ interface PairFixture {
 }
 
 interface RuleFixture extends PairFixture {
+  taxaAdministracaoPercent?: number | null
+  taxaIntermediacaoPercent?: number | null
   ativo: boolean
 }
 
@@ -2131,4 +2133,110 @@ test("mes parcialmente coberto nao soma o teto de empreendimento sem fechamento"
   // Sem a correcao o teto vinha 6.000 e os 5.000 do par sem fechamento caiam no
   // resto sem explicacao.
   assert.equal(result.realizacaoAluguel.contratado, 1_000)
+})
+
+
+test("taxa efetiva de administracao acusa retencao acima do contrato", () => {
+  // Jose Walter ago/2026 antes do conserto: comissao 267,88 + despesa 267,88
+  // sobre receita 3.348,52 dava 16% efetivo contra 8% de contrato. E o
+  // indicador que faltava para pegar a taxa retida duas vezes.
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [{ ...makeRule(), taxaAdministracaoPercent: 8, taxaIntermediacaoPercent: 60 }],
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { total_receitas: 3348.52, total_comissoes: 535.76 } }),
+    })],
+  }))
+  assert.equal(result.resumo.taxas.administracao.contrato, 8)
+  assert.equal(result.resumo.taxas.administracao.efetivo, 16)
+})
+
+test("taxa de contrato fica desconhecida quando os pares cobertos divergem", () => {
+  const PAIR_B = makePair("b")
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [
+      { ...makeRule(), taxaAdministracaoPercent: 5 },
+      { ...makeRule(PAIR_B), taxaAdministracaoPercent: 8 },
+    ],
+    imoveisAtivos: [makeProperty(), makeProperty({ ...PAIR_B, id: "imovel-b", unidade: "9" })],
+    fechamentos: [makeClosing(), makeClosing({ ...PAIR_B, id: "fechamento-b" })],
+    snapshots: [makeSnapshot(), makeSnapshot({ ...PAIR_B, imovelId: "imovel-b", fechamentoId: "fechamento-b" })],
+  }))
+  // Media de 5% e 8% seria um numero inventado: melhor dizer que nao se sabe.
+  assert.equal(result.resumo.taxas.administracao.contrato, null)
+})
+
+test("acordos, rescisoes, intermediacoes e atrasos saem separados, com contagem e valor", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({
+        intermediacoes: [
+          { tipo: "acordo", inquilino: "A", valor: 500, total_recebido: 500, comissao: 25, confianca: 1 },
+          { tipo: "rescisao", inquilino: "B", valor: 1890, total_recebido: 1663.56, comissao: 116.45, confianca: 1 },
+          { tipo: "intermediacao", inquilino: "C", valor: 700, total_recebido: 700, comissao: 420, confianca: 1 },
+          { tipo: "atraso", inquilino: "D", valor: 300, total_recebido: 300, comissao: 15, confianca: 1, competencia_original: "2026-02" },
+        ] as never,
+      }),
+    })],
+  }))
+  const a = result.resumo.acordosRescisoes!
+  assert.deepEqual(a.acordos, { quantidade: 1, valor: 500 })
+  assert.deepEqual(a.rescisoes, { quantidade: 1, valor: 1663.56 })
+  assert.equal(a.intermediacoes.quantidade, 1)
+  assert.equal(a.intermediacoes.comissao, 420)
+  assert.deepEqual(a.atrasos, { quantidade: 1, valor: 300 })
+  // O acordo veio sem competencia de origem: nao abate saldo e e declarado a parte.
+  assert.deepEqual(a.semOrigem, { quantidade: 1, valor: 500 })
+})
+
+test("valor de ocupacao e o contratado das unidades que nao estao vagas", () => {
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [
+      makeProperty({ id: "a", unidade: "1", aluguelEsperadoAtual: 1000 }),
+      makeProperty({ id: "b", unidade: "2", aluguelEsperadoAtual: 700 }),
+    ],
+    snapshots: [
+      makeSnapshot({ imovelId: "a", statusOcupacao: "ocupado", aluguelEsperado: 1000 }),
+      makeSnapshot({ imovelId: "b", statusOcupacao: "vago", aluguelEsperado: 700, aluguelRecebido: 0, aluguelRecebidoCompetencia: 0 }),
+    ],
+  }))
+  assert.equal(result.resumo.valorOcupacao, 1000)
+  assert.equal(result.resumo.valorOcupacao, result.realizacaoAluguel.contratado! - result.realizacaoAluguel.vacancia!)
+})
+
+test("vagas somam o observado e a cobertura declara o que falta", () => {
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ id: "a", unidade: "1" }), makeProperty({ id: "b", unidade: "2" })],
+    snapshots: [
+      makeSnapshot({ imovelId: "a", garagemRecebida: 50 }),
+      makeSnapshot({ imovelId: "b", garagemRecebida: null }),
+    ],
+  }))
+  assert.equal(result.resumo.receitaLocacao.vagas, 50)
+  assert.deepEqual(result.resumo.receitaLocacao.vagasCobertura, { conhecidas: 1, total: 2 })
+})
+
+test("troca de vigencia vira reajuste, e com inquilino novo vira novo contrato", () => {
+  const vig = (id: string, imovelId: string, inicio: string, fim: string | null, valor: number) => ({
+    ...PAIR_A, id, imovelId, vigenciaInicio: inicio, vigenciaFim: fim,
+    modeloReceita: "fixo" as const, aluguelContratado: valor, fonte: "t", ativo: true,
+  })
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: true,
+    imoveisAtivos: [makeProperty({ id: "a", unidade: "1" }), makeProperty({ id: "b", unidade: "2" })],
+    vigencias: [
+      vig("a1", "a", "2026-01-01", "2026-04-30", 1000), vig("a2", "a", "2026-05-01", null, 1050),
+      vig("b1", "b", "2026-01-01", "2026-04-30", 700), vig("b2", "b", "2026-05-01", null, 900),
+    ],
+    snapshots: [
+      makeSnapshot({ imovelId: "a", competencia: "2026-04-01", inquilinoNome: "Mesma Pessoa" }),
+      makeSnapshot({ imovelId: "a", inquilinoNome: "Mesma Pessoa", aluguelEsperado: 1050 }),
+      makeSnapshot({ imovelId: "b", competencia: "2026-04-01", inquilinoNome: "Quem Saiu" }),
+      makeSnapshot({ imovelId: "b", inquilinoNome: "Quem Entrou", aluguelEsperado: 900 }),
+    ],
+  }))
+  const a = result.receitasPorImovel.find((r) => r.imovelId === "a")!.reajuste!
+  const b = result.receitasPorImovel.find((r) => r.imovelId === "b")!.reajuste!
+  assert.deepEqual(a, { de: 1000, para: 1050, percentual: 5, inquilinoMudou: false })
+  assert.equal(b.inquilinoMudou, true)
 })
