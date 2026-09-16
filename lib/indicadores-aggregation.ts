@@ -265,6 +265,7 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     expectedProperties,
     currentSnapshots,
     input.competencia,
+    new Set(eligibleClosings.map(pairKey)),
   )
   const appPropertyIds = new Set(
     vigenciesAtCompetence(scope.vigencies, input.competencia)
@@ -1094,6 +1095,7 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       expectedProperties,
       snapshots,
       competencia,
+      new Set(eligible.map(pairKey)),
     )
     const analyses = eligible.map((closing) => closing.analiseCompleta!)
     const occupancy = summarizeOccupancy(
@@ -2001,17 +2003,31 @@ function sumNullableMoney(
   return roundMoney((left ?? 0) + (right ?? 0))
 }
 
+// O teto so pode falar do MESMO conjunto que o resto da tela. Vacancia,
+// inadimplencia e recebido saem dos snapshots dos fechamentos processados; se o
+// contratado somar a carteira inteira, mes parcialmente coberto compara coisas
+// de escopos diferentes. Agosto/2026 tinha 2 dos 9 empreendimentos fechados e a
+// tela mostrava teto de R$ 90.608,60 contra recebido de R$ 8.155,14, com
+// R$ 80.433,46 sobrando sem explicacao.
+//
+// `coveredPairs` limita o teto aos pares (imobiliaria, empreendimento) com
+// fechamento elegivel na competencia. Imovel de par fechado que esteja SEM
+// snapshot continua no teto de proposito — some do numerador e a cobertura o
+// declara em `snapshot_ausente`; excluir esconderia a lacuna.
 function contractedRentAtCompetence(
   input: IndicadoresAggregationInput,
   scope: AggregationScope,
   properties: IndicadoresPropertyInput[],
   snapshots: IndicadoresSnapshotInput[],
   competence: string,
+  coveredPairs: Set<string>,
 ) {
+  const noEscopo = properties.filter((property) => coveredPairs.has(pairKey(property)))
   if (input.vigenciasDisponiveis === undefined) {
     return sumKnown(snapshots.map((snapshot) => snapshot.aluguelEsperado))
   }
   if (!input.vigenciasDisponiveis) return null
+  if (noEscopo.length === 0) return null
 
   const vigencyByProperty = new Map(
     vigenciesAtCompetence(scope.vigencies, competence).map((vigency) => [
@@ -2019,7 +2035,7 @@ function contractedRentAtCompetence(
       vigency,
     ]),
   )
-  const vigencies = properties.map((property) => vigencyByProperty.get(property.id))
+  const vigencies = noEscopo.map((property) => vigencyByProperty.get(property.id))
   if (
     vigencies.some(
       (vigency) =>

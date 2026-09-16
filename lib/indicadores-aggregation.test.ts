@@ -2102,3 +2102,33 @@ test("layout sem secao e sem registro segue sendo lacuna, nao zero confirmado", 
     1,
   )
 })
+
+test("mes parcialmente coberto nao soma o teto de empreendimento sem fechamento", () => {
+  // Agosto/2026: 2 dos 9 empreendimentos fecharam, e a tela mostrava teto da
+  // carteira inteira (R$ 90.608,60) contra recebido de dois fechamentos
+  // (R$ 8.155,14) — R$ 80.433,46 sobrando sem explicacao. Vacancia,
+  // inadimplencia e recebido saem dos snapshots dos fechamentos processados; o
+  // teto tem de falar do mesmo conjunto.
+  const PAIR_B = makePair("b")
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: true,
+    // So o par A fechou a competencia.
+    fechamentos: [makeClosing()],
+    imoveisAtivos: [
+      makeProperty({ id: "imovel-a" }),
+      makeProperty({ ...PAIR_B, id: "imovel-b", unidade: "999" }),
+    ],
+    vigencias: [
+      { ...PAIR_A, id: "v-a", imovelId: "imovel-a", vigenciaInicio: "2026-01-01", vigenciaFim: null,
+        modeloReceita: "fixo", aluguelContratado: 1_000, fonte: "c", ativo: true },
+      { ...PAIR_B, id: "v-b", imovelId: "imovel-b", vigenciaInicio: "2026-01-01", vigenciaFim: null,
+        modeloReceita: "fixo", aluguelContratado: 5_000, fonte: "c", ativo: true },
+    ],
+    snapshots: [makeSnapshot({ imovelId: "imovel-a", aluguelEsperado: 1_000 })],
+  }))
+
+  // Sem a correcao o teto vinha 6.000 e os 5.000 do par sem fechamento caiam no
+  // resto sem explicacao.
+  assert.equal(result.realizacaoAluguel.contratado, 1_000)
+})
