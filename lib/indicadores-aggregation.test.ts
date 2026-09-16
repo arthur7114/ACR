@@ -2256,3 +2256,27 @@ test("vigencia anterior em zero nao gera reajuste: e placeholder, nao ponto de p
   }))
   assert.equal(result.receitasPorImovel[0]?.reajuste, null)
 })
+
+
+test("ocupacao acumulada e proporcao de unidade-mes, nao media de percentuais", () => {
+  // Mes 1: 1 de 2 ocupado (50%). Mes 2: 3 de 3 ocupados (100%).
+  // Media dos percentuais daria 75%; a proporcao real e 4 de 5 = 80%.
+  const props = ["a", "b", "c"].map((id) => makeProperty({ id, unidade: id }))
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: props,
+    snapshots: [
+      makeSnapshot({ imovelId: "a", competencia: "2026-04-01", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+      makeSnapshot({ imovelId: "b", competencia: "2026-04-01", statusOcupacao: "vago", aluguelEsperado: 100, aluguelRecebido: 0, aluguelRecebidoCompetencia: 0 }),
+      makeSnapshot({ imovelId: "a", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+      makeSnapshot({ imovelId: "b", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+      makeSnapshot({ imovelId: "c", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+    ],
+  }))
+  const acc = result.resumo.ocupacaoAcumulada!
+  assert.equal(acc.numerador, 4)
+  assert.equal(acc.denominador, 5)
+  assert.equal(acc.percentual, 80)
+  assert.equal(acc.janela.meses, 2)
+  assert.equal(acc.janela.inicio, "2026-04-01")
+  assert.equal(acc.valorContratado, 400)
+})

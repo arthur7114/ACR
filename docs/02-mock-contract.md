@@ -293,7 +293,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 - Detalhamento por imóvel: coluna **Reajuste**. Reajuste é troca de vigência com aluguel diferente da anterior, na competência em que a vigência começa; quando o inquilino também troca, a célula diz "novo contrato". Vigência migrada do cadastro não tem anterior e não gera reajuste.
 - Histórico por imóvel (drawer): evento **Reajuste** na linha do tempo, derivado de `imovel_vigencias` — não da prestação, que só informa o mês do reajuste anual, nunca o valor. Aparece antes do aluguel do mês. Com inquilino novo, a observação começa por "Novo contrato". Contador "Reajustes" no resumo.
 - Vagas somam o observado (`garagem_recebida`, coluna que existe desde ago/2026); com cobertura parcial o card fica em alerta e a linha diz quantas unidades foram observadas. Regra B, aprovada em 2026-09-16: parcial marcado, nunca "—" escondendo o que os outros dizem.
-- Pendências de definição, do cliente: janela e método de "acumulado" (itens i, iv, viii) e valor do ativo por imóvel (rentabilidade).
+- Ocupação acumulada (item i): unidade-mês ocupada ÷ unidade-mês com situação conhecida, de todas as competências com histórico até a selecionada, com a janela nomeada na tela ("acumulado desde mai/26"). Não é média dos percentuais mensais — média muda com o tamanho de cada mês — nem a posição do cadastro, que trata locação por app como ocupado e ficava 8 pontos acima. Em reais, o acumulado é soma do aluguel contratado das unidades ocupadas em cada mês. Inadimplência acumulada (item viii) já é saldo e não muda. Rentabilidade (item iv) segue vazia por falta do valor do ativo, decisão do cliente de 2026-09-16 de não tratar agora.
 
 ## Fluxo contratado
 

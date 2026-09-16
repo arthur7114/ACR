@@ -162,6 +162,19 @@ export interface IndicadoresSummary {
   receitaLocacao: IndicadoresReceitaLocacao
   /** Aluguel contratado das unidades ocupadas (contratado − vacancia). */
   valorOcupacao: number | null
+  /**
+   * Ocupacao acumulada da janela observada: unidade-mes ocupada ÷ unidade-mes
+   * com situacao conhecida, de todas as competencias com snapshot ate a
+   * selecionada. Percentual nao se soma nem se tira media; a proporcao do
+   * conjunto e a unica leitura que nao inventa. `valorContratado` e a soma do
+   * aluguel contratado das unidades ocupadas em cada mes da janela.
+   */
+  ocupacaoAcumulada: IndicadoresOcupacaoAcumulada | null
+}
+
+export interface IndicadoresOcupacaoAcumulada extends IndicadoresOccupancy {
+  janela: { inicio: string; fim: string; meses: number }
+  valorContratado: number | null
 }
 
 export interface IndicadoresTaxaPercent {

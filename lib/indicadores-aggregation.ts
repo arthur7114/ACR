@@ -756,6 +756,24 @@ function buildSummary(
       .filter((snapshot) => snapshot.statusOcupacao !== "vago")
       .map((snapshot) => snapshot.aluguelEsperado),
   )
+  // Acumulado da janela = todo snapshot ate a competencia selecionada.
+  // Unidade-mes e a unidade de conta: 118 imoveis x 3 meses = 353 observacoes.
+  const janela = [...historicalSnapshots, ...snapshots]
+  const mesesJanela = [...new Set(janela.map((snapshot) => snapshot.competencia))].sort()
+  const ocupacaoAcumulada =
+    mesesJanela.length === 0
+      ? null
+      : {
+          ...summarizeOccupancy(
+            janela.map((snapshot) =>
+              presentOccupancyStatus(snapshot.statusOcupacao, snapshot.modeloReceita === "variavel"),
+            ),
+          ),
+          janela: { inicio: mesesJanela[0], fim: mesesJanela[mesesJanela.length - 1], meses: mesesJanela.length },
+          valorContratado: sumKnown(
+            janela.filter((snapshot) => snapshot.statusOcupacao !== "vago").map((snapshot) => snapshot.aluguelEsperado),
+          ),
+        }
 
   return {
     taxas: {
@@ -794,6 +812,7 @@ function buildSummary(
       vagasCobertura: { conhecidas: vagasConhecidas.length, total: fixos.length },
     },
     valorOcupacao,
+    ocupacaoAcumulada,
     receitasEconomicas: economicRevenue,
     aluguelRecebidoCompetencia: receivedCurrent,
     atrasosRecuperados: recoveredLate,

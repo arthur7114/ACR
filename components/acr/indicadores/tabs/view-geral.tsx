@@ -23,6 +23,7 @@ import {
   filterMonthlySeriesPeriod,
   formatAcumuladaCobertura,
   formatCount,
+  formatCompetenciaCurta,
   describeConference,
   formatCurrency,
   formatPercent,
@@ -205,8 +206,8 @@ export function ViewGeral({
               short: "Imóveis ocupados entre os que têm situação conhecida.",
               title: "Ocupação",
               definition: "Proporção de imóveis ocupados entre os imóveis com situação conhecida na competência.",
-              formula: "ocupados ÷ imóveis com situação conhecida × 100",
-              limitation: "Imóveis sem histórico ficam fora da conta e aparecem como Desconhecido.",
+              formula: "ocupados ÷ imóveis com situação conhecida × 100 · acumulado = unidade-mês ocupada ÷ unidade-mês conhecida, da primeira competência com histórico até a selecionada",
+              limitation: "Imóveis sem histórico ficam fora da conta e aparecem como Desconhecido. O acumulado é proporção do conjunto, não média dos meses: média de percentuais mudaria com o tamanho de cada mês.",
             }}
           >
             <p className="mt-2 text-xs text-acr-muted-2 tabular-nums">
@@ -215,6 +216,16 @@ export function ViewGeral({
                 <> · {formatCurrency(resumo.valorOcupacao)} de aluguel contratado</>
               )}
             </p>
+            {resumo.ocupacaoAcumulada && resumo.ocupacaoAcumulada.janela.meses > 1 && (
+              <p className="mt-1 text-xs text-acr-muted-2 tabular-nums">
+                acumulado desde {formatCompetenciaCurta(resumo.ocupacaoAcumulada.janela.inicio)}:{" "}
+                {formatPercent(resumo.ocupacaoAcumulada.percentual)} ·{" "}
+                {formatCount(resumo.ocupacaoAcumulada.numerador)} de {formatCount(resumo.ocupacaoAcumulada.denominador)} unidade-mês
+                {resumo.ocupacaoAcumulada.valorContratado !== null && (
+                  <> · {formatCurrency(resumo.ocupacaoAcumulada.valorContratado)}</>
+                )}
+              </p>
+            )}
           </Metric>
           <div className="mt-5 space-y-4">
             {/* A barra "Hoje" (status do cadastro) saiu em 2026-09-02: o cadastro

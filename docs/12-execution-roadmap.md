@@ -245,7 +245,7 @@ Indicadores do contrato: 8 entregues, 4 parciais e 3 ausentes antes. Agora: taxa
 Validacao: suite 622/622, lint e typecheck verdes. Contra o banco: Jose Walter ago com taxa adm efetivo 8% = contrato 8%; 12 reajustes em jul/26 (Jose Walter GA0002 +4,6%, Pompilio +3,2%, Messejana I 1 +4,6%); linha do tempo do Pompilio 0002526 mostra o reajuste de julho com a fonte; snapshots ok:true; `verify-consistencia-telas` 0 divergencia em 4 competencias.
 Registro de incidentes: `docs/15-registro-de-incidentes.md`, 11 incidentes em 8 classes de causa, com o mecanismo de prevencao de cada uma.
 Arquivos/docs impactados: `lib/comissao.ts`, `lib/server/package-rechecks.ts`, `lib/indicadores-aggregation.ts`, `lib/indicadores-types.ts`, `lib/server/indicadores.ts`, `lib/server/imovel-historico.ts`, `lib/imovel-historico-types.ts`, `components/acr/indicadores/tabs/view-{geral,receita,registro}.tsx`, `components/acr/views/imovel-historico-drawer.tsx`, testes, docs `02`, `12`, `15`.
-Proxima acao: definicoes do cliente — janela de "acumulado", valor do ativo por imovel, aluguel do TERRENO CASTELAO; prevencao das classes A (colapsar 3 vias de escrita) e C (constraint contra zero-placeholder); o R$ 0,26 de junho.
+Proxima acao: prevencao das classes A (colapsar 3 vias de escrita) e C (constraint contra zero-placeholder); o R$ 0,26 de junho. Ocupacao acumulada implementada como proporcao de unidade-mes com janela nomeada. Valor do ativo e TERRENO CASTELAO: cliente pediu para ignorar (2026-09-16).
 
 ### 2026-09-10 (2) - Esteira: verificador cego, decomposicao do resto e divida inferida
 
