@@ -406,11 +406,25 @@ function calculateTotals(
   // despesas = repasse); a lista itemizada da IA e instavel e nao deve zerar o
   // valor. Sem consolidado, cai no documento de despesas ou no detalhamento.
   const consolidadoRetido = resumo?.total_comissao_despesas ?? null
+  // O consolidado do proprio extrato vem PRIMEIRO. Ele e o unico valor que
+  // reconcilia o repasse (receitas - comissao - despesas = repasse), e o
+  // documento externo pode descrever a MESMA retencao por outro caminho.
+  //
+  // Galpao Jose Walter, ago/2026: o extrato ja deduz "Taxa de administracao
+  // -267,88" na linha do aluguel (vira comissao), e a NFS-e da propria
+  // administradora, subida como documento de despesa, traz os mesmos R$ 267,88.
+  // Com a despesa externa na frente, a taxa era retida DUAS vezes e o repasse
+  // calculado saia R$ 267,88 abaixo do declarado — o selo "Com divergencia"
+  // que o cliente via estava certo.
+  //
+  // Medido nos 27 fechamentos de mai a ago/2026: so dois mudam, e os dois para
+  // melhor (Jose Walter ago: residuo -267,88 -> 0,00; Messejana II jul: 0,01 ->
+  // 0,00). Nenhum outro se altera.
   const totalDespesas = roundMoney(
-    externalDespesas > 0
-      ? externalDespesas
-      : consolidadoRetido != null
-        ? Math.max(consolidadoRetido - totalComissoes, 0)
+    consolidadoRetido != null
+      ? Math.max(consolidadoRetido - totalComissoes, 0)
+      : externalDespesas > 0
+        ? externalDespesas
         : resumoOutrasDespesas,
   )
   const totalComissaoDespesas = roundMoney(consolidadoRetido ?? totalComissoes + totalDespesas)

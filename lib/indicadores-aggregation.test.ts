@@ -1448,7 +1448,10 @@ test("classifica a diferença de imóvel em rescisão sem absorver lacunas desco
   assert.equal(result.realizacaoAluguel.valoresSemClassificacao, -500)
 })
 
-test("valor de aluguel sem classificação acima de um centavo bloqueia confirmação", () => {
+test("pagamento parcial de ocupado nao acende divergencia: tem causa conhecida", () => {
+  // O desvio existe (R$ 0,02 a menos que o contratado), mas a causa e nomeada —
+  // ocupado com recebimento parcial. Antes isto acendia "Com divergencia" em
+  // quase todo fechamento e o selo perdia o sentido.
   const result = aggregateIndicadores(makeInput({
     fechamentos: [makeClosing({
       analiseCompleta: makeAnalysis({ totals: { valor_comprovado: 1_650 } }),
@@ -1462,6 +1465,29 @@ test("valor de aluguel sem classificação acima de um centavo bloqueia confirma
   }))
 
   assert.equal(result.realizacaoAluguel.valoresSemClassificacao, -0.02)
+  assert.equal(result.realizacaoAluguel.ocupadoRecebimentoParcial, 0.02)
+  assert.equal(result.realizacaoAluguel.restoNaoExplicado, 0)
+  assert.notEqual(result.meta.statusConfianca, "com_divergencia")
+})
+
+test("valor que nenhuma causa conhecida explica ainda bloqueia confirmação", () => {
+  // Desconto documentado numa unidade VAGA: a ponte subtrai o desconto, mas
+  // nenhuma das tres causas nomeadas cobre isso. Sobra sem explicacao e o selo
+  // acende — que e exatamente para o que ele serve.
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: makeAnalysis({ totals: { valor_comprovado: 1_650 } }),
+    })],
+    snapshots: [makeSnapshot({
+      statusOcupacao: "vago",
+      aluguelEsperado: 1_000,
+      aluguelRecebido: 0,
+      aluguelRecebidoCompetencia: 0,
+      desconto: 50,
+    })],
+  }))
+
+  assert.equal(result.realizacaoAluguel.restoNaoExplicado, 50)
   assert.equal(result.meta.statusConfianca, "com_divergencia")
 })
 

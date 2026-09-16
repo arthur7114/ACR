@@ -969,3 +969,57 @@ test("coluna nao lida com totais fechando fica em alerta e outros_recebimentos c
   assert.equal(check.status, "warning")
   assert.match(check.message, /INDICE/)
 })
+
+test("nota fiscal da propria taxa de administracao nao vira despesa em dobro", () => {
+  // Galpao Jose Walter, ago/2026. O extrato ja deduz a taxa de administracao na
+  // linha do aluguel (vira comissao) e a NFS-e da administradora, subida como
+  // documento de despesa, traz o MESMO valor. Com a despesa externa na frente do
+  // consolidado, a taxa era retida duas vezes e o repasse calculado saia abaixo
+  // do declarado — acendendo "Com divergencia" com razao.
+  const prestacao = createPrestacao({
+    resumo_financeiro: {
+      ...createPrestacao().resumo_financeiro,
+      comissao_administracao: 300,
+      // Retido total = so a comissao. Nao ha outra retencao neste extrato.
+      total_comissao_despesas: 300,
+      total_a_repassar: 2700,
+      recebidos_em_nome_locador: 3000,
+    },
+  })
+
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao,
+    repasse: createRepasse(2700),
+    despesas: {
+      despesas: [
+        {
+          tipo: "outro",
+          valor: 300,
+          fornecedor: "ADMINISTRADORA DE IMOVEIS LTDA",
+          observacao: "Taxa de administracao.",
+          referencia: "NFS-e 1234",
+          endereco: null,
+          pago_em: null,
+          pago_por: null,
+          vencimento: null,
+          unidade_consumidora: null,
+          confianca: 0.94,
+        },
+      ],
+      total_despesas: 300,
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.94,
+    } as never,
+    reajuste: null,
+  })
+
+  // O consolidado manda: retido total 300 menos comissao 300 = zero despesa.
+  assert.equal(result.totals.total_despesas, 0)
+  // E o repasse fecha com o declarado, sem o desconto duplicado.
+  assert.equal(
+    result.totals.total_receitas - result.totals.total_comissoes - result.totals.total_despesas,
+    2700,
+  )
+})

@@ -2074,9 +2074,17 @@ function buildConfidenceStatus(
   const hasTransferDivergence =
     summary.diferencaRepasse !== null &&
     Math.abs(summary.diferencaRepasse) > FINANCIAL_TOLERANCE
+  // O gatilho olha o que sobra DEPOIS das causas nomeadas, nao o desvio inteiro.
+  // `valoresSemClassificacao` mede a distancia entre o contratado e o recebido,
+  // e essa distancia tem tres causas conhecidas — inquilino que nao pagou o mes,
+  // pagamento parcial e proporcional de rescisao em unidade vaga. Sao fatos
+  // operacionais normais: acendiam "Com divergencia" em quase todo fechamento e
+  // gastavam a atencao que a tela precisa guardar para erro de verdade (o
+  // cliente reclamava do selo, nao do numero). O que nao tem causa nomeada
+  // continua acendendo.
   const hasRentDivergence =
-    realization.valoresSemClassificacao !== null &&
-    Math.abs(realization.valoresSemClassificacao) > FINANCIAL_TOLERANCE
+    realization.restoNaoExplicado !== null &&
+    Math.abs(realization.restoNaoExplicado) > FINANCIAL_TOLERANCE
 
   if (hasFinancialDivergence) {
     reasons.push("A ponte financeira possui diferença não explicada acima de R$ 0,01.")
@@ -2085,7 +2093,7 @@ function buildConfidenceStatus(
     reasons.push("O repasse confirmado pelo banco diverge do cálculo acima de R$ 0,01.")
   }
   if (hasRentDivergence) {
-    reasons.push("A realização do aluguel possui valor sem classificação acima de R$ 0,01.")
+    reasons.push("A realização do aluguel tem valor que nenhuma causa conhecida explica, acima de R$ 0,01.")
   }
   if (hasFinancialDivergence || hasTransferDivergence || hasRentDivergence) {
     return { status: "com_divergencia" as const, reasons }
