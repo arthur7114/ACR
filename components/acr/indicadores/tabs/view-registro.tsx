@@ -160,9 +160,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                         {row.reajuste
                           ? row.reajuste.inquilinoMudou
                             ? "novo contrato"
-                            : row.reajuste.percentual !== null
-                              ? `${row.reajuste.percentual >= 0 ? "▲" : "▼"} ${formatPercent(Math.abs(row.reajuste.percentual))}`
-                              : "▲"
+                            : `${row.reajuste.percentual >= 0 ? "▲" : "▼"} ${formatPercent(Math.abs(row.reajuste.percentual))}`
                           : "—"}
                       </td>
                       <MoneyCell value={row.aluguelRecebidoCompetencia} strong />

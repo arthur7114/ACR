@@ -255,17 +255,18 @@ async function reajustesDaUnidade(
   let anterior: { aluguel: number | null; garagem: number | null } | null = null
   for (const v of vigencias ?? []) {
     const atual = { aluguel: numOrNull(v.aluguel_contratado), garagem: numOrNull(v.garagem_contratada) }
-    if (anterior && v.modelo_receita === "fixo" && atual.aluguel !== null && anterior.aluguel !== null) {
+    // Anterior em zero e placeholder do cadastro migrado, nao um "de" real.
+    if (anterior && v.modelo_receita === "fixo" && atual.aluguel !== null && anterior.aluguel !== null && anterior.aluguel > 0) {
       const mudouAluguel = Math.abs(atual.aluguel - anterior.aluguel) >= 0.005
       const mudouGaragem = (atual.garagem ?? 0) !== (anterior.garagem ?? 0)
       if (mudouAluguel || mudouGaragem) {
         const competencia = String(v.vigencia_inicio).slice(0, 7) + "-01"
         const delta = atual.aluguel - anterior.aluguel
-        const pct = anterior.aluguel > 0 ? (delta / anterior.aluguel) * 100 : null
+        const pct = (delta / anterior.aluguel) * 100
         const partes = [
           mudouAluguel
             ? `Aluguel de ${formatMoeda(anterior.aluguel)} para ${formatMoeda(atual.aluguel)}` +
-              (pct !== null ? ` (${delta >= 0 ? "+" : ""}${pct.toFixed(1).replace(".", ",")}%)` : "")
+              ` (${delta >= 0 ? "+" : ""}${pct.toFixed(1).replace(".", ",")}%)`
             : null,
           mudouGaragem
             ? `Garagem de ${formatMoeda(anterior.garagem ?? 0)} para ${formatMoeda(atual.garagem ?? 0)}`

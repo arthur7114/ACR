@@ -414,7 +414,7 @@ export interface IndicadoresPropertyRevenue {
   reajuste: {
     de: number
     para: number
-    percentual: number | null
+    percentual: number
     /** Inquilino trocou junto com o valor: e novo contrato, nao reajuste. `null` = sem inquilino anterior para comparar. */
     inquilinoMudou: boolean | null
   } | null

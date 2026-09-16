@@ -1672,8 +1672,10 @@ function buildPropertyRevenues(
     if (indice <= 0) return null
     const de = lista[indice - 1].aluguelContratado
     const para = lista[indice].aluguelContratado
-    if (de === null || para === null || Math.abs(de - para) < 0.005) return null
-    return { de, para, percentual: de > 0 ? Math.round(((para - de) / de) * 1000) / 10 : null }
+    // Anterior em ZERO e placeholder de cadastro migrado (classe C do registro de
+    // incidentes), nao um valor de partida: sem "de", nao ha reajuste.
+    if (de === null || para === null || de <= 0 || Math.abs(de - para) < 0.005) return null
+    return { de, para, percentual: Math.round(((para - de) / de) * 1000) / 10 }
   }
   const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase()
   const propertyById = new Map(properties.map((property) => [property.id, property]))

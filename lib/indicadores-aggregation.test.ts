@@ -2240,3 +2240,19 @@ test("troca de vigencia vira reajuste, e com inquilino novo vira novo contrato",
   assert.deepEqual(a, { de: 1000, para: 1050, percentual: 5, inquilinoMudou: false })
   assert.equal(b.inquilinoMudou, true)
 })
+
+
+test("vigencia anterior em zero nao gera reajuste: e placeholder, nao ponto de partida", () => {
+  const vig = (id: string, inicio: string, fim: string | null, valor: number) => ({
+    ...PAIR_A, id, imovelId: "a", vigenciaInicio: inicio, vigenciaFim: fim,
+    modeloReceita: "fixo" as const, aluguelContratado: valor, fonte: "Cadastro de imóveis migrado", ativo: true,
+  })
+  const result = aggregateIndicadores(makeInput({
+    calculoVersao: "indicadores-confiabilidade-v2",
+    vigenciasDisponiveis: true,
+    imoveisAtivos: [makeProperty({ id: "a", unidade: "1" })],
+    vigencias: [vig("a1", "2026-01-01", "2026-04-30", 0), vig("a2", "2026-05-01", null, 700)],
+    snapshots: [makeSnapshot({ imovelId: "a", aluguelEsperado: 700 })],
+  }))
+  assert.equal(result.receitasPorImovel[0]?.reajuste, null)
+})
