@@ -39,7 +39,7 @@ import {
 } from "@/lib/fechamento-operacional"
 import {
   aptoKey,
-  aptosDeIntermediacao,
+  intermediacoesPorApto,
   contarUnidadesIntermediadas,
   criarClassificadorUnidades,
   type ClassificadorUnidades,
@@ -732,7 +732,7 @@ export function RevisaoView({
   // A tabela de intermediacoes tambem CLASSIFICA a unidade: a linha da vigencia
   // de um apto intermediado vem zerada e nem sempre repete "INTERMEDIACAO" na
   // observacao (GM II ago/2026 apto 23), o que antes a fazia cair em inadimplente.
-  const unidades = criarClassificadorUnidades(aptosDeIntermediacao(acordosRescisoesRecebidosTodos))
+  const unidades = criarClassificadorUnidades(intermediacoesPorApto(acordosRescisoesRecebidosTodos))
   const {
     isAirbnbRow,
     isVacantRow,
@@ -895,7 +895,7 @@ export function RevisaoView({
   // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
   // Soma as linhas classificadas como intermediacao e as intermediacoes que nao
   // tem linha na vigencia, sem contar a mesma unidade duas vezes.
-  const intermediadas = contarUnidadesIntermediadas(linhasUnidades, intermediacoes, unidades)
+  const intermediadas = contarUnidadesIntermediadas(linhasUnidades, intermediacoes)
 
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
     const textMatch = !filtroTexto || 

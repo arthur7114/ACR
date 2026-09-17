@@ -65,21 +65,36 @@ export function aptoKey(apto: string | null | undefined) {
   return (apto ?? "").trim().toLowerCase()
 }
 
-// Aptos que a tabela de intermediacoes do fechamento declara. Nao ha filtro por
-// competencia: a secao de intermediacoes pertence a este fechamento mesmo
-// quando a vigencia cobrada e do mes anterior (GM II ago/2026 lista
+function normalizarNome(nome: string | null | undefined) {
+  return (nome ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase()
+}
+
+// Intermediacoes declaradas pelo fechamento, por apto, com os inquilinos da
+// secao. Nao ha filtro por competencia: a secao pertence a este fechamento mesmo
+// quando cobra a vigencia do mes anterior (GM II ago/2026 lista
 // "INTERMEDIACOES DE JULHO 2026").
-export function aptosDeIntermediacao(acordos: Array<Pick<AcordoRescisaoRecebido, "tipo" | "apto">>) {
-  return new Set(
-    acordos
-      .filter((item) => item.tipo === "intermediacao")
-      .map((item) => aptoKey(item.apto))
-      .filter(Boolean),
-  )
+export function intermediacoesPorApto(
+  acordos: Array<Pick<AcordoRescisaoRecebido, "tipo" | "apto" | "inquilino">>,
+) {
+  const mapa = new Map<string, string[]>()
+  for (const item of acordos) {
+    if (item.tipo !== "intermediacao") continue
+    const key = aptoKey(item.apto)
+    if (!key) continue
+    const inquilinos = mapa.get(key) ?? []
+    inquilinos.push(normalizarNome(item.inquilino))
+    mapa.set(key, inquilinos)
+  }
+  return mapa
 }
 
 export function criarClassificadorUnidades(
-  intermediacaoAptos: Set<string> = new Set(),
+  intermediacoes: Map<string, string[]> = new Map(),
 ): ClassificadorUnidades {
   const textoDaLinha = (row: LinhaUnidade) =>
     `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
@@ -88,11 +103,32 @@ export function criarClassificadorUnidades(
 
   // Unidade de INTERMEDIACAO: tem categoria propria (tabela de Intermediacao).
   // Nao e alugada, vaga nem inadimplente. Duas evidencias equivalentes: a
-  // observacao da linha ou a tabela de intermediacoes do fechamento.
+  // observacao da linha ou a secao de intermediacoes do fechamento.
+  //
+  // A secao so classifica a linha quando as duas falam da MESMA locacao: linha
+  // zerada (o mes da unidade foi cobrado na secao) ou mesmo inquilino. Secao e
+  // linha podem descrever inquilinos diferentes no mesmo apto — Grand Castelao I
+  // mai/2026 tem rescisao do inquilino que saiu (Felipe, apto 2) enquanto a
+  // linha da vigencia ja e do novo (Lucas), pagando aluguel cheio. Sem esta
+  // guarda, um apto intermediado e reocupado no mesmo mes perderia a etiqueta de
+  // pagante.
   const isIntermediacaoRow: ClassificadorUnidades["isIntermediacaoRow"] = (row) => {
     if (/intermedia/.test(textoDaLinha(row))) return true
     const key = aptoKey(row.apto)
-    return key !== "" && intermediacaoAptos.has(key)
+    if (key === "") return false
+    const inquilinosDaSecao = intermediacoes.get(key)
+    if (!inquilinosDaSecao) return false
+    const semReceita = (row.aluguel ?? 0) <= 0 && (row.total ?? 0) <= 0
+    if (semReceita) return true
+    const inquilinoDaLinha = normalizarNome(row.inquilino)
+    if (!inquilinoDaLinha) return false
+    return inquilinosDaSecao.some(
+      (nome) =>
+        nome !== ""
+        && (nome === inquilinoDaLinha
+          || nome.startsWith(inquilinoDaLinha)
+          || inquilinoDaLinha.startsWith(nome)),
+    )
   }
 
   const isVacantRow: ClassificadorUnidades["isVacantRow"] = (row) => {
@@ -157,24 +193,38 @@ export function criarClassificadorUnidades(
   }
 }
 
-// Contagem do tile "Intermediacao": unidades da tabela de receitas classificadas
-// como intermediacao MAIS as intermediacoes que nao tem linha correspondente na
-// vigencia (documento que so traz a unidade na secao de intermediacoes). Uma
-// unidade nunca e contada duas vezes.
+// Contagem do tile "Intermediacao": unidades distintas que a secao de
+// intermediacoes declara MAIS as linhas marcadas INTERMEDIACAO no texto. E a
+// conta que o cliente faz — ele conferiu "tem tres intermediacoes na planilha"
+// olhando as tres linhas da secao.
+//
+// Nao passa pela guarda de inquilino de `isIntermediacaoRow` de proposito: a
+// guarda decide a ETIQUETA da linha (se a unidade, no mes, esta ocupada por um
+// pagante diferente, a linha e dele), enquanto o tile conta o evento de
+// intermediacao do fechamento. Nos 31 fechamentos ate ago/2026 as duas leituras
+// coincidem; separa-las evita que uma unidade reocupada suma da contagem.
 export function contarUnidadesIntermediadas(
   linhasUnidades: LinhaUnidade[],
   intermediacoes: Array<Pick<AcordoRescisaoRecebido, "tipo" | "apto">>,
-  classificador: ClassificadorUnidades,
 ): number {
-  const aptosComLinha = new Set(linhasUnidades.map((row) => aptoKey(row.apto)).filter(Boolean))
-  const comLinha = linhasUnidades.filter(classificador.isIntermediacaoRow).length
-  const semLinha = intermediacoes.filter((item) => {
-    if (item.tipo !== "intermediacao") return false
-    const key = aptoKey(item.apto)
-    // Intermediacao sem apto informado nao tem como casar com uma linha: conta
-    // por si so, como fazia o fallback anterior.
-    return key === "" || !aptosComLinha.has(key)
-  }).length
+  const aptos = new Set<string>()
+  // Intermediacao sem apto informado nao casa com nenhuma linha: conta por si so.
+  let semApto = 0
 
-  return comLinha + semLinha
+  for (const item of intermediacoes) {
+    if (item.tipo !== "intermediacao") continue
+    const key = aptoKey(item.apto)
+    if (key) aptos.add(key)
+    else semApto += 1
+  }
+
+  for (const row of linhasUnidades) {
+    const marcada = /intermedia/.test(`${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase())
+    if (!marcada) continue
+    const key = aptoKey(row.apto)
+    if (key) aptos.add(key)
+    else semApto += 1
+  }
+
+  return aptos.size + semApto
 }

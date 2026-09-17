@@ -2592,8 +2592,29 @@ Alugadas continua 25 — intermediação é subconjunto de alugadas, a unidade t
 locatário no mês. Nenhum valor financeiro muda: repasse R$ 14.001,78 e
 intermediação R$ 1.290,00 seguem iguais.
 
-**Testes.** `lib/fechamento-unidades.test.ts` (6 casos, canário GM II ago/2026 +
-intermediação sem linha, sem apto e apto vago). `lib/fechamento-unidades.ts`
+**Varredura dos 31 fechamentos (mesmo dia).** Cruzamento seção × linha, linhas
+zeradas sem explicação, aptos duplicados, comissão declarada × soma das linhas,
+recebimento sem origem e confiança baixa. **Nenhum erro silencioso novo.** Quatro
+achados, todos explicados: (1) o próprio apto 23, já corrigido; (2) Grand
+Castelão I mai/2026 aptos 2 e 6 — rescisão do inquilino que saiu com a linha já
+do novo inquilino pagante, leitura correta do documento; (3) João Cordeiro
+jun/2026 apto 0002521 em três linhas, uma por competência (atraso), já
+deduplicado para contagem; (4) GRAND MARACANAÚ mai/2026 com comissão declarada
+R$ 433,83 contra R$ 713,82 somados nas linhas — já exposto como **alerta**
+`total_linhas_comissoes` com a mensagem certa, é divergência do documento, não
+da leitura.
+
+**Endurecimento vindo da varredura.** O caso (2) provou que seção e linha podem
+descrever inquilinos diferentes no mesmo apto. A regra nova passou a exigir que
+as duas falem da mesma locação — linha zerada ou mesmo inquilino — antes de a
+seção classificar a linha. A contagem do tile foi separada da etiqueta: conta
+aptos distintos da seção ∪ linhas marcadas, que é a conta que o cliente faz
+("tem três intermediações na planilha"), e não perde o evento quando a unidade
+é reocupada no mesmo mês.
+
+**Testes.** `lib/fechamento-unidades.test.ts` (8 casos, canário GM II ago/2026 +
+intermediação sem linha, sem apto, apto vago e as duas metades da guarda de
+inquilino). `lib/fechamento-unidades.ts`
 entrou na allowlist de `lib/recebimentos-contrato.test.ts` com a justificativa
 de uso não financeiro (lê apenas `tipo` e `apto`). Suíte 606/606, canários 6/6,
 lint e tipos limpos.
