@@ -367,6 +367,14 @@ Estados e acoes relevantes:
 - O que **não** mudou: `aluguel_esperado` do snapshot (segue o contratado), a inadimplência do mês, o total recebido e o resíduo "Sem explicação". O selo "fora do previsto" continua armado pelo mesmo `valoresSemClassificacao`.
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`. Canários em `lib/indicadores-deficit-causas.test.ts`.
 
+### Ajuste registrado — "Despesa detalhada" passa a ler o que foi pago (2026-09-17)
+
+- Ponto alterado: o recorte de água, IPTU e seguro dos Indicadores vinha de `totals.total_agua/_iptu/_seguro_incendio` — as **colunas de receita** da prestação, ou seja, o que os inquilinos reembolsaram. Passa a vir do **documento de despesas**, o que saiu do caixa.
+- Por que: em Grand Messejana II ago/2026 o painel exibia água R$ 1.203,31 (reembolso) enquanto a conta paga à Cagece foi R$ 1.827,90. Os R$ 624,59 que o locador bancou não apareciam em lugar nenhum. O seguro coincidia por acaso (pago = reembolsado = R$ 420,00), o que escondia o erro.
+- Regra: sem documento de despesas o recorte é **desconhecido** (—), nunca zero. Com documento lido e sem item da categoria, é **zero confirmado** (GM II não pagou IPTU em agosto).
+- O reembolso não sumiu: virou tooltip na própria linha, com o valor pago, o reembolsado e quanto ficou por conta do locador.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

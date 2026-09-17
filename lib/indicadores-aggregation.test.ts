@@ -492,11 +492,15 @@ test("mantém despesas retidas separadas da despesa operacional detalhada", () =
   assert.equal(result.resumo.comissaoAdministracao, 100)
   assert.equal(result.resumo.comissaoIntermediacao, 50)
   assert.equal(result.resumo.despesasRetidas, 200)
+  // Sem documento de despesas o recorte do que foi PAGO e desconhecido, nunca
+  // zero e nunca o reembolso: 50/50/25 sao as colunas de receita da prestacao,
+  // o que os inquilinos devolveram, e ficam no lado `reembolsado`.
   assert.deepEqual(result.resumo.despesaOperacionalDetalhada, {
-    agua: 50,
-    iptu: 50,
-    seguro: 25,
-    total: 125,
+    agua: null,
+    iptu: null,
+    seguro: null,
+    total: null,
+    reembolsado: { agua: 50, iptu: 50, seguro: 25 },
   })
   assert.equal(result.resumo.repasseApurado, 1_650)
   assert.equal(result.ponteFinanceira.receitasEconomicas, 2_000)
@@ -509,6 +513,33 @@ test("mantém despesas retidas separadas da despesa operacional detalhada", () =
   assert.equal(result.ponteFinanceira.repasseDeclarado, 1_650)
   assert.equal(result.ponteFinanceira.diferencaNaoExplicada, 0)
   assert.equal(result.ponteFinanceira.reconciliada, true)
+})
+
+// Canário GM II ago/2026 (feedback de 2026-09-17): o painel exibia R$ 1.203,31
+// de água — o que os inquilinos reembolsaram — no lugar dos R$ 1.827,90 pagos à
+// Cagece, escondendo os R$ 624,59 que o locador bancou.
+test("despesa operacional detalhada vem do documento de despesas, não do reembolso", () => {
+  const result = aggregateIndicadores(makeInput({
+    fechamentos: [makeClosing({
+      analiseCompleta: {
+        ...makeAnalysis(),
+        despesasPagas: [
+          { tipo: "agua", fornecedor: "Cagece", observacao: null, valor: 1_827.9 },
+          { tipo: "seguro", fornecedor: "PORTO SEGURO", observacao: null, valor: 420 },
+        ],
+      },
+    })],
+  }))
+
+  assert.deepEqual(result.resumo.despesaOperacionalDetalhada, {
+    agua: 1_827.9,
+    // Documento lido e sem item de IPTU: zero CONFIRMADO, diferente do null de
+    // quando nao ha documento nenhum.
+    iptu: 0,
+    seguro: 420,
+    total: 2_247.9,
+    reembolsado: { agua: 50, iptu: 50, seguro: 25 },
+  })
 })
 
 test("preserva ausência legada de prestação como null, nunca como zero", () => {

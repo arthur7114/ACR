@@ -3,6 +3,10 @@ import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
 import {
+  recortarDespesaOperacional,
+  type RecorteDespesaOperacional,
+} from "./fechamento-operacional"
+import {
   esperadoDoMes,
   imoveisCobradosComoIntermediacao,
 } from "./indicadores-deficit-causas"
@@ -83,6 +87,14 @@ export interface IndicadoresVigencyInput extends IndicadoresPairInput {
 }
 
 export interface IndicadoresAnalysisInput {
+  // Itens do documento de despesas (o que SAIU do caixa). Distinto das colunas
+  // de agua/IPTU/seguro dos `totals`, que sao reembolso recebido dos inquilinos.
+  despesasPagas?: Array<{
+    tipo?: string | null
+    fornecedor?: string | null
+    observacao?: string | null
+    valor: number
+  }> | null
   // Campos que a extracao declarou ausentes no documento. Metrica derivada de
   // campo ausente e desconhecida (null), nunca zero confirmado.
   camposAusentes?: string[] | null
@@ -849,6 +861,11 @@ function buildSummary(
       iptu: operational?.iptu ?? null,
       seguro: operational?.seguro ?? null,
       total: operational?.total ?? null,
+      reembolsado: {
+        agua: operational?.reembolsado.agua ?? null,
+        iptu: operational?.reembolsado.iptu ?? null,
+        seguro: operational?.reembolsado.seguro ?? null,
+      },
     },
     repasseApurado: calculatedTransfer,
     repasseComprovado: confirmedTransfer,
@@ -2046,17 +2063,28 @@ function analysisMetric(
   )
 }
 
+// Recorte de agua, IPTU e seguro do que foi PAGO (documento de despesas), com o
+// reembolso recebido dos inquilinos ao lado para comparacao. Os dois ja foram
+// confundidos: o painel lia as colunas de receita e chamava de despesa.
 function sumOperationalExpenses(analyses: IndicadoresAnalysisInput[]) {
   if (analyses.length === 0) return null
-  const agua = sumKnown(analyses.map((analysis) => analysis.totals.total_agua))
-  const iptu = sumKnown(analyses.map((analysis) => analysis.totals.total_iptu))
-  const seguro = sumKnown(analyses.map((analysis) => analysis.totals.total_seguro_incendio))
+  const recortes = analyses.map((analysis) => recortarDespesaOperacional(analysis.despesasPagas))
+  const somaRecorte = (pick: (r: RecorteDespesaOperacional) => number | null) =>
+    sumKnown(recortes.map(pick))
+  const agua = somaRecorte((r) => r.agua)
+  const iptu = somaRecorte((r) => r.iptu)
+  const seguro = somaRecorte((r) => r.seguro)
   const known = [agua, iptu, seguro].filter((value): value is number => value !== null)
   return {
     agua,
     iptu,
     seguro,
     total: known.length === 0 ? null : roundMoney(known.reduce((total, value) => total + value, 0)),
+    reembolsado: {
+      agua: sumKnown(analyses.map((analysis) => analysis.totals.total_agua)),
+      iptu: sumKnown(analyses.map((analysis) => analysis.totals.total_iptu)),
+      seguro: sumKnown(analyses.map((analysis) => analysis.totals.total_seguro_incendio)),
+    },
   }
 }
 

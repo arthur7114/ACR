@@ -171,6 +171,51 @@ export function calcularAluguelRecebidoMedio(
   return { valor: roundMoney(recebido / unidades), unidades, recebido }
 }
 
+export interface DespesaPagaItem {
+  tipo?: string | null
+  fornecedor?: string | null
+  observacao?: string | null
+  valor: number
+}
+
+export interface RecorteDespesaOperacional {
+  agua: number | null
+  iptu: number | null
+  seguro: number | null
+  total: number | null
+}
+
+// Recorte de agua, IPTU e seguro dentro das despesas PAGAS (documento 4).
+//
+// Antes este recorte vinha de `totals.total_agua/_iptu/_seguro_incendio`, que
+// sao as COLUNAS DE RECEITA da prestacao — o que os inquilinos reembolsaram, nao
+// o que saiu do caixa. Em GM II ago/2026 o painel exibia agua R$ 1.203,31
+// (reembolso) enquanto a conta da Cagece paga foi R$ 1.827,90: os R$ 624,59 que
+// o locador bancou nao apareciam em lugar nenhum. O seguro coincidia por acaso.
+//
+// Sem documento de despesas o recorte e DESCONHECIDO (null), nunca zero: zero
+// afirmaria que nada foi pago.
+export function recortarDespesaOperacional(
+  despesas: DespesaPagaItem[] | null | undefined,
+): RecorteDespesaOperacional {
+  if (!despesas || despesas.length === 0) {
+    return { agua: null, iptu: null, seguro: null, total: null }
+  }
+  const acumulado = { agua: 0, iptu: 0, seguro: 0 }
+  for (const item of despesas) {
+    const categoria =
+      CATEGORIA_POR_TIPO[(item.tipo ?? "").toLowerCase()]
+      ?? classificarDespesaFechamento(item.observacao || item.fornecedor || "")
+    if (categoria === "agua_esgoto") acumulado.agua += item.valor
+    else if (categoria === "iptu") acumulado.iptu += item.valor
+    else if (categoria === "seguro") acumulado.seguro += item.valor
+  }
+  const agua = roundMoney(acumulado.agua)
+  const iptu = roundMoney(acumulado.iptu)
+  const seguro = roundMoney(acumulado.seguro)
+  return { agua, iptu, seguro, total: roundMoney(agua + iptu + seguro) }
+}
+
 export function classificarDespesaFechamento(descricao: string): CategoriaDespesaFechamento {
   const text = normalizeText(descricao)
   if (/estorno|revers|duplic|devolu|ajuste|correcao|credito/.test(text)) return "ajustes"

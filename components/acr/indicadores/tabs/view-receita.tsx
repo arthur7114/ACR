@@ -27,6 +27,7 @@ import {
   resolveMetricValue,
   sumKnownValues,
 } from "../lib/presentation"
+import { Hint } from "@/components/acr/hint-tooltip"
 import { EmptyState, Metric, Panel, PanelHeader, StateChip, StatusChip } from "../primitives/dashboard-ui"
 
 export function ViewReceita({ data }: { data: IndicadoresData }) {
@@ -315,16 +316,30 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
           <PanelHeader
             title="Despesa detalhada"
             help={{
-              short: "Recorte de água, IPTU e seguro.",
+              short: "Recorte de água, IPTU e seguro do que foi pago.",
               title: "Despesa detalhada",
-              definition: "Recorte de água, IPTU e seguro dentro das despesas.",
-              limitation: "Não é o total de despesas: outras despesas retidas ficam fora deste recorte.",
+              definition:
+                "Recorte de água, IPTU e seguro dentro das despesas PAGAS (documento de despesas) — o que saiu do caixa, não o que os inquilinos reembolsaram junto com o aluguel.",
+              limitation:
+                "Não é o total de despesas: outras despesas retidas ficam fora deste recorte. Sem documento de despesas o recorte fica desconhecido, nunca zero.",
             }}
           />
           <dl className="divide-y divide-acr-line px-5 sm:px-6">
-            <DetailValue label="Água" value={summary.despesaOperacionalDetalhada.agua} />
-            <DetailValue label="IPTU" value={summary.despesaOperacionalDetalhada.iptu} />
-            <DetailValue label="Seguro" value={summary.despesaOperacionalDetalhada.seguro} />
+            <DetailValue
+              label="Água"
+              value={summary.despesaOperacionalDetalhada.agua}
+              note={notaReembolso(summary.despesaOperacionalDetalhada.agua, summary.despesaOperacionalDetalhada.reembolsado.agua)}
+            />
+            <DetailValue
+              label="IPTU"
+              value={summary.despesaOperacionalDetalhada.iptu}
+              note={notaReembolso(summary.despesaOperacionalDetalhada.iptu, summary.despesaOperacionalDetalhada.reembolsado.iptu)}
+            />
+            <DetailValue
+              label="Seguro"
+              value={summary.despesaOperacionalDetalhada.seguro}
+              note={notaReembolso(summary.despesaOperacionalDetalhada.seguro, summary.despesaOperacionalDetalhada.reembolsado.seguro)}
+            />
             <DetailValue label="Total do recorte" value={summary.despesaOperacionalDetalhada.total} strong />
           </dl>
         </Panel>
@@ -407,10 +422,40 @@ function RankingValue({
   )
 }
 
-function DetailValue({ label, value, strong = false }: { label: string; value: number | null; strong?: boolean }) {
+// Quanto os inquilinos devolveram do que foi pago, e o que sobrou para o
+// locador bancar. Sem a comparacao o painel ja induziu a erro: agua paga de
+// R$ 1.827,90 contra R$ 1.203,31 reembolsados deixa R$ 624,59 no locador.
+function notaReembolso(pago: number | null, reembolsado: number | null) {
+  if (pago === null || reembolsado === null) return undefined
+  const diferenca = Math.round((pago - reembolsado + Number.EPSILON) * 100) / 100
+  const primeira = `Valor pago no documento de despesas: ${formatCurrency(pago)}.`
+  const segunda = `Reembolsado pelos inquilinos: ${formatCurrency(reembolsado)}.`
+  if (Math.abs(diferenca) <= 0.01) return [primeira, segunda, "Integralmente coberto."]
+  return [
+    primeira,
+    segunda,
+    diferenca > 0
+      ? `${formatCurrency(diferenca)} ficaram por conta do locador.`
+      : `${formatCurrency(Math.abs(diferenca))} recebidos a mais do que foi pago.`,
+  ]
+}
+
+function DetailValue({
+  label,
+  value,
+  strong = false,
+  note,
+}: {
+  label: string
+  value: number | null
+  strong?: boolean
+  note?: Array<string | null | undefined | false>
+}) {
   return (
     <div className="flex items-center justify-between gap-3 py-3">
-      <dt className={`text-sm ${strong ? "font-bold text-acr-ink" : "text-acr-muted-2"}`}>{label}</dt>
+      <dt className={`text-sm ${strong ? "font-bold text-acr-ink" : "text-acr-muted-2"}`}>
+        {note ? <Hint lines={note}><span>{label}</span></Hint> : label}
+      </dt>
       <dd className="text-sm font-bold text-acr-ink tabular-nums">{formatCurrency(value)}</dd>
     </div>
   )

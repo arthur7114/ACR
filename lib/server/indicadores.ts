@@ -213,6 +213,25 @@ const calculationAnalysisSchema = z
         repasse_declarado: z.number().nullable().optional(),
       })
       .passthrough(),
+    despesas: z
+      .object({
+        despesas: z
+          .array(
+            z
+              .object({
+                tipo: z.string().nullable().optional(),
+                fornecedor: z.string().nullable().optional(),
+                observacao: z.string().nullable().optional(),
+                valor: z.number(),
+              })
+              .passthrough(),
+          )
+          .nullable()
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
     prestacao: z
       .object({
         // Ambos vivem DENTRO de prestacao no JSON persistido.
@@ -645,11 +664,18 @@ function parseCalculationAnalysis(
 ): IndicadoresAnalysisInput | null {
   const parsed = calculationAnalysisSchema.safeParse(value)
   if (!parsed.success) return null
-  const { totals, prestacao } = parsed.data
+  const { totals, prestacao, despesas } = parsed.data
 
   return {
     camposAusentes: prestacao?.campos_ausentes ?? null,
     secoesIdentificadas: prestacao?.plano_extracao?.secoes_identificadas ?? null,
+    despesasPagas:
+      despesas?.despesas?.map((item) => ({
+        tipo: item.tipo ?? null,
+        fornecedor: item.fornecedor ?? null,
+        observacao: item.observacao ?? null,
+        valor: item.valor,
+      })) ?? null,
     totals: {
       total_receitas: totals.total_receitas,
       total_comissoes: totals.total_comissoes,

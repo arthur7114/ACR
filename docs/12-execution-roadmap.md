@@ -2670,6 +2670,39 @@ confirmação, não ajuste de rótulo.
 **Testes.** `lib/indicadores-deficit-causas.test.ts` (8 casos). Suíte 616/616,
 lint e tipos limpos.
 
+## 2026-09-17 — "Despesa detalhada" mostrava reembolso, não despesa
+
+**Feedback (print, GM II ago/2026).** "Essas despesas estão cobrindo o que de
+fato é despesa?", com seta do documento de despesas para o painel.
+
+**Não estavam.** O painel lia `totals.total_agua/_iptu/_seguro_incendio`, que são
+as colunas de RECEITA da prestação — o reembolso que vem junto do aluguel:
+
+| | Painel exibia | Documento pagou |
+|---|---|---|
+| Água | R$ 1.203,31 (reembolso) | R$ 1.827,90 (Cagece) |
+| IPTU | R$ 26,56 (reembolso) | R$ 0,00 |
+| Seguro | R$ 420,00 | R$ 420,00 (3 Porto Seguro) |
+
+O seguro batia por coincidência — pago igual a reembolsado —, o que fazia o erro
+passar despercebido. A água escondia **R$ 624,59 que o locador bancou**.
+
+**Correção.** `recortarDespesaOperacional` (em `lib/fechamento-operacional.ts`)
+classifica os itens do documento de despesas pela mesma regra que a Revisão já
+usava, e `sumOperationalExpenses` passa a consumi-la. O documento de despesas
+entra no input dos indicadores (`despesasPagas`), que antes só carregava o total.
+
+Sem documento, o recorte é **desconhecido** (nunca zero). Com documento lido e
+sem item da categoria, é **zero confirmado**. O reembolso virou tooltip da linha,
+com pago, reembolsado e o que ficou por conta do locador.
+
+**Efeito medido (validado no app).** GM II ago/2026: Água R$ 1.827,90, IPTU
+R$ 0,00, Seguro R$ 420,00, total do recorte R$ 2.247,90 — igual ao total de
+despesas do fechamento.
+
+**Testes.** Dois casos em `lib/indicadores-aggregation.test.ts` (com e sem
+documento). Suíte 617/617, lint e tipos limpos.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

@@ -129,11 +129,23 @@ export interface IndicadoresSummary {
   comissaoAdministracao: number | null
   comissaoIntermediacao: number | null
   despesasRetidas: number | null
+  /**
+   * Recorte de agua, IPTU e seguro do que foi PAGO (documento de despesas).
+   * `reembolsado` traz o mesmo recorte do lado da receita — o que os inquilinos
+   * devolveram junto com o aluguel. Os dois ja foram confundidos: o painel lia
+   * a receita e chamava de despesa (GM II ago/2026: exibia R$ 1.203,31 de agua
+   * reembolsada no lugar dos R$ 1.827,90 pagos a Cagece).
+   */
   despesaOperacionalDetalhada: {
     agua: number | null
     iptu: number | null
     seguro: number | null
     total: number | null
+    reembolsado: {
+      agua: number | null
+      iptu: number | null
+      seguro: number | null
+    }
   }
   repasseApurado: number | null
   repasseComprovado: number | null
