@@ -2711,3 +2711,65 @@ Ao final de cada ciclo, adicione uma entrada no historico e atualize:
 - `Proxima acao recomendada`;
 - tabela `Progresso por etapa`;
 - `Decisoes registradas`, quando houver decisao nova.
+
+## 2026-09-17 — Seguros sem dono no popover de despesas
+
+**Feedback (print, GM II ago/2026, ponto #9).** Três seguros "PORTO SEGURO
+COMPANHIA DE SEGUROS GERAIS", R$ 141,04 / 139,83 / 139,13, sem dizer de qual
+apto é cada um.
+
+**O apto existia e se perdia.** A prestação diz "SEGURO APTO 12 · R$ 141,04",
+"SEGURO APTO 17 · R$ 139,83", "SEGURO APTO 26 · R$ 139,13" em OUTRAS COMISSÕES
+E DESPESAS. `desdobrarDespesasFechamento` preferia o documento de despesas
+(fonte do que saiu do caixa) e descartava o resumo inteiro — junto com o apto.
+
+**Correção (`lib/fechamento-operacional.ts`).** `unidadeDaDescricao` lê
+"APTO 12", "SALA 03", "GALPÃO 02" da descrição; `unidadePorValorDoResumo` une
+resumo e documento pelo valor exato em centavos. Valor repetido em aptos
+diferentes fica `null` (dois seguros de R$ 140,00 não permitem dizer qual é de
+qual). O popover exibe "apto 12 · Referência: …". 4 testes novos.
+
+## 2026-09-17 — 27 dos 35 alertas de "divergência" eram falsos
+
+**Feedback (prints, GM I e Maracanaú ago/2026, pontos #10, #11, #14).** "A soma
+da coluna Total é R$ 10.011,92, mas o consolidado informa R$ 12.348,82. O
+correto pelo recálculo é R$ 10.011,92. Verifique manualmente." — em documento
+certo.
+
+**Escopo.** O consolidado da prestação não tem escopo único: em GM I e
+Maracanaú cobre linhas **+ acordos e rescisões** (10.011,92 + 2.336,88 =
+12.348,80); em GM II cobre só as linhas. Medido nos 31 fechamentos
+(`compareTotal` contra `varredura.json`):
+
+| Classe | Fechamentos | Antes | Agora |
+|---|---|---|---|
+| Consolidado inclui acordos | GM I jun/ago, Maracanaú jun/jul, Terreno Castelão mai | alerta | passa, nomeando os dois escopos |
+| Centavos de arredondamento (R$ 0,01–0,05) | Castelão I, GM I mai, GM II mai/jun/ago, LOCMAIS | alerta acusando o documento | passa, nomeando os centavos |
+| Nenhum escopo explica | Maracanaú mai (R$ 279,99) e ago (R$ 123,33–403,35), Castelão I ago (R$ 804–1.443) | alerta | alerta, apontando o escopo mais próximo |
+
+**Correção (`lib/server/package-rechecks.ts`).** `compareTotal` recebe os
+acordos do mês (`totaisDosAcordos`: resolvidos, sem intermediação) e avalia em
+ordem: linhas dentro de R$ 0,01 → linhas dentro de R$ 1,00 (arredondamento) →
+linhas + acordos dentro de R$ 1,00 → alerta com o escopo mais próximo. O limite
+de R$ 1,00 cai no meio de um vão: maior arredondamento real R$ 0,05, menor
+divergência real R$ 123,33. 4 canários novos.
+
+## 2026-09-17 — Água dos acordos: o prompt pedia, o schema proibia
+
+**Feedback (print, GM II ago/2026, ponto #12).** Coluna ÁGUA "–" e seta no
+principal R$ 790,33, onde o documento imprime água R$ 74,70 e total R$ 894,18
+(790,33 + 27,58 + 74,70 + 1,57).
+
+**Causa.** O JSON Schema de `acordos_rescisoes_recebidos` em
+`lib/server/analyze-prestacao.ts` não tinha `agua` (`additionalProperties:
+false`), embora o prompt do agente mandasse preencher. O modelo escreveu
+"ÁGUA: R$ 74,70" na observação. Na carteira: 4 dos 41 acordos, todos GM II
+ago/2026 (Luana e os três intermediados).
+
+**Correção.** Schema ganha `agua` (futuro). `aguaDeclarada(item)` em
+`lib/recebimentos-extraordinarios.ts` lê o campo ou, na falta, a marca da
+observação — fallback permanente, porque os fechamentos gravados ficam nesse
+formato. `parseTaggedMoney` passa a ignorar acentos. Em acordo/atraso/rescisão
+os encargos derivados somam IPTU + água + seguro (antes só IPTU). A Revisão usa
+`aguaDeclarada` na célula e no rodapé. 3 canários novos; GM II ago/2026 exibe
+R$ 74,70 sem reprocessar.

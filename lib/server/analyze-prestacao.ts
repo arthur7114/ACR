@@ -108,6 +108,7 @@ export const prestacaoJsonSchema = {
           "aluguel",
           "garagem",
           "ajuste",
+          "agua",
           "iptu",
           "seguro_incendio",
           "total_recebido",
@@ -127,6 +128,11 @@ export const prestacaoJsonSchema = {
           aluguel: { type: ["number", "null"] },
           garagem: { type: ["number", "null"] },
           ajuste: { type: ["number", "null"] },
+          // A secao de acordos/rescisoes imprime a coluna AGUA como as linhas
+          // regulares. Sem o campo no schema o modelo so podia registrar o valor
+          // no texto da observacao ("AGUA: R$ 74,70") e a tela exibia "-"
+          // (GM II ago/2026, apto 7 — feedback do cliente em 2026-09-17).
+          agua: { type: ["number", "null"] },
           iptu: { type: ["number", "null"] },
           seguro_incendio: { type: ["number", "null"] },
           total_recebido: { type: ["number", "null"] },

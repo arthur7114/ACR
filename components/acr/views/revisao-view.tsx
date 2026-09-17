@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
 import {
+  aguaDeclarada,
   resolverRecebimentoLegado,
   resolverRecebimentosLegados,
 } from "@/lib/recebimentos-extraordinarios"
@@ -442,6 +443,11 @@ function competenciaParaMesAno(competencia: string | null | undefined): string |
   return null
 }
 
+// Componente monetario opcional de uma linha: "-" quando o documento nao o traz.
+function formatComponente(value: number | null | undefined) {
+  return typeof value === "number" ? formatBRL(value) : "-"
+}
+
 function formatPercent(value: number | null | undefined) {
   if (typeof value !== "number") return "-"
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)}%`
@@ -763,7 +769,7 @@ export function RevisaoView({
   const acordosComponentes = {
     aluguel: somaAcordos((item) => item.aluguel),
     garagem: somaAcordos((item) => item.garagem),
-    agua: somaAcordos((item) => item.agua),
+    agua: somaAcordos(aguaDeclarada),
     iptu: somaAcordos((item) => item.iptu),
     seguro: somaAcordos((item) => item.seguro_incendio),
   }
@@ -1645,7 +1651,7 @@ export function RevisaoView({
                           cliente confere acordo/rescisão coluna a coluna contra o documento. */}
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.aluguel === "number" ? formatBRL(item.aluguel) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.garagem === "number" ? formatBRL(item.garagem) : "-"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.agua === "number" ? formatBRL(item.agua) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatComponente(aguaDeclarada(item))}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.iptu === "number" ? formatBRL(item.iptu) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{typeof item.seguro_incendio === "number" ? formatBRL(item.seguro_incendio) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatBRL(item.valor)}</td>

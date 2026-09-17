@@ -375,6 +375,28 @@ Estados e acoes relevantes:
 - O reembolso não sumiu: virou tooltip na própria linha, com o valor pago, o reembolsado e quanto ficou por conta do locador.
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — o apto de cada seguro chega à tela (2026-09-17)
+
+- Ponto alterado: no popover de "Outras despesas", cada item do documento de despesas passa a exibir a **unidade** ("apto 12 · Referência: …") quando a prestação a informa.
+- Por que: o documento de despesas traz só fornecedor e apólice ("PORTO SEGURO COMPANHIA DE SEGUROS GERAIS"); quem diz de quem é cada seguro é o resumo "OUTRAS COMISSÕES E DESPESAS" da prestação ("SEGURO APTO 12 · R$ 141,04"). O desdobramento preferia o documento de despesas e descartava o resumo inteiro — Grand Messejana II ago/2026 mostrava três seguros idênticos (ponto #9 do feedback de 2026-09-17).
+- Regra: a união é pelo **valor exato em centavos**. Valor repetido em aptos diferentes fica **desconhecido** (sem unidade), nunca chutado. A unidade escrita na própria despesa (observação/endereço) tem precedência.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — o total do documento tem dois escopos (2026-09-17)
+
+- Ponto alterado: as validações "Total das linhas de receitas / comissões / repasse" comparavam a soma das linhas da vigência com o consolidado do documento. Passam a aceitar **dois escopos**: só as linhas, ou linhas **mais acordos e rescisões recebidos no mês** — nesta ordem, o segundo só quando o primeiro não explica.
+- Por que: em Grand Messejana I e Grand Maracanaú o consolidado inclui os acordos; a validação acusava "divergência" de milhares de reais em documento correto e pedia conferência manual (pontos #10, #11 e #14 do feedback). Em GM II o consolidado cobre só as linhas — por isso não dá para somar os acordos sempre. Nos 31 fechamentos da carteira, **27 dos 35 alertas eram falsos**; os 8 que sobram (Maracanaú mai e ago/2026, Castelão I ago/2026) nenhum escopo explica e continuam em alerta, agora apontando o escopo mais próximo.
+- Regra de centavos: diferença **até R$ 1,00** entre o consolidado e a soma das linhas é arredondamento do documento e **passa** com a diferença nomeada ("bate a menos de R$ 0,04 de arredondamento do documento. Nenhum valor precisa ser corrigido."). A frase "o correto pelo recálculo é…" saiu: acusava o documento por centavos (GM II ago/2026, R$ 0,04 — ponto #13).
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — água dos acordos e rescisões (2026-09-17)
+
+- Ponto alterado: a coluna ÁGUA da tabela "Acordos e rescisões recebidos no mês" mostrava "–" onde o documento imprime valor (GM II ago/2026: apto 7, R$ 74,70; aptos 3, 8 e 23, R$ 67,70).
+- Por que: o schema enviado ao modelo **não tinha o campo `agua`** nesses itens (as linhas regulares têm). O prompt pedia o campo, o schema proibia — o modelo só podia escrever "ÁGUA: R$ 74,70" na observação. Ponto #12 do feedback ("faltando valores").
+- Correção em duas frentes: o schema ganhou `agua` (extrações futuras) e a leitura passa a recuperar o valor marcado na observação quando o campo não veio (fechamentos já gravados exibem certo **sem reprocessar**). O campo estruturado tem precedência; sem marca, continua desconhecido — nunca zero.
+- Efeito colateral corrigido: em acordo/atraso/rescisão sem `total_recebido`, o total derivado passa a somar água e seguro (790,33 + 27,58 + 74,70 + 1,57 = 894,18, o TOTAL impresso). Na intermediação a água entra no total e no repasse, não na base percentual.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

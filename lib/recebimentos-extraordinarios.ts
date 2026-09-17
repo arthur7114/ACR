@@ -139,6 +139,28 @@ export type RecebimentoLegado = { tipo: AcordoRescisaoRecebido["tipo"] } & {
   [K in keyof Omit<AcordoRescisaoRecebido, "tipo">]?: AcordoRescisaoRecebido[K] | null
 }
 
+// Agua do acordo/rescisao como o documento a imprime. O campo estruturado tem
+// precedencia; na falta dele, o valor marcado na observacao ("AGUA: R$ 74,70").
+//
+// Ate 2026-09-17 o schema enviado ao modelo nao tinha `agua` nos itens da
+// secao de acordos/rescisoes, embora o prompt pedisse o campo: o modelo so
+// podia registrar o valor no texto da observacao, e a Revisao exibia "-" na
+// coluna AGUA (GM II ago/2026: apto 7, R$ 74,70, e os tres intermediados com
+// R$ 67,70). Os fechamentos ja persistidos continuam nesse formato — por isso a
+// leitura da observacao fica como fallback permanente, nao como migracao.
+export function aguaDeclarada(item: Pick<RecebimentoLegado, "agua" | "observacao">): number | null {
+  if (typeof item.agua === "number") return item.agua
+  return parseTaggedMoney(item.observacao ?? "", "agua")
+}
+
+// Soma de componentes opcionais: null so quando NENHUM foi informado, para nao
+// transformar ausencia em zero.
+function somarInformados(...valores: Array<number | null | undefined>): number | null {
+  const informados = valores.filter((valor): valor is number => typeof valor === "number")
+  if (informados.length === 0) return null
+  return roundMoney(informados.reduce((total, valor) => total + valor, 0))
+}
+
 export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtraordinario {
   const valorLegado = item.valor ?? 0
   const base: BaseRecebimento = {
@@ -172,8 +194,8 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
         aluguel: item.aluguel ?? (valorLegado !== 0 ? valorLegado : null),
         garagem: item.garagem ?? null,
         iptu: item.iptu ?? parseTaggedMoney(observacao, "iptu"),
-        seguro: null,
-        outrosEncargos: item.agua ?? null,
+        seguro: item.seguro_incendio ?? null,
+        outrosEncargos: aguaDeclarada(item),
       },
       percentualInformado: item.percentual ?? null,
     }
@@ -186,7 +208,14 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
     tipo: item.tipo,
     principal: valorLegado !== 0 ? valorLegado : null,
     ajuste: item.ajuste ?? null,
-    componentes: { garagem: item.garagem ?? null, encargos: item.iptu ?? null },
+    // Encargos = tudo que o TOTAL impresso soma alem de principal e garagem:
+    // IPTU, agua e seguro. Antes so o IPTU entrava, e um atraso sem
+    // total_recebido derivava um total menor que o do documento (GM II
+    // ago/2026, apto 7: 790,33 + 27,58 + 74,70 + 1,57 = 894,18).
+    componentes: {
+      garagem: item.garagem ?? null,
+      encargos: somarInformados(item.iptu, aguaDeclarada(item), item.seguro_incendio),
+    },
   }
 }
 
@@ -263,7 +292,10 @@ function validarEquacao(totalRecebido: number, comissao: number, repasse: number
 }
 
 function parseTaggedMoney(text: string, label: string): number | null {
-  const match = new RegExp(`${label}[^.;]{0,40}?R\\$\\s*([\\d.]+(?:,\\d{1,2})?)`, "i").exec(text)
+  // Sem acentos dos dois lados: o documento escreve "ÁGUA: R$ 74,70" e o
+  // rotulo procurado e "agua".
+  const semAcentos = text.normalize("NFD").replace(/[̀-ͯ]/g, "")
+  const match = new RegExp(`${label}[^.;]{0,40}?R\\$\\s*([\\d.]+(?:,\\d{1,2})?)`, "i").exec(semAcentos)
   if (!match) return null
   const value = Number(match[1].replace(/\./g, "").replace(",", "."))
   return Number.isFinite(value) ? value : null

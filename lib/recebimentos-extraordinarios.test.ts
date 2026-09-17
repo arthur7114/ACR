@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  aguaDeclarada,
   normalizarItemLegado,
   resolverRecebimento,
   resolverRecebimentoLegado,
@@ -329,4 +330,67 @@ test("em acordo/rescisão a base comissionável é o total pago pelo inquilino",
   if (r.status !== "resolvido") return
   assert.equal(r.baseComissionavel, 848.52)
   assert.equal(r.percentualRealizado, 7)
+})
+
+// Canário GM II ago/2026 (feedback do cliente em 2026-09-17, ponto #12): o
+// schema do modelo não tinha `agua` nos acordos, então o valor foi parar na
+// observação e a coluna ÁGUA da Revisão mostrava "-" onde o documento imprime
+// R$ 74,70 (apto 7, Luana) e R$ 67,70 (aptos 3, 8 e 23, intermediados).
+const LUANA_GM2_AGOSTO = {
+  tipo: "atraso" as const,
+  apto: "7",
+  inquilino: "LUANA ALINE BATISTA",
+  valor: 790.33,
+  aluguel: 790.33,
+  garagem: 27.58,
+  iptu: 1.57,
+  seguro_incendio: 0,
+  comissao: 62.59,
+  repasse: 831.59,
+  competencia_original: "07/2026",
+  competencia_recebimento: "08/2026",
+  observacao: "VIGÊNCIA DE JULHO DE 2026. IPTU (7/12). SEGURO QUITADO. VAGA DE GARAGEM PARA MOTO. ÁGUA: R$ 74,70.",
+  confianca: 0.96,
+}
+
+test("GM II ago/2026: água marcada na observação é lida quando o campo não veio", () => {
+  assert.equal(aguaDeclarada(LUANA_GM2_AGOSTO), 74.7)
+  // Campo estruturado tem precedência sobre o texto.
+  assert.equal(aguaDeclarada({ ...LUANA_GM2_AGOSTO, agua: 70 }), 70)
+  // Sem marca no texto, continua desconhecida — nunca zero.
+  assert.equal(aguaDeclarada({ agua: null, observacao: "IPTU (7/12). SEGURO QUITADO." }), null)
+  assert.equal(aguaDeclarada({ agua: null, observacao: null }), null)
+})
+
+test("GM II ago/2026: sem total_recebido, o atraso deriva o TOTAL do documento com a água", () => {
+  const r = resolverRecebimentoLegado({ ...LUANA_GM2_AGOSTO, total_recebido: null })
+  assert.equal(r.status, "resolvido")
+  if (r.status !== "resolvido") return
+  // 790,33 + 27,58 + 74,70 + 1,57 — exatamente o TOTAL impresso.
+  assert.equal(r.totalRecebido, 894.18)
+  assert.equal(r.repasse, 831.59)
+})
+
+test("GM II ago/2026: intermediação deriva o total da linha incluindo a água da observação", () => {
+  const r = resolverRecebimentoLegado({
+    tipo: "intermediacao",
+    apto: "3",
+    inquilino: "VITOR SOUSA PINTO",
+    valor: 700,
+    aluguel: 700,
+    garagem: 25,
+    iptu: 1.43,
+    comissao: 435,
+    percentual: 60,
+    competencia_original: "07/2026",
+    competencia_recebimento: "08/2026",
+    observacao: "INTERMEDIAÇÕES DE JULHO 2026. IPTU (8/12). SEGURO QUITADO. VAGA DE GARAGEM PARA MOTO. ÁGUA: R$ 67,70.",
+    confianca: 0.96,
+  })
+  assert.equal(r.status, "resolvido")
+  if (r.status !== "resolvido") return
+  assert.equal(r.totalRecebido, 794.13)
+  // A água entra no total e no repasse, mas não na base percentual (60% de 725).
+  assert.equal(r.baseComissionavel, 725)
+  assert.equal(r.repasse, 359.13)
 })
