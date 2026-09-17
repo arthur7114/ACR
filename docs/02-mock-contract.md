@@ -428,6 +428,12 @@ Estados e acoes relevantes:
 - Fechamentos aprovados antes desta data: `scripts/atualizar-cadastro-ocupacao.ts` (dry-run por padrão, `--aplicar` escreve).
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — toda aprovação deixa rastro na tela de Logs (2026-09-17)
+
+- Ponto alterado: ao aprovar um fechamento, além das linhas de `auditoria_correcoes` por unidade, entra uma **notificação** na tela de Logs resumindo o que a aprovação fez no cadastro: "Aprovação Grand Messejana II 08/2026: cadastro atualizado em 11 unidades, 1 reajuste aplicado", com a lista no corpo. Se a atualização do cadastro falhar, a notificação diz "cadastro NÃO atualizado" com o erro e o que fazer. Reajuste que precisou de decisão humana aparece como "pendente".
+- Por que: a API devolvia o resultado, mas a tela de Revisão não o mostra. Uma falha deixava o cadastro velho em silêncio (apontado na validação de 2026-09-17).
+- Onde: `lib/server/aprovacao-log.ts`, chamado no fim de `approveFechamentoForEgestor`. Falha ao gravar o log não desfaz a aprovação.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

@@ -6,6 +6,7 @@ import { EgestorApiError, EgestorClient } from "./egestor-client"
 import { valorTedItemizada } from "@/lib/despesas-locador"
 import { aplicarReajustesDoFechamento, type DecisaoReajuste } from "./reajuste-cadastro"
 import { atualizarCadastroOcupacaoDoFechamento, type MudancaCadastro } from "./cadastro-ocupacao"
+import { registrarLogAprovacao } from "./aprovacao-log"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -123,6 +124,14 @@ export async function approveFechamentoForEgestor(supabase: SupabaseClient, fech
     cadastro = await atualizarCadastroOcupacaoDoFechamento(supabase, fechamentoId, { usuario: "Operador" })
   } catch (falha) {
     cadastroErro = falha instanceof Error ? falha.message : String(falha)
+  }
+  // Tudo o que a aprovacao fez (ou nao conseguiu fazer) no cadastro fica na
+  // tela de Logs. A tela de Revisao nao mostra o retorno desta chamada, e uma
+  // falha aqui ficava invisivel.
+  try {
+    await registrarLogAprovacao(supabase, fechamentoId, { reajustes, cadastro, cadastroErro })
+  } catch (falha) {
+    console.error("[aprovacao] log nao registrado:", falha instanceof Error ? falha.message : falha)
   }
   return { ...data, reajustes, cadastro, cadastroErro }
 }

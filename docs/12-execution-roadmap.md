@@ -2882,3 +2882,25 @@ roda no fim de `approveFechamentoForEgestor`, copiando `status_ocupacao` e
 `inquilino_nome` do snapshot para `imoveis`, com auditoria. Backfill:
 `scripts/atualizar-cadastro-ocupacao.ts`. 5 testes em
 `lib/server/cadastro-ocupacao.test.ts`.
+
+## 2026-09-17 — Ponte financeira de ago/2026 validada; aprovação com rastro nos Logs
+
+**Ponte por unidade (6 fechamentos).** `restoNaoExplicado` = 0 em todos. Cada
+causa nomeada casa com a linha do PDF: intermediação (Castelão 3 e 101 =
+1.340,00; Maracanaú 202 = 400,00; GM II 3, 8 e 23 = 2.100,00), mês proporcional
+de contrato novo (GM II 26 = 185,81 e 12 = 677,42; LOCMAIS Galpão 02 = 578,39
+com isenção de 1.121,61), recebido em unidade vaga por rescisão (Castelão 105
+= 175,19; GM I 17 = 43,87; GM II 11 = 44,59), desconto (Maracanaú 112 = 20,00).
+
+**Achado, não bug — aluguel de contrato novo fora do cadastro.** O proporcional
+declarado permite inferir o aluguel cheio do contrato novo, e ele não bate com
+o cadastro em duas unidades: LOCMAIS Galpão 02 (J Mais) 1.121,61 = 19/31 ×
+**1.830,00**, cadastro em 1.700,00; GM II 26 (Samuel) 474,19 = 21/31 ×
+**700,00**, cadastro em 660,00. Hoje o "contratado" dessas unidades fica
+subestimado até alguém editar o cadastro. Candidato a melhoria: contrato novo
+(intermediação / proporcional) atualiza o aluguel esperado a partir do primeiro
+mês cheio, com a mesma guarda do reajuste.
+
+**Logs.** `registrarLogAprovacao` grava uma notificação por aprovação com o
+resultado do cadastro e do reajuste (sucesso, pendência ou falha). 4 testes em
+`lib/server/aprovacao-log.test.ts`.
