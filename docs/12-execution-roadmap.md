@@ -2773,3 +2773,42 @@ formato. `parseTaggedMoney` passa a ignorar acentos. Em acordo/atraso/rescisão
 os encargos derivados somam IPTU + água + seguro (antes só IPTU). A Revisão usa
 `aguaDeclarada` na célula e no rodapé. 3 canários novos; GM II ago/2026 exibe
 R$ 74,70 sem reprocessar.
+
+## 2026-09-17 — Reajuste do relatório passa a corrigir o cadastro sozinho
+
+**Pedido (print, GM II ago/2026, ponto #7).** "Quando houver atualização
+monetária corrigir automaticamente o valor do cadastro." Relatório da Alive:
+apto 17, André Cassiano, R$ 628,06 → R$ 655,96 (IPCA 4,44%). Cadastro de
+Imóveis: R$ 628,06. Indicadores: "Sem explicação R$ 27,90".
+
+**Estado anterior.** `imovel_vigencias` só era escrita por migrations (a de
+Pompílio jul/2026 aplicou um reajuste à mão, com guarda de valor anterior e
+auditoria). O cadastro dependia do botão "Sincronizar dos fechamentos" ou de
+edição manual.
+
+**Correção (`lib/server/reajuste-cadastro.ts`).** `aplicarReajustesDoFechamento`
+roda no fim de `approveFechamentoForEgestor`:
+
+1. `reajustesAplicaveis` filtra itens com `valor_anterior` e `valor_novo`
+   positivos e diferentes, e texto de reajuste/atualização — a rescisão do
+   apto 11 no mesmo relatório fica fora.
+2. `decidirCadastro`: aplica se o cadastro está no anterior ou vazio;
+   `ja_aplicado` se no novo; `cadastro_divergente` se em outro valor.
+3. `planejarVigencia`: `encerrar_e_abrir` (vigência aberta antes do mês),
+   `atualizar` (já começa no mês), `abrir` (sem vigência), `nada` ou
+   `divergente` (receita variável ou outro valor).
+4. Escreve `imoveis`, `imovel_vigencias` e `auditoria_correcoes`
+   (`imoveis.valor_aluguel_esperado[17]`, 628.06 → 655.96, justificativa com
+   competência e percentual).
+
+Falha não desfaz a aprovação: volta em `reajustes` no retorno. 10 testes
+puros. Dry-run do backfill nos 4 fechamentos aprovados com relatório: GM II
+apto 17 (628,06 → 655,96), Castelão I apto 01 (690,00 → 761,30 a partir de
+07/2026), GM I apto 16 (678,31 → 708,45), LOCMAIS sala 07 (1.400,00 →
+1.462,20 — os R$ 62,20 do ponto #6). Todos com o cadastro ainda no valor
+anterior. Fora do escopo: garagem reajustada (o relatório só a cita em texto).
+
+**Ponto #8 ("melhor colocar intermediação").** Era a linha "Ocupado sem
+recebimento" da cascata carregando os R$ 2.100 de intermediação; resolvido
+em `c5e5f84` — a tela hoje mostra "Cobrado como intermediação R$ 2.100,00" e
+"Ocupado sem recebimento R$ 0,00".

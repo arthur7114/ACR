@@ -4,6 +4,7 @@ import type { PackageAnalysis } from "@/lib/prestacao-types"
 import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-types"
 import { EgestorApiError, EgestorClient } from "./egestor-client"
 import { valorTedItemizada } from "@/lib/despesas-locador"
+import { aplicarReajustesDoFechamento, type DecisaoReajuste } from "./reajuste-cadastro"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -93,7 +94,26 @@ export async function approveFechamentoForEgestor(supabase: SupabaseClient, fech
 
   if (error) throw error
   await logStatusEvento(supabase, fechamentoId, previousStatus, "aprovado", "Operador", "Aprovacao manual do fechamento.")
-  return data
+
+  // Reajuste declarado no relatorio -> cadastro e vigencia do imovel (pedido do
+  // cliente, 2026-09-17). Roda depois da aprovacao porque e ela que da o
+  // documento por bom. Falha aqui nao desfaz a aprovacao: vira item de
+  // resultado para o operador, o cadastro continua corrigivel a mao.
+  let reajustes: DecisaoReajuste[] = []
+  try {
+    reajustes = await aplicarReajustesDoFechamento(supabase, fechamentoId, { usuario: "Operador" })
+  } catch (falha) {
+    reajustes = [
+      {
+        apto: "-",
+        valorAnterior: 0,
+        valorNovo: 0,
+        resultado: "cadastro_divergente",
+        detalhe: `Reajuste não aplicado ao cadastro: ${falha instanceof Error ? falha.message : String(falha)}`,
+      },
+    ]
+  }
+  return { ...data, reajustes }
 }
 
 export async function generateEgestorPreview(supabase: SupabaseClient, fechamentoId: string) {

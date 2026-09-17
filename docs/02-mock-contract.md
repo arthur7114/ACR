@@ -397,6 +397,15 @@ Estados e acoes relevantes:
 - Efeito colateral corrigido: em acordo/atraso/rescisão sem `total_recebido`, o total derivado passa a somar água e seguro (790,33 + 27,58 + 74,70 + 1,57 = 894,18, o TOTAL impresso). Na intermediação a água entra no total e no repasse, não na base percentual.
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — reajuste do relatório atualiza o cadastro na aprovação (2026-09-17)
+
+- Ponto alterado: ao **aprovar** um fechamento cujo relatório de reajuste declara "de → para" de aluguel (ex.: GM II ago/2026, apto 17: R$ 628,06 → R$ 655,96, IPCA 4,44%), o sistema atualiza `imoveis.valor_aluguel_esperado` (tela de Imóveis) e a vigência contratual (`imovel_vigencias`, que os Indicadores usam como "contratado"): encerra a vigência anterior no mês anterior ao reajuste e abre outra com o valor novo. Cada troca vai para `auditoria_correcoes`.
+- Por que: pedido do cliente — "Quando houver atualização monetária corrigir automaticamente o valor do cadastro." O cadastro ficava no valor antigo e os Indicadores mostravam a diferença como "Sem explicação" (GM II ago/2026: R$ 27,90; LOCMAIS ago/2026: R$ 62,20, ponto #6 do feedback).
+- Guarda — nenhuma sobrescrita implícita: só troca quando o cadastro ainda está no valor **anterior** que o documento declara (ou vazio). Já no valor novo: nada a fazer. Em qualquer outro valor: não mexe e devolve `cadastro_divergente` para decisão humana. Vigência de receita variável (temporada) ou em outro valor também não é tocada. Rescisões e outros eventos do mesmo relatório (sem valor anterior) ficam de fora.
+- Quando: na aprovação, nunca na extração — a leitura por IA pode errar; a aprovação é o momento em que alguém deu o documento por bom. Falha na aplicação não desfaz a aprovação; volta no resultado.
+- Fechamentos aprovados antes desta data: `scripts/aplicar-reajustes-cadastro.ts` (dry-run por padrão, `--aplicar` escreve) usa a mesma função e as mesmas guardas.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:
