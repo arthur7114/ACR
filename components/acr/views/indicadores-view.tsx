@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react"
-import { AlertTriangle, CalendarDays, LoaderCircle, RefreshCw } from "lucide-react"
+import { AlertTriangle, CalendarDays, Download, LoaderCircle, RefreshCw } from "lucide-react"
 import type { IndicadoresData, IndicadoresFiltroOption } from "@/lib/indicadores-types"
 import { cn } from "@/lib/utils"
 import { EmptyState } from "../indicadores/primitives/dashboard-ui"
@@ -162,7 +162,10 @@ export function IndicadoresView() {
             </p>
           )}
         </div>
-        <FiltersBar data={data} filters={filters} onChange={changeFilter} disabled={isLoading && !data} />
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+          <FiltersBar data={data} filters={filters} onChange={changeFilter} disabled={isLoading && !data} />
+          <ExportPdfLink filters={filtersWithDefaultCompetence(filters, data)} disabled={!data || isLoading} />
+        </div>
       </header>
 
       {isLoading && !data && <DashboardSkeleton />}
@@ -219,6 +222,32 @@ export function IndicadoresView() {
         </>
       )}
     </div>
+  )
+}
+
+// Mesmo recorte da tela, em PDF (Anexo I, 5b). O link leva os filtros atuais para
+// /api/indicadores/pdf; o servidor monta o relatorio do mesmo objeto que esta na tela.
+function ExportPdfLink({ filters, disabled }: { filters: Filters; disabled: boolean }) {
+  const params = new URLSearchParams()
+  if (filters.competencia) params.set("competencia", filters.competencia)
+  if (filters.empresaId) params.set("empresaId", filters.empresaId)
+  if (filters.empreendimentoId) params.set("empreendimentoId", filters.empreendimentoId)
+  if (filters.imovelId) params.set("imovelId", filters.imovelId)
+  const className = cn(
+    "inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-acr-green px-3 text-sm font-semibold text-acr-green-strong transition-colors motion-reduce:transition-none hover:bg-acr-green-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green",
+    disabled && "pointer-events-none opacity-50",
+  )
+  return (
+    <a
+      href={`/api/indicadores/pdf?${params.toString()}`}
+      target="_blank"
+      rel="noopener"
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : undefined}
+      className={className}
+    >
+      <Download aria-hidden="true" className="size-4" /> Exportar PDF
+    </a>
   )
 }
 

@@ -406,6 +406,15 @@ Estados e acoes relevantes:
 - Fechamentos aprovados antes desta data: `scripts/aplicar-reajustes-cadastro.ts` (dry-run por padrão, `--aplicar` escreve) usa a mesma função e as mesmas guardas.
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — exportação dos Indicadores em PDF (2026-09-17)
+
+- Ponto alterado: a tela de Indicadores ganha o botão **"Exportar PDF"** ao lado dos filtros. Ele abre `/api/indicadores/pdf` com o mesmo recorte da tela (competência, empresa, empreendimento, imóvel) e devolve um PDF gerado no servidor: visão geral (os 12 cartões), situação das unidades, as duas cascatas da aba Receita, acordos e rescisões, despesa detalhada, evolução mensal, imóveis que pedem atenção e, em página paisagem, o detalhamento por imóvel. Nome do arquivo: `indicadores-AAAA-MM-<escopo>.pdf`.
+- Por que: Anexo I do contrato, item 5b — "possibilidade de exportação de relatório em PDF". Era o único item do módulo de indicadores ainda não entregue.
+- Regra: o PDF lê o **mesmo objeto** que a tela recebe de `/api/indicadores` e usa os mesmos rótulos e formatações — desconhecido sai como "—", nunca zero. Nada é recalculado na exportação (`lib/indicadores-relatorio.ts` é puro e testado; `lib/server/indicadores-pdf.tsx` só desenha).
+- Rentabilidade aparece como "—" com a nota "sem valor do imóvel cadastrado", como na tela (decisão do cliente em 16/09).
+- Removido: o botão "Exportar relatório" da tela de Revisão, que nunca teve função. Exportar a revisão não está no contrato; o cliente confirmou que não precisa.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

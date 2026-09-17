@@ -2812,3 +2812,43 @@ anterior. Fora do escopo: garagem reajustada (o relatório só a cita em texto).
 recebimento" da cascata carregando os R$ 2.100 de intermediação; resolvido
 em `c5e5f84` — a tela hoje mostra "Cobrado como intermediação R$ 2.100,00" e
 "Ocupado sem recebimento R$ 0,00".
+
+## 2026-09-17 — Indicadores em PDF: o item 5b do contrato
+
+**Contexto.** Auditoria do Anexo I do contrato contra o que está em produção:
+o único item do módulo de indicadores sem entrega era o 5b, "possibilidade de
+exportação de relatório em PDF". A tela de Revisão tinha um botão "Exportar
+relatório" sem função nenhuma (nem `onClick`); o cliente confirmou que não
+precisa dele — "mas o dos indicadores faz sentido".
+
+**Decisão: PDF de servidor, não "imprimir a página".** `window.print()` de uma
+tela com abas e gráficos em canvas produz recorte parcial e depende do
+navegador do cliente. O relatório é montado em duas camadas:
+
+1. `lib/indicadores-relatorio.ts` — **puro**. Recebe o `IndicadoresData` que a
+   tela já recebe de `/api/indicadores` e devolve seções com textos prontos:
+   12 KPIs (mesmos valores e notas da visão geral, via `resolveMetricValue`,
+   `describeConference` etc. de `presentation.ts`), distribuição de ocupação,
+   as duas cascatas da aba Receita linha a linha, acordos e rescisões, despesa
+   detalhada (pago × reembolsado), evolução mensal, ranking de atenção e
+   detalhamento por imóvel (com a coluna de reajuste). 5 testes cobrem KPIs,
+   cascatas, "—" para desconhecido, reajuste/ocupação e nome do arquivo.
+2. `lib/server/indicadores-pdf.tsx` — `@react-pdf/renderer` desenhando o
+   modelo com DM Sans (TTFs em `public/fonts/`) e a paleta da ACR. A4 retrato
+   para o painel, A4 paisagem para o detalhamento; cabeçalho e rodapé fixos
+   com "Página N de M"; blocos de duas colunas não se partem entre páginas.
+
+`app/api/indicadores/pdf/route.ts` (Node runtime, `force-dynamic`) aceita os
+mesmos parâmetros de `/api/indicadores` e devolve `application/pdf` inline com
+`indicadores-AAAA-MM-<escopo>.pdf`. O botão "Exportar PDF" em
+`indicadores-view.tsx` monta o link a partir dos filtros atuais (competência
+cai na padrão da API quando o usuário não escolheu). `@react-pdf/renderer`
+entra em `serverExternalPackages` para o Turbopack não empacotá-lo.
+
+**Verificado** em GM II ago/2026 (4 páginas, 27 imóveis) e na carteira inteira
+(8 páginas, 114 imóveis): resultado R$ 14.001,78 / R$ 60.233,75, "Confere com
+o banco", cascatas fechando em R$ 0,00 — os mesmos números da tela.
+
+**Fora do escopo.** Gráficos (heat map, séries) não vão para o PDF; as tabelas
+carregam os mesmos dados. Rentabilidade segue "—" até o cliente cadastrar o
+valor dos imóveis.

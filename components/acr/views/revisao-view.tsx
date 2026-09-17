@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Building2,
   CheckCircle,
-  Download,
   Droplet,
   FileText,
   History,
@@ -2398,10 +2397,6 @@ export function RevisaoView({
           Voltar à lista
         </Link>
         <div className="flex gap-2">
-          <button className="h-10 px-4 rounded-lg bg-white border border-[#D5DDD6] text-[#3D4F3F] text-[14px] font-medium hover:bg-[#EEF1EE] inline-flex items-center gap-2 transition-colors">
-            <Download size={14} />
-            Exportar relatório
-          </button>
           <button
             onClick={() => runEgestorAction("approve")}
             disabled={hasBlocking || isApproved || egestorAction !== "idle"}
