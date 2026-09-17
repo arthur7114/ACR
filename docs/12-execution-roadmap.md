@@ -2619,6 +2619,57 @@ entrou na allowlist de `lib/recebimentos-contrato.test.ts` com a justificativa
 de uso não financeiro (lê apenas `tipo` e `apto`). Suíte 606/606, canários 6/6,
 lint e tipos limpos.
 
+## 2026-09-17 — Indicadores: R$ 2.100 de "perda" que era dinheiro no caixa
+
+**Feedback (print da tela de Indicadores, GM II ago/2026).** "Esses valores não
+batem", apontando as linhas destacadas da cascata "Do contrato ao recebido".
+
+**O que os números eram de verdade.**
+
+| Linha | Valor | O que é |
+|---|---|---|
+| Ocupado sem recebimento | R$ 2.100,00 | os 3 aptos de intermediação (3, 8 e 23, R$ 700 cada) |
+| Ocupado com recebimento parcial | R$ 863,23 | 2 contratos novos proporcionais (Samuel 21 dias, Francisco 1 dia) |
+| Recebido em imóvel vago | R$ 44,59 | rescisão do Alfredo em 02/08 — estava certo |
+
+O primeiro é o mesmo erro da Revisão, um andar acima: a cascata não sabia da
+seção de intermediações e lia as três linhas zeradas como "inquilino nomeado que
+não pagou o mês", enquanto o dinheiro (R$ 2.357,39) aparecia dois painéis abaixo
+em "Intermediações 3". O segundo comparava o aluguel contratado inteiro contra um
+mês que nem era devido inteiro — 700/31 = 22,58 é exatamente o que Francisco
+pagou.
+
+**Correção (`lib/indicadores-deficit-causas.ts`, novo).** `buildRentRealization`
+passa a decompor o déficit das unidades ocupadas em quatro parcelas, duas delas
+com nome próprio e explicitamente **não** perda: `cobradoComoIntermediacao` e
+`mesProporcionalContratoNovo`. Elas saem de dentro das duas linhas antigas, então
+a identidade da cascata e o resíduo `restoNaoExplicado` não mudam de valor.
+
+A unidade intermediada é reconhecida pela seção do próprio fechamento (casa por
+inquilino, com o número do apto como segunda via — a seção não traz `imovel_id`).
+O proporcional só existe quando a linha **declara** o período; nunca é inferido
+por comparação de valores, e esperado desconhecido segue desconhecido.
+
+**Efeito medido (validado no app).** GM II ago/2026: Cobrado como intermediação
+R$ 2.100,00, Contrato novo · mês proporcional R$ 863,23, **Ocupado sem
+recebimento R$ 0,00 e Ocupado com recebimento parcial R$ 0,00**. Recebido da
+competência (R$ 11.958,68), recebido no mês (R$ 12.852,86) e "Sem explicação"
+(R$ 27,90) inalterados. Na carteira inteira de ago/2026 as duas linhas de perda
+também zeram: R$ 3.840,00 de intermediação e R$ 1.441,62 de mês proporcional
+explicam todo o déficit do mês.
+
+**Não muda, e é de propósito:** `aluguel_esperado` do snapshot continua o
+contratado (fato do cadastro, não do mês), a inadimplência do mês continua com a
+mesma base, e o selo "fora do previsto" segue armado pelo mesmo
+`valoresSemClassificacao` — nomear o dinheiro não desarma o portão.
+
+**Aberto:** o selo ainda diz "R$ 2.890,74 fora do previsto" numa cascata onde
+nada mais é perda. Trocar o que o selo lê é decisão sobre o portão de
+confirmação, não ajuste de rótulo.
+
+**Testes.** `lib/indicadores-deficit-causas.test.ts` (8 casos). Suíte 616/616,
+lint e tipos limpos.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

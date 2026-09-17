@@ -260,6 +260,19 @@ export interface IndicadoresRentRealization {
   descontos: number | null
   ajustesClassificados: number | null
   /**
+   * Parcela do deficit das unidades ocupadas cuja competencia foi cobrada na
+   * secao de intermediacoes do fechamento. NAO e perda: o dinheiro entrou por
+   * la (GM II ago/2026, aptos 3, 8 e 23). Sai de dentro de
+   * `ocupadoSemRecebimento`, que antes a chamava de inquilino que nao pagou.
+   */
+  cobradoComoIntermediacao: number | null
+  /**
+   * Parcela do deficit explicada por periodo proporcional DECLARADO na linha
+   * ("PROPORCIONAL DE 21 DIAS"). NAO e perda: o mes cheio nunca foi devido.
+   * Sai de dentro de `ocupadoRecebimentoParcial` e de `ocupadoSemRecebimento`.
+   */
+  mesProporcionalContratoNovo: number | null
+  /**
    * Deficit de unidades OCUPADAS que nao receberam nada na competencia.
    * `status_ocupacao` descreve ocupacao, nao pagamento: inquilino nomeado que
    * nao pagou segue "ocupado" e nao entra nem em vacancia nem em

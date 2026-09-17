@@ -2,6 +2,10 @@ import { normalizeCodigoImovel } from "./codigo-imovel"
 import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
+import {
+  esperadoDoMes,
+  imoveisCobradosComoIntermediacao,
+} from "./indicadores-deficit-causas"
 import type {
   IndicadoresAccumulatedCoverage,
   IndicadoresAttentionItem,
@@ -285,7 +289,16 @@ export function aggregateIndicadores(input: IndicadoresAggregationInput): Indica
     appPropertyIds,
   )
   const bridge = buildFinancialBridge(summary)
-  const realization = buildRentRealization(currentSnapshots, contractedRent)
+  const realization = buildRentRealization(
+    currentSnapshots,
+    contractedRent,
+    input.competencia,
+    intermediadasDosFechamentos(
+      currentSnapshots,
+      eligibleClosings.map((closing) => closing.analiseCompleta),
+      input.imoveisAtivos,
+    ),
+  )
   const eligibleHistoricalIds = new Set(
     scope.closings
       .filter(
@@ -936,9 +949,26 @@ function buildFinancialBridge(summary: IndicadoresSummary): IndicadoresFinancial
   }
 }
 
+// Imoveis cuja competencia foi cobrada na secao de intermediacoes dos
+// fechamentos daquele mes. A secao traz `apto` e `inquilino`, nunca `imovel_id`.
+function intermediadasDosFechamentos(
+  snapshots: IndicadoresSnapshotInput[],
+  analyses: Array<IndicadoresAnalysisInput | null>,
+  imoveis: IndicadoresPropertyInput[],
+): Set<string> {
+  const intermediacoes = analyses.flatMap(
+    (analysis) => analysis?.prestacao?.acordos_rescisoes_recebidos ?? [],
+  )
+  if (intermediacoes.length === 0) return new Set()
+  const unidadePorImovel = new Map(imoveis.map((imovel) => [imovel.id, imovel.unidade]))
+  return imoveisCobradosComoIntermediacao(snapshots, intermediacoes, unidadePorImovel)
+}
+
 function buildRentRealization(
   snapshots: IndicadoresSnapshotInput[],
   contracted: number | null,
+  competencia: string,
+  intermediadas: Set<string> = new Set(),
 ): IndicadoresRentRealization {
   const received = sumKnown(
     snapshots.map(currentRent),
@@ -1009,17 +1039,48 @@ function buildRentRealization(
   // nome proprio. Rescisao fica de fora porque ja vive em `ajustesClassificados`.
   const naoOcupados = new Set<OccupancyStatus>(["vago", "inadimplente", "em_rescisao"])
   const ocupados = snapshots.filter((snapshot) => !naoOcupados.has(snapshot.statusOcupacao))
-  const deficitOcupado = (apenasSemRecebimento: boolean) =>
-    ocupados.reduce((total, snapshot) => {
-      const esperado = snapshot.aluguelEsperado
-      if (esperado === null) return total
-      const recebido = currentRent(snapshot) ?? 0
-      if (apenasSemRecebimento ? recebido !== 0 : recebido === 0) return total
-      return total + Math.max(0, esperado - recebido - (snapshot.desconto ?? 0))
-    }, 0)
+  // Duas parcelas do deficit tem nome proprio e NAO sao perda: o mes cobrado na
+  // secao de intermediacoes (o dinheiro entrou por la) e o mes proporcional de
+  // contrato novo (o mes cheio nunca foi devido). Ver lib/indicadores-deficit-causas.ts.
+  const deficitDaLinha = (snapshot: IndicadoresSnapshotInput, esperado: number) =>
+    Math.max(0, esperado - (currentRent(snapshot) ?? 0) - (snapshot.desconto ?? 0))
 
-  const ocupadoSemRecebimento = snapshots.length === 0 ? null : roundMoney(deficitOcupado(true))
-  const ocupadoRecebimentoParcial = snapshots.length === 0 ? null : roundMoney(deficitOcupado(false))
+  const causas = ocupados.reduce(
+    (acc, snapshot) => {
+      const contratado = snapshot.aluguelEsperado
+      if (contratado === null) return acc
+      const recebido = currentRent(snapshot) ?? 0
+      const esperadoMes = esperadoDoMes(contratado, snapshot.observacao, competencia) ?? contratado
+      // A unidade intermediada tem a linha zerada: o deficit dela e o contratado
+      // inteiro, e ele foi cobrado na secao — nao virou perda.
+      if (intermediadas.has(snapshot.imovelId)) {
+        return { ...acc, intermediacao: acc.intermediacao + deficitDaLinha(snapshot, contratado) }
+      }
+      // Parte do deficit que o periodo proporcional declarado explica.
+      const proporcional = roundMoney(
+        deficitDaLinha(snapshot, contratado) - deficitDaLinha(snapshot, esperadoMes),
+      )
+      const restante = deficitDaLinha(snapshot, esperadoMes)
+      return recebido === 0
+        ? {
+            ...acc,
+            proporcional: acc.proporcional + proporcional,
+            semRecebimento: acc.semRecebimento + restante,
+          }
+        : {
+            ...acc,
+            proporcional: acc.proporcional + proporcional,
+            parcial: acc.parcial + restante,
+          }
+    },
+    { intermediacao: 0, proporcional: 0, semRecebimento: 0, parcial: 0 },
+  )
+
+  const semSnapshots = snapshots.length === 0
+  const cobradoComoIntermediacao = semSnapshots ? null : roundMoney(causas.intermediacao)
+  const mesProporcionalContratoNovo = semSnapshots ? null : roundMoney(causas.proporcional)
+  const ocupadoSemRecebimento = semSnapshots ? null : roundMoney(causas.semRecebimento)
+  const ocupadoRecebimentoParcial = semSnapshots ? null : roundMoney(causas.parcial)
   const recebidoEmVago =
     snapshots.length === 0
       ? null
@@ -1050,6 +1111,8 @@ function buildRentRealization(
       ? null
       : roundMoney(
           unclassifiedValues +
+            (cobradoComoIntermediacao ?? 0) +
+            (mesProporcionalContratoNovo ?? 0) +
             (ocupadoSemRecebimento ?? 0) +
             (ocupadoRecebimentoParcial ?? 0) -
             (recebidoEmVago ?? 0),
@@ -1064,6 +1127,8 @@ function buildRentRealization(
     inadimplenciaMes: delinquency,
     descontos: discounts,
     ajustesClassificados: classifiedAdjustments,
+    cobradoComoIntermediacao,
+    mesProporcionalContratoNovo,
     ocupadoSemRecebimento,
     ocupadoRecebimentoParcial,
     recebidoEmVago,
@@ -1226,7 +1291,12 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
     const reallocation = reallocations.get(competencia)
     // Mesma funcao que a tela de referencia usa, agora por mes: a decomposicao
     // da realizacao vem da mesma identidade, sem calculo paralelo.
-    const monthlyRealization = buildRentRealization(snapshots, monthlyContractedRent)
+    const monthlyRealization = buildRentRealization(
+      snapshots,
+      monthlyContractedRent,
+      competencia,
+      intermediadasDosFechamentos(snapshots, analyses, input.imoveisAtivos),
+    )
     const receitaBase = input.filtros.imovelId
       ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
       : sumKnown(analyses.map((analysis) => analysis.totals.total_receitas))

@@ -563,6 +563,9 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     inadimplenciaFinanceira: 500,
     descontos: 50,
     ajustesClassificados: 0,
+    // Nenhuma seção de intermediação e nenhum período proporcional declarado.
+    cobradoComoIntermediacao: 0,
+    mesProporcionalContratoNovo: 0,
     // Ocupado esperava 1.000, recebeu 900 com 50 de desconto: 50 de deficit.
     ocupadoSemRecebimento: 0,
     ocupadoRecebimentoParcial: 50,

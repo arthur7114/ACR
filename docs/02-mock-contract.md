@@ -358,6 +358,15 @@ Estados e acoes relevantes:
 - Sem seção de intermediações no documento, a observação da linha continua sendo a única evidência (comportamento anterior preservado).
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`. Canários em `lib/fechamento-unidades.test.ts`.
 
+### Ajuste registrado — duas causas do desvio que não são perda (2026-09-17)
+
+- Ponto alterado: a cascata "Do contrato ao recebido" ganha duas linhas nomeadas, recortadas de dentro de "Ocupado sem recebimento" e "Ocupado com recebimento parcial": **Cobrado como intermediação** e **Contrato novo · mês proporcional**. A aritmética não muda; o que muda é parar de chamar de perda o que não é.
+- Por que: em Grand Messejana II ago/2026 o cliente viu R$ 2.100,00 como "inquilino nomeado que não pagou o mês" — eram os três aptos de intermediação (3, 8 e 23), cujo mês foi cobrado na seção de intermediações e cujo dinheiro a própria tela mostra em "Intermediações 3 · R$ 2.357,39". E R$ 863,23 de "recebimento parcial" eram dois contratos novos com período declarado na linha (Samuel, 21 dias; Francisco, 1 dia — 700/31 = 22,58, o centavo exato que ele pagou).
+- Regra da intermediação: a unidade é reconhecida pela seção do próprio fechamento, casando por inquilino e, como segunda via, pelo número do apto — a seção traz `apto`, nunca `imovel_id`.
+- Regra do proporcional: só existe quando a **linha declara** o período ("PROPORCIONAL DE N DIAS"). Nunca é inferido por comparação de valores. Esperado desconhecido continua desconhecido, nunca zero.
+- O que **não** mudou: `aluguel_esperado` do snapshot (segue o contratado), a inadimplência do mês, o total recebido e o resíduo "Sem explicação". O selo "fora do previsto" continua armado pelo mesmo `valoresSemClassificacao`.
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`. Canários em `lib/indicadores-deficit-causas.test.ts`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

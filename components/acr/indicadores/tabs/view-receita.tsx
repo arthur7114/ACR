@@ -169,7 +169,7 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
               title: "Do contrato ao recebido",
               definition: "Mostra o que separou o aluguel previsto nos contratos do que efetivamente entrou.",
               formula:
-                "contratado − vacância − inadimplência − descontos ± ajustes documentados − ocupado sem recebimento − ocupado parcial + recebido em vago = recebido da competência",
+                "contratado − vacância − inadimplência − descontos ± ajustes documentados − cobrado como intermediação − mês proporcional − ocupado sem recebimento − ocupado parcial + recebido em vago = recebido da competência",
               limitation: "Contratos de receita variável não entram no aluguel contratado.",
             }}
             action={<UndocumentedState value={valoresSemDocumento} flagged={hasUndocumented} />}
@@ -196,6 +196,18 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
             />
             <FinancialRow label="Descontos documentados" value={realization.descontos} operation="−" />
             <FinancialRow label="Ajustes documentados" value={resolveMetricValue(realization.ajustesClassificados)} operation="±" />
+            <FinancialRow
+              label="Cobrado como intermediação"
+              value={realization.cobradoComoIntermediacao}
+              operation="−"
+              note="O mês da unidade foi cobrado na seção de intermediações, não na coluna de aluguel. O dinheiro entrou — veja Acordos e rescisões."
+            />
+            <FinancialRow
+              label="Contrato novo · mês proporcional"
+              value={realization.mesProporcionalContratoNovo}
+              operation="−"
+              note="A linha declara o período (ex.: 21 dias). O mês cheio nunca foi devido; não é inadimplência."
+            />
             <FinancialRow
               label="Ocupado sem recebimento"
               value={realization.ocupadoSemRecebimento}
