@@ -86,6 +86,12 @@ interface AnalysisFixture {
     repasse_declarado?: number | null
   }
   prestacao: PrestacaoFixture | null
+  despesasPagas?: Array<{
+    tipo?: string | null
+    fornecedor?: string | null
+    observacao?: string | null
+    valor: number
+  }> | null
 }
 
 interface ClosingFixture extends PairFixture {

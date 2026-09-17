@@ -1023,3 +1023,141 @@ test("nota fiscal da propria taxa de administracao nao vira despesa em dobro", (
     2700,
   )
 })
+
+// Canários GM I / Maracanaú ago/2026 (feedback do cliente em 2026-09-17, pontos
+// #10 e #14): o consolidado da prestação não tem escopo único na carteira. Num
+// fechamento ele cobre só as linhas da vigência, noutro cobre as linhas mais os
+// acordos e rescisões recebidos. Comparar sempre com as linhas acusava
+// divergência de milhares de reais em documento correto — nos 31 fechamentos
+// até ago/2026 eram 27 alertas falsos em 35.
+test("GM I ago/2026: consolidado que inclui acordos e rescisoes nao e divergencia", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "101",
+          inquilino: "Natan",
+          valor: 500,
+          total_recebido: 500,
+          comissao: 50,
+          repasse: 450,
+          competencia_original: "2026-03",
+          competencia_recebimento: "2026-03",
+          observacao: "Acordo recebido no mes.",
+          confianca: 0.95,
+        },
+      ],
+      resumo_financeiro: {
+        ...createPrestacao().resumo_financeiro,
+        // Linhas 3.000 + acordo 500; comissoes 30 + 50; repasse 2.700 + 450.
+        total_linhas_receitas: 3500,
+        total_linhas_comissoes: 80,
+        total_linhas_repasse: 3150,
+      },
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  for (const id of ["total_linhas_receitas", "total_linhas_comissoes", "total_linhas_repasse"]) {
+    const check = result.rechecks.find((item) => item.id === id)
+    assert.equal(check?.status, "passed", `${id}: ${check?.message}`)
+    assert.match(check?.message ?? "", /acordos e rescisoes recebidos no mes/)
+  }
+})
+
+// GM II ago/2026 é o caso oposto: o consolidado cobre SÓ as linhas. Somar os
+// acordos sempre apenas inverteria o falso positivo.
+test("GM II ago/2026: consolidado restrito as linhas continua batendo com os acordos presentes", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "101",
+          inquilino: "Natan",
+          valor: 500,
+          total_recebido: 500,
+          comissao: 50,
+          repasse: 450,
+          competencia_original: "2026-03",
+          competencia_recebimento: "2026-03",
+          observacao: "Acordo recebido no mes.",
+          confianca: 0.95,
+        },
+      ],
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const check = result.rechecks.find((item) => item.id === "total_linhas_receitas")
+  assert.equal(check?.status, "passed")
+  assert.match(check?.message ?? "", /bate com o consolidado\./)
+})
+
+// GM II ago/2026, ponto #13: o documento fecha o total em R$ 14.255,86 enquanto
+// suas 27 linhas somam R$ 14.255,82. Quatro centavos de arredondamento não são
+// erro, e o alerta dizia "o correto pelo recálculo é...", acusando o documento.
+test("centavos de arredondamento do documento nao viram acusacao de erro", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      resumo_financeiro: {
+        ...createPrestacao().resumo_financeiro,
+        total_linhas_receitas: 3000.04,
+      },
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const check = result.rechecks.find((item) => item.id === "total_linhas_receitas")
+  assert.equal(check?.status, "passed")
+  assert.equal(check?.difference, 0.04)
+  assert.match(check?.message ?? "", /arredondamento do documento/)
+})
+
+// Divergência real (Maracanaú ago/2026: R$ 123,33 no repasse, o menor dos
+// casos que sobram) continua alertando — e agora aponta o escopo mais próximo.
+test("divergencia real continua alertando e nomeia o escopo mais proximo", () => {
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao: createPrestacao({
+      acordos_rescisoes_recebidos: [
+        {
+          tipo: "acordo",
+          apto: "101",
+          inquilino: "Natan",
+          valor: 500,
+          total_recebido: 500,
+          comissao: 50,
+          repasse: 450,
+          competencia_original: "2026-03",
+          competencia_recebimento: "2026-03",
+          observacao: "Acordo recebido no mes.",
+          confianca: 0.95,
+        },
+      ],
+      resumo_financeiro: {
+        ...createPrestacao().resumo_financeiro,
+        total_linhas_receitas: 3623.33,
+      },
+    }),
+    repasse: createRepasse(2700),
+    despesas: null,
+    reajuste: null,
+  })
+
+  const check = result.rechecks.find((item) => item.id === "total_linhas_receitas")
+  assert.equal(check?.status, "warning")
+  assert.equal(check?.expected, 3500)
+  assert.equal(check?.difference, 123.33)
+  assert.match(check?.message ?? "", /linhas R\$\s3\.000,00 \+ acordos e rescisoes R\$\s500,00/)
+})

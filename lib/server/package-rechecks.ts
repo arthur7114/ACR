@@ -478,6 +478,7 @@ function buildRechecks({
   repasseEmbutido: boolean
   recebimentosPendentes: RecebimentoPendente[]
 }) {
+  const acordosDoMes = totaisDosAcordos(prestacao)
   const checks: PrestacaoRecheck[] = [
     checkRecebimentosPendentes(recebimentosPendentes),
     checkRequiredDocument(documents, "prestacao_contas", "Prestacao de contas"),
@@ -487,13 +488,14 @@ function buildRechecks({
     checkUnknownDocuments(documents),
     checkPrestacaoRows(prestacao),
     checkLineComponents(prestacao),
-    compareTotal("total_linhas_receitas", "Total das linhas de receitas", "Total", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? [])),
+    compareTotal("total_linhas_receitas", "Total das linhas de receitas", "Total", prestacao?.resumo_financeiro.total_linhas_receitas ?? prestacao?.totais.total_receitas ?? null, sum(prestacao?.receitas_por_imovel.map((row) => row.total) ?? []), acordosDoMes.total),
     compareColumnTotal(
       "total_linhas_comissoes",
       "Total das comissoes por linha",
       "Comissao",
       prestacao?.resumo_financeiro.total_linhas_comissoes ?? null,
       prestacao?.receitas_por_imovel.map((row) => zeroWhenNoReceipt(row.total, row.comissao)) ?? [],
+      acordosDoMes.comissao,
     ),
     compareColumnTotal(
       "total_linhas_repasse",
@@ -501,6 +503,7 @@ function buildRechecks({
       "Repasse",
       prestacao?.resumo_financeiro.total_linhas_repasse ?? null,
       prestacao?.receitas_por_imovel.map((row) => zeroWhenNoReceipt(row.total, row.repasse)) ?? [],
+      acordosDoMes.repasse,
     ),
     compareAdminCommissionRule(prestacao, totals, commercialRule ?? null),
     checkAgreementCompetencies(prestacao),
@@ -803,7 +806,34 @@ function checkPrestacaoRows(prestacao: PrestacaoAnalysis | null): PrestacaoReche
   }
 }
 
-function compareTotal(id: string, label: string, columnLabel: string, extracted: number | null, calculated: number): PrestacaoRecheck {
+// Arredondamento de centavos entre o consolidado do documento e a soma das suas
+// proprias linhas. Nao e erro: e a planilha da imobiliaria arredondando o
+// agregado de vinte e tantas linhas de centavos. Na carteira ate ago/2026 o
+// maior desses residuos e R$ 0,05 (GM II mai/2026, receitas) e a menor
+// divergencia REAL e R$ 123,33 (Maracanau ago/2026, repasse) — o limite abaixo
+// cai no meio de um vao de mais de cem reais, entao nao e um numero delicado.
+const ARREDONDAMENTO_DO_DOCUMENTO = 1
+
+// Total de coluna do documento comparado com a soma das linhas.
+//
+// O consolidado nao tem um escopo unico na carteira: em uns fechamentos ele
+// cobre SO as linhas da vigencia, em outros cobre as linhas MAIS os acordos e
+// rescisoes recebidos no mes. Comparar sempre com as linhas acusava divergencia
+// de milhares de reais onde o documento esta certo (GM I ago/2026 informava
+// R$ 12.348,82 de receitas: R$ 10.011,92 das linhas + R$ 2.336,88 de acordos) e
+// o cliente recebia um alerta pedindo conferencia manual de um valor correto
+// (feedback de 2026-09-17, pontos #10 e #14). O contrario tambem existe — GM II
+// ago/2026 declara so as linhas — entao somar os acordos sempre inverteria o
+// falso positivo. Por isso os dois escopos sao aceitos, nesta ordem: as linhas
+// primeiro, os acordos so quando as linhas sozinhas nao explicam.
+function compareTotal(
+  id: string,
+  label: string,
+  columnLabel: string,
+  extracted: number | null,
+  calculated: number,
+  acordos = 0,
+): PrestacaoRecheck {
   if (extracted === null) {
     return {
       id,
@@ -818,19 +848,69 @@ function compareTotal(id: string, label: string, columnLabel: string, extracted:
 
   const actual = roundMoney(extracted)
   const difference = roundMoney(Math.abs(actual - calculated))
-  const status = difference <= MONEY_TOLERANCE ? "passed" : "failed"
+
+  if (difference <= MONEY_TOLERANCE) {
+    return {
+      id,
+      label,
+      status: "passed",
+      message: `A soma da coluna ${columnLabel} bate com o consolidado.`,
+      expected: calculated,
+      actual,
+      difference,
+    }
+  }
+
+  if (difference <= ARREDONDAMENTO_DO_DOCUMENTO) {
+    return {
+      id,
+      label,
+      status: "passed",
+      message: `A soma da coluna ${columnLabel} bate com o consolidado a menos de ${formatBRL(difference)} de arredondamento do documento. Nenhum valor precisa ser corrigido.`,
+      expected: calculated,
+      actual,
+      difference,
+    }
+  }
+
+  const comAcordos = roundMoney(calculated + acordos)
+  const diferencaComAcordos = roundMoney(Math.abs(actual - comAcordos))
+
+  if (acordos !== 0 && diferencaComAcordos <= ARREDONDAMENTO_DO_DOCUMENTO) {
+    const residuo =
+      diferencaComAcordos <= MONEY_TOLERANCE
+        ? ""
+        : ` Sobra ${formatBRL(diferencaComAcordos)} de arredondamento do documento.`
+    return {
+      id,
+      label,
+      status: "passed",
+      message: `O consolidado de ${columnLabel} cobre as linhas da vigencia (${formatBRL(calculated)}) mais os acordos e rescisoes recebidos no mes (${formatBRL(acordos)}).${residuo}`,
+      expected: comAcordos,
+      actual,
+      difference: diferencaComAcordos,
+    }
+  }
+
+  // Nenhum dos dois escopos explica: reporta o que chegou mais perto, para a
+  // conferencia manual comecar do lugar certo.
+  const escopoMaisProximo =
+    acordos !== 0 && diferencaComAcordos < difference
+      ? {
+          calculado: comAcordos,
+          diferenca: diferencaComAcordos,
+          detalhe: ` (linhas ${formatBRL(calculated)} + acordos e rescisoes ${formatBRL(acordos)})`,
+        }
+      : { calculado: calculated, diferenca: difference, detalhe: "" }
 
   return {
     id,
     label,
-    status,
-    message:
-      status === "passed"
-        ? `A soma da coluna ${columnLabel} bate com o consolidado.`
-        : `A soma da coluna ${columnLabel} e ${formatBRL(calculated)}, mas o consolidado informa ${formatBRL(actual)}. O correto pelo recalculo e ${formatBRL(calculated)}. Verifique manualmente.`,
-    expected: calculated,
+    status: "failed",
+    message: `A soma da coluna ${columnLabel} e ${formatBRL(escopoMaisProximo.calculado)}${escopoMaisProximo.detalhe}, mas o consolidado informa ${formatBRL(actual)}. Diferenca de ${formatBRL(escopoMaisProximo.diferenca)}. Verifique manualmente.`,
+    expected: escopoMaisProximo.calculado,
     actual,
-    difference,
+    difference: escopoMaisProximo.diferenca,
   }
 }
 
@@ -840,6 +920,7 @@ function compareColumnTotal(
   columnLabel: string,
   extracted: number | null,
   values: Array<number | null>,
+  acordos = 0,
 ): PrestacaoRecheck {
   const hasRows = values.length > 0
   const hasCompleteColumn = hasRows && values.every((value) => value !== null)
@@ -856,7 +937,27 @@ function compareColumnTotal(
     }
   }
 
-  return compareTotal(id, label, columnLabel, extracted, sum(values.map((value) => value ?? 0)))
+  return compareTotal(id, label, columnLabel, extracted, sum(values.map((value) => value ?? 0)), acordos)
+}
+
+// Acordos, rescisoes e atrasos RESOLVIDOS do mes, por coluna. Intermediacao fica
+// de fora: ela nao entra no consolidado das linhas em nenhum fechamento da
+// carteira. Item pendente tambem nao entra — ele ainda nao e dinheiro.
+function totaisDosAcordos(prestacao: PrestacaoAnalysis | null) {
+  const acumulado = { total: 0, comissao: 0, repasse: 0 }
+  for (const item of prestacao?.acordos_rescisoes_recebidos ?? []) {
+    if (item.tipo === "intermediacao") continue
+    const resolucao = resolverRecebimentoLegado(item)
+    if (resolucao.status !== "resolvido") continue
+    acumulado.total += resolucao.totalRecebido
+    acumulado.comissao += resolucao.comissao
+    acumulado.repasse += resolucao.repasse
+  }
+  return {
+    total: roundMoney(acumulado.total),
+    comissao: roundMoney(acumulado.comissao),
+    repasse: roundMoney(acumulado.repasse),
+  }
 }
 
 function compareDespesasTotal(
