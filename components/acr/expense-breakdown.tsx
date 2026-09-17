@@ -55,7 +55,10 @@ export function ExpenseBreakdown({ groups }: { groups: GrupoDespesaFechamento[] 
                     <div key={`${item.descricao}-${index}`} className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3">
                       <div className="min-w-0">
                         <p className="break-words text-[12px] leading-snug text-[#1A2B1C]">{item.descricao}</p>
-                        <p className="mt-1 text-[11px] text-[#6B7F6E]">Referência: {item.referencia ?? "Não informada"}</p>
+                        <p className="mt-1 text-[11px] text-[#6B7F6E]">
+                          {item.unidade ? `${item.unidade} · ` : ""}
+                          Referência: {item.referencia ?? "Não informada"}
+                        </p>
                       </div>
                       <p className="text-[12px] font-semibold tabular-nums text-[#1A2B1C]">{formatBRL(item.valor)}</p>
                     </div>

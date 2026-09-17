@@ -7,6 +7,7 @@ import {
   calcularIptuRecebidoExibicao,
   calcularResumoReceitasAdicionais,
   desdobrarDespesasFechamento,
+  unidadeDaDescricao,
 } from "./fechamento-operacional.ts"
 
 test("Pompilio: mostra os dois IPTUs de passagem como recebido sem alterar o total contabil", () => {
@@ -320,4 +321,78 @@ test("sem tipo estruturado, o desdobramento continua classificando pelo texto", 
   const porCategoria = new Map(result.map((grupo) => [grupo.categoria, grupo.total]))
   assert.equal(porCategoria.get("energia"), 200)
   assert.equal(porCategoria.get("seguro"), 100)
+})
+
+// Canário GM II ago/2026 (ponto #9 do feedback de 2026-09-17): a prestação diz
+// "SEGURO APTO 12 · R$ 141,04", "SEGURO APTO 17 · R$ 139,83" e "SEGURO APTO 26
+// · R$ 139,13", mas o documento de despesas pagas traz os três como "PORTO
+// SEGURO COMPANHIA DE SEGUROS GERAIS" sem apto. A tela mostrava três seguros
+// indistinguíveis.
+const seguroPago = (valor: number) => ({
+  tipo: "seguro" as const,
+  fornecedor: "PORTO SEGURO COMPANHIA DE SEGUROS GERAIS",
+  valor,
+  vencimento: null,
+  referencia: null,
+  observacao: "Boleto com Nosso Número.",
+  endereco: null,
+  unidade_consumidora: null,
+  pago_em: null,
+  pago_por: null,
+  confianca: 1,
+})
+
+test("GM II ago/2026: o apto do resumo alcança a despesa paga do mesmo valor", () => {
+  const result = desdobrarDespesasFechamento({
+    totalDespesas: 420,
+    resumoItens: [
+      { descricao: "SEGURO APTO 12", valor: 141.04, confianca: 1 },
+      { descricao: "SEGURO APTO 17", valor: 139.83, confianca: 1 },
+      { descricao: "SEGURO APTO 26", valor: 139.13, confianca: 1 },
+    ],
+    despesas: [seguroPago(141.04), seguroPago(139.83), seguroPago(139.13)],
+  })
+
+  const seguros = result.find((grupo) => grupo.categoria === "seguro")
+  assert.deepEqual(
+    seguros?.itens.map((item) => [item.valor, item.unidade]),
+    [
+      [141.04, "apto 12"],
+      [139.83, "apto 17"],
+      [139.13, "apto 26"],
+    ],
+  )
+})
+
+test("valor repetido em aptos diferentes deixa a unidade desconhecida", () => {
+  const result = desdobrarDespesasFechamento({
+    totalDespesas: 280,
+    resumoItens: [
+      { descricao: "SEGURO APTO 12", valor: 140, confianca: 1 },
+      { descricao: "SEGURO APTO 17", valor: 140, confianca: 1 },
+    ],
+    despesas: [seguroPago(140), seguroPago(140)],
+  })
+
+  const seguros = result.find((grupo) => grupo.categoria === "seguro")
+  assert.deepEqual(seguros?.itens.map((item) => item.unidade), [null, null])
+})
+
+test("a unidade dita pela própria despesa tem precedência sobre o cruzamento", () => {
+  const result = desdobrarDespesasFechamento({
+    totalDespesas: 141.04,
+    resumoItens: [{ descricao: "SEGURO APTO 12", valor: 141.04, confianca: 1 }],
+    despesas: [{ ...seguroPago(141.04), endereco: "RUA X, 100 - APTO 31" }],
+  })
+
+  assert.equal(result[0].itens[0].unidade, "apto 31")
+})
+
+test("unidadeDaDescricao lê apto, sala e galpão, e não inventa unidade", () => {
+  assert.equal(unidadeDaDescricao("SEGURO APTO 12"), "apto 12")
+  assert.equal(unidadeDaDescricao("IPTU 2026 GALPÃO 02 (5/7)"), "galpao 02")
+  assert.equal(unidadeDaDescricao("SEGURO SALA 03"), "sala 03")
+  assert.equal(unidadeDaDescricao("Apartamento 7 - seguro"), "apto 7")
+  assert.equal(unidadeDaDescricao("Tarifa PIX"), null)
+  assert.equal(unidadeDaDescricao(null), null)
 })

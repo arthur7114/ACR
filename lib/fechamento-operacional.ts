@@ -20,6 +20,9 @@ export interface ItemDespesaFechamento {
   // segunda ENEL e os 8 seguros caiam em "Outros" porque a observacao dizia
   // apenas "Comprovante de pagamento" e "Boleto com Nosso Numero").
   categoria?: CategoriaDespesaFechamento
+  // Unidade a que a despesa pertence ("apto 12"), quando o documento a diz.
+  // Desconhecida (null) quando nao ha como saber — nunca inventada.
+  unidade?: string | null
 }
 
 // Tipos do documento de despesas -> categorias do desdobramento.
@@ -233,20 +236,58 @@ function extrairReferencia(descricao: string): string | null {
   return `${match[1].padStart(2, "0")}/${match[2]}`
 }
 
+// Unidade citada dentro da descricao ("SEGURO APTO 12" -> "apto 12"). E a
+// unica forma de a prestacao dizer de quem e a despesa: o documento de despesas
+// pagas traz apenas o fornecedor e a apolice.
+const UNIDADE_NA_DESCRICAO =
+  /\b(apto|apartamento|sala|loja|galpao|casa|box|quiosque)\.?\s*(?:n[o°.]?\s*)?(\d{1,4}[a-z]?)\b/
+
+export function unidadeDaDescricao(descricao: string | null | undefined): string | null {
+  const match = normalizeText(descricao ?? "").match(UNIDADE_NA_DESCRICAO)
+  if (!match) return null
+  const tipo = match[1] === "apartamento" ? "apto" : match[1]
+  return `${tipo} ${match[2]}`
+}
+
+// Une o documento de despesas pagas (que tem o valor e o fornecedor, mas nao o
+// apto) ao resumo "OUTRAS COMISSOES E DESPESAS" da prestacao (que tem o apto,
+// mas nao o fornecedor). A chave e o valor exato em centavos — o mesmo numero
+// aparece nos dois lugares porque e a mesma despesa.
+//
+// Valor repetido em unidades diferentes fica DESCONHECIDO: dois seguros de
+// R$ 139,00 nao permitem dizer qual e de qual apto, e chutar seria pior que
+// omitir. Na carteira ate ago/2026 nenhum par colide.
+function unidadePorValorDoResumo(resumoItens: PrestacaoResumoDespesa[]): Map<number, string | null> {
+  const mapa = new Map<number, string | null>()
+  for (const item of resumoItens) {
+    const unidade = unidadeDaDescricao(item.descricao)
+    if (!unidade) continue
+    const chave = Math.round(roundMoney(item.valor) * 100)
+    if (mapa.has(chave) && mapa.get(chave) !== unidade) mapa.set(chave, null)
+    else mapa.set(chave, unidade)
+  }
+  return mapa
+}
+
 function resumoToItem(item: PrestacaoResumoDespesa): ItemDespesaFechamento {
   return {
     descricao: item.descricao,
     referencia: extrairReferencia(item.descricao),
     valor: roundMoney(item.valor),
+    unidade: unidadeDaDescricao(item.descricao),
   }
 }
 
 function despesaToItem(item: Despesa): ItemDespesaFechamento {
+  const descricao = item.observacao || item.fornecedor || "Despesa extraída"
   return {
-    descricao: item.observacao || item.fornecedor || "Despesa extraída",
+    descricao,
     referencia: item.referencia || extrairReferencia(item.observacao || item.fornecedor || ""),
     valor: roundMoney(item.valor),
     categoria: CATEGORIA_POR_TIPO[item.tipo],
+    // O documento de despesas nao tem campo de apto; quando a unidade aparece,
+    // e dentro da observacao ou do endereco do imovel.
+    unidade: unidadeDaDescricao(descricao) ?? unidadeDaDescricao(item.endereco),
   }
 }
 
@@ -263,8 +304,18 @@ export function desdobrarDespesasFechamento({
   const totalDespesasDocumento = roundMoney(
     despesasItens.reduce((total, item) => total + item.valor, 0),
   )
+  // O documento de despesas pagas ganha por ser a fonte do que saiu do caixa,
+  // mas ele nao diz de qual unidade e cada despesa. Quem diz e o resumo da
+  // prestacao ("SEGURO APTO 12 - R$ 141,04"), que ate aqui era descartado
+  // inteiro — GM II ago/2026 exibia tres seguros identicos, todos "PORTO
+  // SEGURO COMPANHIA DE SEGUROS GERAIS", sem como saber a quem pertenciam.
+  const unidades = unidadePorValorDoResumo(resumoItens)
   const itens = totalDespesasDocumento > 0.01
-    ? despesasItens
+    ? despesasItens.map((item) =>
+        item.unidade
+          ? item
+          : { ...item, unidade: unidades.get(Math.round(item.valor * 100)) ?? null },
+      )
     : resumoItens.map(resumoToItem)
   const somaItens = roundMoney(itens.reduce((total, item) => total + item.valor, 0))
   const residual = roundMoney(totalDespesas - somaItens)
