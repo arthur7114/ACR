@@ -37,6 +37,13 @@ import {
   calcularResumoReceitasAdicionais,
   desdobrarDespesasFechamento,
 } from "@/lib/fechamento-operacional"
+import {
+  aptoKey,
+  aptosDeIntermediacao,
+  contarUnidadesIntermediadas,
+  criarClassificadorUnidades,
+  type ClassificadorUnidades,
+} from "@/lib/fechamento-unidades"
 import { formatCompetenciaMes } from "@/lib/competencia-fechamento"
 import { derivePendencias, getValidationSummary, isResolvedCheck } from "@/lib/revisao-pendencias"
 import type { EgestorEnvio, EgestorLancamento } from "@/lib/egestor-types"
@@ -256,89 +263,18 @@ function getHeroToneClasses(tone: RepasseTone) {
   return { card: "border-[#BFE4C7] bg-[#F4F9F5]", value: "text-[#2D8C3A]" }
 }
 
-const VAGO_INQUILINO_TOKENS = new Set(["", "vago", "vaga", "disponivel", "disponível", "-", "--", "null", ": null", "nulo", "undefined"])
-
-function isInquilinoVazio(inquilino: string | null | undefined) {
-  if (!inquilino) return true
-  return VAGO_INQUILINO_TOKENS.has(inquilino.trim().toLowerCase())
-}
-
 function displayInquilino(inquilino: string | null | undefined) {
   if (!inquilino?.trim()) return "-"
   const trimmed = inquilino.trim()
   return /^[:\s]*(null|nulo|undefined)$/i.test(trimmed) ? "-" : trimmed
 }
 
-function isAirbnbRow(row: ReceitaPorImovel) {
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  return /air\s*bnb/.test(text)
-}
-
-// Linha de INTERMEDIACAO na tabela (apto com observacao 'INTERMEDIACAO'): tem
-// categoria propria (tabela de Intermediacao). Nao e alugada, vaga nem inadimplente.
-function isIntermediacaoRow(row: ReceitaPorImovel) {
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  return /intermedia/.test(text)
-}
-
-function isVacantRow(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  if (/inadimpl/.test(text)) return false
-  if (/\b(vago|vacancia|vacância|disponivel|disponível)\b/.test(text)) return true
-  // Unidade que recebeu aluguel (ou tem total > 0) NAO e vaga, mesmo sem o nome
-  // do inquilino na linha — no extrato consolidado (Cesar Rego) o inquilino vem
-  // como agrupador e nem sempre e preenchido por linha. So tratamos inquilino
-  // vazio como vacancia quando tambem nao ha receita na linha.
-  if ((row.aluguel ?? 0) > 0 || row.total > 0) return false
-  return isInquilinoVazio(row.inquilino)
-}
-
-function isDelinquentRow(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  return !isVacantRow(row) && ((row.aluguel === null || row.aluguel === 0) || /inadimpl/.test(text))
-}
-
-function isRentedCurrentRow(row: ReceitaPorImovel) {
-  return !isAirbnbRow(row) && !isIntermediacaoRow(row) && !isVacantRow(row) && !isDelinquentRow(row)
-}
-
-// Linha explicitamente marcada como INADIMPLENCIA (vigencia do mes nao paga). Um
-// acordo de mes anterior (ex.: pagou abril) nao descaracteriza essa inadimplencia.
-function isExplicitInadimplencia(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row)) return false
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  return /inadimpl/.test(text)
-}
-
-// Rescisao no mes (ex.: "RESCISÃO. PROPORCIONAL DE 10 DIAS"): a unidade teve
-// locatario e saiu dentro da competencia. Continua alugada no mes do fechamento;
-// nos indicadores ela encerra o mes vaga (evento de rescisao).
-function isRescisaoRow(row: ReceitaPorImovel) {
-  if (isAirbnbRow(row) || isIntermediacaoRow(row)) return false
-  const text = `${row.inquilino ?? ""} ${row.observacao ?? ""}`.toLowerCase()
-  return /rescis/.test(text)
-}
-
-// Unidade ALUGADA na competencia = teve locatario no mes. Inclui pagantes,
-// inadimplentes, intermediacao e rescisoes proporcionais; exclui vagas e
-// aplicativos. Definicao do cliente (GM II jul/26: 22 pagantes + 1 inadimplente
-// + 1 intermediacao = 24 alugadas e 3 vagas). Os demais tiles sao subconjuntos.
-function isOccupiedRow(row: ReceitaPorImovel) {
-  return !isAirbnbRow(row) && !isVacantRow(row)
-}
-
-// Atualizacao monetaria no mes: a coluna REAJUSTE do documento aponta para a
-// competencia e a linha nao e contrato novo (proporcional). Fonte unica: o
-// proprio documento — sem inferir reajuste por comparacao de valores.
-function isReajusteRow(row: ReceitaPorImovel, competenciaMes: string | null) {
-  if (!competenciaMes || !row.reajuste_mes || row.reajuste_mes !== competenciaMes) return false
-  if (isAirbnbRow(row) || isIntermediacaoRow(row) || isVacantRow(row)) return false
-  return !/proporcional/i.test(row.observacao ?? "")
-}
-
-function getRowBadge(row: ReceitaPorImovel, acordoAptos: Set<string> = new Set()) {
+function getRowBadge(
+  row: ReceitaPorImovel,
+  unidades: ClassificadorUnidades,
+  acordoAptos: Set<string> = new Set(),
+) {
+  const { isAirbnbRow, isIntermediacaoRow, isVacantRow, isDelinquentRow, isExplicitInadimplencia, isRescisaoRow } = unidades
   if (isAirbnbRow(row)) {
     return {
       label: "Aplicativo",
@@ -474,11 +410,6 @@ function sumRows(rows: ReceitaPorImovel[]) {
 // Total da unidade ja com o desconto aplicado (total bruto menos o desconto da linha).
 function getTotalComDesconto(row: ReceitaPorImovel) {
   return Math.max(row.total - (row.desconto ?? 0), 0)
-}
-
-// Normaliza o numero do apto para comparar receitas x acordos/rescisoes.
-function aptoKey(apto: string | null | undefined) {
-  return (apto ?? "").trim().toLowerCase()
 }
 
 // Vagas de garagem informadas dentro de um acordo/rescisao (campo extraido ou parse da observacao).
@@ -798,6 +729,19 @@ export function RevisaoView({
   const acordosRescisoesRecebidosTodos = prestacao?.acordos_rescisoes_recebidos ?? []
   // Intermediacao tem categoria propria (tabela separada acima das receitas).
   const intermediacoes = acordosRescisoesRecebidosTodos.filter((item) => item.tipo === "intermediacao")
+  // A tabela de intermediacoes tambem CLASSIFICA a unidade: a linha da vigencia
+  // de um apto intermediado vem zerada e nem sempre repete "INTERMEDIACAO" na
+  // observacao (GM II ago/2026 apto 23), o que antes a fazia cair em inadimplente.
+  const unidades = criarClassificadorUnidades(aptosDeIntermediacao(acordosRescisoesRecebidosTodos))
+  const {
+    isAirbnbRow,
+    isVacantRow,
+    isDelinquentRow,
+    isExplicitInadimplencia,
+    isRescisaoRow,
+    isOccupiedRow,
+    isReajusteRow,
+  } = unidades
   // Acordos/rescisoes "puros" (sem intermediacao) para a tabela de acordos.
   const acordosRescisoesRecebidos = acordosRescisoesRecebidosTodos.filter((item) => item.tipo !== "intermediacao")
   // Aptos quitados via acordo/rescisao do PROPRIO mes nao contam como inadimplentes;
@@ -949,10 +893,9 @@ export function RevisaoView({
   const vagos = linhasUnidades.filter(isVacantRow).length
   const airbnb = linhasUnidades.filter(isAirbnbRow).length
   // Unidades de intermediacao: contadas a parte (nao sao alugadas/vagas/inadimplentes).
-  // Usa as linhas marcadas INTERMEDIACAO; se nao houver linha, cai na contagem de
-  // acordos de intermediacao do mes.
-  const intermediadasRows = linhasUnidades.filter(isIntermediacaoRow).length
-  const intermediadas = intermediadasRows > 0 ? intermediadasRows : intermediacoes.length
+  // Soma as linhas classificadas como intermediacao e as intermediacoes que nao
+  // tem linha na vigencia, sem contar a mesma unidade duas vezes.
+  const intermediadas = contarUnidadesIntermediadas(linhasUnidades, intermediacoes, unidades)
 
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
     const textMatch = !filtroTexto || 
@@ -1550,7 +1493,7 @@ export function RevisaoView({
             <tbody>
               {linhasImoveisExibicao.length > 0 ? (
                 linhasImoveisExibicao.map((row, idx) => {
-                  const badge = getRowBadge(row, acordoAptos)
+                  const badge = getRowBadge(row, unidades, acordoAptos)
                   const competenciaAtual = row.competencia_original ? formatCompetenciaMes(row.competencia_original) : ""
                   const competenciaAtrasada = Boolean(row.competencia_original && competenciaMesAno && competenciaAtual !== competenciaMesAno)
                   return (

@@ -31,6 +31,10 @@ const ALLOWLIST = new Set([
   // lê os itens do JSON e resolve a comissão por resolverRecebimentosLegados.
   "scripts/verify-reconciliacao-repasse.ts",
   // Usos não financeiros (eventos de rescisão, dedup, chaves, sincronização)
+  // Classificação de unidade: lê apenas `tipo` e `apto` da seção de
+  // intermediações para saber QUAIS unidades são intermediadas. Nenhum valor
+  // monetário sai daqui — o dinheiro continua vindo de resolverRecebimento*.
+  "lib/fechamento-unidades.ts",
   "lib/server/acordos.ts",
   "lib/server/sync-imoveis.ts",
   // Scripts de reparo/backfill (auditados por ciclo próprio, dry-run por padrão)

@@ -2558,6 +2558,46 @@ após o ajuste.
 a prestação de maio listou só 15 das 30 unidades — não há linha do 101 no
 documento; jun e jul já saem "Vago".
 
+## 2026-09-17 — Intermediação: a seção do documento classifica a unidade
+
+**Feedback (dois vídeos + print, Grand Messejana II ago/2026).** "Tem três
+intermediações apresentando aqui na planilha (…) e aqui mostra só duas. Está
+errado." E, no segundo: "Essa inquilina aqui, Jamille, ela está com um
+inadimplente, só que na verdade ela é intermediação — apartamento 23."
+
+**O que o documento diz.** A seção "INTERMEDIAÇÕES DE JULHO 2026" lista os aptos
+3, 8 e 23 (comissões de R$ 435,00, R$ 435,00 e R$ 420,00 — os R$ 1.290,00 que a
+tela já exibia corretamente no card de Intermediação). Na tabela da vigência de
+agosto, as linhas dos três vêm zeradas, mas só o 3 e o 8 repetem
+"INTERMEDIAÇÃO" na observação; a do 23 traz "IPTU (8/12). SEGURO QUITADO.".
+
+**Causa.** A extração estava certa — os três itens estão em
+`acordos_rescisoes_recebidos` com `tipo: "intermediacao"`. A classificação da
+unidade, porém, lia só o texto da linha (`isIntermediacaoRow` em
+`revisao-view.tsx`). Linha zerada sem a palavra caía em `isDelinquentRow`: o
+apto 23 virava inadimplente. A contagem do tile agravava o erro —
+`intermediadasRows > 0 ? intermediadasRows : intermediacoes.length` fazia as 2
+linhas marcadas vencerem os 3 itens da seção, em vez de somá-los.
+
+**Correção (`lib/fechamento-unidades.ts`, novo).** A classificação de unidades
+saiu da view para um módulo puro e passa a receber os aptos declarados na seção
+de intermediações: unidade intermediada é a que a **linha marca ou a seção
+declara**. O tile soma as linhas classificadas e as intermediações sem linha na
+vigência, sem contar a mesma unidade duas vezes (substitui o fallback
+excludente). Sem seção no documento, nada muda: a observação segue decidindo.
+
+**Efeito medido no fechamento real** (`286f25c4`, validado no app): Intermediação
+2 → 3, Inadimplentes 3 → 2, etiqueta do apto 23 Inadimplente → Intermediação.
+Alugadas continua 25 — intermediação é subconjunto de alugadas, a unidade tem
+locatário no mês. Nenhum valor financeiro muda: repasse R$ 14.001,78 e
+intermediação R$ 1.290,00 seguem iguais.
+
+**Testes.** `lib/fechamento-unidades.test.ts` (6 casos, canário GM II ago/2026 +
+intermediação sem linha, sem apto e apto vago). `lib/fechamento-unidades.ts`
+entrou na allowlist de `lib/recebimentos-contrato.test.ts` com a justificativa
+de uso não financeiro (lê apenas `tipo` e `apto`). Suíte 606/606, canários 6/6,
+lint e tipos limpos.
+
 ## Como atualizar este doc
 
 Ao final de cada ciclo, adicione uma entrada no historico e atualize:

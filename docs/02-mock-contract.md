@@ -348,6 +348,15 @@ Estados e acoes relevantes:
 - Item sem seção explícita, sem valor próprio ou sem vínculo por unidade/evidência vira pendência de revisão sem efeito financeiro (fail-closed), em vez de pedir ao operador que escolha qual total manter.
 - Docs atualizados: este contrato, `docs/03-domain-model.md`, `docs/06-acceptance-criteria.md` (CA14.2 revisado, CA27–CA27.3, valores-canário) e `docs/12-execution-roadmap.md`.
 
+### Ajuste registrado — a tabela de intermediações classifica a unidade (2026-09-17)
+
+- Ponto alterado: uma unidade é de **intermediação** quando a linha da vigência diz INTERMEDIAÇÃO **ou** quando o apto aparece na seção de intermediações do próprio fechamento. Antes só o texto da linha decidia.
+- Por que: a linha da vigência de um apto intermediado vem zerada — o mesmo formato de uma inadimplência — e nem sempre repete a palavra na observação. Em Grand Messejana II ago/2026 a seção "INTERMEDIAÇÕES DE JULHO 2026" lista os aptos 3, 8 e 23, mas a linha do 23 traz apenas "IPTU (8/12). SEGURO QUITADO."; a tela exibia 2 intermediações e 3 inadimplentes, e etiquetava o apto 23 como Inadimplente (feedback do cliente em 2026-09-17, dois vídeos).
+- Efeito nos tiles: Intermediação 2 → 3 e Inadimplentes 3 → 2. **Alugadas não muda** (25): intermediação continua dentro das alugadas, porque a unidade tem locatário no mês.
+- Contagem do tile: unidades classificadas como intermediação **mais** as intermediações sem linha na vigência — a mesma unidade nunca conta duas vezes. Não há filtro por competência: a seção pertence ao fechamento mesmo quando cobra a vigência do mês anterior.
+- Sem seção de intermediações no documento, a observação da linha continua sendo a única evidência (comportamento anterior preservado).
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`. Canários em `lib/fechamento-unidades.test.ts`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:
