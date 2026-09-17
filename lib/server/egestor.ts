@@ -5,6 +5,7 @@ import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-type
 import { EgestorApiError, EgestorClient } from "./egestor-client"
 import { valorTedItemizada } from "@/lib/despesas-locador"
 import { aplicarReajustesDoFechamento, type DecisaoReajuste } from "./reajuste-cadastro"
+import { atualizarCadastroOcupacaoDoFechamento, type MudancaCadastro } from "./cadastro-ocupacao"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -113,7 +114,17 @@ export async function approveFechamentoForEgestor(supabase: SupabaseClient, fech
       },
     ]
   }
-  return { ...data, reajustes }
+  // Ocupacao da competencia -> cadastro (status e inquilino do imovel). Mesma
+  // razao e mesma tolerancia a falha do reajuste: o card "Hoje" lia um cadastro
+  // que ninguem atualizava e contradizia o proprio PDF (22 unidades em ago/2026).
+  let cadastro: MudancaCadastro[] = []
+  let cadastroErro: string | null = null
+  try {
+    cadastro = await atualizarCadastroOcupacaoDoFechamento(supabase, fechamentoId, { usuario: "Operador" })
+  } catch (falha) {
+    cadastroErro = falha instanceof Error ? falha.message : String(falha)
+  }
+  return { ...data, reajustes, cadastro, cadastroErro }
 }
 
 export async function generateEgestorPreview(supabase: SupabaseClient, fechamentoId: string) {

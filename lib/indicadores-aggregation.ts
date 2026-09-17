@@ -1450,16 +1450,13 @@ function buildHeat(
     linhas: sortedProperties.map((property) => {
       const historico = snapshotsByProperty.get(property.id) ?? []
       const ledger = buildPropertyLedger(property, closingsNoPeriodo)
-      const celulas = months.map((competencia) =>
-        applyDivida(
-          buildHeatCell(
-            snapshotByPropertyMonth.get(`${property.id}::${competencia}`),
-            competencia,
-            resolveQuitacao(historico, competencia),
-          ),
-          resolveDivida(ledger, competencia),
-        ),
-      )
+      const celulas = months.map((competencia) => {
+        const snapshot = snapshotByPropertyMonth.get(`${property.id}::${competencia}`)
+        return applyDivida(
+          buildHeatCell(snapshot, competencia, resolveQuitacao(historico, competencia)),
+          resolveDivida(ledger, competencia, snapshot?.inquilinoNome ?? null),
+        )
+      })
       return {
         imovelId: property.id,
         unidade: property.unidade,
@@ -1532,13 +1529,25 @@ const MESES_POR_EXTENSO: Record<string, number> = {
 }
 
 // Competencias que um item de divida acumulada descreve. Prioridade: campo
-// estruturado; texto com ano ("VIGENCIA DE MAIO 2025", "05/2026"); por fim
-// meses por extenso sem ano ("MAIO, JUNHO"), que so podem ser do proprio ano
-// do fechamento ou do anterior — mes maior que o do fechamento e do ano
-// anterior. Sem mes nenhum ("MULTA POR RESCISAO") a divida nao se ancora.
+// estruturado; texto com ano ("VIGENCIA DE MAIO 2025", "ABRIL/25", "05/2026");
+// por fim meses sem ano nenhum ("MAIO, JUNHO"), que so podem ser do proprio ano
+// do fechamento ou do anterior — mes maior que o do fechamento e do ano anterior.
+//
+// O ano vale para a lista inteira: "MAIO, JUNHO, JULHO E PROPORCIONAL DE AGOSTO
+// DE 2023" descreve quatro meses de 2023, nao tres de 2026 e um de 2023 (Grand
+// Maracanau 206, ago/2026). A lista termina no ponto final ou no fim do texto.
+//
+// Mes sem ano so e seguro quando a divida e NOVA — apareceu num fechamento e nao
+// constava no anterior (Grand Maracanau 202: "MAIO, JUNHO" registrada em junho).
+// Uma divida que ja estava no primeiro fechamento conhecido pode ter anos
+// (GM I apto 15, ARTHUR: "ALUGUEL DE AGOSTO" reajustado em 2021, exibido como
+// agosto de 2026 numa unidade desocupada). `semAno: "ignorar"` deixa esses meses
+// sem ancora em vez de chutar o ano. Sem mes nenhum ("MULTA POR RESCISAO") a
+// divida nao se ancora.
 export function inferirCompetenciasDaDivida(
   item: { condicao?: string | null; observacao?: string | null; competencia_original?: string | null },
   fechamentoCompetencia: string,
+  opcoes: { semAno?: "ancorar" | "ignorar" } = {},
 ): string[] {
   const estruturada = competenciaMesToDatabase(item.competencia_original)
   if (estruturada) return [estruturada]
@@ -1548,18 +1557,60 @@ export function inferirCompetenciasDaDivida(
   const [anoFechamento, mesFechamento] = fechamentoCompetencia.slice(0, 7).split("-").map(Number)
   const encontradas = new Set<string>()
 
-  for (const match of texto.matchAll(/\b(\d{1,2})\/(\d{4})\b/g)) {
+  // Datas completas (07/08/2023) sao dias, nao competencias: saem antes de
+  // "mm/aaaa" ser lido, senao "08/2023" dentro delas vira um mes a mais.
+  const semDatas = texto.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, " ")
+  for (const match of semDatas.matchAll(/\b(\d{1,2})\/(\d{4})\b/g)) {
     const competencia = competenciaMesToDatabase(`${match[1]}/${match[2]}`)
     if (competencia) encontradas.add(competencia)
   }
-  for (const match of texto.matchAll(
-    /\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\b(?:\s*(?:de|\/)?\s*(\d{4})\b)?/g,
-  )) {
-    const mes = MESES_POR_EXTENSO[match[1]]
-    const ano = match[2] ? Number(match[2]) : mes <= mesFechamento ? anoFechamento : anoFechamento - 1
-    encontradas.add(`${ano}-${String(mes).padStart(2, "0")}-01`)
+
+  // Cada trecho ate um ponto final e uma lista: o ano que aparece nele (colado a
+  // um mes ou no fim, "DE 2023") vale para os meses do trecho que nao trazem o
+  // proprio ano. Abreviacoes (AGO, SET, OUT) so contam quando o trecho tem ano:
+  // sozinhas sao curtas demais para distinguir de outras palavras.
+  for (const trecho of semDatas.split(/[.;]/)) {
+    const meses: Array<{ mes: number; ano: number | null; abreviado: boolean }> = []
+    for (const match of trecho.matchAll(MES_NO_TEXTO)) {
+      const mes = MESES_POR_EXTENSO[match[1]] ?? MESES_ABREVIADOS[match[1]]
+      if (mes === undefined) continue
+      meses.push({ mes, ano: match[2] ? anoCompleto(match[2]) : null, abreviado: match[1].length === 3 })
+    }
+    const anoDoTrecho =
+      meses.map((item) => item.ano).filter((ano): ano is number => ano !== null).at(-1) ?? anoSoltoNoFim(trecho)
+    for (const { mes, ano, abreviado } of meses) {
+      const anoFinal = ano ?? anoDoTrecho
+      if (anoFinal !== null) {
+        encontradas.add(`${anoFinal}-${String(mes).padStart(2, "0")}-01`)
+        continue
+      }
+      if (abreviado || opcoes.semAno === "ignorar") continue
+      const inferido = mes <= mesFechamento ? anoFechamento : anoFechamento - 1
+      encontradas.add(`${inferido}-${String(mes).padStart(2, "0")}-01`)
+    }
   }
   return [...encontradas].sort()
+}
+
+const MESES_ABREVIADOS: Record<string, number> = {
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6, jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+}
+
+// Mes por extenso ou abreviado, com ano opcional colado: "MAIO 2025",
+// "MAIO DE 2025", "ABRIL/25", "NOV/24".
+const MES_NO_TEXTO =
+  /\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b(?:\s*(?:de|\/)?\s*(\d{4}|\d{2})\b)?/g
+
+function anoCompleto(valor: string) {
+  const numero = Number(valor)
+  return valor.length === 4 ? numero : 2000 + numero
+}
+
+// "... E PROPORCIONAL DE AGOSTO DE 2023 (ATE O DIA ...)" ja casa o ano colado ao
+// mes. Fica o caso do ano solto depois da lista: "MAIO, JUNHO E JULHO DE 2023".
+function anoSoltoNoFim(trecho: string) {
+  const match = /\b(?:de\s+)?(20\d{2})\b/.exec(trecho)
+  return match ? Number(match[1]) : null
 }
 
 function buildPropertyLedger(
@@ -1576,20 +1627,30 @@ function buildPropertyLedger(
     .sort((a, b) => a.competencia.localeCompare(b.competencia))
   const itens: LedgerItem[] = []
   const pagamentos: LedgerPagamento[] = []
+  // Devedores ja listados em fechamentos anteriores do par. Divida de quem ja
+  // constava antes nao e nova: mes sem ano nela nao se ancora no ano corrente.
+  const devedoresAnteriores = new Set<string>()
 
   for (const closing of doPar) {
     const prestacao = closing.analiseCompleta?.prestacao
+    const devedoresDesteFechamento = new Set<string>()
     for (const item of prestacao?.inadimplencias_acumuladas ?? []) {
       if (normalizeCodigoImovel(item.apto ?? "") !== unidadeKey) continue
+      const inquilinoKey = normalizePropertyKeyPart(item.inquilino ?? "")
+      const dividaNova = closing !== doPar[0] && !devedoresAnteriores.has(inquilinoKey)
+      devedoresDesteFechamento.add(inquilinoKey)
       itens.push({
         fechamentoCompetencia: closing.competencia,
         inquilino: item.inquilino?.trim() || null,
-        inquilinoKey: normalizePropertyKeyPart(item.inquilino ?? ""),
+        inquilinoKey,
         valor: item.valor,
         condicao: item.condicao?.trim() || item.observacao?.trim() || null,
-        competencias: inferirCompetenciasDaDivida(item, closing.competencia),
+        competencias: inferirCompetenciasDaDivida(item, closing.competencia, {
+          semAno: dividaNova ? "ancorar" : "ignorar",
+        }),
       })
     }
+    for (const chave of devedoresDesteFechamento) devedoresAnteriores.add(chave)
     for (const recebido of prestacao?.acordos_rescisoes_recebidos ?? []) {
       if (recebido.tipo === "intermediacao") continue
       if (normalizeCodigoImovel(recebido.apto ?? "") !== unidadeKey) continue
@@ -1607,20 +1668,31 @@ function buildPropertyLedger(
   return { itens, pagamentos, fechamentos: doPar.map((closing) => closing.competencia) }
 }
 
-function resolveDivida(ledger: PropertyLedger, competencia: string): IndicadoresHeatDivida | null {
+function resolveDivida(
+  ledger: PropertyLedger,
+  competencia: string,
+  inquilinoDaCelula: string | null = null,
+): IndicadoresHeatDivida | null {
   // `>=`: o fechamento do proprio mes pode registrar a divida do mes (junho
   // listou "MAIO, JUNHO" no documento de junho).
   const registros = ledger.itens.filter(
     (item) => item.fechamentoCompetencia >= competencia && item.competencias.includes(competencia),
   )
   if (registros.length === 0) return null
-  const primeiro = registros[0]
+  // Duas pessoas podem dever o mesmo mes da mesma unidade (ex-inquilino e
+  // atual). A celula mostra a divida de quem estava nela; a soma das duas dizia
+  // que GEISA devia R$ 3.836,10 quando devia R$ 795,52 (GM II 25, ago/2026).
+  const chaveDaCelula = normalizePropertyKeyPart(inquilinoDaCelula ?? "")
+  const primeiro =
+    registros.find((item) => chaveDaCelula !== "" && item.inquilinoKey === chaveDaCelula) ?? registros[0]
   // A mesma divida reaparece nos fechamentos seguintes (mesmo inquilino), as
   // vezes com o texto reescrito e o valor corrigido: acompanha pelo inquilino.
+  // Devedor sem nome so casa com registros tambem sem nome.
   const daMesmaDivida = ledger.itens.filter(
     (item) =>
       item.fechamentoCompetencia >= primeiro.fechamentoCompetencia
-      && (item.competencias.includes(competencia) || (primeiro.inquilinoKey !== "" && item.inquilinoKey === primeiro.inquilinoKey)),
+      && item.inquilinoKey === primeiro.inquilinoKey
+      && (item.competencias.includes(competencia) || primeiro.inquilinoKey !== ""),
   )
   const saldoEm = daMesmaDivida.map((item) => item.fechamentoCompetencia).sort().at(-1) as string
   const saldo = roundMoney(

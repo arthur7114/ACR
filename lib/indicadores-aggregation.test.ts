@@ -39,6 +39,7 @@ interface RevenueLineFixture {
   total: number
   imovel_id?: string | null
   competencia_original?: string | null
+  observacao?: string | null
 }
 
 interface PrestacaoFixture {
@@ -2044,6 +2045,96 @@ test("inferirCompetenciasDaDivida: campo estruturado, texto com ano, meses por e
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "REFERENTE A DEZEMBRO" }, "2026-02-01"), ["2025-12-01"])
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "ALUGUEL 04/2026" }, "2026-07-01"), ["2026-04-01"])
   assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "MULTA POR RESCISÃO ANTES DO PRAZO." }, "2026-07-01"), [])
+})
+
+test("inferirCompetenciasDaDivida: ano de dois dígitos e ano no fim da lista valem para todos os meses", () => {
+  // Grand Castelão I ago/2026: "VIGÊNCIA DE ABRIL/25" caía em 2026 porque so o
+  // ano de quatro dígitos era lido.
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "VIGÊNCIA DE ABRIL/25. IPTU (4/12)." }, "2026-08-01"), ["2025-04-01"])
+  assert.deepEqual(inferirCompetenciasDaDivida({ condicao: "VIGÊNCIA DE AGOSTO/26." }, "2026-08-01"), ["2026-08-01"])
+  // Grand Maracanaú 206 (ALAN): o "DE 2023" no fim descreve os quatro meses,
+  // nao so agosto — maio, junho e julho caiam em 2026.
+  assert.deepEqual(
+    inferirCompetenciasDaDivida(
+      { condicao: "VIGÊNCIA DE MAIO, JUNHO, JULHO E PROPORCIONAL DE AGOSTO DE 2023 (ATÉ O DIA 07/08/2023)." },
+      "2026-08-01",
+    ),
+    ["2023-05-01", "2023-06-01", "2023-07-01", "2023-08-01"],
+  )
+  // GM I 15 (MARIA ALESSANDRA): meses abreviados com ano no fim.
+  assert.deepEqual(
+    inferirCompetenciasDaDivida({ condicao: "VIG DE AGO, SET, OUT E NOV/24: R$ 2.582,15 - R$ 300,00 (PC JUN/25)" }, "2026-08-01"),
+    ["2024-08-01", "2024-09-01", "2024-10-01", "2024-11-01", "2025-06-01"],
+  )
+  // Sem ano em nenhum lugar, o chamador decide se o mes se ancora no ano do
+  // fechamento (divida nova) ou fica sem ancora (divida antiga).
+  assert.deepEqual(
+    inferirCompetenciasDaDivida({ condicao: "R$ 595,30 (ALUGUEL AGOSTO) + R$ 3,55 (IPTU 8/12)" }, "2026-08-01", { semAno: "ignorar" }),
+    [],
+  )
+  assert.deepEqual(
+    inferirCompetenciasDaDivida({ condicao: "VALOR DA RESCISÃO (MAIO, JUNHO E SEGUNDA METADE DA MULTA)" }, "2026-06-01", { semAno: "ignorar" }),
+    [],
+  )
+})
+
+// GM I apto 15 (ARTHUR, ~2021): a divida "ALUGUEL DE MAIO ... AGOSTO" sem ano ja
+// constava no primeiro fechamento conhecido. Nao e divida nova: ancorar em 2026
+// mostrava R$ 3.725,09 de "agosto de 2026" numa unidade DESOCUPADA.
+test("massa falida: divida sem ano que ja constava no primeiro fechamento nao se ancora em mes nenhum", () => {
+  const DIVIDA_ARTHUR = { apto: "15", inquilino: "ARTHUR", valor: 607.08, condicao: "R$ 595,30 (ALUGUEL MAIO) + R$ 3,55 (IPTU 5/12). ALUGUEL DE MAIO." }
+  const linhaVaga = { apto: "15", inquilino: "", aluguel: 0, aluguel_com_desconto: null, desconto: null, total: 0, observacao: "DESOCUPADO" }
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-06-01",
+      imoveisAtivos: [makeProperty({ id: "imovel-15", unidade: "15", inquilinoNome: null, statusAtual: "vago" })],
+      fechamentos: [
+        makeClosing({ id: "f-mai", competencia: "2026-05-01", analiseCompleta: makeAnalysis({ receitas: [linhaVaga], intermediacoes: [], inadimplencias: [DIVIDA_ARTHUR] }) }),
+        makeClosing({ id: "f-jun", competencia: "2026-06-01", analiseCompleta: makeAnalysis({ receitas: [linhaVaga], intermediacoes: [], inadimplencias: [DIVIDA_ARTHUR] }) }),
+      ],
+      snapshots: [
+        makeSnapshot({ imovelId: "imovel-15", fechamentoId: "f-mai", competencia: "2026-05-01", statusOcupacao: "vago", statusOrigem: "prestacao_vacancia", inquilinoNome: null, aluguelEsperado: 700, aluguelRecebido: 0 }),
+        makeSnapshot({ imovelId: "imovel-15", fechamentoId: "f-jun", competencia: "2026-06-01", statusOcupacao: "vago", statusOrigem: "prestacao_vacancia", inquilinoNome: null, aluguelEsperado: 700, aluguelRecebido: 0 }),
+      ],
+    }),
+  )
+  const row = data.heat.linhas.find((linha) => linha.unidade === "15")
+  assert.equal(row?.celulas.find((cell) => cell.competencia === "2026-05-01")?.divida ?? null, null)
+  assert.equal(row?.celulas.find((cell) => cell.competencia === "2026-06-01")?.divida ?? null, null)
+})
+
+// GM II apto 25 ago/2026: GEISA (inquilina atual) deve R$ 795,52 de agosto;
+// SHIRLEY (ex-inquilina) tem divida antiga no mesmo apto. O hover somava as duas
+// e dizia que GEISA devia R$ 3.836,10.
+test("massa falida: saldo da celula e so do inquilino da divida, nao de todos que ja deveram na unidade", () => {
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-08-01",
+      imoveisAtivos: [makeProperty({ id: "imovel-25", unidade: "25", inquilinoNome: "GEISA SILVA MOURA" })],
+      fechamentos: [
+        makeClosing({ id: "f-jul", competencia: "2026-07-01", analiseCompleta: makeAnalysis({ receitas: [{ apto: "25", inquilino: "GEISA SILVA MOURA", aluguel: 699.08, aluguel_com_desconto: null, desconto: null, total: 699.08 }], intermediacoes: [], inadimplencias: [] }) }),
+        makeClosing({
+          id: "f-ago",
+          competencia: "2026-08-01",
+          analiseCompleta: makeAnalysis({
+            receitas: [{ apto: "25", inquilino: "GEISA SILVA MOURA", aluguel: 0, aluguel_com_desconto: null, desconto: null, total: 0, observacao: "INADIMPLÊNCIA" }],
+            intermediacoes: [],
+            inadimplencias: [
+              { apto: "25", inquilino: "GEISA SILVA MOURA", valor: 795.52, competencia_original: "2026-08" },
+              { apto: "25", inquilino: "SHIRLEY", valor: 3040.58, competencia_original: "2026-08", condicao: "MULTA RESCISÃO DO PRAZO E REPAROS" },
+            ],
+          }),
+        }),
+      ],
+      snapshots: [
+        makeSnapshot({ imovelId: "imovel-25", fechamentoId: "f-jul", competencia: "2026-07-01", statusOcupacao: "ocupado", inquilinoNome: "GEISA SILVA MOURA", aluguelEsperado: 699.08, aluguelRecebido: 699.08 }),
+        makeSnapshot({ imovelId: "imovel-25", fechamentoId: "f-ago", competencia: "2026-08-01", statusOcupacao: "inadimplente", statusOrigem: "prestacao_inadimplencia", inquilinoNome: "GEISA SILVA MOURA", aluguelEsperado: 699.08, aluguelRecebido: 0 }),
+      ],
+    }),
+  )
+  const agosto = data.heat.linhas.find((linha) => linha.unidade === "25")?.celulas.find((cell) => cell.competencia === "2026-08-01")
+  assert.equal(agosto?.divida?.inquilino, "GEISA SILVA MOURA")
+  assert.equal(agosto?.divida?.saldo, 795.52)
 })
 
 test("a decomposicao explica o resto sem classificacao e nao o substitui", () => {

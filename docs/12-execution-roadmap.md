@@ -2852,3 +2852,33 @@ o banco", cascatas fechando em R$ 0,00 — os mesmos números da tela.
 **Fora do escopo.** Gráficos (heat map, séries) não vão para o PDF; as tabelas
 carregam os mesmos dados. Rentabilidade segue "—" até o cliente cadastrar o
 valor dos imóveis.
+
+## 2026-09-17 — Validação dos indicadores de ago/2026: dois ajustes
+
+**Pedido.** "Teve 6 fechamentos de agosto que subiram e quero validar os
+indicadores, principalmente inadimplência acumulada e mapa de calor."
+
+**Conferido contra os 6 PDFs.** Acumulada 56.972,54 = soma exata das seções
+"Inadimplências" dos 5 documentos que a têm (GM I 26.280,11; GM II 15.785,52;
+Maracanaú 9.023,74; Castelão I 4.435,16; LOCMAIS 1.448,01; José Walter sem
+seção → "5 de 6"). Inadimplentes do mês: 6 unidades = as 6 linhas
+"INADIMPLÊNCIA" dos PDFs (3.911,01). Vagos: 16 = 8 DESOCUPADO + 5 linhas em
+branco + 3 rescisões no meio do mês. Airbnb 13. Nada a corrigir nos cards.
+
+**Bug 1 — ano da dívida no mapa (`inferirCompetenciasDaDivida`).** Mês sem ano
+caía no ano do fechamento; ano no fim da lista só valia para o último mês;
+"ABRIL/25" era ignorado. Efeito: GM II 25 (Geisa) com saldo 3.836,10 no hover
+(795,52 dela + 3.040,58 da Shirley, ex-inquilina); GM I 15 desocupado com
+3.725,09 de "agosto de 2026" (Arthur, 2021); Maracanaú 205/206 com dívidas de
+2023 em mai–jul/2026. Correção: ano de 2 dígitos; ano do trecho vale para a
+lista toda; sem ano só ancora se a dívida é nova no par (`buildPropertyLedger`
+passa `semAno: "ignorar"` para quem já constava antes); `resolveDivida` escolhe
+a dívida do inquilino da célula e não mistura inquilinos. 3 testes novos em
+`lib/indicadores-aggregation.test.ts`.
+
+**Alerta 2 — card "Hoje" (`lib/server/cadastro-ocupacao.ts`).** 22 de 119
+unidades com cadastro diferente de agosto. `atualizarCadastroOcupacaoDoFechamento`
+roda no fim de `approveFechamentoForEgestor`, copiando `status_ocupacao` e
+`inquilino_nome` do snapshot para `imoveis`, com auditoria. Backfill:
+`scripts/atualizar-cadastro-ocupacao.ts`. 5 testes em
+`lib/server/cadastro-ocupacao.test.ts`.

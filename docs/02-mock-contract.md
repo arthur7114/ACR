@@ -413,6 +413,19 @@ Estados e acoes relevantes:
 - Regra: o PDF lê o **mesmo objeto** que a tela recebe de `/api/indicadores` e usa os mesmos rótulos e formatações — desconhecido sai como "—", nunca zero. Nada é recalculado na exportação (`lib/indicadores-relatorio.ts` é puro e testado; `lib/server/indicadores-pdf.tsx` só desenha).
 - Rentabilidade aparece como "—" com a nota "sem valor do imóvel cadastrado", como na tela (decisão do cliente em 16/09).
 - Removido: o botão "Exportar relatório" da tela de Revisão, que nunca teve função. Exportar a revisão não está no contrato; o cliente confirmou que não precisa.
+
+### Ajuste registrado — dívida antiga não vira dívida do mês no mapa de calor (2026-09-17)
+
+- Ponto alterado: no hover das células do mapa de calor, a "dívida registrada" só se ancora num mês quando o documento diz o ano (por extenso, "ABRIL/25" ou "05/2026") — e um ano no fim da lista vale para todos os meses da lista ("MAIO, JUNHO, JULHO E PROPORCIONAL DE AGOSTO DE 2023" são quatro meses de 2023). Mês sem ano nenhum só se ancora quando a dívida é **nova** (apareceu num fechamento e não constava no anterior); dívida que já estava no primeiro fechamento conhecido fica sem mês. O saldo da célula é só do inquilino daquela dívida, nunca a soma de todos que já deveram na unidade.
+- Por que: validação dos indicadores de ago/2026. GM II apto 25: a Geisa (inadimplente do mês, R$ 795,52) aparecia no hover devendo R$ 3.836,10 porque a dívida antiga da Shirley ("JULHO, AGOSTO", sem ano) caiu em 2026 e foi somada. GM I apto 15 (DESOCUPADO) mostrava R$ 3.725,09 de "agosto de 2026" que eram do Arthur, de 2021. Maracanaú 205/206: dívidas de 2023 apareciam em mai–jul/2026. 13 das 30 células com dívida estavam no mês errado.
+- O que não muda: status e cor das células (vinham da evidência da própria linha); o caso Grand Maracanaú 202 (rescisão registrada em junho com "MAIO, JUNHO") continua marcando maio, porque a dívida era nova.
+
+### Ajuste registrado — aprovação atualiza a ocupação do cadastro (2026-09-17)
+
+- Ponto alterado: ao **aprovar** um fechamento, `imoveis.status` e `imoveis.inquilino_nome` (o "Hoje" dos Indicadores e da tela de Imóveis) passam a refletir o que o snapshot da competência já calculou para o mapa de calor: ocupado, inadimplente ou vago, e o inquilino da linha (vago fica sem inquilino, mesmo com rescisão no meio do mês). Cada troca vai para `auditoria_correcoes`.
+- Por que: em ago/2026 o card "Hoje" dizia 7 vagos e o próprio PDF do cliente listava 16 — 22 unidades divergentes. LOCMAIS Galpão 02 constava "vago" com a J Mais dentro desde 13/08; GM I 15 e 21 constavam "inadimplentes" com o documento dizendo DESOCUPADO. O cadastro só mudava por sincronização manual.
+- Guardas: snapshot `desconhecido` não mexe; fechamento mais antigo que o último aprovado do par não regride o cadastro; `inativo` é decisão de gente e não é tocado; o valor do aluguel continua sendo do reajuste, não deste ajuste. Falha na aplicação não desfaz a aprovação.
+- Fechamentos aprovados antes desta data: `scripts/atualizar-cadastro-ocupacao.ts` (dry-run por padrão, `--aplicar` escreve).
 - Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
 
 ## Dados e nomenclatura de exemplo
