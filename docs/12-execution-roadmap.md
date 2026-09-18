@@ -2904,3 +2904,26 @@ mês cheio, com a mesma guarda do reajuste.
 **Logs.** `registrarLogAprovacao` grava uma notificação por aprovação com o
 resultado do cadastro e do reajuste (sucesso, pendência ou falha). 4 testes em
 `lib/server/aprovacao-log.test.ts`.
+
+## 2026-09-18 — Contrato novo passa a corrigir o aluguel do cadastro
+
+**Pedido.** "Implementa" a melhoria registrada em 2026-09-17: aluguel de
+contrato novo fora do cadastro (LOCMAIS Galpão 02 1.700 → 1.830; GM II 26
+660 → 700).
+
+**Implementação (`lib/server/contrato-novo-cadastro.ts`).**
+`contratosNovosDoFechamento` (puro) lê a prestação: proporcional de entrada,
+seção de intermediações, primeiro mês cheio com inquilino trocado.
+`aluguelCheioDoProporcional` inverte o proporcional preferindo o inteiro que
+reproduz o valor observado. `aplicarContratosNovosDoFechamento` roda depois do
+reajuste em `approveFechamentoForEgestor`; as decisões entram na mesma lista e
+no mesmo log da aprovação ("aluguel atualizado"/"pendente de decisão").
+
+**Refatoração.** O miolo de `aplicarReajustesDoFechamento` virou
+`carregarContextoDeAluguel` + `aplicarValorDeAluguel` (reajuste-cadastro.ts),
+compartilhados pelos dois caminhos. Item sem `valorAnterior` usa o cadastro
+atual (ou a vigência do mês) como anterior — mesma guarda.
+
+**Backfill em produção.** Dry-run nos 22 fechamentos aprovados: só as duas
+unidades previstas mudam; todas as intermediações de jun–ago já batiam
+(`ja_aplicado`). 5 testes em `lib/server/contrato-novo-cadastro.test.ts`.

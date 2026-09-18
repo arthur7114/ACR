@@ -434,6 +434,14 @@ Estados e acoes relevantes:
 - Por que: a API devolvia o resultado, mas a tela de Revisão não o mostra. Uma falha deixava o cadastro velho em silêncio (apontado na validação de 2026-09-17).
 - Onde: `lib/server/aprovacao-log.ts`, chamado no fim de `approveFechamentoForEgestor`. Falha ao gravar o log não desfaz a aprovação.
 
+### Ajuste registrado — contrato novo atualiza o aluguel do cadastro na aprovação (2026-09-18)
+
+- Ponto alterado: ao **aprovar** um fechamento, o aluguel cheio de um contrato **novo** passa para `imoveis.valor_aluguel_esperado` e para a vigência (`imovel_vigencias`), como o reajuste já fazia. O valor sai da própria prestação de contas, por três caminhos: (1) linha com "PROPORCIONAL DE N DIAS" de quem entrou (aluguel × dias do mês ÷ N — 474,19 em 21 dias = 700,00; 1.121,61 em 19 dias = 1.830,00); (2) item da seção de intermediações; (3) primeiro mês cheio de inquilino diferente do mês anterior. Cada troca vai para `auditoria_correcoes` e para o log da aprovação.
+- Por que: validação de ago/2026. LOCMAIS Galpão 02 estava em 1.700 (inquilino anterior) com a J Mais a 1.830; GM II 26 em 660 com o Samuel a 700. O "contratado" dos Indicadores ficava subestimado até alguém editar a mão.
+- Guardas: rescisão também é proporcional, mas de quem saiu — fica de fora (texto "RESCISÃO", tipo rescisão, ou período começando no dia 1). Mesmo inquilino com valor novo é reajuste, não contrato. Cadastro e vigência precisam concordar entre si; valor editado a mão em um deles vira pendência de decisão, não sobrescrita. Centavos ambíguos no inverso do proporcional (22,58 × 31) resolvem pelo valor inteiro que reproduz o observado; o primeiro mês cheio corrige se errar.
+- Fechamentos aprovados antes desta data: `scripts/aplicar-contratos-novos-cadastro.ts` (dry-run por padrão, `--aplicar` escreve).
+- Docs atualizados: este contrato e `docs/12-execution-roadmap.md`.
+
 ## Dados e nomenclatura de exemplo
 
 Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentada:

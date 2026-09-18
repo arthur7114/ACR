@@ -7,6 +7,7 @@ import { valorTedItemizada } from "@/lib/despesas-locador"
 import { aplicarReajustesDoFechamento, type DecisaoReajuste } from "./reajuste-cadastro"
 import { atualizarCadastroOcupacaoDoFechamento, type MudancaCadastro } from "./cadastro-ocupacao"
 import { registrarLogAprovacao } from "./aprovacao-log"
+import { aplicarContratosNovosDoFechamento } from "./contrato-novo-cadastro"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -104,6 +105,10 @@ export async function approveFechamentoForEgestor(supabase: SupabaseClient, fech
   let reajustes: DecisaoReajuste[] = []
   try {
     reajustes = await aplicarReajustesDoFechamento(supabase, fechamentoId, { usuario: "Operador" })
+    // Contrato novo (proporcional, intermediacao, primeiro mes cheio) nao tem
+    // relatorio: o aluguel cheio sai da propria prestacao. Mesma guarda e
+    // mesmo destino (cadastro + vigencia + auditoria).
+    reajustes = reajustes.concat(await aplicarContratosNovosDoFechamento(supabase, fechamentoId, { usuario: "Operador" }))
   } catch (falha) {
     reajustes = [
       {

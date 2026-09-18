@@ -35,6 +35,9 @@ const ALLOWLIST = new Set([
   // intermediações para saber QUAIS unidades são intermediadas. Nenhum valor
   // monetário sai daqui — o dinheiro continua vindo de resolverRecebimento*.
   "lib/fechamento-unidades.ts",
+  // Contrato novo -> cadastro: le `tipo`/`apto` para excluir quem rescindiu e o
+  // aluguel da intermediacao por normalizarItemLegado (componentes.aluguel).
+  "lib/server/contrato-novo-cadastro.ts",
   "lib/server/acordos.ts",
   "lib/server/sync-imoveis.ts",
   // Scripts de reparo/backfill (auditados por ciclo próprio, dry-run por padrão)

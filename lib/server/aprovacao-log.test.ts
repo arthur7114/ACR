@@ -15,7 +15,7 @@ test("aprovação com cadastro e reajuste aplicados vira uma notificação com o
     cadastroErro: null,
   })
   assert.equal(log.tipo, "aprovacao_cadastro")
-  assert.equal(log.titulo, "Aprovação Grand Messejana II 08/2026: cadastro atualizado em 2 unidades, 1 reajuste aplicado")
+  assert.equal(log.titulo, "Aprovação Grand Messejana II 08/2026: cadastro atualizado em 2 unidades, 1 aluguel atualizado")
   assert.match(log.corpo, /25: ocupado \(GEISA\) → inadimplente \(GEISA\)/)
   assert.match(log.corpo, /6: ocupado \(MARIANA\) → vago/)
   assert.match(log.corpo, /apto 17: 628\.06 -> 655\.96/)
@@ -36,7 +36,7 @@ test("reajuste divergente aparece no log como pendência de decisão", () => {
     cadastroErro: null,
   })
   assert.equal(log.tipo, "aprovacao_cadastro_pendente")
-  assert.match(log.titulo, /1 reajuste pendente/)
+  assert.match(log.titulo, /1 aluguel pendente de decisão/)
   assert.match(log.corpo, /apto 17: Cadastro está em 700\.00/)
 })
 

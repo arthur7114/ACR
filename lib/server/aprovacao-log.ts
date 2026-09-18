@@ -52,8 +52,8 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
       corpo: [
         `A aprovação foi registrada, mas a ocupação do cadastro (status e inquilino dos imóveis) não foi atualizada: ${resultado.cadastroErro}`,
         "Confira a tela de Imóveis ou rode scripts/atualizar-cadastro-ocupacao.ts para este fechamento.",
-        ...secao("Reajustes aplicados", linhasReajuste),
-        ...secao("Reajustes pendentes de decisão", linhasPendentes),
+        ...secao("Aluguéis atualizados (reajuste ou contrato novo)", linhasReajuste),
+        ...secao("Aluguéis pendentes de decisão", linhasPendentes),
       ].join("\n"),
     }
   }
@@ -64,8 +64,8 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
       ? "cadastro já refletia o documento"
       : `cadastro atualizado em ${resultado.cadastro.length} ${resultado.cadastro.length === 1 ? "unidade" : "unidades"}`,
   )
-  if (aplicados.length > 0) partes.push(`${aplicados.length} ${aplicados.length === 1 ? "reajuste aplicado" : "reajustes aplicados"}`)
-  if (pendentes.length > 0) partes.push(`${pendentes.length} ${pendentes.length === 1 ? "reajuste pendente" : "reajustes pendentes"}`)
+  if (aplicados.length > 0) partes.push(`${aplicados.length} ${aplicados.length === 1 ? "aluguel atualizado" : "aluguéis atualizados"}`)
+  if (pendentes.length > 0) partes.push(`${pendentes.length} ${pendentes.length === 1 ? "aluguel pendente de decisão" : "aluguéis pendentes de decisão"}`)
 
   return {
     tipo: pendentes.length > 0 ? "aprovacao_cadastro_pendente" : "aprovacao_cadastro",
@@ -73,8 +73,8 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
     corpo:
       [
         ...secao("Ocupação do cadastro", linhasCadastro),
-        ...secao("Reajustes aplicados", linhasReajuste),
-        ...secao("Reajustes pendentes de decisão (cadastro não foi alterado)", linhasPendentes),
+        ...secao("Aluguéis atualizados (reajuste ou contrato novo)", linhasReajuste),
+        ...secao("Aluguéis pendentes de decisão (cadastro não foi alterado)", linhasPendentes),
       ].join("\n") || "Nenhuma alteração no cadastro: status, inquilinos e aluguéis já batiam com o fechamento.",
   }
 }

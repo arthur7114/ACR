@@ -212,11 +212,23 @@ export interface AplicarReajustesOptions {
   usuario?: string
 }
 
-export async function aplicarReajustesDoFechamento(
+// Tudo o que um ajuste de aluguel precisa saber do fechamento, carregado uma
+// vez. Compartilhado pelo reajuste (relatorio) e pelo contrato novo (prestacao).
+export interface ContextoDeAluguel {
+  supabase: SupabaseClient
+  fechamento: FechamentoParaReajuste
+  competencia: string
+  imoveis: ImovelParaReajuste[]
+  documentoFonteId: string | null
+  usuario: string
+  dryRun: boolean
+}
+
+export async function carregarContextoDeAluguel(
   supabase: SupabaseClient,
   fechamentoId: string,
-  options: AplicarReajustesOptions = {},
-): Promise<DecisaoReajuste[]> {
+  options: AplicarReajustesOptions & { documentoTipo: string },
+): Promise<ContextoDeAluguel> {
   const { data: fechamentoRaw, error: erroFechamento } = await supabase
     .from("fechamentos")
     .select("id,competencia,imobiliaria_id,empreendimento_id,analise_completa")
@@ -224,10 +236,6 @@ export async function aplicarReajustesDoFechamento(
     .single()
   if (erroFechamento) throw erroFechamento
   const fechamento = fechamentoRaw as FechamentoParaReajuste
-  const competencia = String(fechamento.competencia).slice(0, 10)
-
-  const itens = reajustesAplicaveis(fechamento.analise_completa?.reajuste, competencia)
-  if (itens.length === 0) return []
 
   const { data: imoveisRaw, error: erroImoveis } = await supabase
     .from("imoveis")
@@ -236,112 +244,178 @@ export async function aplicarReajustesDoFechamento(
     .eq("empreendimento_id", fechamento.empreendimento_id)
     .eq("ativo", true)
   if (erroImoveis) throw erroImoveis
-  const imoveis = (imoveisRaw ?? []) as ImovelParaReajuste[]
 
   const { data: documentos } = await supabase
     .from("documentos_fechamento")
     .select("id")
     .eq("fechamento_id", fechamentoId)
-    .eq("tipo_documento", "relatorio_reajuste")
+    .eq("tipo_documento", options.documentoTipo)
     .limit(1)
-  const documentoFonteId = (documentos?.[0] as { id: string } | undefined)?.id ?? null
 
-  const usuario = options.usuario ?? "Sistema"
-  const decisoes: DecisaoReajuste[] = []
+  return {
+    supabase,
+    fechamento,
+    competencia: String(fechamento.competencia).slice(0, 10),
+    imoveis: (imoveisRaw ?? []) as ImovelParaReajuste[],
+    documentoFonteId: (documentos?.[0] as { id: string } | undefined)?.id ?? null,
+    usuario: options.usuario ?? "Sistema",
+    dryRun: options.dryRun ?? false,
+  }
+}
 
-  for (const item of itens) {
-    const imovel = encontrarImovel(item.apto, imoveis)
-    const base = { apto: item.apto, valorAnterior: item.valorAnterior, valorNovo: item.valorNovo }
-    const cadastro = decidirCadastro(item, imovel)
+export interface TextosDoAjuste {
+  fonte: string
+  justificativa: string
+}
 
-    if (cadastro === "sem_imovel") {
-      decisoes.push({ ...base, resultado: cadastro, detalhe: "Nenhum imóvel ativo com essa unidade no empreendimento." })
-      continue
+// Um item sem `valorAnterior` (contrato novo) usa como anterior o que o cadastro
+// tem hoje — ou, com cadastro vazio, o que a vigencia do mes diz. A guarda
+// continua a mesma: cadastro e vigencia precisam concordar entre si; se alguem
+// ja editou um deles para outro valor, e decisao de gente.
+export async function aplicarValorDeAluguel(
+  contexto: ContextoDeAluguel,
+  entrada: ReajusteAplicavel | Omit<ReajusteAplicavel, "valorAnterior">,
+  textos: TextosDoAjuste,
+): Promise<DecisaoReajuste> {
+  const { supabase, fechamento } = contexto
+  const imovel = encontrarImovel(entrada.apto, contexto.imoveis)
+  if (!imovel) {
+    return {
+      apto: entrada.apto,
+      valorAnterior: "valorAnterior" in entrada ? entrada.valorAnterior : 0,
+      valorNovo: entrada.valorNovo,
+      resultado: "sem_imovel",
+      detalhe: "Nenhum imóvel ativo com essa unidade no empreendimento.",
     }
-    if (cadastro === "cadastro_divergente") {
-      decisoes.push({
-        ...base,
-        resultado: cadastro,
-        detalhe: `Cadastro está em ${Number(imovel!.valor_aluguel_esperado).toFixed(2)}, não em ${item.valorAnterior.toFixed(2)} como o relatório declara.`,
-      })
-      continue
-    }
-
-    const { data: vigenciasRaw, error: erroVigencias } = await supabase
-      .from("imovel_vigencias")
-      .select("id,vigencia_inicio,vigencia_fim,modelo_receita,aluguel_contratado")
-      .eq("imovel_id", imovel!.id)
-      .eq("ativo", true)
-      .order("vigencia_inicio", { ascending: true })
-    if (erroVigencias) throw erroVigencias
-    const plano = planejarVigencia(item, (vigenciasRaw ?? []) as VigenciaParaReajuste[])
-
-    if (plano.acao === "divergente") {
-      decisoes.push({ ...base, resultado: "vigencia_divergente", detalhe: plano.motivo })
-      continue
-    }
-    if (cadastro === "ja_aplicado" && plano.acao === "nada") {
-      decisoes.push({ ...base, resultado: "ja_aplicado", detalhe: "Cadastro e vigência já estão no valor novo." })
-      continue
-    }
-
-    const detalhe = `${item.valorAnterior.toFixed(2)} -> ${item.valorNovo.toFixed(2)} a partir de ${competenciaLabel(item.vigencia)}`
-    if (options.dryRun) {
-      decisoes.push({ ...base, resultado: "aplicado", detalhe: `[dry-run] ${detalhe}; vigência: ${plano.acao}` })
-      continue
-    }
-
-    if (cadastro === "aplicado") {
-      const { error } = await supabase
-        .from("imoveis")
-        .update({ valor_aluguel_esperado: item.valorNovo })
-        .eq("id", imovel!.id)
-      if (error) throw error
-    }
-
-    const fonte = `Relatório de reajuste da competência ${competenciaLabel(competencia)}`
-    const novaVigencia = {
-      imovel_id: imovel!.id,
-      imobiliaria_id: fechamento.imobiliaria_id,
-      empreendimento_id: fechamento.empreendimento_id,
-      vigencia_inicio: item.vigencia,
-      modelo_receita: "fixo",
-      aluguel_contratado: item.valorNovo,
-      fonte,
-      documento_fonte_id: documentoFonteId,
-      ativo: true,
-    }
-    if (plano.acao === "atualizar") {
-      const { error } = await supabase
-        .from("imovel_vigencias")
-        .update({ aluguel_contratado: item.valorNovo, fonte, documento_fonte_id: documentoFonteId })
-        .eq("id", plano.id)
-      if (error) throw error
-    } else if (plano.acao === "encerrar_e_abrir") {
-      const encerrar = await supabase
-        .from("imovel_vigencias")
-        .update({ vigencia_fim: plano.fimAnterior })
-        .eq("id", plano.encerrarId)
-      if (encerrar.error) throw encerrar.error
-      const abrir = await supabase.from("imovel_vigencias").insert({ ...novaVigencia, vigencia_fim: plano.fimNovo })
-      if (abrir.error) throw abrir.error
-    } else if (plano.acao === "abrir") {
-      const abrir = await supabase.from("imovel_vigencias").insert({ ...novaVigencia, vigencia_fim: plano.fim })
-      if (abrir.error) throw abrir.error
-    }
-
-    const { error: erroAuditoria } = await supabase.from("auditoria_correcoes").insert({
-      fechamento_id: fechamentoId,
-      usuario,
-      campo_alterado: `imoveis.valor_aluguel_esperado[${imovel!.unidade ?? item.apto}]`,
-      valor_anterior: item.valorAnterior.toFixed(2),
-      valor_novo: item.valorNovo.toFixed(2),
-      justificativa: `Reajuste declarado no relatório de reajuste da competência ${competenciaLabel(competencia)}${formatPercentual(item.percentual)}, aplicado ao cadastro e à vigência a partir de ${competenciaLabel(item.vigencia)}.`,
-    })
-    if (erroAuditoria) throw erroAuditoria
-
-    decisoes.push({ ...base, resultado: "aplicado", detalhe })
   }
 
+  const { data: vigenciasRaw, error: erroVigencias } = await supabase
+    .from("imovel_vigencias")
+    .select("id,vigencia_inicio,vigencia_fim,modelo_receita,aluguel_contratado")
+    .eq("imovel_id", imovel.id)
+    .eq("ativo", true)
+    .order("vigencia_inicio", { ascending: true })
+  if (erroVigencias) throw erroVigencias
+  const vigencias = (vigenciasRaw ?? []) as VigenciaParaReajuste[]
+
+  const item: ReajusteAplicavel =
+    "valorAnterior" in entrada
+      ? entrada
+      : { ...entrada, valorAnterior: valorAnteriorInferido(entrada, imovel, vigencias) }
+  const base = { apto: item.apto, valorAnterior: item.valorAnterior, valorNovo: item.valorNovo }
+  const cadastro = decidirCadastro(item, imovel)
+
+  if (cadastro === "sem_imovel") {
+    return { ...base, resultado: cadastro, detalhe: "Nenhum imóvel ativo com essa unidade no empreendimento." }
+  }
+  if (cadastro === "cadastro_divergente") {
+    return {
+      ...base,
+      resultado: cadastro,
+      detalhe: `Cadastro está em ${Number(imovel.valor_aluguel_esperado).toFixed(2)}, não em ${item.valorAnterior.toFixed(2)} como o documento declara.`,
+    }
+  }
+
+  const plano = planejarVigencia(item, vigencias)
+  if (plano.acao === "divergente") {
+    return { ...base, resultado: "vigencia_divergente", detalhe: plano.motivo }
+  }
+  if (cadastro === "ja_aplicado" && plano.acao === "nada") {
+    return { ...base, resultado: "ja_aplicado", detalhe: "Cadastro e vigência já estão no valor novo." }
+  }
+
+  const detalhe = `${item.valorAnterior.toFixed(2)} -> ${item.valorNovo.toFixed(2)} a partir de ${competenciaLabel(item.vigencia)}`
+  if (contexto.dryRun) {
+    return { ...base, resultado: "aplicado", detalhe: `[dry-run] ${detalhe}; vigência: ${plano.acao}` }
+  }
+
+  if (cadastro === "aplicado") {
+    const { error } = await supabase
+      .from("imoveis")
+      .update({ valor_aluguel_esperado: item.valorNovo })
+      .eq("id", imovel.id)
+    if (error) throw error
+  }
+
+  const novaVigencia = {
+    imovel_id: imovel.id,
+    imobiliaria_id: fechamento.imobiliaria_id,
+    empreendimento_id: fechamento.empreendimento_id,
+    vigencia_inicio: item.vigencia,
+    modelo_receita: "fixo",
+    aluguel_contratado: item.valorNovo,
+    fonte: textos.fonte,
+    documento_fonte_id: contexto.documentoFonteId,
+    ativo: true,
+  }
+  if (plano.acao === "atualizar") {
+    const { error } = await supabase
+      .from("imovel_vigencias")
+      .update({ aluguel_contratado: item.valorNovo, fonte: textos.fonte, documento_fonte_id: contexto.documentoFonteId })
+      .eq("id", plano.id)
+    if (error) throw error
+  } else if (plano.acao === "encerrar_e_abrir") {
+    const encerrar = await supabase
+      .from("imovel_vigencias")
+      .update({ vigencia_fim: plano.fimAnterior })
+      .eq("id", plano.encerrarId)
+    if (encerrar.error) throw encerrar.error
+    const abrir = await supabase.from("imovel_vigencias").insert({ ...novaVigencia, vigencia_fim: plano.fimNovo })
+    if (abrir.error) throw abrir.error
+  } else if (plano.acao === "abrir") {
+    const abrir = await supabase.from("imovel_vigencias").insert({ ...novaVigencia, vigencia_fim: plano.fim })
+    if (abrir.error) throw abrir.error
+  }
+
+  const { error: erroAuditoria } = await supabase.from("auditoria_correcoes").insert({
+    fechamento_id: fechamento.id,
+    usuario: contexto.usuario,
+    campo_alterado: `imoveis.valor_aluguel_esperado[${imovel.unidade ?? item.apto}]`,
+    valor_anterior: item.valorAnterior.toFixed(2),
+    valor_novo: item.valorNovo.toFixed(2),
+    justificativa: textos.justificativa,
+  })
+  if (erroAuditoria) throw erroAuditoria
+
+  return { ...base, resultado: "aplicado", detalhe }
+}
+
+function valorAnteriorInferido(
+  entrada: Omit<ReajusteAplicavel, "valorAnterior">,
+  imovel: ImovelParaReajuste,
+  vigencias: VigenciaParaReajuste[],
+): number {
+  const cadastro = numero(imovel.valor_aluguel_esperado)
+  if (cadastro !== null) return cadastro
+  const cobre = vigencias.find(
+    (v) =>
+      String(v.vigencia_inicio).slice(0, 10) <= entrada.vigencia
+      && (v.vigencia_fim === null || String(v.vigencia_fim).slice(0, 10) >= entrada.vigencia),
+  )
+  return numero(cobre?.aluguel_contratado) ?? entrada.valorNovo
+}
+
+export async function aplicarReajustesDoFechamento(
+  supabase: SupabaseClient,
+  fechamentoId: string,
+  options: AplicarReajustesOptions = {},
+): Promise<DecisaoReajuste[]> {
+  const contexto = await carregarContextoDeAluguel(supabase, fechamentoId, {
+    ...options,
+    documentoTipo: "relatorio_reajuste",
+  })
+  const competencia = contexto.competencia
+  const itens = reajustesAplicaveis(contexto.fechamento.analise_completa?.reajuste, competencia)
+  if (itens.length === 0) return []
+
+  const decisoes: DecisaoReajuste[] = []
+  for (const item of itens) {
+    decisoes.push(
+      await aplicarValorDeAluguel(contexto, item, {
+        fonte: `Relatório de reajuste da competência ${competenciaLabel(competencia)}`,
+        justificativa: `Reajuste declarado no relatório de reajuste da competência ${competenciaLabel(competencia)}${formatPercentual(item.percentual)}, aplicado ao cadastro e à vigência a partir de ${competenciaLabel(item.vigencia)}.`,
+      }),
+    )
+  }
   return decisoes
 }
