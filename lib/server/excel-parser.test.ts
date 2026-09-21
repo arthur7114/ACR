@@ -303,3 +303,64 @@ test("planilha com todas as colunas conhecidas nao registra coluna nao lida", ()
   assert.deepEqual(result.plano_extracao.colunas_nao_lidas, [])
   assert.deepEqual(result.plano_extracao.alertas, [])
 })
+
+test("planilha real GM II: a linha TOTAL de cada secao vira conferencia", () => {
+  const result = parseExcelPrestacao(
+    readFileSync("docs/Artefatos/CAIXA ADMINISTRAÇÃO LOCAÇÃO - GM II (1).xlsx"),
+    "2026-03",
+  )
+  const totais = result.totais_secoes ?? []
+  assert.ok(totais.length > 0, "a planilha fecha cada secao com TOTAL; nenhum foi lido")
+  const vigencia = totais.find((total) => total.secao === "vigencia")
+  assert.ok(vigencia, "faltou o total da vigencia")
+  // A conferencia pela planilha NAO e exata, ao contrario do que parece: o
+  // parser le os valores EXIBIDOS (decisao antiga e deliberada), enquanto a
+  // celula TOTAL e uma formula sobre os valores cheios. Em 27 linhas a deriva
+  // aqui e de 5 centavos — a mesma tolerancia proporcional do recheck cobre.
+  const somaLinhas = Math.round(result.receitas_por_imovel.reduce((total, linha) => total + linha.total, 0) * 100) / 100
+  assert.equal(somaLinhas, 20_046.19)
+  assert.equal(vigencia.total, 20_046.24)
+  assert.ok(Math.abs(somaLinhas - (vigencia.total ?? 0)) <= 0.01 * result.receitas_por_imovel.length)
+})
+
+test("LIXO e ENCARGOS caem em outros_recebimentos nas linhas regulares", () => {
+  // Duas colunas, dois layouts diferentes, a mesma casa: `outros_recebimentos`
+  // e o que a base da comissao le. Um campo proprio duplicaria o valor.
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["GRAND CASTELÃO I"],
+    ["VIGÊNCIA MARÇO 2026"],
+    ["NOME", "APTO", "ALUGUEL", "DESCONTO", "ALUGUEL C/ DESCONTO", "IPTU", "LIXO", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO", "VENC."],
+    ["LOCATÁRIO", "101", 1000, 0, 1000, 50, 12.5, 1062.5, 74.38, 988.12, "IPTU 3/12", 30],
+    ["TOTAL", null, 1000, 0, 1000, 50, 12.5, 1062.5, 74.38, 988.12],
+    [null, null, null, null, null, null, null, "COMISSÃO ADMINISTRAÇÃO", null, 74.38],
+    [null, null, null, null, null, null, null, "TOTAL COMISSÃO + DESPESAS", null, 74.38],
+    [null, null, null, null, null, null, null, "SUBTOTAL RECEBIDOS EM NOME DO LOCADOR", null, 1062.5],
+    [null, null, null, null, null, null, null, "TOTAL A REPASSAR", null, 988.12],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "MAR 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-03")
+  assert.equal(result.receitas_por_imovel[0].outros_recebimentos, 12.5)
+  const vigencia = (result.totais_secoes ?? []).find((total) => total.secao === "vigencia")
+  assert.equal(vigencia?.lixo, 12.5)
+  assert.equal(vigencia?.encargos, null)
+})
+
+test("secao sem linha TOTAL nao inventa conferencia", () => {
+  const workbook = xlsx.utils.book_new()
+  const sheet = xlsx.utils.aoa_to_sheet([
+    ["LOC MAIS"],
+    ["VIGÊNCIA MARÇO 2026"],
+    ["NOME", "IMÓVEL", "ALUGUEL", "DESCONTO", "ALUGUEL C/ DESCONTO", "IPTU", "TOTAL", "COMISSÃO", "REPASSE", "OBSERVAÇÃO", "VENC."],
+    ["LOCATÁRIO", "GALPÃO 01", 1000, 0, 1000, 50, 1050, 73.5, 976.5, "IPTU 3/12", 30],
+    [null, null, null, null, null, null, null, "COMISSÃO ADMINISTRAÇÃO", null, 73.5],
+    [null, null, null, null, null, null, null, "TOTAL COMISSÃO + DESPESAS", null, 73.5],
+    [null, null, null, null, null, null, null, "SUBTOTAL RECEBIDOS EM NOME DO LOCADOR", null, 1050],
+    [null, null, null, null, null, null, null, "TOTAL A REPASSAR", null, 976.5],
+  ])
+  xlsx.utils.book_append_sheet(workbook, sheet, "MAR 26")
+
+  const result = parseExcelPrestacao(xlsx.write(workbook, { type: "buffer" }), "2026-03")
+  assert.equal(result.totais_secoes, undefined)
+})

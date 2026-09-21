@@ -59,8 +59,6 @@ export const prestacaoJsonSchema = {
           "agua",
           "iptu",
           "seguro_incendio",
-          "lixo",
-          "encargos",
           "outros_recebimentos",
           "total",
           "comissao",
@@ -84,10 +82,6 @@ export const prestacaoJsonSchema = {
           agua: { type: ["number", "null"] },
           iptu: { type: ["number", "null"] },
           seguro_incendio: { type: ["number", "null"] },
-          // Colunas de algumas imobiliarias: LIXO (Grand Castelao ate dez/2024)
-          // e ENCARGOS (Grand Maracanau, balde residual que soma no TOTAL).
-          lixo: { type: ["number", "null"] },
-          encargos: { type: ["number", "null"] },
           outros_recebimentos: { type: ["number", "null"] },
           total: { type: "number" },
           comissao: { type: ["number", "null"] },

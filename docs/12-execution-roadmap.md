@@ -3306,3 +3306,48 @@ login.
 `totais_secoes`; a tabela "Receitas por imóvel" não mostra lixo nem encargos
 (os campos já são extraídos); e a água do Grand Castelão I ago/2026 depende da
 aba `AGO 26` ou do PDF.
+
+## Ciclo — fecha as lacunas declaradas e o P3 (2026-09-21)
+
+Cinco entregas, pedidas como "fecha os em aberto".
+
+**Excel com rede.** O parser agora lê a linha TOTAL de cada seção e alimenta
+`totais_secoes`. Verificado contra a planilha real do Castelão em 4 competências
+e 2 layouts de coluna: 12 rechecks passando. E a prova do valor: apagando a
+coluna ÁGUA das linhas de jul/2026, o recheck acusa `água (documento R$ 47,60,
+linhas R$ 0,00)` e bloqueia — a falha de ago/2026, pega.
+
+**Correção de rota minha:** eu havia dito que no Excel a conferência seria
+exata. Não é. O parser lê os valores exibidos por decisão antiga, e a célula
+TOTAL é fórmula sobre os cheios: 5 centavos de deriva em 27 linhas no GM II.
+
+**Erro do ciclo anterior corrigido.** Eu havia criado campos `lixo`/`encargos`
+nas linhas regulares sem ver que `outros_recebimentos` já era a casa de ENCARGOS
+desde 2026-09-02 — e que ela entra na base da comissão. Campo paralelo = dupla
+contagem ou base silenciosamente menor, que é o bug do João Cordeiro de volta.
+Os dois campos ficaram só onde não há `outros_recebimentos`: intermediação e
+acordos.
+
+**Coluna "Outros"** na tabela Receitas por imóvel: o valor já pesava na comissão
+e não aparecia na tela.
+
+**P3.** "Aluguel contratado" virou "Aluguel potencial" em Indicadores e no
+relatório — menos no cabeçalho do CSV, que é contrato de exportação. E a linha
+de teto virou barra empilhada: verde o recebido, cinza o não realizado, a barra
+inteira é o potencial.
+
+O cinza tem piso em zero (recebido acima do potencial acontece) e é `null`
+quando falta uma das pontas. O tooltip o explica com **quatro** parcelas, não
+duas: a identidade `serie_realizacao_do_ponto` inclui descontos e ajustes, e
+listar só vacância e inadimplência deixaria o bloco maior que a explicação.
+
+Vacância e inadimplência saíram do gráfico para o tooltip. É perda na primeira
+leitura, registrada para a cliente poder pedir de volta.
+
+`pnpm test` 699 passando (1 skip), `tsc --noEmit` e `pnpm lint` limpos. **Sem
+verificação visual do gráfico** — a aplicação está atrás de login.
+
+**O que segue em aberto, e por quê.** Água do Castelão I ago/2026 (falta a aba
+`AGO 26`); P4 inteiro (lista de valores da cliente, regra do Terreno Castelão,
+decisão sobre remover a Conciliação financeira); regra dos 15+1 dias (bloqueada
+por schema: `imovel_vigencias` é mensal por constraint e não há data de saída).

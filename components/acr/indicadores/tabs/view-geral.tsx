@@ -185,8 +185,8 @@ export function ViewGeral({
               help={{
                 short: "Aluguel não gerado por imóvel vago.",
                 title: "Vacância",
-                definition: "Aluguel contratado que a competência não gerou porque o imóvel estava vago.",
-                formula: "vacância ÷ aluguel contratado × 100",
+                definition: "Aluguel potencial que a competência não gerou porque o imóvel estava vago.",
+                formula: "vacância ÷ aluguel potencial × 100",
               }}
             >
               {realizacao.vacancia !== null && realizacao.contratado ? (
@@ -214,7 +214,7 @@ export function ViewGeral({
             <p className="mt-2 text-xs text-acr-muted-2 tabular-nums">
               {formatCount(resumo.ocupacaoCompetencia.numerador)} de {formatCount(resumo.ocupacaoCompetencia.denominador)} imóveis
               {resumo.valorOcupacao !== null && (
-                <> · {formatCurrency(resumo.valorOcupacao)} de aluguel contratado</>
+                <> · {formatCurrency(resumo.valorOcupacao)} de aluguel potencial</>
               )}
             </p>
             {/* A derivação saiu da tela em 2026-09-21. A linha punha "90 de 108
@@ -233,7 +233,7 @@ export function ViewGeral({
                   `${formatCount(resumo.ocupacaoAcumulada.numerador)} de ${formatCount(resumo.ocupacaoAcumulada.denominador)} unidade-mês ocupada.`,
                   "Unidade-mês conta cada unidade uma vez por mês da janela — por isso o total é maior que o número de imóveis deste recorte.",
                   resumo.ocupacaoAcumulada.valorContratado !== null
-                    ? `Aluguel contratado somado na janela: ${formatCurrency(resumo.ocupacaoAcumulada.valorContratado)}.`
+                    ? `Aluguel potencial somado na janela: ${formatCurrency(resumo.ocupacaoAcumulada.valorContratado)}.`
                     : null,
                 ]}
               >
@@ -258,13 +258,13 @@ export function ViewGeral({
       <Panel className="px-5 py-5 sm:px-6">
         <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 xl:grid-cols-4">
           <Metric
-            label="Aluguel contratado"
+            label="Aluguel potencial"
             value={formatPortfolioContractedRent(resumo.aluguelContratado, data.cobertura.contratos)}
             rank="compact"
             tone={data.cobertura.contratos.ausentes > 0 ? "warning" : "default"}
             help={{
               short: "Aluguel fixo previsto nos contratos vigentes.",
-              title: "Aluguel contratado",
+              title: "Aluguel potencial",
               definition: "Soma do aluguel fixo previsto nos contratos vigentes na competência.",
               limitation:
                 "Contratos de receita variável não entram na soma. Imóvel com contrato fixo sem valor conhecido também fica fora — e a linha abaixo diz quantos são, porque somar zero por ele faria o número parecer completo.",
@@ -273,7 +273,7 @@ export function ViewGeral({
             {data.cobertura.contratos.ausentes > 0 && (
               <p className="mt-2 text-xs tabular-nums text-[#72500f]">
                 ⚠ {formatCount(data.cobertura.contratos.ausentes)}{" "}
-                {data.cobertura.contratos.ausentes === 1 ? "imóvel sem aluguel contratado" : "imóveis sem aluguel contratado"}
+                {data.cobertura.contratos.ausentes === 1 ? "imóvel sem aluguel potencial" : "imóveis sem aluguel potencial"}
               </p>
             )}
           </Metric>
@@ -376,10 +376,10 @@ export function ViewGeral({
             </div>
           )}
           help={metric === "valor" ? {
-            short: "Quanto do aluguel contratado foi realizado em cada mês.",
+            short: "Quanto do aluguel potencial foi realizado em cada mês.",
             title: "Realização do aluguel, mês a mês",
-            definition: "A linha é o aluguel contratado, teto do mês; as barras são o recebido da competência e as duas perdas, vacância e inadimplência, que explicam a distância até o teto. Passe o mouse sobre um mês para ver os valores.",
-            source: "Vigências para o contratado; histórico mensal por imóvel para o recebido e as perdas.",
+            definition: "Cada barra é o aluguel potencial do mês: em verde o que foi recebido, em cinza o que não se concretizou. Passe o mouse sobre um mês para ver os valores e o que compõe o cinza: vacância, inadimplência, descontos e ajustes documentados.",
+            source: "Vigências para o potencial; histórico mensal por imóvel para o recebido e as perdas.",
             limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor do mês.",
           } : {
             short: "Ocupação e inadimplência do histórico mês a mês.",

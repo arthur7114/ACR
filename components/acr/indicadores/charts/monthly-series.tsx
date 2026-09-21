@@ -21,21 +21,59 @@ interface Series {
 // muito zoado e aparecendo muito texto"). Na tela fica só a legenda; o número
 // de cada barra vive no hover/foco e na tabela acessível.
 //
-// A série de valores mede a REALIZAÇÃO do aluguel contratado. O contratado não
-// é uma categoria ao lado das outras: é o teto do mês, então vira uma linha de
-// referência por cima do grupo, e as barras são o recebido e as duas perdas que
-// explicam a distância até ela. Cores validadas com o verificador de paleta
-// (adjacências verde↔âmbar↔vermelho-escuro passam ΔE de daltonismo; o antigo
-// par #b45309↔#c2410c tinha ΔE 0,1 para deutan — indistinguíveis).
-const VALUE_SERIES: Series[] = [
-  { key: "recebido", label: "Recebido da competência", color: "#2d8c3a", read: (point) => point.aluguelRecebido, format: formatCurrency },
-  { key: "vacancia", label: "Vacância", color: "#d9a441", read: (point) => point.vacancia, format: formatCurrency },
-  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: (point) => point.inadimplencia, format: formatCurrency },
+// A série de valores mede a REALIZAÇÃO do aluguel potencial. O potencial não é
+// uma categoria ao lado das outras: é o total do mês, e a barra inteira o
+// representa.
+// Pedido da cliente (set/2026): em vez de tres barras lado a lado com uma linha
+// de teto por cima, UMA barra que sobe ate o aluguel potencial — verde o que
+// entrou, cinza o que nao se concretizou. A distancia ate o teto deixa de ser
+// um espaco vazio entre marcas e passa a ser um bloco com area propria.
+//
+// Vacancia e inadimplencia nao sumiram: elas explicam o cinza e vivem no
+// tooltip, que e onde derivacao mora. Empilha-las com cor propria contrariaria
+// o pedido ("a parte que nao foi recebida em cinza") e devolveria ao grafico a
+// leitura de tres categorias que ele tinha.
+const VALUE_STACK: Series[] = [
+  {
+    key: "recebido",
+    label: "Recebido da competência",
+    color: "#2d8c3a",
+    read: (point) => point.aluguelRecebido,
+    format: formatCurrency,
+  },
+  {
+    key: "nao_realizado",
+    label: "Não realizado",
+    color: "#c2c9c3",
+    // Resto do potencial que nao virou receita. `null` quando falta qualquer um
+    // dos dois: uma barra cinza calculada sobre dado ausente afirmaria perda que
+    // ninguem apurou. Piso em zero porque recebido acima do potencial existe
+    // (atraso recuperado no mes) e nao e perda negativa.
+    read: (point) =>
+      point.aluguelContratado === null || point.aluguelRecebido === null
+        ? null
+        : Math.max(0, Math.round((point.aluguelContratado - point.aluguelRecebido) * 100) / 100),
+    format: formatCurrency,
+  },
 ]
 
-const VALUE_CEILING: Series = {
+// Lidas so pelo tooltip e pela tabela acessivel: sao o detalhe do cinza.
+//
+// As quatro, nao duas. A identidade que o sistema ja verifica
+// (`serie_realizacao_do_ponto`) e potencial − vacancia − inadimplencia −
+// descontos + ajustes = recebido; logo o cinza e a soma das tres primeiras
+// menos os ajustes. Listar so vacancia e inadimplencia deixaria o bloco cinza
+// maior que a explicacao dele em todo mes com desconto.
+const VALUE_DETALHE: Series[] = [
+  { key: "vacancia", label: "Vacância", color: "#d9a441", read: (point) => point.vacancia, format: formatCurrency },
+  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: (point) => point.inadimplencia, format: formatCurrency },
+  { key: "descontos", label: "Descontos", color: "#8a6f3f", read: (point) => point.descontos, format: formatCurrency },
+  { key: "ajustes", label: "Ajustes documentados", color: "#5a6b7f", read: (point) => point.outrosAjustes, format: formatCurrency },
+]
+
+const VALUE_TOTAL: Series = {
   key: "contratado",
-  label: "Aluguel contratado (teto)",
+  label: "Aluguel potencial",
   color: "#6b7f6e",
   read: (point) => point.aluguelContratado,
   format: formatCurrency,
@@ -69,8 +107,13 @@ export function MonthlySeries({
   metric: DashboardMetric
   selectedCompetencia: string
 }) {
-  const definitions = metric === "percentual" ? PERCENT_SERIES : VALUE_SERIES
-  const ceiling = metric === "percentual" ? null : VALUE_CEILING
+  // Valores empilham numa barra so; percentuais seguem lado a lado, porque
+  // ocupacao e inadimplencia sao duas leituras independentes e somar as duas
+  // nao significaria nada.
+  const stacked = metric !== "percentual"
+  const definitions = stacked ? VALUE_STACK : PERCENT_SERIES
+  // Tudo que o tooltip e a tabela acessivel mostram, na ordem de leitura.
+  const detalhamento = stacked ? [VALUE_TOTAL, ...VALUE_STACK, ...VALUE_DETALHE] : PERCENT_SERIES
   const selectedIndex = resolveSelectedIndex(series, selectedCompetencia)
   const [hovered, setHovered] = useState<{ index: number; key: string | null } | null>(null)
   const tooltipId = useId()
@@ -80,20 +123,22 @@ export function MonthlySeries({
   const width = Math.max(WIDTH, PAD.left + PAD.right + series.length * MONTH_WIDTH)
   const plotWidth = width - PAD.left - PAD.right
   const band = plotWidth / series.length
-  const barWidth = Math.min(BAR_MAX, (band - BAND_PADDING * 2 - BAR_GAP * (definitions.length - 1)) / definitions.length)
-  const groupWidth = barWidth * definitions.length + BAR_GAP * (definitions.length - 1)
-  const maxValue = metric === "percentual"
-    ? 100
-    : niceCeiling(
+  const colunas = stacked ? 1 : definitions.length
+  const barWidth = Math.min(stacked ? BAR_MAX * 1.5 : BAR_MAX, (band - BAND_PADDING * 2 - BAR_GAP * (colunas - 1)) / colunas)
+  const groupWidth = barWidth * colunas + BAR_GAP * (colunas - 1)
+  // Empilhado, o topo e a soma da pilha — que e o proprio aluguel potencial.
+  const maxValue = stacked
+    ? niceCeiling(
         Math.max(
           1,
-          ...series.flatMap((point) => [...definitions, ...(ceiling ? [ceiling] : [])].map((item) => item.read(point) ?? 0)),
+          ...series.map((point) => definitions.reduce((total, item) => total + (item.read(point) ?? 0), 0)),
         ),
       )
+    : 100
 
   const bandStart = (index: number) => PAD.left + index * band
   const barX = (index: number, seriesIndex: number) =>
-    bandStart(index) + (band - groupWidth) / 2 + seriesIndex * (barWidth + BAR_GAP)
+    bandStart(index) + (band - groupWidth) / 2 + (stacked ? 0 : seriesIndex * (barWidth + BAR_GAP))
   const y = (value: number) => PAD.top + (1 - Math.min(value, maxValue) / maxValue) * PLOT_H
   const baseline = PAD.top + PLOT_H
 
@@ -101,8 +146,8 @@ export function MonthlySeries({
 
   return (
     <div className="px-4 pb-4 pt-2 sm:px-5">
-      {/* Legenda: só o que é cada coisa. Barras têm chave retangular, o teto
-          tem chave de linha, como a marca que representam. */}
+      {/* Legenda: só o que é cada segmento da barra. O total da pilha é o
+          aluguel potencial e não precisa de chave própria — é a barra inteira. */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5" aria-hidden="true">
         {definitions.map((item) => (
           <span key={item.key} className="inline-flex items-center gap-1.5 text-xs text-acr-muted-2">
@@ -110,10 +155,9 @@ export function MonthlySeries({
             {item.label}
           </span>
         ))}
-        {ceiling && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-acr-muted-2">
-            <span className="h-0.5 w-4 rounded-full" style={{ background: ceiling.color }} />
-            {ceiling.label}
+        {stacked && (
+          <span className="text-xs text-acr-muted-2">
+            A barra inteira é o aluguel potencial do mês.
           </span>
         )}
       </div>
@@ -188,18 +232,28 @@ export function MonthlySeries({
               )
             })}
 
-            {series.map((point, index) =>
-              definitions.map((item, seriesIndex) => {
+            {series.map((point, index) => {
+              // Empilhado, cada segmento comeca onde o anterior parou.
+              let acumulado = 0
+              return definitions.map((item, seriesIndex) => {
                 const value = item.read(point)
                 if (value === null) return null
-                const top = y(value)
-                const height = Math.max(0, baseline - top)
+                const base = stacked ? acumulado : 0
+                acumulado += value
+                const top = y(base + value)
+                const height = Math.max(0, y(base) - top)
                 const x = barX(index, seriesIndex)
                 const isActive = hovered?.index === index && (hovered.key === null || hovered.key === item.key)
                 return (
                   <g key={`${point.competencia}-${item.key}`}>
                     <path
-                      d={roundedTopBar(x, top, barWidth, height)}
+                      // So o segmento do topo arredonda: cantos no meio da
+                      // pilha abririam fresta entre um bloco e outro.
+                      d={
+                        stacked && seriesIndex < definitions.length - 1
+                          ? squareBar(x, top, barWidth, height)
+                          : roundedTopBar(x, top, barWidth, height)
+                      }
                       fill={item.color}
                       opacity={hovered && !isActive ? 0.45 : 1}
                     />
@@ -222,36 +276,15 @@ export function MonthlySeries({
                     />
                   </g>
                 )
-              }),
-            )}
-
-            {ceiling &&
-              series.map((point, index) => {
-                const value = ceiling.read(point)
-                if (value === null) return null
-                const lineY = y(value)
-                const x = bandStart(index) + (band - groupWidth) / 2
-                return (
-                  <line
-                    key={`teto-${point.competencia}`}
-                    x1={x - 4}
-                    x2={x + groupWidth + 4}
-                    y1={lineY}
-                    y2={lineY}
-                    stroke={ceiling.color}
-                    strokeWidth={2}
-                    strokeLinecap="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                )
-              })}
+              })
+            })}
           </svg>
 
           {activePoint && hovered && (
             <SeriesTooltip
               id={tooltipId}
               point={activePoint}
-              items={[...(ceiling ? [ceiling] : []), ...definitions]}
+              items={detalhamento}
               highlighted={hovered.key}
               leftPercent={((bandStart(hovered.index) + band / 2) / width) * 100}
               alignRight={hovered.index >= series.length / 2}
@@ -266,14 +299,14 @@ export function MonthlySeries({
           <thead>
             <tr>
               <th scope="col">Competência</th>
-              {[...(ceiling ? [ceiling] : []), ...definitions].map((item) => <th key={item.key} scope="col">{item.label}</th>)}
+              {detalhamento.map((item) => <th key={item.key} scope="col">{item.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {series.map((point) => (
               <tr key={point.competencia}>
                 <th scope="row">{point.label}</th>
-                {[...(ceiling ? [ceiling] : []), ...definitions].map((item) => <td key={item.key}>{item.format(item.read(point))}</td>)}
+                {detalhamento.map((item) => <td key={item.key}>{item.format(item.read(point))}</td>)}
               </tr>
             ))}
           </tbody>
@@ -337,6 +370,12 @@ function SeriesTooltip({
 }
 
 // Barra com o topo arredondado (4px) e a base reta na linha zero.
+// Segmento do meio da pilha: sem cantos, para nao abrir fresta entre blocos.
+function squareBar(x: number, top: number, width: number, height: number): string {
+  if (height <= 0) return ""
+  return `M${x} ${top}h${width}v${height}h${-width}Z`
+}
+
 function roundedTopBar(x: number, top: number, width: number, height: number): string {
   if (height <= 0) return ""
   const r = Math.min(CORNER, width / 2, height)

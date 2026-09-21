@@ -702,3 +702,53 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
 - **Ainda não feito:** a tabela "Receitas por imóvel" não ganhou as colunas,
   embora os campos passem a ser extraídos também para as linhas regulares.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — Excel, "Outros" nas receitas, aluguel potencial e barra empilhada (2026-09-21)
+
+**1. Parser de Excel popula `totais_secoes`.** `locateTable` já usava a linha
+TOTAL como critério de parada; agora também a devolve, e `buildTotalSecao` a lê
+pelo mesmo mapa de cabeçalho que leu as linhas. Verificado contra a planilha real
+do Grand Castelão em 4 competências e 2 layouts (dez/2024 com LIXO, jan/2025 em
+diante sem): 12 rechecks, todos passando.
+
+- **Correção do que eu havia afirmado:** a conferência pelo Excel **não é
+  exata**. O parser lê os valores *exibidos* (decisão antiga e deliberada),
+  enquanto a célula TOTAL é fórmula sobre os valores cheios. No GM II a deriva é
+  de 5 centavos em 27 linhas. A mesma tolerância proporcional cobre.
+- **Prova do valor:** removendo a coluna ÁGUA das linhas do Castelão jul/2026, o
+  recheck acusa `água (documento R$ 47,60, linhas R$ 0,00)` e o parecer bloqueia
+  — exatamente a falha de ago/2026.
+
+**2. LIXO e ENCARGOS nas linhas regulares vão para `outros_recebimentos`, não
+para campos próprios.** Correção de um erro do ciclo anterior: `outros_recebimentos`
+já era a casa de ENCARGOS desde 2026-09-02 e **entra na base da comissão**
+(`commissionBaseComponents`), com medição registrada (João Cordeiro jun/2026).
+Um campo paralelo teria criado dupla contagem ou perda silenciosa da base. Os
+campos `lixo`/`encargos` ficam só nas seções de intermediação e acordos, que não
+têm `outros_recebimentos`.
+
+**3. Coluna "Outros" na tabela Receitas por imóvel.** O valor entrava na base da
+comissão e não aparecia em lugar nenhum da tela.
+
+**4. "Aluguel contratado" → "Aluguel potencial"** em toda a superfície de
+Indicadores e no relatório. O cabeçalho do CSV (`aluguel_contratado`) **não**
+mudou: é contrato de exportação e renomear quebraria planilhas da cliente em
+silêncio.
+
+**5. Barra empilhada no lugar da linha de teto.** Uma barra por mês que sobe até
+o aluguel potencial — verde o recebido, cinza o não realizado. A linha some.
+
+- **O cinza é `potencial − recebido`, com piso em zero** (recebido acima do
+  potencial existe: atraso recuperado no mês) e `null` quando falta qualquer um
+  dos dois, para não afirmar perda que ninguém apurou.
+- **O tooltip explica o cinza com quatro parcelas, não duas.** A identidade que
+  o sistema já verifica (`serie_realizacao_do_ponto`) é potencial − vacância −
+  inadimplência − descontos + ajustes = recebido. Listar só vacância e
+  inadimplência deixaria o bloco maior que a explicação dele em todo mês com
+  desconto.
+- **Vacância e inadimplência saíram do gráfico e ficaram no tooltip**, conforme
+  o pedido ("a parte que não foi recebida em cinza"). É perda de informação na
+  primeira leitura — registrada aqui para a cliente poder pedir de volta.
+- **Sem verificação visual:** a aplicação está atrás de login.
+
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

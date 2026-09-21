@@ -166,18 +166,18 @@ export function ViewReceita({ data }: { data: IndicadoresData }) {
           <PanelHeader
             title="Do contrato ao recebido"
             help={{
-              short: "Por que o aluguel contratado não entrou inteiro.",
+              short: "Por que o aluguel potencial não entrou inteiro.",
               title: "Do contrato ao recebido",
               definition: "Mostra o que separou o aluguel previsto nos contratos do que efetivamente entrou.",
               formula:
                 "contratado − vacância − inadimplência − descontos ± ajustes documentados − cobrado como intermediação − mês proporcional − ocupado sem recebimento − ocupado parcial + recebido em vago = recebido da competência",
-              limitation: "Contratos de receita variável não entram no aluguel contratado.",
+              limitation: "Contratos de receita variável não entram no aluguel potencial.",
             }}
             action={<UndocumentedState value={valoresSemDocumento} flagged={hasUndocumented} />}
           />
           <div className="px-5 py-2 sm:px-6">
             <FinancialRow
-              label="Aluguel contratado"
+              label="Aluguel potencial"
               value={realization.contratado}
               formattedValue={formatPortfolioContractedRent(realization.contratado, data.cobertura.contratos)}
               operation="="

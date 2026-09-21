@@ -123,7 +123,7 @@ const ROTULO_COLUNA: Record<ColunaConferida, string> = {
   agua: "água",
   iptu: "IPTU",
   seguro_incendio: "seguro",
-  lixo: "lixo",
+  lixo: "lixo/encargos",
   encargos: "encargos",
   total: "total",
   comissao: "comissão",
@@ -145,7 +145,17 @@ interface LinhaConferivel {
 
 function linhasDaSecao(analysis: PrestacaoAnalysis, secao: TotalSecao["secao"]): LinhaConferivel[] {
   const extraordinarios = analysis.acordos_rescisoes_recebidos ?? []
-  if (secao === "vigencia") return analysis.receitas_por_imovel
+  if (secao === "vigencia") {
+    // Nas linhas regulares, LIXO e ENCARGOS nao tem campo proprio: os dois vao
+    // para `outros_recebimentos`, que e a casa estabelecida desde 2026-09-02 e
+    // entra na base da comissao. Aqui se faz o caminho de volta para a
+    // conferencia enxergar as colunas impressas.
+    return analysis.receitas_por_imovel.map((linha) => ({
+      ...linha,
+      lixo: linha.outros_recebimentos ?? null,
+      encargos: null,
+    }))
+  }
   if (secao === "intermediacao") {
     return extraordinarios
       .filter((item) => item.tipo === "intermediacao")
@@ -180,7 +190,15 @@ export function conferirTotaisDeSecao(analysis: PrestacaoAnalysis): PrestacaoRec
     let maiorDiferenca = 0
 
     for (const coluna of COLUNAS_CONFERIDAS) {
-      const valorImpresso = impresso[coluna]
+      // Na vigencia, LIXO e ENCARGOS caem no mesmo campo (`outros_recebimentos`)
+      // e por isso sao conferidos juntos, sob o rotulo de lixo. Nenhum documento
+      // observado imprime as duas colunas ao mesmo tempo, mas somar e o que
+      // mantem a conferencia honesta caso apareca.
+      if (impresso.secao === "vigencia" && coluna === "encargos") continue
+      const valorImpresso =
+        impresso.secao === "vigencia" && coluna === "lixo"
+          ? somarImpressos(impresso.lixo, impresso.encargos)
+          : impresso[coluna]
       // Coluna que a secao nao imprime nao e conferivel: o layout varia por
       // imobiliaria (Grand Maracanau nao tem AGUA) e por mes.
       if (valorImpresso === null || valorImpresso === undefined) continue
@@ -220,6 +238,13 @@ export function conferirTotaisDeSecao(analysis: PrestacaoAnalysis): PrestacaoRec
       difference: maiorDiferenca,
     }
   })
+}
+
+// `null` em ambos significa "nenhuma das duas colunas existe" e nao e
+// conferivel; com uma so informada, soma so ela.
+function somarImpressos(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null
+  return roundMoney((a ?? 0) + (b ?? 0))
 }
 
 function formatMoney(value: number) {

@@ -153,11 +153,11 @@ export function montarRelatorioIndicadores(data: IndicadoresData, agora: Date = 
       tom: ocupacao.desconhecidos > 0 ? "alerta" : "neutro",
     },
     {
-      rotulo: "Aluguel contratado",
+      rotulo: "Aluguel potencial",
       valor: formatCurrency(resumo.aluguelContratado),
       nota:
         data.cobertura.contratos.ausentes > 0
-          ? `${contagem(data.cobertura.contratos.ausentes)} imóvel(is) sem aluguel contratado`
+          ? `${contagem(data.cobertura.contratos.ausentes)} imóvel(is) sem aluguel potencial`
           : null,
       tom: data.cobertura.contratos.ausentes > 0 ? "alerta" : "neutro",
     },
@@ -230,7 +230,7 @@ export function montarRelatorioIndicadores(data: IndicadoresData, agora: Date = 
     colunasNumericas: [2],
     larguras: [0.4, 5, 2],
     linhas: [
-      { celulas: ["=", "Aluguel contratado", formatCurrency(realizacao.contratado)], destaque: true },
+      { celulas: ["=", "Aluguel potencial", formatCurrency(realizacao.contratado)], destaque: true },
       { celulas: ["−", "Vacância", formatCurrency(realizacao.vacancia)] },
       { celulas: ["−", "Inadimplência do mês", formatCurrency(realizacao.inadimplenciaMes)] },
       { celulas: ["−", "Descontos documentados", formatCurrency(realizacao.descontos)] },

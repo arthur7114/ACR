@@ -4,6 +4,7 @@ import type {
   InadimplenciaAcumulada,
   PrestacaoAnalysis,
   ReceitaPorImovel,
+  TotalSecao,
 } from "@/lib/prestacao-types"
 import { contarVagasDeTexto } from "@/lib/vagas"
 
@@ -45,6 +46,7 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
   const acordos = parseReceivedSection(rows, "ACORDOS", competencia)
   const atrasados = parseReceivedSection(rows, "ATRASADOS", competencia)
   const inadimplencias = parseInadimplencias(rows)
+  const totaisSecoes = coletarTotaisDeSecao(rows, vigenciaIndex)
   const comissaoIntermediacao = sumMoney(intermediacoes.map((item) => item.comissao))
   const resumo = parseResumo(rows, receitas, comissaoIntermediacao)
 
@@ -114,6 +116,9 @@ export function parseExcelPrestacao(fileBuffer: Buffer, competencia: string): Pr
       total_comissoes: comissaoAdministracao,
       total_repassar: totalRepassar,
     },
+    // Vazio vira `undefined`: ausencia de total impresso e "nao ha o que
+    // conferir", e uma lista vazia diria a mesma coisa de forma mais ambigua.
+    totais_secoes: totaisSecoes.length > 0 ? totaisSecoes : undefined,
     campos_ausentes: [],
     observacoes: [`Processado deterministicamente a partir da aba ${sheetName}.`],
     confianca_geral: 1,
@@ -167,9 +172,11 @@ function buildReceita(row: Row, columns: ColumnMap, competencia: string): Receit
     agua: moneyAt(row, columns.agua),
     iptu: moneyAt(row, columns.iptu),
     seguro_incendio: moneyAt(row, columns.seguro),
-    // ENCARGOS (Grand Maracanau): receita do locador sem coluna propria no
-    // schema; entra em outros_recebimentos (decisao de 2026-09-02).
-    outros_recebimentos: moneyAt(row, columns.encargos),
+    // ENCARGOS (Grand Maracanau) e LIXO (Grand Castelao ate dez/2024): receita
+    // do locador sem coluna propria no schema; entram em outros_recebimentos
+    // (decisao de 2026-09-02), que e o que a base da comissao le. Nenhum
+    // documento observado imprime as duas, mas somar mantem o total honesto.
+    outros_recebimentos: somarOpcionais(moneyAt(row, columns.encargos), moneyAt(row, columns.lixo)),
     total: moneyAt(row, columns.total) ?? 0,
     comissao: moneyAt(row, columns.comissao),
     repasse: moneyAt(row, columns.repasse),
@@ -218,6 +225,8 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
       agua: moneyAt(row, table.columns.agua),
       iptu: moneyAt(row, table.columns.iptu),
       seguro_incendio: moneyAt(row, table.columns.seguro),
+      lixo: moneyAt(row, table.columns.lixo),
+      encargos: moneyAt(row, table.columns.encargos),
       total_recebido: totalRecebido,
       repasse: moneyAt(row, table.columns.repasse),
       comissao,
@@ -228,6 +237,71 @@ function parseReceivedSection(rows: Row[], marker: string, competencia: string) 
       confianca: 1,
     } satisfies AcordoRescisaoRecebido]
   })
+}
+
+// `null` nos dois = nenhuma das colunas existe nesta planilha. Com uma so
+// informada, soma so ela — zero afirmaria que a coluna existe e vale nada.
+// Le a linha TOTAL de cada secao da aba. A vigencia tem posicao conhecida; as
+// demais sao localizadas pelo mesmo marcador que ja as encontra para os dados,
+// para nao haver duas nocoes de "onde comeca a secao".
+function coletarTotaisDeSecao(rows: Row[], vigenciaIndex: number): TotalSecao[] {
+  const secoes: Array<{ secao: TotalSecao["secao"]; indice: number }> = [
+    { secao: "vigencia", indice: vigenciaIndex },
+    { secao: "intermediacao", indice: findSectionIndex(rows, "INTERMEDIAC") },
+    { secao: "acordos_rescisoes", indice: findSectionIndex(rows, "ACORDOS") },
+  ]
+  const totais: TotalSecao[] = []
+  for (const { secao, indice } of secoes) {
+    if (indice < 0) continue
+    const table = locateTable(rows, indice)
+    if (!table) continue
+    const total = buildTotalSecao(secao, firstText(rows[indice]) || null, table.columns, table.totalRow)
+    if (total) totais.push(total)
+  }
+  return totais
+}
+
+function somarOpcionais(a: number | null, b: number | null): number | null {
+  if (a === null && b === null) return null
+  return roundMoney((a ?? 0) + (b ?? 0))
+}
+
+// Linha TOTAL da secao, lida coluna a coluna pelo mesmo mapa de cabecalho que
+// leu as linhas de dados. Coluna que a secao nao imprime vira `null`, nunca
+// zero: e a diferenca entre "nao existe" e "existe e vale nada".
+function buildTotalSecao(
+  secao: TotalSecao["secao"],
+  rotulo: string | null,
+  columns: ColumnMap,
+  totalRow: Row | null,
+): TotalSecao | null {
+  if (!totalRow) return null
+  const valor = (indice: number | undefined) => (indice === undefined || indice < 0 ? null : moneyAt(totalRow, indice))
+  const total: TotalSecao = {
+    secao,
+    rotulo,
+    aluguel: valor(columns.aluguel),
+    desconto: valor(columns.desconto),
+    aluguel_com_desconto: valor(columns.aluguelComDesconto),
+    garagem: valor(columns.garagem),
+    agua: valor(columns.agua),
+    iptu: valor(columns.iptu),
+    lixo: valor(columns.lixo),
+    seguro_incendio: valor(columns.seguro),
+    encargos: valor(columns.encargos),
+    total: valor(columns.total),
+    comissao: valor(columns.comissao),
+    repasse: valor(columns.repasse),
+    confianca: 1,
+  }
+  // Linha TOTAL sem nenhum valor e linha vazia: nao serve de conferencia e
+  // emiti-la faria o recheck comparar contra nada.
+  const temValor = [
+    total.aluguel, total.aluguel_com_desconto, total.garagem, total.agua,
+    total.iptu, total.lixo, total.seguro_incendio, total.encargos,
+    total.total, total.comissao, total.repasse,
+  ].some((valorColuna) => valorColuna !== null)
+  return temValor ? total : null
 }
 
 function findSectionIndex(rows: Row[], marker: string) {
@@ -327,14 +401,22 @@ function locateTable(rows: Row[], sectionIndex: number) {
   const headerIndex = findHeaderRow(rows, sectionIndex)
   if (headerIndex < 0) return null
   const tableRows: Row[] = []
+  // A planilha fecha cada secao com uma linha TOTAL. Ela ja era o criterio de
+  // parada; agora tambem e devolvida, para servir de conferencia contra a nossa
+  // soma das linhas (ver `conferirTotaisDeSecao`). Aqui a conferencia e exata:
+  // a planilha entrega os valores cheios, sem o arredondamento da impressao.
+  let totalRow: Row | null = null
   for (let index = headerIndex + 1; index < rows.length; index += 1) {
     const row = rows[index]
-    if (firstText(row).toUpperCase() === "TOTAL") break
+    if (firstText(row).toUpperCase() === "TOTAL") {
+      totalRow = row
+      break
+    }
     const normalized = normalizeRow(row)
     if (normalized.startsWith("INADIMPLENCIAS") || normalized.includes("RECEBIDAS EM")) break
     if (row.some((cell) => cell !== null && cell !== "")) tableRows.push(row)
   }
-  return { columns: mapColumns(rows[headerIndex]), rows: tableRows }
+  return { columns: mapColumns(rows[headerIndex]), rows: tableRows, totalRow }
 }
 
 // Colunas conhecidas que nao carregam dinheiro: podem ter numero (dia 10,
@@ -386,6 +468,7 @@ function mapColumns(header: Row): ColumnMap {
     iptu: findColumn(values, ["IPTU"]),
     seguro: findColumn(values, ["SEG INC", "SEGURO"]),
     encargos: findColumn(values, ["ENCARGOS", "ENCARGO"]),
+    lixo: findColumn(values, ["LIXO"]),
     total: findColumn(values, ["TOTAL"]),
     comissao: findColumn(values, ["COMISSAO"]),
     repasse: findColumn(values, ["REPASSE"]),

@@ -419,12 +419,13 @@ function sumRows(rows: ReceitaPorImovel[]) {
       agua: totals.agua + (row.agua ?? 0),
       iptu: totals.iptu + (row.iptu ?? 0),
       seguro: totals.seguro + (row.seguro_incendio ?? 0),
+      outros: totals.outros + (row.outros_recebimentos ?? 0),
       total: totals.total + row.total,
       totalComDesconto: totals.totalComDesconto + getTotalComDesconto(row),
       comissao: totals.comissao + (row.comissao ?? 0),
       repasse: totals.repasse + (row.repasse ?? 0),
     }),
-    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, total: 0, totalComDesconto: 0, comissao: 0, repasse: 0 },
+    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, outros: 0, total: 0, totalComDesconto: 0, comissao: 0, repasse: 0 },
   )
 }
 
@@ -1586,6 +1587,7 @@ export function RevisaoView({
                   { label: "Água" },
                   { label: "IPTU" },
                   { label: "Seg. inc.", title: "Seguro incêndio" },
+                  { label: "Outros", title: "Colunas de receita do locador que só algumas imobiliárias imprimem — ENCARGOS (Grand Maracanaú) e LIXO (Grand Castelão). Entram na base da comissão." },
                   { label: "Total" },
                   { label: "Comissão" },
                   { label: "Repasse" },
@@ -1651,6 +1653,7 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{typeof row.outros_recebimentos === "number" ? formatBRL(row.outros_recebimentos) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
@@ -1666,7 +1669,7 @@ export function RevisaoView({
                 })
               ) : (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
+                  <td colSpan={15} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
               )}
             </tbody>
@@ -1682,6 +1685,7 @@ export function RevisaoView({
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.agua)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.iptu)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.seguro)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.outros)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>
