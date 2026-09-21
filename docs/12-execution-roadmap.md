@@ -3381,3 +3381,123 @@ seções.
 **O script ganhou `--pdf`.** Nem todo empreendimento tem a aba do mês na
 planilha que a cliente compartilha. `--planilha` segue determinístico; exigir
 exatamente uma das duas fontes deixa explícito qual venceu.
+
+---
+
+## Ciclo — feedback do cliente de 2026-09-21, oito pontos (2026-09-21)
+
+Oito pontos chegaram por WhatsApp ao longo da tarde. Todos corrigidos, mais dois
+achados na conferência. Retorno ao cliente em `ACR-retorno-feedback-21-09-2026.pdf`.
+
+### Mapa — o ✅ e o balão do apto 204 (Grand Maracanaú)
+
+O 204 paga sempre um mês atrasado: a cadeia `atrasos_competencia_origem` mostra
+maio quitado em junho (466,93), junho em julho, julho em agosto. Maio ficou
+gravado como `ocupado` porque o fechamento de maio registrou o pagamento de
+ABRIL — e o sinal de quitação era montado só dentro do ramo
+`status === "inadimplente"` do mapa. Junho ganhava o ✅ e maio, a mesma
+quitação, caía no ramo de cima sem check e com o despejo do `descreverDivida`.
+
+`descreverQuitacao` passou a resolver isso antes dos ramos de status.
+`isInadimplenciaQuitada` ficou como estava: ela também conta risco no painel, e
+lá "ocupado" não é inadimplência quitada.
+
+Segundo achado do mesmo print: o balão de maio listava os pagamentos de junho,
+julho e agosto — e o de maio, que liquidou abril —, porque o filtro era só
+"fechamento posterior a esta competência". Passa a usar o `competencia_original`
+que o próprio recebido declara. Origem ausente continua aparecendo: não dá para
+atribuir, e esconder seria pior que mostrar no mês errado.
+
+### Mapa — legenda de percentual descrevendo célula categórica
+
+"Essa legenda não está correspondente aos apartamentos." Estava certo: a rampa
+0–1% … 75%+ descreve o percentual de UNIDADES em risco, grandeza que só a linha
+do empreendimento tem. O apartamento usava a mesma rampa para outra coisa
+(quanto do aluguel dele faltou) e, quando inadimplente, nem usava — a cor já era
+fixa. O mesmo vermelho queria dizer duas coisas em duas linhas da mesma tabela.
+
+Paleta categórica declarada (`UNIT_TONE`) para o apartamento; `heatTone` fica só
+onde é escala. A legenda virou dois blocos, e o de apartamento só aparece com
+algum empreendimento aberto. O degradê carregava informação real — virou linha
+no tooltip (`descreverRecebimentoParcial`), porque derivação mora lá e não na
+intensidade da cor.
+
+### José Walter ago/2026 — bloqueio insolúvel
+
+`compareDespesasTotal` confrontava o total do documento de despesa (NFS-e da
+administradora, R$ 267,88) com a retenção recalculada (R$ 0,00). Os dois lados
+certos, medindo coisas diferentes: `265a85e` decidiu — com razão — que o
+consolidado do extrato manda, porque aquela taxa já foi deduzida na linha do
+aluguel. O recheck seguia `failed` para sempre, numa tela cujo único botão é
+"Atualizar", que refaz o mesmo cálculo.
+
+Vira aviso quando o consolidado do extrato já cobre o que o documento declara.
+Despesa externa que caiba na retenção declarada continua conferida como antes,
+com teste próprio.
+
+**Diagnóstico errado no caminho:** eu disse ao Arthur que era um recheck fóssil
+congelado em `analise_completa` e que bastava revalidar. O dry-run provou o
+contrário — o `failed` sobrevive à revalidação porque é recalculado. A correção
+teve de ser na regra, não nos dados.
+
+### José Walter — comissão exibida como despesa
+
+A conta já sabia; o card é que lia o documento cru e mostrava "Outros
+R$ 267,88" com "Abatido do repasse − R$ 0,00" logo abaixo.
+`desdobrarDespesasFechamento` já nomeava o residual positivo; passa a nomear o
+negativo também.
+
+### Castelão I ago/2026 — intermediação fora da decomposição de receitas
+
+Card RECEITAS somava R$ 14.003,51 em partes contra R$ 15.447,13 no total. Os
+R$ 1.443,63 que faltavam são o recebido da seção de intermediação, que
+`calcularResumoReceitasAdicionais` descartava de propósito e o total (vindo de
+`recebidos_em_nome_locador`) sempre incluiu. Linha própria, não diluída no
+aluguel: o regime de comissão é outro (67% contra 7%).
+
+### Indicadores — "ajustes documentados" era o rótulo errado
+
+A série lia `point.outrosAjustes` = `valoresSemClassificacao`, o resto que arma o
+bloqueio de confirmação (CA-IND06), sob o nome de `ajustesClassificados` — que é
+o mês proporcional de quem rescindiu e nem passa pelo gráfico. No consolidado ele
+costuma ser NEGATIVO (mai a ago/2026: −2.124,83, −1.125,32, −4.034,38, −5.187,97).
+
+### Indicadores — a barra abre o não realizado, e as parcelas fecham
+
+"Não está aparecendo na barra inadimplência e vacância." O bloco só pôde ser
+aberto porque agora fecha: o ponto mensal carregava quatro causas que não
+somavam o não realizado em mês nenhum (ago/2026, 11.732,09 contra 22.108,03).
+Passa a carregar as parcelas que abrem `outrosAjustes`.
+
+Vacância entra líquida do recebido em vago — esse dinheiro já está no verde.
+Medido nos quatro meses, a soma bate o aluguel potencial na vírgula: 87.923,57 ·
+89.127,89 · 90.679,90 · 76.530,71.
+
+Duas parcelas **não são perda** e ganharam tom frio: cobrado como intermediação
+(R$ 3.840,00 em agosto) e mês proporcional de contrato novo (R$ 1.611,62). Um
+quarto do bloco. A identidade `serie_decomposicao_do_nao_realizado` entra em
+`lib/indicadores-identidades.ts` para impedir que volte a não fechar.
+
+### Achado na conferência — dívida como receita em dois fechamentos de maio
+
+Auditando os 31 fechamentos, Castelão I e LOCMAIS de mai/2026 tinham a seção
+INADIMPLÊNCIAS gravada em `acordos_rescisoes_recebidos`: R$ 2.161,97 e
+R$ 1.848,00 de dívida contabilizados como dinheiro recebido, com
+`inadimplencias_acumuladas` vazio. Reprocessados do PDF; totais financeiros
+inalterados. O LOCMAIS ainda recuperou R$ 38,08 de IPTU que a extração antiga
+deixou só na observação.
+
+### Incidente — revalidação zerou colunas financeiras
+
+`scripts/revalidar-fechamento.ts`, na primeira execução, zerou
+`total_receitas`, `total_despesas`, `total_comissoes`, `total_repassar`,
+`valor_repassado_comprovante` e `diferenca_total` do José Walter ago/2026 — um
+fechamento já lançado no eGestor. `persistir_pacote_fechamento_v1` aplica
+`p_fechamento_patch` como UPDATE de coluna: chave ausente vira NULL, e o patch
+só levava status, parecer e análise.
+
+Restaurado na re-execução com os mesmos números (3.348,52 / 0 / 267,88 /
+3.080,64), conferidos contra jul/2026. O script passou a repassar os totais
+explicitamente. O RPC também APAGA as movimentações não-manuais antes de
+reinserir — por isso elas são reconstruídas e repassadas; snapshots são upsert e
+ficam intocados com `null`.
