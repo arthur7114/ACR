@@ -3351,3 +3351,33 @@ verificação visual do gráfico** — a aplicação está atrás de login.
 `AGO 26`); P4 inteiro (lista de valores da cliente, regra do Terreno Castelão,
 decisão sobre remover a Conciliação financeira); regra dos 15+1 dias (bloqueada
 por schema: `imovel_vigencias` é mensal por constraint e não há data de saída).
+
+## Ciclo — água do Grand Castelão I ago/2026, corrigida (2026-09-21)
+
+O PDF não estava nos Downloads do Arthur — as planilhas de lá foram baixadas em
+2026-08-28, antes do fechamento de agosto existir, e nenhuma tem aba `AGO 26`.
+Ele estava no Storage do próprio app (`documentos_fechamento` → bucket
+`fechamento-documentos`), que era onde eu devia ter olhado antes de pedir o
+arquivo.
+
+**O documento confirma:** ÁGUA R$ 47,60 por apto, R$ 95,20 na linha TOTAL da
+seção de intermediação — exatamente a sobra que a tela acusava.
+
+**Correção de uma afirmação minha.** Eu havia registrado que a vigência também
+perdeu a água (R$ 821,48). Não perdeu: o diff da re-extração mostra 821,48 em 18
+linhas, antes e depois. Só a intermediação perdeu.
+
+**Diff da re-extração, campo a campo:** uma única diferença — água da
+intermediação, 0 → 95,20. Aluguel, garagem, IPTU, seguro, outros, total,
+comissão e repasse idênticos na vigência; contagens de linhas, acordos e
+inadimplências acumuladas idênticas. Os totais financeiros do fechamento não se
+moveram (recebidos 15.447,13 · comissão 980,25 · repasse 12.481,29), então o
+lançamento no eGestor segue coerente e o status foi preservado.
+
+**Gravado:** 30 movimentações, 21 snapshots, 8 validações. Verificado depois: as
+duas linhas com água 47,60, sobra zero, e `totais_secoes` persistido nas três
+seções.
+
+**O script ganhou `--pdf`.** Nem todo empreendimento tem a aba do mês na
+planilha que a cliente compartilha. `--planilha` segue determinístico; exigir
+exatamente uma das duas fontes deixa explícito qual venceu.
