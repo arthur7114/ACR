@@ -420,3 +420,36 @@ test("intermediacao entra no breakdown: as partes tem que somar o total exibido"
   // (um centavo de arredondamento das linhas impressas).
   assert.equal(resumo.total, 2290.1)
 })
+
+// Galpao Jose Walter ago/2026 (feedback do cliente, 2026-09-21: "comissao esta
+// indo para as despesas"). A NFS-e da propria administradora, R$ 267,88, e a
+// MESMA taxa ja deduzida na linha do aluguel. A conciliacao sabe disso e poe a
+// despesa em zero; o card listava o item cru e exibia "Outros R$ 267,88" com
+// "Abatido do repasse - R$ 0,00" logo abaixo. A comissao aparecia como despesa
+// do locador, e as partes nao somavam o total.
+test("despesa ja retida como comissao nao e listada como despesa do locador", () => {
+  const grupos = desdobrarDespesasFechamento({
+    totalDespesas: 0,
+    resumoItens: [],
+    despesas: [
+      {
+        tipo: "outro",
+        valor: 267.88,
+        fornecedor: "PLURAL ADMINISTRAÇÃO DE IMÓVEIS LTDA",
+        observacao: "Taxa de administração.",
+        referencia: "NFS-e",
+        endereco: null,
+        pago_em: null,
+        pago_por: null,
+        vencimento: null,
+        unidade_consumidora: null,
+        confianca: 0.94,
+      },
+    ] as never,
+  })
+
+  const itens = grupos.flatMap((grupo) => grupo.itens)
+  const soma = Math.round(itens.reduce((total, item) => total + item.valor, 0) * 100) / 100
+  assert.equal(soma, 0)
+  assert.ok(itens.some((item) => /já retido como comissão/i.test(item.descricao)))
+})

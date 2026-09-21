@@ -338,6 +338,20 @@ export function desdobrarDespesasFechamento({
     })
   }
 
+  // Residual NEGATIVO: o documento discrimina mais do que a conciliacao alocou
+  // a despesas. Isso acontece quando parte do que a nota descreve ja foi retido
+  // por outro caminho — tipicamente a NFS-e da propria taxa de administracao,
+  // que o extrato ja deduziu na linha do aluguel (Galpao Jose Walter ago/2026,
+  // R$ 267,88 nos dois lugares). Sem nomear o abatimento, o card listava a
+  // comissao como despesa do locador e exibia partes que nao somavam o total.
+  if (residual < -0.01) {
+    itens.push({
+      descricao: "Já retido como comissão de administração",
+      referencia: null,
+      valor: residual,
+    })
+  }
+
   const grupos = new Map<CategoriaDespesaFechamento, ItemDespesaFechamento[]>()
   for (const item of itens) {
     // Tipo do documento primeiro; texto so quando o documento nao classifica.
