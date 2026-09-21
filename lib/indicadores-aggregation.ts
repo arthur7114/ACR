@@ -117,6 +117,10 @@ export interface IndicadoresAnalysisInput {
     total_entradas_passagem?: number | null
     total_saidas_passagem?: number | null
     total_tarifas?: number | null
+    // Base sobre a qual a taxa de administracao incide (aluguel com desconto +
+    // garagem + agua + IPTU + seguro + encargos de atraso). Calculada uma vez
+    // no fechamento por `commissionBaseComponents`; aqui e so lida.
+    base_comissao_administracao?: number | null
   }
   prestacao: {
     receitas_por_imovel: Array<{
@@ -762,6 +766,42 @@ function buildSummary(
       )
   const intermediacoes = recebimentos.filter(({ item }) => item.tipo === "intermediacao")
   const baseIntermediacao = sumKnown(intermediacoes.map(({ financeiro }) => financeiro.baseComissionavel))
+  // Denominador do percentual EFETIVO de administracao.
+  //
+  // `total_receitas` (o denominador antigo) e a receita do fechamento inteiro e
+  // devolvia "6,1% efetivo" onde a Revisao do MESMO fechamento mostra 7%: ela
+  // inclui a intermediacao, que tem comissao propria e base propria. Trocar so
+  // por `base_comissao_administracao` tambem nao fecha, porque o NUMERADOR
+  // (`total_comissoes`) e a administracao do fechamento inteiro — inclui a taxa
+  // cobrada sobre acordo, rescisao e atraso, que incide sobre o TOTAL pago pelo
+  // inquilino (ver `recebimentos-extraordinarios.ts`). Sem somar essa base, o
+  // percentual subia de 7,00% para 8,02% e acusava retencao dobrada onde nao
+  // houve.
+  //
+  // Base certa = linhas regulares + total dos extraordinarios que pagam
+  // administracao. Conferido nos 14 fechamentos de jul e ago/2026: reproduz, em
+  // todos, o mesmo percentual da Revisao.
+  //
+  // Filtrado por imovel a linha JA e a base: `receita_total` do snapshot soma
+  // exatamente os componentes comissionaveis daquela unidade.
+  //
+  // Soma estrita da parte declarada: um unico fechamento sem
+  // `base_comissao_administracao` torna o denominador menor que a realidade e
+  // inflaria o percentual. Melhor "—" que um numero que acende alarme a toa.
+  const baseAdministracaoLinhas = byProperty
+    ? economicRevenue
+    : sumKnownStrict(analyses.map((analysis) => analysis.totals.base_comissao_administracao))
+  const baseAdministracaoExtras = byProperty
+    ? 0
+    : roundMoney(
+        recebimentos
+          .filter(({ item }) => item.tipo !== "intermediacao")
+          .reduce((total, { financeiro }) => total + financeiro.totalRecebido, 0),
+      )
+  const administrationBase =
+    baseAdministracaoLinhas === null
+      ? null
+      : roundMoney(baseAdministracaoLinhas + baseAdministracaoExtras)
   const contagemValor = (
     lista: typeof recebimentos,
   ): { quantidade: number; valor: number } => ({
@@ -804,7 +844,7 @@ function buildSummary(
     taxas: {
       administracao: {
         contrato: byProperty ? null : taxaUnica((rule) => rule.taxaAdministracaoPercent),
-        efetivo: percentual(administrationCommission, economicRevenue),
+        efetivo: percentual(administrationCommission, administrationBase),
       },
       intermediacao: {
         contrato: byProperty ? null : taxaUnica((rule) => rule.taxaIntermediacaoPercent),
@@ -2283,6 +2323,15 @@ function sumForStatus(
   const classified = snapshots.filter((snapshot) => snapshot.statusOcupacao === status)
   if (classified.length === 0) return 0
   return sumKnown(classified.map(select))
+}
+
+// Como `sumKnown`, mas um unico valor ausente torna a soma inteira desconhecida.
+// Para denominador de percentual: somar so o que se conhece produz uma base
+// menor que a real e um percentual maior que o real.
+function sumKnownStrict(values: Array<number | null | undefined>) {
+  if (values.length === 0) return null
+  if (values.some((value) => typeof value !== "number" || !Number.isFinite(value))) return null
+  return roundMoney((values as number[]).reduce((total, value) => total + value, 0))
 }
 
 function sumKnown(values: Array<number | null | undefined>) {

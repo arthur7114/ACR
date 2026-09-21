@@ -286,7 +286,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 ### Ajuste registrado — indicadores do contrato: taxas, acordos, reajuste e receita de locação (2026-09-16)
 
 - Ponto alterado: auditoria dos 13 indicadores do contrato contra `getIndicadores` mostrou 3 ausentes (rentabilidade, reajuste, acordos/rescisões com quantidade e valor) e 4 pela metade (percentual das taxas, vagas na receita, valor de ocupação, % de vacância).
-- Visão geral: Vacância ganha "% do contratado"; Ocupação ganha o aluguel contratado das unidades ocupadas; Comissões ganha uma linha por taxa com valor, % efetivo (comissão ÷ receita) e % de contrato — o efetivo acima do contrato acende, e é o sinal que faltou para a taxa retida duas vezes em ago/2026. Grade de apoio passa de 5 para 4 colunas e recebe dois cards: **Receita de locação** (aluguel + vagas, com cobertura das vagas) e **Rentabilidade**.
+- Visão geral: Vacância ganha "% do contratado"; Ocupação ganha o aluguel contratado das unidades ocupadas; Comissões ganha uma linha por taxa com valor, % efetivo (comissão ÷ base comissionável — ver o ajuste de 2026-09-21) e % de contrato — o efetivo acima do contrato acende, e é o sinal que faltou para a taxa retida duas vezes em ago/2026. Grade de apoio passa de 5 para 4 colunas e recebe dois cards: **Receita de locação** (aluguel + vagas, com cobertura das vagas) e **Rentabilidade**.
 - Rentabilidade fica **declaradamente vazia**: é retorno sobre ativo e o cadastro não tem valor venal nem de aquisição de nenhuma unidade. Sem isso, qualquer número seria repasse ÷ contratado com outro nome. O card existe, mostra "—" e diz por quê no tooltip.
 - Percentual de contrato só aparece quando todos os pares do recorte têm a mesma taxa; com taxas diferentes fica "—". Média de contratos distintos seria número inventado.
 - Conciliação financeira: painel **Acordos e rescisões** com quatro colunas separadas — acordos, rescisões, intermediações (com comissão) e atrasos pagos — cada uma com contagem e valor. Não há total somado: dinheiro entrando e inquilino saindo são fatos diferentes. Atraso ou acordo sem competência de origem aparece à parte, porque não abate o saldo em aberto.
@@ -456,3 +456,53 @@ Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentad
 ## Como atualizar este doc
 
 Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada substituir um comportamento do mock. Registre a mudanca tambem em `12-execution-roadmap.md`.
+
+### Ajuste registrado — denominador do % efetivo de administração (2026-09-21)
+
+- **Ponto alterado:** o % efetivo da comissão de administração passa a dividir
+  pela base sobre a qual a taxa realmente incide — `base_comissao_administracao`
+  (linhas regulares) **mais** o total dos recebimentos extraordinários que pagam
+  administração (acordo, rescisão, atraso) — e não por `total_receitas`.
+- **Por quê:** a cliente reportou "6,1% efetivo" na Visão geral contra 7% na
+  Revisão do mesmo fechamento. Não era divergência de valor, era de denominador.
+  `total_receitas` soma também acordos, rescisões, intermediações e atrasos, e a
+  taxa de administração não incide sobre eles. Denominador maior, percentual menor.
+- **Consequência que importa mais que o número:** como o denominador inflado
+  sempre puxa o efetivo para baixo, o alerta "efetivo acima do contrato" —
+  criado justamente para pegar a taxa retida duas vezes em ago/2026 — nunca
+  acendia. O sintoma estava mascarado.
+- **Fonte única:** a base já era calculada uma vez por `commissionBaseComponents`
+  (`lib/comissao.ts`) e gravada em `analise_completa.totals`. A Revisão já a
+  mostra no tooltip do valor calculado. Os indicadores passam a ler o mesmo
+  número em vez de recalcular por outro caminho.
+- **Fail-closed:** fechamento sem a base declarada deixa o efetivo em "—". Somar
+  só os fechamentos que declaram produziria uma base menor que a real e um
+  percentual maior que o real — exatamente o erro que acende o alerta à toa.
+- **Intermediação fica fora do denominador da administração.** Tem comissão
+  própria, base própria (aluguel + garagem do contrato novo) e linha própria na
+  tela. Deixá-la dentro — como `total_receitas` fazia — era o erro original;
+  tirá-la sem somar a base de acordo/rescisão/atraso é o erro simétrico, que
+  levava 7,00% a exibir 8,02% e acendia retenção dobrada onde não houve.
+- **Verificação:** nos 14 fechamentos de jul e ago/2026, o efetivo agora
+  reproduz exatamente o percentual que a Revisão mostra do mesmo fechamento, e
+  coincide com a taxa de contrato em todos. Antes: 5,6% a 6,4%.
+- **Não muda:** o efetivo da intermediação e o % de contrato.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — derivação da ocupação acumulada sai da tela (2026-09-21)
+
+- **Ponto alterado:** a segunda linha do descritivo da Ocupação passa a exibir
+  só `acumulado de N meses desde <mês>: <percentual>`. A contagem em
+  unidade-mês, a definição da unidade e o aluguel contratado da janela vão para
+  a tooltip (`Hint`).
+- **Por quê:** com um empreendimento filtrado, a linha exibia "24 de 27 imóveis"
+  e logo abaixo "90 de 108 unidade-mês · R$ 60.550,77". Os dois números estão
+  certos e recortados — 108 é 27 unidades × 4 meses — mas a linha trocava a
+  unidade de conta sem avisar, e a cliente leu como filtro que não pegou. O
+  defeito era de leitura, não de cálculo: verificado que a agregação, a query e
+  a API recortam corretamente nos três níveis de filtro.
+- **Regra aplicada:** a mesma que `components/acr/hint-tooltip.tsx` enuncia —
+  quando o número já se explica sozinho, a derivação não fica solta embaixo dele.
+- **"de N meses" fica visível** porque é exatamente a informação que faltava: diz
+  que o percentual não é do mês em tela antes de o leitor comparar com o de cima.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

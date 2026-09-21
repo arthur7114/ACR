@@ -31,7 +31,13 @@ import type { createSupabaseAdmin } from "./supabase"
 // dentro do valor recuperado; conta-lo de novo como desconto do mes fazia a
 // ponte subtrair R$ 0,26 duas vezes (Joao Cordeiro 0002521, jun/26: dois
 // alugueis atrasados quitados, um deles a 787,96 em vez de 788,22).
-export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.3"
+// v3.4: a cobranca esperada recorre a vaga OBSERVADA em mes pago quando a
+// vigencia nao declara `garagem_contratada`. O cadastro migrado deixou 49 dos 56
+// imoveis com vaga sem o valor no contrato, e tratar a ausencia como zero cobrava
+// do inadimplente so o aluguel (Grand Messejana II apto 7, ago/2026: 716,31 em
+// vez de 741,31). Snapshots gravados antes desta versao precisam de
+// rematerializacao para refletir a regra.
+export const INDICADORES_SNAPSHOT_CALCULATION_VERSION = "recebimentos-canonicos-v3.4"
 
 export type IndicadoresSnapshotOrigin = "processamento" | "backfill"
 export type IndicadoresSnapshotQuality = "completo" | "parcial" | "sem_linha"
@@ -44,8 +50,16 @@ export interface IndicadoresSnapshotProperty {
   unit: string
   expectedRent: number | null
   // Garagem contratada da vigência (CA-IND23). Nunca inferida do cadastro
-  // atual: null significa "sem evidência", e a cobrança esperada fica só no aluguel.
+  // atual: null significa "sem evidência", e a cobrança esperada recorre então
+  // à vaga observada abaixo.
   garagemContratada?: number | null
+  // Última vaga OBSERVADA em competência anterior paga (`garagem_recebida > 0`).
+  // Não é o cadastro: é o que o documento registrou o inquilino pagando. Serve
+  // de base só quando a vigência não declara a vaga — o cadastro migrado deixou
+  // 49 dos 56 imóveis com vaga sem `garagem_contratada`, e tratar a ausência
+  // como zero cobrava do inadimplente menos do que ele devia (Grand Messejana II
+  // apto 7, ago/2026: 716,31 em vez de 741,31).
+  garagemObservada?: number | null
   revenueModel?: IndicadoresRevenueModel
   expectedRentSource?: string | null
   realEstateAgencyName: string | null
@@ -241,7 +255,57 @@ export async function loadActiveIndicadoresProperties(input: {
 
   if (error) throw error
 
-  return mapIndicadoresProperties({ propertyRows: data ?? [], vigencies })
+  const propertyIds = z.array(z.object({ id: z.string() })).parse(data ?? []).map((row) => row.id)
+  const garagensObservadas = competence
+    ? await loadObservedGarages(input.supabase, propertyIds, competence)
+    : new Map<string, number>()
+
+  return mapIndicadoresProperties({ propertyRows: data ?? [], vigencies, garagensObservadas })
+}
+
+/**
+ * Última vaga que o documento registrou PAGA em competência anterior, por imóvel.
+ *
+ * Só serve de base quando a vigência não declara `garagem_contratada`. Exige
+ * valor positivo: `garagem_recebida = 0` num mês inadimplente significa "não
+ * pagou", não "não tem vaga" — usar o zero recriaria o bug que isto conserta.
+ *
+ * Competência anterior, nunca a corrente: no mês em que a unidade está
+ * inadimplente a vaga vem zerada junto com o aluguel, e é justamente o valor
+ * histórico que diz quanto ela deveria ter pago.
+ */
+async function loadObservedGarages(
+  supabase: SupabaseAdmin,
+  propertyIds: string[],
+  competence: string,
+) {
+  const observed = new Map<string, number>()
+  if (propertyIds.length === 0) return observed
+  const { data, error } = await supabase
+    .from("imovel_competencias")
+    .select("imovel_id, competencia, garagem_recebida")
+    .in("imovel_id", propertyIds)
+    .lt("competencia", competence)
+    .gt("garagem_recebida", 0)
+    // Decrescente de proposito: o cliente corta a resposta em 1.000 linhas, e
+    // ascendente a truncagem comeria as competencias MAIS RECENTES, que sao as
+    // unicas que interessam aqui. Decrescente ela come as mais antigas, que ja
+    // seriam descartadas pelo `continue` abaixo.
+    .order("competencia", { ascending: false })
+  if (error) {
+    // Coluna ou tabela ausente em base antiga: seguimos sem a vaga observada,
+    // que é exatamente o comportamento anterior a esta regra.
+    if (isMissingDatabaseObject(error)) return observed
+    throw error
+  }
+  // Ordem decrescente: a PRIMEIRA linha de cada imóvel é a competência mais
+  // recente; as seguintes são histórico e não substituem.
+  for (const row of data ?? []) {
+    if (observed.has(row.imovel_id)) continue
+    const valor = toNullableMoney(row.garagem_recebida)
+    if (valor !== null && valor > 0) observed.set(row.imovel_id, valor)
+  }
+  return observed
 }
 
 /**
@@ -256,6 +320,8 @@ export async function loadActiveIndicadoresProperties(input: {
 export function mapIndicadoresProperties(input: {
   propertyRows: unknown
   vigencies: SnapshotVigencyRow[]
+  /** Última vaga observada por imóvel, de competência anterior paga. */
+  garagensObservadas?: Map<string, number>
 }): IndicadoresSnapshotProperty[] {
   const vigencyByProperty = new Map(
     input.vigencies.map((vigency) => [vigency.imovel_id, vigency]),
@@ -277,6 +343,10 @@ export function mapIndicadoresProperties(input: {
           : null,
       garagemContratada:
         revenueModel === "fixo" ? toNullableMoney(vigency?.garagem_contratada ?? null) : null,
+      garagemObservada:
+        revenueModel === "fixo"
+          ? toNullableMoney(input.garagensObservadas?.get(property.id) ?? null)
+          : null,
       revenueModel,
       expectedRentSource: vigency ? "vigencia" : "cadastro",
       realEstateAgencyName: getRelationName(property.imobiliarias),
@@ -532,9 +602,13 @@ function buildSnapshotRow(input: {
   const status = classifyOccupancy(evidence)
   const eventos = classifyOccupancyEventos(evidence)
   // CA-IND23: cobrança esperada por componentes com vigência/evidência —
-  // aluguel contratado + garagem contratada quando existir; nunca inferida.
+  // aluguel contratado + vaga. A vaga vem da vigência quando o contrato a
+  // declara; senão, da última competência paga em que o documento registrou o
+  // inquilino pagando por ela. Nenhuma das duas é inferida do cadastro atual, e
+  // sem nenhuma das duas a cobrança fica só no aluguel.
+  const garagemEsperada = property.garagemContratada ?? property.garagemObservada ?? 0
   const cobrancaEsperada =
-    expectedRent === null ? null : roundMoney(expectedRent + (property.garagemContratada ?? 0))
+    expectedRent === null ? null : roundMoney(expectedRent + garagemEsperada)
   const quality = resolveQuality(propertyLines.length, expectedRent, currentRent, revenueModel)
   const dayDue = selectStableNumber(propertyLines.map((line) => line.dia_vencimento))
   const statusExplicit =

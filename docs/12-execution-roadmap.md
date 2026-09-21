@@ -2927,3 +2927,135 @@ atual (ou a vigência do mês) como anterior — mesma guarda.
 **Backfill em produção.** Dry-run nos 22 fechamentos aprovados: só as duas
 unidades previstas mudam; todas as intermediações de jun–ago já batiam
 (`ja_aplicado`). 5 testes em `lib/server/contrato-novo-cadastro.test.ts`.
+
+## 2026-09-21 — P0 do feedback da cliente: denominador da comissão e vaga do inadimplente
+
+**Pedido.** Atacar o P0 do mapa em `docs/PLAN-bugs-feedback-cliente-2026-09-21.md`:
+comissão "6,1% efetivo" contra 7% na Revisão, vaga de moto fora da inadimplência
+do apto 7 GM II, e ocupação acumulada supostamente sem filtro de imóvel.
+
+### 1. % efetivo da administração passava pelo denominador errado
+
+**Causa raiz.** `efetivo = comissão ÷ economicRevenue`, com
+`economicRevenue = analise.totals.total_receitas` — a receita do fechamento
+inteiro, que inclui acordos, rescisões, intermediações e atrasos. A taxa de
+administração não incide sobre eles. A Revisão sempre usou
+`base_comissao_administracao` (`commissionBaseComponents`, `lib/comissao.ts`):
+aluguel com desconto + garagem + água + IPTU + seguro + encargos de atraso.
+Denominador maior, percentual menor — 700 ÷ 11.475,41 = 6,1%; 700 ÷ 10.000 = 7%.
+
+**Consequência que importava mais que o número.** O alerta "efetivo acima do
+contrato" — criado para pegar a taxa retida duas vezes em ago/2026 — nunca
+acendia, porque o denominador inflado sempre puxa o efetivo para baixo.
+
+**Implementação.** `administrationBase` em `lib/indicadores-aggregation.ts` =
+soma **estrita** de `base_comissao_administracao` dos fechamentos do recorte
+(um único ausente ⇒ "—", porque somar parte da base inflaria o percentual)
+**mais** o total dos recebimentos extraordinários que pagam administração.
+Filtrado por imóvel a linha já É a base: `receita_total` do snapshot soma
+exatamente os componentes comissionáveis da unidade. O campo entrou no tipo e
+no schema Zod de `lib/server/indicadores.ts`. 3 testes novos; o canário do José
+Walter (16% × 8%) passou a declarar a base e segue acusando a retenção dobrada.
+
+**Correção do próprio conserto (mesma sessão).** A primeira versão trocava só o
+denominador por `base_comissao_administracao` e parava aí. Errado pela metade: o
+NUMERADOR (`total_comissoes`) é a administração do fechamento inteiro e inclui a
+taxa cobrada sobre acordo, rescisão e atraso, que incide sobre o TOTAL pago pelo
+inquilino (`recebimentos-extraordinarios.ts`). Sem somar essa base, Grand
+Messejana II ago/2026 exibia 8,02% onde a Revisão mostra 7,00% — e o alerta de
+retenção dobrada acendia em 5 empreendimentos de julho e 4 de agosto, todos
+falso positivo. Intermediação continua fora: comissão própria, base própria.
+
+Pego na conferência contra o banco, não pelos testes — o caso sintético não
+tinha recebimento extraordinário. Verificação atual: nos 14 fechamentos de jul e
+ago/2026 o efetivo reproduz exatamente o percentual da Revisão e coincide com a
+taxa de contrato em todos; zero alertas. Correção é em tempo de leitura, não
+toca snapshot: nenhum backfill novo.
+
+### 2. Vaga de garagem fora da cobrança esperada do inadimplente
+
+**Causa raiz, confirmada no banco.** Grand Messejana II apto 7: vigência com
+`aluguel_contratado = 716,31` e `garagem_contratada = null`, enquanto a vaga de
+moto (R$ 25,00, "VAGA DE GARAGEM PARA MOTO" na observação) foi paga e registrada
+em `garagem_recebida` até a unidade ficar inadimplente. O `?? 0` em
+`indicadores-snapshots.ts` transformava a ausência em zero e cobrava 716,31 em
+vez de 741,31.
+
+**Alcance medido.** 49 dos 56 imóveis com vaga observada estão sem
+`garagem_contratada` (cadastro migrado). 4 já passaram por inadimplência,
+R$ 202,27 subestimados. Não é caso isolado: é classe.
+
+**Implementação.** `loadObservedGarages` busca a última `garagem_recebida > 0`
+de competência **anterior** por imóvel; `mapIndicadoresProperties` a expõe como
+`garagemObservada`; a cobrança esperada passa a ser
+`aluguel + (garagemContratada ?? garagemObservada ?? 0)`. Precedência: contrato
+vence observação; `garagem_recebida = 0` em mês inadimplente é "não pagou", não
+"não tem vaga", e por isso a busca exige valor positivo; receita variável
+continua sem cobrança esperada. Mesma lógica que `receitaEsperadaInadimplente`
+já usava ao recorrer ao último mês pago — evidência do documento, não inferência
+do cadastro. 3 testes novos.
+
+**Versão do snapshot: `recebimentos-canonicos-v3.4`.** Conferido contra o banco:
+apto 7 passa a calcular 741,31, e 13 das 27 unidades do GM II herdam a vaga.
+
+**Backfill executado em produção (2026-09-21).** Dry-run antes: 31 fechamentos,
+469 updates, 0 inserts. Diff de conteúdo conferido linha a linha antes de gravar:
+
+- 322 linhas mudam só `calculo_versao`/checksum — nenhum valor.
+- 147 mudam `cobranca_esperada`, **todas para cima** (delta R$ 1,67 a R$ 130,00).
+  8 são linhas inadimplentes, efeito direto na inadimplência do mês; as demais
+  também movem vacância e a acumulada derivada, que leem o mesmo campo.
+- 7 mudam `aluguel_esperado` e **não vêm deste conserto**: são os casos do ciclo
+  de 2026-09-18 (GM II 26 660 → 700, LOCMAIS Galpão 02 1.700 → 1.830, Grand
+  Castelão I 1 690 → 761,30 e mais quatro), cujos snapshots nunca tinham sido
+  rematerializados depois da correção de cadastro. Pegaram carona.
+
+Pós-commit: segunda execução devolve 469 skips (idempotente) e
+`verify-indicadores-snapshots` dá `ok: true` — cobertura 100%, zero duplicatas,
+469 checksums válidos, 31 reconciliações sem falha, tabelas-fonte intactas.
+
+GM II apto 7 agora: mai/26 ocupado 716,31; jun–ago inadimplente **741,31**.
+
+> **Resíduo conhecido:** a vaga observada só olha competência ANTERIOR, então o
+> primeiro mês em que a vaga aparece mantém a cobrança esperada sem ela (apto 7,
+> mai/26: 716,31 com R$ 25,00 de vaga recebida). Não afeta a inadimplência —
+> num mês pago a vaga entra pelo recebido — mas o teto daquele mês fica curto.
+> Some quando o cadastro receber `garagem_contratada` de verdade.
+
+### 3. Ocupação acumulada "sem filtro de imóvel" — era legibilidade, não filtro
+
+Verificado em três camadas. Agregação: `applyScope` filtra os snapshots por
+`filtros.imovelId` e `historicalSnapshots` filtra de novo por
+`expectedPropertyIds`. API real, competência 2026-08: carteira 402 de 467
+unidade-mês; filtro de imóvel (GM II apto 7) 4 de 4, R$ 2.865,24; filtro de
+empreendimento (GM II) 90 de 108, R$ 60.550,77 — todos corretamente recortados.
+Camada de tela e do PDF passam `imovelId` na query e no link de exportação.
+
+Fica um teste de regressão (`ocupacao acumulada respeita o filtro de imovel`).
+
+**Resolvido com o print da cliente (Grand Messejana II, ago/2026).** A linha dizia:
+
+```
+24 de 27 imóveis · R$ 16.332,71 de aluguel contratado
+acumulado desde mai. de 2026: 83,3% · 90 de 108 unidade-mês · R$ 60.550,77
+```
+
+O dado sempre esteve recortado — 108 é 27 unidades × 4 meses e R$ 60.550,77 é o
+contratado somado da janela. O que a linha não dizia é que a **unidade de conta
+muda** entre as duas: quem lê "27 imóveis" e vê "108" logo abaixo conclui, com
+razão, que o filtro não pegou.
+
+Correção pela regra da casa (derivação vai para tooltip, não solta na tela — a
+mesma que o docstring de `hint-tooltip.tsx` enuncia): a linha visível fica
+`acumulado de 4 meses desde mai. de 2026: 83,3%`, com "de 4 meses" dizendo de
+cara que o número não é do mês em tela. A contagem, a definição de unidade-mês e
+o valor contratado passam para o `Hint`.
+
+**Validação.** `pnpm test` 667 testes (1 skip de fixture local), `tsc --noEmit`
+e `pnpm lint` limpos.
+
+**Docs.** `docs/02-mock-contract.md` (ajuste do denominador do % efetivo) e
+`docs/PLAN-bugs-feedback-cliente-2026-09-21.md`.
+
+**Próximo passo.** P1: histórico do imóvel (inadimplências em aberto × meses no
+histórico) e revisão de nomenclaturas.

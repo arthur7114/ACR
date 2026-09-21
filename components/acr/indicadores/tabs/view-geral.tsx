@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react"
 import type { IndicadoresData, IndicadoresOccupancy, IndicadoresTaxaPercent } from "@/lib/indicadores-types"
+import { Hint } from "@/components/acr/hint-tooltip"
 import { MonthlySeries } from "../charts/monthly-series"
 import { SegmentedBar, type BarSegment } from "../charts/segmented-bar"
 import {
@@ -216,15 +217,32 @@ export function ViewGeral({
                 <> · {formatCurrency(resumo.valorOcupacao)} de aluguel contratado</>
               )}
             </p>
+            {/* A derivação saiu da tela em 2026-09-21. A linha punha "90 de 108
+                unidade-mês · R$ 60.550,77" logo abaixo de "24 de 27 imóveis":
+                quem lê 27 e vê 108 conclui que o filtro não pegou (queixa da
+                cliente no GM II). O dado sempre esteve recortado — o que faltava
+                era dizer que a unidade de conta mudou. Na tela fica o percentual
+                com o tamanho da janela ("de 4 meses"), que é o que evita a
+                comparação errada com a linha de cima; a conta vai na tooltip. */}
             {resumo.ocupacaoAcumulada && resumo.ocupacaoAcumulada.janela.meses > 1 && (
-              <p className="mt-1 text-xs text-acr-muted-2 tabular-nums">
-                acumulado desde {formatCompetenciaCurta(resumo.ocupacaoAcumulada.janela.inicio)}:{" "}
-                {formatPercent(resumo.ocupacaoAcumulada.percentual)} ·{" "}
-                {formatCount(resumo.ocupacaoAcumulada.numerador)} de {formatCount(resumo.ocupacaoAcumulada.denominador)} unidade-mês
-                {resumo.ocupacaoAcumulada.valorContratado !== null && (
-                  <> · {formatCurrency(resumo.ocupacaoAcumulada.valorContratado)}</>
-                )}
-              </p>
+              <Hint
+                className="mt-1"
+                label="Como a ocupação acumulada é calculada"
+                lines={[
+                  `Proporção dos ${formatCount(resumo.ocupacaoAcumulada.janela.meses)} meses inteiros, não do mês em tela.`,
+                  `${formatCount(resumo.ocupacaoAcumulada.numerador)} de ${formatCount(resumo.ocupacaoAcumulada.denominador)} unidade-mês ocupada.`,
+                  "Unidade-mês conta cada unidade uma vez por mês da janela — por isso o total é maior que o número de imóveis deste recorte.",
+                  resumo.ocupacaoAcumulada.valorContratado !== null
+                    ? `Aluguel contratado somado na janela: ${formatCurrency(resumo.ocupacaoAcumulada.valorContratado)}.`
+                    : null,
+                ]}
+              >
+                <p className="text-xs text-acr-muted-2 tabular-nums">
+                  acumulado de {formatCount(resumo.ocupacaoAcumulada.janela.meses)} meses desde{" "}
+                  {formatCompetenciaCurta(resumo.ocupacaoAcumulada.janela.inicio)}:{" "}
+                  {formatPercent(resumo.ocupacaoAcumulada.percentual)}
+                </p>
+              </Hint>
             )}
           </Metric>
           <div className="mt-5 space-y-4">
@@ -317,9 +335,9 @@ export function ViewGeral({
               short: "Administração e intermediação da imobiliária.",
               title: "Comissões",
               definition: "Soma da comissão de administração e da comissão de intermediação.",
-              formula: "efetivo = comissão ÷ receita da competência × 100",
+              formula: "efetivo da administração = comissão ÷ base comissionável × 100 · efetivo da intermediação = comissão ÷ (aluguel + garagem) do contrato novo × 100",
               limitation:
-                "O percentual de contrato só aparece quando todos os fechamentos do recorte têm a mesma taxa; com taxas diferentes fica “—”, porque uma média inventaria um número. Efetivo acima do contrato é sinal de retenção dobrada.",
+                "A base comissionável é a mesma da Revisão: aluguel (com desconto), garagem, água, IPTU, seguro e encargos de atraso das linhas do mês, mais o total recebido em acordos, rescisões e atrasos, sobre o qual a taxa de administração também incide. Intermediação fica fora: tem comissão e base próprias, na linha ao lado. Fechamento sem a base declarada deixa o efetivo em “—”, porque somar só parte dela inflaria o percentual. O percentual de contrato só aparece quando todos os fechamentos do recorte têm a mesma taxa; com taxas diferentes fica “—”, porque uma média inventaria um número. Efetivo acima do contrato é sinal de retenção dobrada.",
             }}
           >
             <TaxaLinha rotulo="adm." taxa={resumo.taxas.administracao} valor={resumo.comissaoAdministracao} />

@@ -211,6 +211,7 @@ const calculationAnalysisSchema = z
         saidas_passagem: z.number().nullable().optional(),
         total_tarifas: z.number().nullable().optional(),
         repasse_declarado: z.number().nullable().optional(),
+        base_comissao_administracao: z.number().nullable().optional(),
       })
       .passthrough(),
     despesas: z
@@ -690,6 +691,7 @@ function parseCalculationAnalysis(
       saidas_passagem: totals.saidas_passagem ?? null,
       total_tarifas: totals.total_tarifas ?? null,
       repasse_declarado: totals.repasse_declarado ?? null,
+      base_comissao_administracao: totals.base_comissao_administracao ?? null,
     },
     prestacao: prestacao
       ? {
