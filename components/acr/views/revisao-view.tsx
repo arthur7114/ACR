@@ -1155,6 +1155,12 @@ export function RevisaoView({
                         <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.rescisoes)}</span>
                       </div>
                     )}
+                    {receitasAdicionais.intermediacao > 0 && (
+                      <div className="flex justify-between text-[13px]">
+                        <span className="text-[#6B7F6E]">Intermediação</span>
+                        <span className="font-medium tabular-nums text-[#1A2B1C]">{formatBRL(receitasAdicionais.intermediacao)}</span>
+                      </div>
+                    )}
                     {receitasAdicionais.inadimplenciasPagas > 0 && (
                       <div className="flex justify-between text-[13px]">
                         <span className="text-[#6B7F6E]">Inadimplência paga</span>

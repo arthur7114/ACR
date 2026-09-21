@@ -44,6 +44,8 @@ export interface ResumoReceitasAdicionais {
   acordos: number
   rescisoes: number
   inadimplenciasPagas: number
+  /** Total RECEBIDO na secao de intermediacao — nao a taxa retida. */
+  intermediacao: number
   outros: number
   total: number
 }
@@ -123,11 +125,16 @@ export function calcularResumoReceitasAdicionais(
     acordos: 0,
     rescisoes: 0,
     inadimplenciasPagas: 0,
+    intermediacao: 0,
     outros: 0,
   }
 
+  // A intermediacao ficava de fora: o total exibido a incluia (ela esta dentro
+  // de `recebidos_em_nome_locador`) e a decomposicao nao, entao as partes nao
+  // somavam o todo. Grand Castelao I ago/2026: R$ 14.003,51 listados contra
+  // R$ 15.447,13 exibidos, R$ 1.443,63 de diferenca. Ela tem linha propria
+  // porque o regime de comissao e outro — somar no aluguel esconderia isso.
   for (const item of prestacao?.acordos_rescisoes_recebidos ?? []) {
-    if (item.tipo === "intermediacao") continue
     const resolucao = resolverRecebimentoLegado(item)
     // Item pendente não produz efeito financeiro (CA27.2); ele aparece no
     // painel de pendências, nunca em total confirmado.
@@ -136,6 +143,7 @@ export function calcularResumoReceitasAdicionais(
     if (item.tipo === "acordo") resumo.acordos += recebido
     else if (item.tipo === "rescisao") resumo.rescisoes += recebido
     else if (item.tipo === "atraso") resumo.inadimplenciasPagas += recebido
+    else if (item.tipo === "intermediacao") resumo.intermediacao += recebido
     else resumo.outros += recebido
   }
 
@@ -143,6 +151,7 @@ export function calcularResumoReceitasAdicionais(
     acordos: roundMoney(resumo.acordos),
     rescisoes: roundMoney(resumo.rescisoes),
     inadimplenciasPagas: roundMoney(resumo.inadimplenciasPagas),
+    intermediacao: roundMoney(resumo.intermediacao),
     outros: roundMoney(resumo.outros),
   }
 
@@ -152,6 +161,7 @@ export function calcularResumoReceitasAdicionais(
       normalized.acordos
       + normalized.rescisoes
       + normalized.inadimplenciasPagas
+      + normalized.intermediacao
       + normalized.outros,
     ),
   }
