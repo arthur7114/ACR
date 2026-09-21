@@ -33,6 +33,28 @@ interface Series {
 // tooltip, que e onde derivacao mora. Empilha-las com cor propria contrariaria
 // o pedido ("a parte que nao foi recebida em cinza") e devolveria ao grafico a
 // leitura de tres categorias que ele tinha.
+const perda = (ler: (p: MonthlyPoint) => number | null): Series["read"] => (point) =>
+  point.aluguelContratado === null || point.aluguelRecebido === null ? null : ler(point)
+
+const centavos = (valor: number) => Math.round(valor * 100) / 100
+
+// UMA barra que sobe ate o aluguel potencial (pedido da cliente, set/2026):
+// verde o que entrou, e acima dele o que nao se concretizou. O que mudou em
+// 21/09, a pedido dela de novo ("nao esta aparecendo na barra inadimplencia e
+// vacancia"), e que o bloco de cima deixou de ser um cinza unico.
+//
+// Ele so pode ser aberto porque agora fecha. O ponto mensal carregava quatro
+// causas que nao somavam o nao realizado em mes nenhum — ago/2026, 11.732,09
+// contra 22.108,03 — porque `outrosAjustes` (= `valoresSemClassificacao`) e um
+// agregado, nao uma parcela. Com as parcelas dele no ponto, a soma fecha na
+// virgula em mai-ago/2026, e a identidade `serie_decomposicao_do_nao_realizado`
+// impede que volte a nao fechar.
+//
+// Duas das parcelas NAO sao perda e por isso tem cor fria, nao quente: o mes
+// cobrado na secao de intermediacao (o dinheiro entrou por la) e o mes
+// proporcional de contrato novo (o mes cheio nunca foi devido). Em ago/2026 as
+// duas somam R$ 5.451,62 de um bloco de R$ 22.108,03: pinta-las de vermelho
+// chamaria de calote um dinheiro que entrou.
 const VALUE_STACK: Series[] = [
   {
     key: "recebido",
@@ -42,46 +64,36 @@ const VALUE_STACK: Series[] = [
     format: formatCurrency,
   },
   {
-    key: "nao_realizado",
-    label: "Não realizado",
-    color: "#c2c9c3",
-    // Resto do potencial que nao virou receita. `null` quando falta qualquer um
-    // dos dois: uma barra cinza calculada sobre dado ausente afirmaria perda que
-    // ninguem apurou. Piso em zero porque recebido acima do potencial existe
-    // (atraso recuperado no mes) e nao e perda negativa.
-    read: (point) =>
-      point.aluguelContratado === null || point.aluguelRecebido === null
-        ? null
-        : Math.max(0, Math.round((point.aluguelContratado - point.aluguelRecebido) * 100) / 100),
+    key: "vacancia",
+    label: "Vacância",
+    color: "#d9a441",
+    // Liquida do que a unidade vaga recebeu: `recebidoEmVago` ja esta dentro do
+    // verde, entao descontar aqui e o que faz as parcelas somarem o bloco.
+    read: perda((point) =>
+      point.vacancia === null ? null : centavos(point.vacancia - (point.recebidoEmVago ?? 0)),
+    ),
     format: formatCurrency,
   },
-]
-
-// Lidas so pelo tooltip e pela tabela acessivel: sao PARTE do detalhe do cinza.
-//
-// Medido em mai-ago/2026, consolidado: estas quatro nao fecham o cinza em mes
-// nenhum (14.240,84 contra 9.991,18; 18.891,46 contra 16.640,82; 23.195,60
-// contra 15.126,84; 22.108,03 contra 11.732,09). A identidade completa esta na
-// aba Receita e tem dez termos — faltam aqui `ajustesClassificados`, cobrado
-// como intermediacao, mes proporcional, ocupado sem recebimento, ocupado
-// parcial e recebido em vago. Enquanto o ponto mensal nao carregar todos, o
-// tooltip lista causas, nao uma decomposicao fechada, e o cinza NAO pode ser
-// empilhado com estas cores sem mentir sobre o que ele e.
-const VALUE_DETALHE: Series[] = [
-  { key: "vacancia", label: "Vacância", color: "#d9a441", read: (point) => point.vacancia, format: formatCurrency },
-  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: (point) => point.inadimplencia, format: formatCurrency },
-  { key: "descontos", label: "Descontos", color: "#8a6f3f", read: (point) => point.descontos, format: formatCurrency },
-  // NAO e "ajustes documentados": este campo e `valoresSemClassificacao`, o
-  // resto que fecha a identidade da ponte e arma o bloqueio de confirmacao
-  // (CA-IND06). "Ajustes documentados" e `ajustesClassificados` — o mes
-  // proporcional de quem rescindiu —, que a aba Receita exibe com esse nome e
-  // que NAO passa por aqui. O grafico chamava o dinheiro inexplicado de
-  // documentado, e o cliente perguntou o que era (2026-09-21).
-  //
-  // E costuma ser NEGATIVO no consolidado (mai a ago/2026: -2.124,83, -1.125,32,
-  // -4.034,38, -5.187,97), entao nao e uma parcela do cinza: entrou dinheiro que
-  // a decomposicao nao soube nomear.
-  { key: "sem_classificacao", label: "Sem classificação", color: "#5a6b7f", read: (point) => point.outrosAjustes, format: formatCurrency },
+  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: perda((point) => point.inadimplencia), format: formatCurrency },
+  { key: "descontos", label: "Descontos", color: "#8a6f3f", read: perda((point) => point.descontos), format: formatCurrency },
+  { key: "ocupado_sem_recebimento", label: "Ocupado sem recebimento", color: "#b4553a", read: perda((point) => point.ocupadoSemRecebimento), format: formatCurrency },
+  { key: "ocupado_parcial", label: "Ocupado, pagou menos", color: "#c98a5e", read: perda((point) => point.ocupadoRecebimentoParcial), format: formatCurrency },
+  { key: "intermediacao", label: "Cobrado como intermediação", color: "#4a7fa5", read: perda((point) => point.cobradoComoIntermediacao), format: formatCurrency },
+  { key: "proporcional", label: "Mês proporcional (contrato novo)", color: "#7fa8c4", read: perda((point) => point.mesProporcionalContratoNovo), format: formatCurrency },
+  {
+    key: "outros",
+    label: "Outros ajustes",
+    color: "#c2c9c3",
+    // Fecha o bloco: o que sobra depois das parcelas nomeadas. Piso em zero
+    // porque segmento negativo nao se desenha — se isso acontecer, a identidade
+    // `serie_decomposicao_do_nao_realizado` acusa antes de chegar na tela.
+    read: perda((point) =>
+      point.ajustesClassificados === null || point.restoNaoExplicado === null
+        ? null
+        : Math.max(0, centavos(-point.ajustesClassificados - point.restoNaoExplicado)),
+    ),
+    format: formatCurrency,
+  },
 ]
 
 const VALUE_TOTAL: Series = {
@@ -126,7 +138,7 @@ export function MonthlySeries({
   const stacked = metric !== "percentual"
   const definitions = stacked ? VALUE_STACK : PERCENT_SERIES
   // Tudo que o tooltip e a tabela acessivel mostram, na ordem de leitura.
-  const detalhamento = stacked ? [VALUE_TOTAL, ...VALUE_STACK, ...VALUE_DETALHE] : PERCENT_SERIES
+  const detalhamento = stacked ? [VALUE_TOTAL, ...VALUE_STACK] : PERCENT_SERIES
   const selectedIndex = resolveSelectedIndex(series, selectedCompetencia)
   const [hovered, setHovered] = useState<{ index: number; key: string | null } | null>(null)
   const tooltipId = useId()
