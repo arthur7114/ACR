@@ -75,6 +75,8 @@ import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
 // nas tabelas de receitas e de acordos.
 const COLUNAS_NUMERICAS_INTERMEDIACAO = new Set([
   "Aluguel",
+  "Desconto",
+  "Aluguel c/ desc.",
   "Garagem",
   "Água",
   "IPTU",
@@ -1390,20 +1392,22 @@ export function RevisaoView({
             <span className="text-[13px] font-semibold text-[#0F766E] tabular-nums">{formatBRL(intermediacaoValor)}</span>
           </div>
           <div className="max-h-[320px] overflow-auto">
-            <table className="w-full min-w-[1420px] text-sm">
+            <table className="w-full min-w-[1620px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
                   {[
                     { label: "Apto" },
                     { label: "Inquilino" },
-                    { label: "Aluguel", title: "Coluna ALUGUEL da linha no documento" },
+                    { label: "Aluguel", title: "Coluna ALUGUEL da linha no documento — valor cheio" },
+                    { label: "Desconto", title: "Coluna DESCONTO da linha" },
+                    { label: "Aluguel c/ desc.", title: "Coluna ALUGUEL C/ DESCONTO — é este valor que soma no total e sobre o qual a comissão incide" },
                     { label: "Garagem", title: "Coluna GARAGEM da linha" },
                     { label: "Água", title: "Coluna ÁGUA da linha" },
                     { label: "IPTU", title: "Coluna IPTU da linha" },
                     { label: "Seg. inc.", title: "Seguro incêndio da linha" },
                     { label: "Total recebido", title: "Total impresso na linha — é o que soma nos totais" },
                     { label: "Comissão interm.", title: "Comissão de intermediação" },
-                    { label: "%", title: "Comissão sobre a base comissionável (aluguel + garagem), não sobre o total" },
+                    { label: "%", title: "Comissão sobre a base comissionável (aluguel c/ desconto + garagem), não sobre o total" },
                     { label: "Repasse" },
                     { label: "Competência" },
                     { label: "Obs", title: "Observação" },
@@ -1422,7 +1426,7 @@ export function RevisaoView({
                       <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 bg-[#FFFBEB]">
                         <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                         <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                        <td className="px-4 py-3" colSpan={9}>
+                        <td className="px-4 py-3" colSpan={11}>
                           <span className="inline-flex items-center rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]" title={resolucao.pendencia.descricao}>
                             Pendente — sem efeito financeiro
                           </span>
@@ -1442,6 +1446,8 @@ export function RevisaoView({
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.aluguel !== null ? formatBRL(componentes.aluguel) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.desconto !== null ? formatBRL(componentes.desconto) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]">{componentes.aluguelComDesconto !== null ? formatBRL(componentes.aluguelComDesconto) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.garagem !== null ? formatBRL(componentes.garagem) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.agua !== null ? formatBRL(componentes.agua) : "-"}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.iptu !== null ? formatBRL(componentes.iptu) : "-"}</td>
@@ -1476,7 +1482,7 @@ export function RevisaoView({
                           ? `${intermediacaoTotais.basesDesconhecidas} sem base comissionável apurável, e por isso o % fica “—”.`
                           : null,
                         intermediacaoTotais.baseComissionavel !== null
-                          ? `Base comissionável (aluguel + garagem): ${formatBRL(intermediacaoTotais.baseComissionavel)}. A comissão incide só sobre ela.`
+                          ? `Base comissionável (aluguel c/ desconto + garagem): ${formatBRL(intermediacaoTotais.baseComissionavel)}. A comissão incide só sobre ela.`
                           : null,
                         intermediacaoTotais.encargos !== null
                           ? `Encargos (água, IPTU, seguro): ${formatBRL(intermediacaoTotais.encargos)}. Compõem o total e o repasse, não a base.`
@@ -1497,6 +1503,8 @@ export function RevisaoView({
                   </td>
                   {([
                     intermediacaoTotais.componentes.aluguel,
+                    intermediacaoTotais.componentes.desconto,
+                    intermediacaoTotais.componentes.aluguelComDesconto,
                     intermediacaoTotais.componentes.garagem,
                     intermediacaoTotais.componentes.agua,
                     intermediacaoTotais.componentes.iptu,

@@ -22,7 +22,7 @@ function intermediacao(overrides: Partial<Extract<RecebimentoExtraordinario, { t
     inquilino: "LOCATÁRIO",
     competenciaOrigem: "2026-06",
     competenciaRecebimento: "2026-07",
-    componentes: { aluguel: 650, garagem: 25, iptu: 51.44, seguro: null, outrosEncargos: null },
+    componentes: { aluguel: 650, desconto: null, aluguelComDesconto: 650, garagem: 25, iptu: 51.44, seguro: null, outrosEncargos: null },
     percentualInformado: null,
     totalRecebidoInformado: null,
     comissaoInformada: null,
@@ -70,7 +70,7 @@ test("intermediação sem total informado deriva total = base + encargos", () =>
 test("intermediação sem garagem usa só o aluguel como base", () => {
   const r = resolverRecebimento(
     intermediacao({
-      componentes: { aluguel: 700, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
+      componentes: { aluguel: 700, desconto: null, aluguelComDesconto: 700, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
       comissaoInformada: 350,
     }),
   )
@@ -155,7 +155,7 @@ test("confiança abaixo do mínimo fica pendente sem efeito financeiro", () => {
 test("item sem nenhum valor monetário fica pendente, nunca zero confirmado", () => {
   const r = resolverRecebimento(
     intermediacao({
-      componentes: { aluguel: null, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
+      componentes: { aluguel: null, desconto: null, aluguelComDesconto: null, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
     }),
   )
   assert.equal(r.status, "pendente")
@@ -533,4 +533,80 @@ test("coluna sem nenhuma linha informada fica desconhecida, nao zero", () => {
   ])
   assert.equal(totais.componentes.seguro, null)
   assert.equal(totais.componentes.agua, null)
+})
+
+test("base comissionavel usa o aluguel COM desconto, nao o cheio", () => {
+  // O documento de repasse imprime ALUGUEL, DESCONTO e ALUGUEL C/ DESCONTO na
+  // secao de intermediacoes (GM II ago/2026). Quem soma no TOTAL e a terceira
+  // coluna. Usar o aluguel cheio inflava a base e, com ela, a comissao derivada
+  // do percentual e o percentual exibido.
+  const resolucao = resolverRecebimentoLegado({
+    ...INTERM_OK,
+    aluguel: 800,
+    desconto: 100,
+    aluguel_com_desconto: 700,
+    garagem: 25,
+    iptu: 10,
+    percentual: 60,
+    total_recebido: null,
+    comissao: null,
+    repasse: null,
+  })
+  assert.equal(resolucao.status, "resolvido")
+  if (resolucao.status !== "resolvido") return
+  assert.equal(resolucao.baseComissionavel, 725)
+  assert.equal(resolucao.comissao, 435)
+  assert.equal(resolucao.totalRecebido, 735)
+})
+
+test("sem a coluna impressa, o desconto deriva o aluguel liquido", () => {
+  const componentes = componentesLinhaIntermediacao(
+    { ...INTERM_OK, aluguel: 800, desconto: 100, garagem: 0, iptu: 0, seguro_incendio: 0 },
+    700,
+  )
+  assert.equal(componentes.aluguel, 800)
+  assert.equal(componentes.desconto, 100)
+  assert.equal(componentes.aluguelComDesconto, 700)
+  assert.equal(componentes.naoDetalhado, 0)
+})
+
+test("GM II ago/2026: a secao de intermediacao do documento fecha coluna a coluna", () => {
+  // Numeros lidos do PDF "1. PRESTACAO DE CONTAS LOCACAO AGOSTO 20" (GRAND
+  // MESSEJANA II), secao INTERMEDIACOES DE JULHO 2026, as tres linhas e a
+  // linha TOTAL impressa.
+  const linha = (apto: string, garagem: number, total: number, comissao: number, repasse: number) => ({
+    ...INTERM_OK,
+    apto,
+    aluguel: 700,
+    aluguel_com_desconto: 700,
+    garagem,
+    agua: 67.7,
+    iptu: 1.43,
+    seguro_incendio: null,
+    total_recebido: total,
+    comissao,
+    repasse,
+    percentual: 60,
+  })
+  const totais = totalizarRecebimentos([
+    linha("3", 25, 794.13, 435, 359.13),
+    linha("8", 25, 794.13, 435, 359.13),
+    linha("23", 0, 769.13, 420, 349.13),
+  ])
+  assert.equal(totais.componentes.aluguel, 2100)
+  assert.equal(totais.componentes.aluguelComDesconto, 2100)
+  assert.equal(totais.componentes.garagem, 50)
+  assert.equal(totais.componentes.agua, 203.1)
+  assert.equal(totais.componentes.iptu, 4.29)
+  assert.equal(totais.componentes.seguro, null)
+  assert.equal(totais.totalRecebido, 2357.39)
+  assert.equal(totais.comissao, 1290)
+  assert.equal(totais.repasse, 1067.39)
+  assert.equal(totais.percentual, 60)
+  // As colunas fecham com o total, sem sobra.
+  assert.equal(totais.componentes.naoDetalhado, 0)
+  // O documento IMPRIME 4,30 / 2.357,40 / 1.067,40: ele arredonda cada coluna
+  // por conta propria. A soma exata e um centavo menor, e e ela que a tela
+  // mostra — herdar o arredondamento do documento quebraria a identidade
+  // colunas = total.
 })

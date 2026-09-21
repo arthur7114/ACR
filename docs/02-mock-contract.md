@@ -609,3 +609,35 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
   indica que a extração de agosto perdeu a coluna ÁGUA. Falta um PDF de repasse
   de Castelão I ago/2026 para confirmar e corrigir na extração.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — desconto da intermediação, conferido contra o documento (2026-09-21)
+
+- **Fonte:** `1. PRESTAÇÃO DE CONTAS LOCAÇÃO AGOSTO 20.pdf` (GRAND MESSEJANA II),
+  seção "INTERMEDIAÇÕES DE JULHO 2026". O "2. REPASSE ..." é só o comprovante
+  bancário do Inter; quem tem as colunas é a prestação de contas.
+- **Colunas do documento, na ordem impressa:** NOME · APTO · REAJUSTE · ALUGUEL ·
+  DESCONTO · ALUGUEL C/ DESCONTO · GARAGEM · ÁGUA · IPTU · SEG INC. · TOTAL ·
+  COMISSÃO · REPASSE · OBSERVAÇÃO · VENC. · CARÊNCIA. São as **mesmas** da seção
+  de vigência regular.
+- **Ponto alterado:** entram as colunas **Desconto** e **Aluguel c/ desc.**, e a
+  base comissionável passa a ser `aluguel c/ desconto + garagem`.
+- **Por que isso é correção, não cosmética:** `resolverBase` somava o aluguel
+  **cheio**. Numa linha com desconto a base ficaria maior que a real, e com ela
+  a comissão derivada do percentual e o % exibido. Nenhuma das 7 intermediações
+  já persistidas tem desconto, então nenhum número muda hoje — a verificação
+  contra o banco confirma os 7 inalterados. O erro era latente, não ativo.
+- **Precedência do líquido:** coluna impressa > aluguel − desconto > aluguel
+  cheio. Sem aluguel nenhum a base fica desconhecida e o item vira pendência,
+  nunca comissão sobre base inventada.
+- **Extração:** `desconto` e `aluguel_com_desconto` entram no JSON Schema dos
+  itens de `acordos_rescisoes_recebidos`. Análises já persistidas não têm os
+  campos — a coluna Desconto mostra "-" e `aluguel c/ desc.` cai no aluguel
+  cheio, que é o valor certo quando não houve desconto.
+- **Um centavo de propósito.** A linha TOTAL impressa diz IPTU 4,30, TOTAL
+  2.357,40 e REPASSE 1.067,40; o documento arredonda cada coluna por conta
+  própria. A soma exata é 4,29 / 2.357,39 / 1.067,39, e é ela que a tela mostra:
+  herdar o arredondamento do documento quebraria a identidade colunas = total.
+- **Colunas do documento ainda ausentes:** REAJUSTE, VENC. e CARÊNCIA. São
+  referência, não parcela da soma, e nenhuma está na extração. Ficam para
+  decisão do Arthur.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

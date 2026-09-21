@@ -27,7 +27,14 @@ interface BaseRecebimento {
 }
 
 export interface ComponentesIntermediacao {
+  /** Coluna ALUGUEL do documento — valor cheio, antes do desconto. */
   aluguel: number | null
+  desconto: number | null
+  /**
+   * Coluna ALUGUEL C/ DESCONTO. E ela, nao o aluguel cheio, que soma no TOTAL
+   * impresso e sobre a qual a comissao incide.
+   */
+  aluguelComDesconto: number | null
   garagem: number | null
   iptu: number | null
   seguro: number | null
@@ -185,13 +192,23 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
     // traziam total/IPTU/repasse apenas no texto da observação. Campos
     // estruturados sempre têm precedência.
     const observacao = item.observacao ?? ""
+    const aluguelBruto = item.aluguel ?? (valorLegado !== 0 ? valorLegado : null)
     return {
       ...base,
       tipo: "intermediacao",
       totalRecebidoInformado: base.totalRecebidoInformado ?? parseTaggedMoney(observacao, "total"),
       repasseInformado: base.repasseInformado ?? parseTaggedMoney(observacao, "repasse"),
       componentes: {
-        aluguel: item.aluguel ?? (valorLegado !== 0 ? valorLegado : null),
+        aluguel: aluguelBruto,
+        desconto: item.desconto ?? null,
+        // Precedencia: coluna impressa > aluguel menos desconto > aluguel cheio.
+        // Nunca zero: sem aluguel nenhum a base fica desconhecida, e o item vai
+        // para pendencia em vez de produzir comissao sobre base inventada.
+        aluguelComDesconto:
+          item.aluguel_com_desconto
+          ?? (aluguelBruto !== null && typeof item.desconto === "number"
+            ? roundMoney(aluguelBruto - item.desconto)
+            : aluguelBruto),
         garagem: item.garagem ?? null,
         iptu: item.iptu ?? parseTaggedMoney(observacao, "iptu"),
         seguro: item.seguro_incendio ?? null,
@@ -256,6 +273,8 @@ export function resolverRecebimentosLegados<T extends RecebimentoLegado>(
 
 export interface ComponentesLinhaIntermediacao {
   aluguel: number | null
+  desconto: number | null
+  aluguelComDesconto: number | null
   garagem: number | null
   agua: number | null
   iptu: number | null
@@ -278,14 +297,28 @@ export function componentesLinhaIntermediacao(
 ): ComponentesLinhaIntermediacao {
   const normalizado = normalizarItemLegado(item)
   if (normalizado.tipo !== "intermediacao") {
-    return { aluguel: null, garagem: null, agua: null, iptu: null, seguro: null, naoDetalhado: 0 }
+    return {
+      aluguel: null,
+      desconto: null,
+      aluguelComDesconto: null,
+      garagem: null,
+      agua: null,
+      iptu: null,
+      seguro: null,
+      naoDetalhado: 0,
+    }
   }
   // `outrosEncargos` e a agua — `normalizarItemLegado` ja aplica o fallback de
   // leitura da observacao. Aqui so se renomeia para o nome da coluna impressa.
-  const { aluguel, garagem, iptu, seguro, outrosEncargos } = normalizado.componentes
-  const conhecidos = (aluguel ?? 0) + (garagem ?? 0) + (iptu ?? 0) + (seguro ?? 0) + (outrosEncargos ?? 0)
+  const { aluguel, desconto, aluguelComDesconto, garagem, iptu, seguro, outrosEncargos } =
+    normalizado.componentes
+  // Quem soma no total e o aluguel COM desconto, nao o cheio.
+  const conhecidos =
+    (aluguelComDesconto ?? 0) + (garagem ?? 0) + (iptu ?? 0) + (seguro ?? 0) + (outrosEncargos ?? 0)
   return {
     aluguel,
+    desconto,
+    aluguelComDesconto,
     garagem,
     agua: outrosEncargos,
     iptu,
@@ -366,6 +399,8 @@ export function totalizarRecebimentos(itens: RecebimentoLegado[]): TotaisRecebim
   return {
     componentes: {
       aluguel: somarColuna(porLinha.map((c) => c.aluguel)),
+      desconto: somarColuna(porLinha.map((c) => c.desconto)),
+      aluguelComDesconto: somarColuna(porLinha.map((c) => c.aluguelComDesconto)),
       garagem: somarColuna(porLinha.map((c) => c.garagem)),
       agua: somarColuna(porLinha.map((c) => c.agua)),
       iptu: somarColuna(porLinha.map((c) => c.iptu)),
@@ -389,9 +424,11 @@ export function totalizarRecebimentos(itens: RecebimentoLegado[]): TotaisRecebim
 
 function resolverBase(item: RecebimentoExtraordinario): number | null {
   if (item.tipo !== "intermediacao") return null
-  const { aluguel, garagem } = item.componentes
-  if (aluguel === null && garagem === null) return null
-  return roundMoney((aluguel ?? 0) + (garagem ?? 0))
+  // Aluguel COM desconto: e o que o documento soma no TOTAL. Usar o cheio
+  // inflaria a base e, com ela, a comissao derivada e o percentual exibido.
+  const { aluguelComDesconto, garagem } = item.componentes
+  if (aluguelComDesconto === null && garagem === null) return null
+  return roundMoney((aluguelComDesconto ?? 0) + (garagem ?? 0))
 }
 
 function derivarTotal(item: RecebimentoExtraordinario, baseComissionavel: number | null): number | null {

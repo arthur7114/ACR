@@ -3203,3 +3203,35 @@ verificação em navegador — a aplicação está atrás de login.
 R$ 47,60 em cada, exatamente a água da linha de jul/2026 do mesmo
 empreendimento. A extração de agosto provavelmente perdeu a coluna ÁGUA. Um PDF
 de repasse de Castelão I ago/2026 confirma e permite corrigir na extração.
+
+## Ciclo — desconto da intermediação, lido do documento (2026-09-21)
+
+O PDF estava nos Downloads do Arthur o tempo todo: `1. PRESTAÇÃO DE CONTAS
+LOCAÇÃO AGOSTO 20.pdf`, GRAND MESSEJANA II. (O arquivo chamado "2. REPASSE ..."
+é o comprovante do Inter, não o extrato.)
+
+Ele confirmou a paridade das colunas implementada no ciclo anterior **e revelou
+duas que faltavam**: DESCONTO e ALUGUEL C/ DESCONTO. A segunda é a que soma no
+TOTAL impresso.
+
+**Bug latente fechado.** `resolverBase` usava o aluguel cheio. Numa linha com
+desconto a base comissionável sairia maior que a real, junto com a comissão
+derivada do percentual e o % da tela. Nenhuma das 7 intermediações persistidas
+tem desconto, então a verificação contra o banco mostra os 7 fechamentos com
+números idênticos aos de antes — o erro nunca chegou a produzir número errado, e
+agora não vai.
+
+**Verificação contra o documento.** A seção de intermediação de GM II ago/2026
+fecha coluna a coluna: alu 2.100,00 · gar 50,00 · água 203,10 · IPTU 4,29 =
+2.357,39 · comissão 1.290,00 · repasse 1.067,39. O documento imprime 4,30 /
+2.357,40 / 1.067,40 porque arredonda cada coluna isolada; mantivemos a soma
+exata, com o motivo registrado no teste.
+
+`pnpm test` 686 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Decisão pendente do Arthur.** REAJUSTE, VENC. e CARÊNCIA também são colunas do
+documento, mas são referência, não parcela da soma, e nenhuma está na extração.
+Adicioná-las custa uma mudança de schema mais reprocessamento dos fechamentos —
+sem isso apareceriam vazias.

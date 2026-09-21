@@ -106,6 +106,12 @@ export const acordoRescisaoRecebidoSchema = z
     // demais tipos, `valor` segue como principal bruto e `ajuste` carrega
     // desconto (negativo) ou crédito (positivo).
     aluguel: z.number().nullable().optional(),
+    // O documento imprime ALUGUEL, DESCONTO e ALUGUEL C/ DESCONTO tambem na
+    // secao de intermediacoes e na de acordos — mesmas colunas da secao de
+    // vigencia. E o valor COM desconto que soma no TOTAL e sobre o qual a
+    // comissao incide, entao ele nao pode faltar (GM II ago/2026).
+    desconto: z.number().nullable().optional(),
+    aluguel_com_desconto: z.number().nullable().optional(),
     garagem: z.number().nullable().optional(),
     ajuste: z.number().nullable().optional(),
     agua: z.number().nullable().optional(),

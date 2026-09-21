@@ -106,6 +106,8 @@ export const prestacaoJsonSchema = {
           "inquilino",
           "valor",
           "aluguel",
+          "desconto",
+          "aluguel_com_desconto",
           "garagem",
           "ajuste",
           "agua",
@@ -126,6 +128,12 @@ export const prestacaoJsonSchema = {
           inquilino: { type: ["string", "null"] },
           valor: { type: "number" },
           aluguel: { type: ["number", "null"] },
+          // A secao de intermediacoes imprime as mesmas colunas da secao de
+          // vigencia, DESCONTO e ALUGUEL C/ DESCONTO inclusive. Sem estes dois
+          // campos a base comissionavel usava o aluguel cheio, e uma linha com
+          // desconto teria comissao e percentual maiores que os do documento.
+          desconto: { type: ["number", "null"] },
+          aluguel_com_desconto: { type: ["number", "null"] },
           garagem: { type: ["number", "null"] },
           ajuste: { type: ["number", "null"] },
           // A secao de acordos/rescisoes imprime a coluna AGUA como as linhas
