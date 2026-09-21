@@ -108,6 +108,8 @@ const COLUNAS_CONFERIDAS = [
   "agua",
   "iptu",
   "seguro_incendio",
+  "lixo",
+  "encargos",
   "total",
   "comissao",
   "repasse",
@@ -121,6 +123,8 @@ const ROTULO_COLUNA: Record<ColunaConferida, string> = {
   agua: "água",
   iptu: "IPTU",
   seguro_incendio: "seguro",
+  lixo: "lixo",
+  encargos: "encargos",
   total: "total",
   comissao: "comissão",
   repasse: "repasse",
@@ -132,6 +136,8 @@ interface LinhaConferivel {
   agua?: number | null
   iptu?: number | null
   seguro_incendio?: number | null
+  lixo?: number | null
+  encargos?: number | null
   total?: number | null
   comissao?: number | null
   repasse?: number | null

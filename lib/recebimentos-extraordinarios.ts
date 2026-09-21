@@ -38,7 +38,16 @@ export interface ComponentesIntermediacao {
   garagem: number | null
   iptu: number | null
   seguro: number | null
+  /** Coluna AGUA. Mantem o nome legado por compatibilidade de dados. */
   outrosEncargos: number | null
+  /** Coluna LIXO — Grand Castelao ate dez/2024. */
+  lixo: number | null
+  /**
+   * Coluna ENCARGOS do Grand Maracanau: um balde residual impresso que soma no
+   * TOTAL da linha. Nao confundir com `ComponentesRecebimento.encargos`, que e
+   * derivado (tudo alem de principal e garagem); este e o valor impresso.
+   */
+  encargosImpressos: number | null
 }
 
 export interface ComponentesRecebimento {
@@ -213,6 +222,8 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
         iptu: item.iptu ?? parseTaggedMoney(observacao, "iptu"),
         seguro: item.seguro_incendio ?? null,
         outrosEncargos: aguaDeclarada(item),
+        lixo: item.lixo ?? null,
+        encargosImpressos: item.encargos ?? null,
       },
       percentualInformado: item.percentual ?? null,
     }
@@ -231,7 +242,13 @@ export function normalizarItemLegado(item: RecebimentoLegado): RecebimentoExtrao
     // ago/2026, apto 7: 790,33 + 27,58 + 74,70 + 1,57 = 894,18).
     componentes: {
       garagem: item.garagem ?? null,
-      encargos: somarInformados(item.iptu, aguaDeclarada(item), item.seguro_incendio),
+      encargos: somarInformados(
+        item.iptu,
+        aguaDeclarada(item),
+        item.seguro_incendio,
+        item.lixo,
+        item.encargos,
+      ),
     },
   }
 }
@@ -279,6 +296,8 @@ export interface ComponentesLinhaIntermediacao {
   agua: number | null
   iptu: number | null
   seguro: number | null
+  lixo: number | null
+  encargos: number | null
   /**
    * Parte do total recebido que nenhuma coluna explica. Acontece quando a agua
    * nao veio estruturada nem com o rotulo "AGUA: R$ ..." na observacao: as
@@ -305,16 +324,33 @@ export function componentesLinhaIntermediacao(
       agua: null,
       iptu: null,
       seguro: null,
+      lixo: null,
+      encargos: null,
       naoDetalhado: 0,
     }
   }
   // `outrosEncargos` e a agua — `normalizarItemLegado` ja aplica o fallback de
   // leitura da observacao. Aqui so se renomeia para o nome da coluna impressa.
-  const { aluguel, desconto, aluguelComDesconto, garagem, iptu, seguro, outrosEncargos } =
-    normalizado.componentes
+  const {
+    aluguel,
+    desconto,
+    aluguelComDesconto,
+    garagem,
+    iptu,
+    seguro,
+    outrosEncargos,
+    lixo,
+    encargosImpressos,
+  } = normalizado.componentes
   // Quem soma no total e o aluguel COM desconto, nao o cheio.
   const conhecidos =
-    (aluguelComDesconto ?? 0) + (garagem ?? 0) + (iptu ?? 0) + (seguro ?? 0) + (outrosEncargos ?? 0)
+    (aluguelComDesconto ?? 0)
+    + (garagem ?? 0)
+    + (iptu ?? 0)
+    + (seguro ?? 0)
+    + (outrosEncargos ?? 0)
+    + (lixo ?? 0)
+    + (encargosImpressos ?? 0)
   return {
     aluguel,
     desconto,
@@ -323,6 +359,8 @@ export function componentesLinhaIntermediacao(
     agua: outrosEncargos,
     iptu,
     seguro,
+    lixo,
+    encargos: encargosImpressos,
     naoDetalhado: roundMoney(totalRecebido - conhecidos),
   }
 }
@@ -405,6 +443,8 @@ export function totalizarRecebimentos(itens: RecebimentoLegado[]): TotaisRecebim
       agua: somarColuna(porLinha.map((c) => c.agua)),
       iptu: somarColuna(porLinha.map((c) => c.iptu)),
       seguro: somarColuna(porLinha.map((c) => c.seguro)),
+      lixo: somarColuna(porLinha.map((c) => c.lixo)),
+      encargos: somarColuna(porLinha.map((c) => c.encargos)),
       naoDetalhado: roundMoney(porLinha.reduce((total, c) => total + c.naoDetalhado, 0)),
     },
     linhas: resolvidos.length,
@@ -434,8 +474,15 @@ function resolverBase(item: RecebimentoExtraordinario): number | null {
 function derivarTotal(item: RecebimentoExtraordinario, baseComissionavel: number | null): number | null {
   if (item.tipo === "intermediacao") {
     if (baseComissionavel === null) return null
-    const { iptu, seguro, outrosEncargos } = item.componentes
-    return roundMoney(baseComissionavel + (iptu ?? 0) + (seguro ?? 0) + (outrosEncargos ?? 0))
+    const { iptu, seguro, outrosEncargos, lixo, encargosImpressos } = item.componentes
+    return roundMoney(
+      baseComissionavel
+        + (iptu ?? 0)
+        + (seguro ?? 0)
+        + (outrosEncargos ?? 0)
+        + (lixo ?? 0)
+        + (encargosImpressos ?? 0),
+    )
   }
   if (item.tipo === "outro") return item.valorInformado
   if (item.principal === null) return null

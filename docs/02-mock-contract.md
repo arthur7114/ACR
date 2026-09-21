@@ -676,3 +676,29 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
 - **Ainda não coberto:** o parser de Excel não popula `totais_secoes`, embora a
   planilha traga a linha TOTAL de graça. Upload `.xlsx` segue sem conferência.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — colunas LIXO e ENCARGOS (2026-09-21)
+
+- **Ponto alterado:** entram `lixo` e `encargos` na extração (linhas regulares e
+  de acordos/intermediação) e duas colunas na tabela de Intermediação.
+- **Por quê:** são as duas colunas do documento que ainda não existiam em lugar
+  nenhum do sistema. **"coluna encargos" é o que o pedido original dizia** — é a
+  coluna do Grand Maracanaú, não o agregado derivado que a tabela mostrava antes.
+- **`ComponentesIntermediacao.encargosImpressos` ≠ `ComponentesRecebimento.encargos`.**
+  O primeiro é a coluna impressa do Maracanaú, um balde residual que soma no
+  TOTAL da linha; o segundo é derivado (tudo além de principal e garagem). O
+  nome longo existe para a colisão não passar despercebida em revisão.
+- **Nenhuma comissiona.** Lixo e encargos entram no total e no repasse, nunca na
+  base: a base segue sendo aluguel c/ desconto + garagem.
+- **Em acordos/rescisões/atrasos** as duas entram no `encargos` derivado, que já
+  significa "tudo que o TOTAL soma além de principal e garagem".
+- **`null` é ausência de coluna, nunca zero.** Uma linha sem lixo não zera a
+  coluna de lixo das outras no rodapé.
+- **O recheck de seção confere as duas.** Documento que imprime ENCARGOS e
+  extração que não o captura passa a acusar divergência.
+- **Sem regressão:** os 7 fechamentos com intermediação saem com números
+  idênticos; `lixo` e `encargos` vêm `null` nas análises já persistidas, o que é
+  o estado correto até reprocessamento.
+- **Ainda não feito:** a tabela "Receitas por imóvel" não ganhou as colunas,
+  embora os campos passem a ser extraídos também para as linhas regulares.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

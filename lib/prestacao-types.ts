@@ -38,6 +38,12 @@ export const receitaPorImovelSchema = z
     agua: z.number().nullable(),
     iptu: z.number().nullable(),
     seguro_incendio: z.number().nullable(),
+    // Colunas que so algumas imobiliarias imprimem. LIXO aparece no Grand
+    // Castelao ate dez/2024; ENCARGOS e a coluna do Grand Maracanau, um balde
+    // residual que soma no TOTAL da linha. Ausentes = `null`, nunca zero: o
+    // layout muda por imobiliaria e ate por mes no mesmo empreendimento.
+    lixo: z.number().nullable().optional(),
+    encargos: z.number().nullable().optional(),
     total: z.number(),
     comissao: z.number().nullable(),
     repasse: z.number().nullable(),
@@ -117,6 +123,12 @@ export const acordoRescisaoRecebidoSchema = z
     agua: z.number().nullable().optional(),
     iptu: z.number().nullable().optional(),
     seguro_incendio: z.number().nullable().optional(),
+    // Colunas que so algumas imobiliarias imprimem. LIXO aparece no Grand
+    // Castelao ate dez/2024; ENCARGOS e a coluna do Grand Maracanau, um balde
+    // residual que soma no TOTAL da linha. Ausentes = `null`, nunca zero: o
+    // layout muda por imobiliaria e ate por mes no mesmo empreendimento.
+    lixo: z.number().nullable().optional(),
+    encargos: z.number().nullable().optional(),
     total_recebido: z.number().nullable().optional(),
     repasse: z.number().nullable().optional(),
     // Comissao retida sobre este recebimento (ex.: comissao do acordo, taxa de

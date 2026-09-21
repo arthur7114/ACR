@@ -22,7 +22,7 @@ function intermediacao(overrides: Partial<Extract<RecebimentoExtraordinario, { t
     inquilino: "LOCATÁRIO",
     competenciaOrigem: "2026-06",
     competenciaRecebimento: "2026-07",
-    componentes: { aluguel: 650, desconto: null, aluguelComDesconto: 650, garagem: 25, iptu: 51.44, seguro: null, outrosEncargos: null },
+    componentes: { aluguel: 650, desconto: null, aluguelComDesconto: 650, garagem: 25, iptu: 51.44, seguro: null, outrosEncargos: null, lixo: null, encargosImpressos: null },
     percentualInformado: null,
     totalRecebidoInformado: null,
     comissaoInformada: null,
@@ -70,7 +70,7 @@ test("intermediação sem total informado deriva total = base + encargos", () =>
 test("intermediação sem garagem usa só o aluguel como base", () => {
   const r = resolverRecebimento(
     intermediacao({
-      componentes: { aluguel: 700, desconto: null, aluguelComDesconto: 700, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
+      componentes: { aluguel: 700, desconto: null, aluguelComDesconto: 700, garagem: null, iptu: null, seguro: null, outrosEncargos: null, lixo: null, encargosImpressos: null },
       comissaoInformada: 350,
     }),
   )
@@ -155,7 +155,7 @@ test("confiança abaixo do mínimo fica pendente sem efeito financeiro", () => {
 test("item sem nenhum valor monetário fica pendente, nunca zero confirmado", () => {
   const r = resolverRecebimento(
     intermediacao({
-      componentes: { aluguel: null, desconto: null, aluguelComDesconto: null, garagem: null, iptu: null, seguro: null, outrosEncargos: null },
+      componentes: { aluguel: null, desconto: null, aluguelComDesconto: null, garagem: null, iptu: null, seguro: null, outrosEncargos: null, lixo: null, encargosImpressos: null },
     }),
   )
   assert.equal(r.status, "pendente")
@@ -609,4 +609,55 @@ test("GM II ago/2026: a secao de intermediacao do documento fecha coluna a colun
   // por conta propria. A soma exata e um centavo menor, e e ela que a tela
   // mostra — herdar o arredondamento do documento quebraria a identidade
   // colunas = total.
+})
+
+test("coluna ENCARGOS impressa soma no total e nao na base", () => {
+  // Layout do Grand Maracanau: sem AGUA, com um balde ENCARGOS que soma no
+  // TOTAL da linha. Se ele ficasse de fora, o total derivado sairia menor que o
+  // impresso e a sobra apareceria como buraco.
+  const componentes = componentesLinhaIntermediacao(
+    { ...INTERM_OK, aluguel: 400, garagem: 0, iptu: 3.35, seguro_incendio: 0, encargos: 40 },
+    443.35,
+  )
+  assert.equal(componentes.encargos, 40)
+  assert.equal(componentes.naoDetalhado, 0)
+
+  const resolucao = resolverRecebimentoLegado({
+    ...INTERM_OK,
+    aluguel: 400,
+    garagem: 0,
+    iptu: 3.35,
+    seguro_incendio: 0,
+    encargos: 40,
+    percentual: 70,
+    total_recebido: null,
+    comissao: null,
+    repasse: null,
+  })
+  assert.equal(resolucao.status, "resolvido")
+  if (resolucao.status !== "resolvido") return
+  // Base segue sendo aluguel c/ desconto + garagem: encargos nao comissionam.
+  assert.equal(resolucao.baseComissionavel, 400)
+  assert.equal(resolucao.comissao, 280)
+  assert.equal(resolucao.totalRecebido, 443.35)
+})
+
+test("coluna LIXO entra no total como os demais encargos", () => {
+  // Grand Castelao imprimiu LIXO ate dez/2024.
+  const componentes = componentesLinhaIntermediacao(
+    { ...INTERM_OK, aluguel: 690, garagem: 0, agua: 43.4, iptu: 4.2, seguro_incendio: 0, lixo: 12.5 },
+    750.1,
+  )
+  assert.equal(componentes.lixo, 12.5)
+  assert.equal(componentes.naoDetalhado, 0)
+})
+
+test("linha sem lixo nem encargos nao zera as colunas das outras", () => {
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 0, iptu: 10, lixo: 5, total_recebido: 715, comissao: 420, repasse: 295 },
+    { ...INTERM_OK, apto: "205", aluguel: 400, garagem: 0, iptu: 5, total_recebido: 405, comissao: 240, repasse: 165 },
+  ])
+  assert.equal(totais.componentes.lixo, 5)
+  assert.equal(totais.componentes.encargos, null)
+  assert.equal(totais.componentes.naoDetalhado, 0)
 })

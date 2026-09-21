@@ -3273,3 +3273,36 @@ quando a aba `AGO 26` ou o PDF aparecer.
 **Lacuna declarada.** O parser de Excel não popula `totais_secoes`, embora a
 planilha traga a linha TOTAL de graça e ali a conferência seria exata, sem
 arredondamento. Upload `.xlsx` segue sem rede.
+
+## Ciclo — colunas LIXO e ENCARGOS (2026-09-21)
+
+Segundo passo da ordem combinada. Fecha a lacuna que o levantamento dos layouts
+revelou: das colunas que as planilhas imprimem, duas não existiam em lugar
+nenhum do sistema — `LIXO` (Grand Castelão até dez/2024) e `ENCARGOS` (Grand
+Maracanaú). A segunda é literalmente a que o pedido original citava entre
+parênteses, "(coluna encargos)".
+
+**Cuidado com a colisão de nome.** Já havia um `encargos` no módulo canônico,
+mas derivado: tudo que o TOTAL soma além de principal e garagem. A coluna do
+Maracanaú é outra coisa — um valor impresso. Em intermediação ela entrou como
+`encargosImpressos`, nome deliberadamente longo para a diferença não escapar
+numa revisão futura. Em acordos/rescisões/atrasos as duas novas colunas entram
+no `encargos` derivado, que é exatamente o que ele significa.
+
+Nenhuma das duas comissiona: a base segue aluguel c/ desconto + garagem.
+
+O recheck de seção do ciclo anterior passa a conferir as duas — documento que
+imprime ENCARGOS com extração que não o captura agora acusa.
+
+**Sem regressão.** Os 7 fechamentos com intermediação saem com números
+idênticos, e as duas colunas vêm `null` nas análises persistidas: estado correto
+até reprocessamento, porque `null` é "não sei", não "zero".
+
+`pnpm test` 696 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Restam, das lacunas declaradas.** O parser de Excel não popula
+`totais_secoes`; a tabela "Receitas por imóvel" não mostra lixo nem encargos
+(os campos já são extraídos); e a água do Grand Castelão I ago/2026 depende da
+aba `AGO 26` ou do PDF.
