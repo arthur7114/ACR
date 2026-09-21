@@ -7,6 +7,7 @@ import {
   resolverRecebimento,
   resolverRecebimentoLegado,
   resolverRecebimentosLegados,
+  totalizarRecebimentos,
   type RecebimentoExtraordinario,
 } from "./recebimentos-extraordinarios"
 
@@ -393,4 +394,80 @@ test("GM II ago/2026: intermediação deriva o total da linha incluindo a água 
   // A água entra no total e no repasse, mas não na base percentual (60% de 725).
   assert.equal(r.baseComissionavel, 725)
   assert.equal(r.repasse, 359.13)
+})
+
+
+// --- Totais da tabela de intermediacao (pedido da cliente, set/2026) --------
+
+const INTERM_OK = {
+  tipo: "intermediacao" as const,
+  apto: "204",
+  inquilino: "LOCATÁRIO",
+  confianca: 0.95,
+}
+
+test("totaliza so as linhas resolvidas e diz quantas ficaram de fora", () => {
+  // Linha pendente nao tem efeito financeiro (CA27.2): nao entra em soma
+  // nenhuma. Mas some do rodape em silencio seria pior que o rodape ausente —
+  // o total tem de declarar quantas ignorou.
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, iptu: 30, total_recebido: 780, comissao: 375, repasse: 405 },
+    // confianca abaixo do minimo: pendente
+    { ...INTERM_OK, apto: "205", aluguel: 600, total_recebido: 600, comissao: 300, repasse: 300, confianca: 0.2 },
+  ])
+  assert.equal(totais.linhas, 1)
+  assert.equal(totais.pendentes, 1)
+  assert.equal(totais.totalRecebido, 780)
+  assert.equal(totais.comissao, 375)
+  assert.equal(totais.repasse, 405)
+  assert.equal(totais.baseComissionavel, 750)
+  assert.equal(totais.encargos, 30)
+})
+
+test("encargos do rodape sao o resto do total sobre a base, linha a linha", () => {
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, iptu: 30, total_recebido: 780, comissao: 375, repasse: 405 },
+    { ...INTERM_OK, apto: "205", aluguel: 400, iptu: 20, agua: 10, total_recebido: 430, comissao: 200, repasse: 230 },
+  ])
+  assert.equal(totais.baseComissionavel, 1150)
+  assert.equal(totais.totalRecebido, 1210)
+  assert.equal(totais.encargos, 60)
+  // Fecha a identidade que a tabela promete: base + encargos = total.
+  assert.equal(totais.baseComissionavel! + totais.encargos!, totais.totalRecebido)
+})
+
+test("base desconhecida em alguma linha nao vira zero no rodape", () => {
+  // Sem aluguel nem garagem a base e desconhecida ("-" na celula). Somar como
+  // zero faria o rodape afirmar uma base menor que a real e um percentual maior.
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, iptu: 30, total_recebido: 780, comissao: 375, repasse: 405 },
+    { ...INTERM_OK, apto: "205", total_recebido: 500, comissao: 250, repasse: 250 },
+  ])
+  assert.equal(totais.linhas, 2)
+  assert.equal(totais.basesDesconhecidas, 1)
+  assert.equal(totais.baseComissionavel, 750)
+  assert.equal(totais.totalRecebido, 1280)
+  // Percentual fica desconhecido: a comissao soma as duas linhas e a base, uma.
+  assert.equal(totais.percentual, null)
+})
+
+test("percentual do rodape so existe quando toda linha tem base", () => {
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, iptu: 30, total_recebido: 780, comissao: 375, repasse: 405 },
+    { ...INTERM_OK, apto: "205", aluguel: 250, total_recebido: 250, comissao: 125, repasse: 125 },
+  ])
+  assert.equal(totais.basesDesconhecidas, 0)
+  assert.equal(totais.baseComissionavel, 1000)
+  assert.equal(totais.comissao, 500)
+  assert.equal(totais.percentual, 50)
+})
+
+test("lista vazia devolve zeros, nao desconhecido", () => {
+  const totais = totalizarRecebimentos([])
+  assert.equal(totais.linhas, 0)
+  assert.equal(totais.pendentes, 0)
+  assert.equal(totais.totalRecebido, 0)
+  assert.equal(totais.baseComissionavel, null)
+  assert.equal(totais.encargos, null)
+  assert.equal(totais.percentual, null)
 })

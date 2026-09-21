@@ -534,3 +534,26 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
   parcelados depende deles; os dois tiles viram um só, com a divisão na tooltip.
   "Meses obs." vira "Meses", com a definição na tooltip.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — rodapé de totais na tabela de intermediação (2026-09-21)
+
+- **Ponto alterado:** a tabela de Intermediação ganha `<tfoot>` com base
+  comissionável, encargos, total recebido, comissão, % e repasse.
+- **Por quê:** a tabela não somava nada. O único total era a comissão no
+  cabeçalho da seção, e conferir a soma contra a planilha exigia somar à mão.
+- **Soma só o que tem efeito financeiro.** Linha pendente fica de fora (CA27.2),
+  mas não some em silêncio: a contagem vai na tooltip do "Total", com um ⚠ no
+  rótulo quando há pendente ou base não apurável.
+- **Base desconhecida não vira zero.** A célula mostra "-" e o rodapé soma só as
+  demais; nesse caso o **%** fica "—", porque a comissão somaria N linhas e a
+  base N-1, e a divisão mentiria para cima. Mesmo erro que o efetivo de
+  administração tinha nos Indicadores.
+- **Uma soma só:** `totalizarRecebimentos` vive no módulo canônico
+  (`lib/recebimentos-extraordinarios.ts`) e alimenta o cabeçalho e o rodapé. A
+  tela não recalcula por fora (CA27).
+- **Verificado** nos 7 fechamentos com intermediação de mai a ago/2026: a
+  identidade base + encargos = total recebido fecha em todos.
+- **Ainda não feito:** quebrar a coluna "Encargos" nos componentes da planilha
+  (IPTU, água, seguro). Depende do print da aba da cliente para replicar ordem e
+  nomes — os dados já existem em `ComponentesIntermediacao`.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

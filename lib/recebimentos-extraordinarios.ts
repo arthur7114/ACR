@@ -243,6 +243,77 @@ export function resolverRecebimentosLegados<T extends RecebimentoLegado>(
   return resolvidos
 }
 
+export interface TotaisRecebimentos {
+  /** Linhas com efeito financeiro — as unicas somadas. */
+  linhas: number
+  /** Linhas pendentes, fora de toda soma (CA27.2). O rodape declara quantas. */
+  pendentes: number
+  /** Linhas resolvidas cuja base comissionavel o documento nao permite apurar. */
+  basesDesconhecidas: number
+  baseComissionavel: number | null
+  /** Resto do total sobre a base, linha a linha: IPTU, agua, seguro e afins. */
+  encargos: number | null
+  totalRecebido: number
+  comissao: number
+  repasse: number
+  /** Comissao sobre base. `null` quando alguma linha nao tem base. */
+  percentual: number | null
+}
+
+/**
+ * Totais de uma lista de recebimentos, para o rodape da tabela.
+ *
+ * Soma UMA vez, do mesmo lugar em que a linha foi resolvida — a tela nunca
+ * recalcula por fora (CA27). Tres regras que o rodape tem de respeitar:
+ *
+ * 1. Pendente nao soma. Mas sumir com ela em silencio seria pior que nao ter
+ *    rodape: `pendentes` existe para o rodape dizer quantas ignorou.
+ * 2. Base desconhecida nao vira zero. A celula mostra "-", e uma base menor que
+ *    a real inflaria o percentual — o mesmo erro que o efetivo de administracao
+ *    tinha nos indicadores.
+ * 3. Percentual so existe quando TODA linha tem base. Com uma base faltando, a
+ *    comissao soma N linhas e a base soma N-1: a divisao mente para cima.
+ */
+export function totalizarRecebimentos(itens: RecebimentoLegado[]): TotaisRecebimentos {
+  const resolvidos = resolverRecebimentosLegados(itens)
+  const bases = resolvidos.map(({ financeiro }) => financeiro.baseComissionavel)
+  const conhecidas = bases.filter((base): base is number => base !== null)
+  const soma = (pick: (financeiro: FinanceiroResolvido) => number) =>
+    roundMoney(resolvidos.reduce((total, { financeiro }) => total + pick(financeiro), 0))
+
+  const baseComissionavel = conhecidas.length === 0 ? null : roundMoney(conhecidas.reduce((a, b) => a + b, 0))
+  const totalRecebido = soma((financeiro) => financeiro.totalRecebido)
+  const comissao = soma((financeiro) => financeiro.comissao)
+  // Encargos so das linhas com base: sem base nao ha de que subtrair o total.
+  const encargos =
+    conhecidas.length === 0
+      ? null
+      : roundMoney(
+          resolvidos
+            .filter(({ financeiro }) => financeiro.baseComissionavel !== null)
+            .reduce(
+              (total, { financeiro }) => total + financeiro.totalRecebido - (financeiro.baseComissionavel as number),
+              0,
+            ),
+        )
+  const todasComBase = conhecidas.length === resolvidos.length && resolvidos.length > 0
+
+  return {
+    linhas: resolvidos.length,
+    pendentes: itens.length - resolvidos.length,
+    basesDesconhecidas: bases.length - conhecidas.length,
+    baseComissionavel,
+    encargos,
+    totalRecebido,
+    comissao,
+    repasse: soma((financeiro) => financeiro.repasse),
+    percentual:
+      todasComBase && baseComissionavel !== null && baseComissionavel > 0
+        ? Math.round((comissao / baseComissionavel) * 10_000) / 100
+        : null,
+  }
+}
+
 function resolverBase(item: RecebimentoExtraordinario): number | null {
   if (item.tipo !== "intermediacao") return null
   const { aluguel, garagem } = item.componentes

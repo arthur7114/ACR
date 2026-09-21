@@ -27,6 +27,7 @@ import {
   aguaDeclarada,
   resolverRecebimentoLegado,
   resolverRecebimentosLegados,
+  totalizarRecebimentos,
 } from "@/lib/recebimentos-extraordinarios"
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
@@ -778,7 +779,9 @@ export function RevisaoView({
   const acordosRepasseTotal = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.repasse, 0)
   // Total da intermediacao (taxa retida) e seu percentual, quando houver.
   const intermediacoesResolvidas = resolverRecebimentosLegados(intermediacoes)
-  const intermediacaoValor = intermediacoesResolvidas.reduce((sum, { financeiro }) => sum + financeiro.comissao, 0)
+  // Uma soma so, do modulo canonico, para o cabecalho e para o rodape da tabela.
+  const intermediacaoTotais = totalizarRecebimentos(intermediacoes)
+  const intermediacaoValor = intermediacaoTotais.comissao
   const intermediacaoPercent = (() => {
     for (const { financeiro } of intermediacoesResolvidas) {
       if (financeiro.percentualRealizado !== null) return financeiro.percentualRealizado
@@ -1429,6 +1432,48 @@ export function RevisaoView({
                   )
                 })}
               </tbody>
+              {/* Rodape pedido pela cliente (set/2026): a tabela nao somava nada,
+                  e o unico total era a comissao no cabecalho da secao. Soma so o
+                  que tem efeito financeiro; pendente e base desconhecida sao
+                  declaradas na tooltip em vez de sumirem. */}
+              <tfoot>
+                <tr className="border-t border-[#99F6E4] bg-[#F0FDFA] font-semibold text-[#1A2B1C]">
+                  <td className="px-4 py-3" colSpan={2}>
+                    <Hint
+                      lines={[
+                        `${intermediacaoTotais.linhas} ${intermediacaoTotais.linhas === 1 ? "intermediação somada" : "intermediações somadas"}.`,
+                        intermediacaoTotais.pendentes > 0
+                          ? `${intermediacaoTotais.pendentes} pendente${intermediacaoTotais.pendentes === 1 ? "" : "s"} fora do total — sem efeito financeiro até a revisão.`
+                          : null,
+                        intermediacaoTotais.basesDesconhecidas > 0
+                          ? `${intermediacaoTotais.basesDesconhecidas} sem base comissionável apurável: a base e os encargos somam só as demais, e por isso o % fica “—”.`
+                          : null,
+                        "Base + encargos = total recebido. Comissão incide só sobre a base.",
+                      ]}
+                      label="Detalhe dos totais de intermediação"
+                    >
+                      <span>Total</span>
+                      {(intermediacaoTotais.pendentes > 0 || intermediacaoTotais.basesDesconhecidas > 0) && (
+                        <span className="ml-1.5 text-[11px] font-medium text-[#92400E]">⚠</span>
+                      )}
+                    </Hint>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {intermediacaoTotais.baseComissionavel !== null ? formatBRL(intermediacaoTotais.baseComissionavel) : "-"}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {intermediacaoTotais.encargos !== null ? formatBRL(intermediacaoTotais.encargos) : "-"}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{formatBRL(intermediacaoTotais.totalRecebido)}</td>
+                  <td className="px-4 py-3 tabular-nums text-[#0F766E]">{formatBRL(intermediacaoTotais.comissao)}</td>
+                  <td className="px-4 py-3 tabular-nums">
+                    {intermediacaoTotais.percentual !== null ? formatPercent(intermediacaoTotais.percentual) : "-"}
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{formatBRL(intermediacaoTotais.repasse)}</td>
+                  <td className="px-4 py-3"></td>
+                  <td className="px-4 py-3"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </section>

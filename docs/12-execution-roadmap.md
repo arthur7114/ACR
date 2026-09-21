@@ -3109,3 +3109,41 @@ Galpão 03, que mostravam inadimplência com tudo já quitado.
 
 **Próximo passo.** Resto do P1/P2: totais e componentes da tabela de
 intermediação.
+
+## 2026-09-21 — Totais da tabela de intermediação
+
+**Pedido.** "Totais da tabela de intermediação."
+
+**Estado anterior.** A tabela não tinha rodapé; o único total era a comissão
+impressa no cabeçalho da seção.
+
+**Implementação.** `totalizarRecebimentos` em
+`lib/recebimentos-extraordinarios.ts` (5 testes), ao lado da resolução que já é
+a via única desses valores — o rodapé não é uma segunda conta, é a mesma.
+Alimenta também o total do cabeçalho, que antes somava por conta própria.
+
+Três regras que o rodapé respeita:
+
+1. **Pendente não soma** (CA27.2) — mas é declarada. Sumir com ela em silêncio
+   seria pior que não ter rodapé.
+2. **Base desconhecida não vira zero.** A célula mostra "-"; somar como zero
+   daria uma base menor que a real.
+3. **% só existe quando toda linha tem base.** Com uma base faltando, a comissão
+   soma N linhas e a base N-1: a divisão mente para cima — o mesmo erro que o
+   efetivo de administração tinha.
+
+Contagens de pendente e de base não apurável vão na tooltip do "Total", com ⚠ no
+rótulo quando existem.
+
+**Verificação contra o banco.** 7 fechamentos com intermediação entre mai e
+ago/2026. A identidade base + encargos = total recebido fecha em todos os 7, e os
+percentuais caem em cima do contrato (60% e 70%). GM II ago/2026: base
+R$ 2.150,00 + encargos R$ 207,39 = R$ 2.357,39, comissão R$ 1.290,00 — o mesmo
+R$ 1.290,00 que a Visão geral mostra na linha de intermediação.
+
+`pnpm test` 679 passando, `tsc --noEmit` e `pnpm lint` limpos.
+
+**Próximo passo.** Quebrar a coluna "Encargos" nos componentes da planilha
+(IPTU, água, seguro): `ComponentesIntermediacao` já carrega o detalhe e
+`normalizarItemLegado` já o preenche, mas o pedido é "replicar exatamente as
+colunas da planilha" — falta o print da aba para definir ordem e nomes.
