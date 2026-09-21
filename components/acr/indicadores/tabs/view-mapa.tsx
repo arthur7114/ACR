@@ -23,6 +23,7 @@ import {
   formatCompetenciaCurta,
   formatCount,
   formatCurrency,
+  descreverQuitacao,
   isInadimplenciaQuitada,
   occupancyLabel,
   type HeatGroup,
@@ -374,6 +375,9 @@ function UnitCell({
   // inquilino e a cor diz o estado. Vago fica branco e escrito; desconhecido
   // continua escrito porque nao ha inquilino a mostrar.
   const dividaLinhas = cell.divida ? descreverDivida(cell.divida, month) : []
+  // Resolvida ANTES dos ramos de status: a quitacao de uma competencia nao
+  // depende de como o snapshot daquele mes classificou a unidade.
+  const quitacaoDescrita = descreverQuitacao(cell, month)
   if (status === "vago") {
     // Rescisao no mes: a unidade terminou vaga, mas o que aconteceu foi uma
     // saida com proporcional. A celula diz "Rescisao" e o hover traz o
@@ -414,14 +418,19 @@ function UnitCell({
   const inquilino = inquilinoOuAtual(cell, fallbackTenant)
 
   if (status !== "inadimplente") {
+    // Mes que o snapshot nao marcou como inadimplente mas que uma recuperacao
+    // posterior quitou (o inquilino que paga sempre um mes atrasado) recebe o
+    // mesmo tratamento do mes inadimplente quitado: ✅ e as duas linhas curtas.
+    const linhas = [...(quitacaoDescrita?.linhas ?? []), ...dividaLinhas]
+    const quitadaAqui = quitacaoDescrita?.completa ?? false
     return (
       <td
-        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}, ${tenantAriaLabel(inquilino)}${dividaLinhas.map((linha) => `, ${linha}`).join("")}`}
-        className={cn(UNIT_CELL_BASE, dividaLinhas.length > 0 && "p-0", heatTone(cell.inadimplenciaPercentual))}
+        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${quitadaAqui ? ", inadimplência quitada" : ""}, ${tenantAriaLabel(inquilino)}${linhas.map((linha) => `, ${linha}`).join("")}`}
+        className={cn(UNIT_CELL_BASE, linhas.length > 0 && "p-0", heatTone(cell.inadimplenciaPercentual))}
       >
-        {dividaLinhas.length > 0 ? (
-          <Hint lines={dividaLinhas} side="bottom" className="px-2 py-2.5 text-center">
-            <TenantName name={inquilino} emphasis />
+        {linhas.length > 0 ? (
+          <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
+            <TenantNameComQuitacao name={inquilino} quitada={quitadaAqui} />
           </Hint>
         ) : (
           <TenantName name={inquilino} emphasis />
@@ -433,20 +442,12 @@ function UnitCell({
   // Inadimplente: vermelho enquanto em aberto; verde com o sinal de quitacao
   // quando um mes posterior recuperou o atraso desta competencia. O historico
   // nao apaga que a inadimplencia existiu — o hover conta quanto e quando.
+  // `isInadimplenciaQuitada` tambem cobre a divida que sumiu do fechamento
+  // seguinte, sem recuperacao apontando para ca — por isso nao vira so o
+  // `completa` do descritor.
   const quitada = isInadimplenciaQuitada(cell)
   const valorLabel = cell.valor === null ? "valor não apurado" : formatCurrency(cell.valor)
-  const quitacaoLinhas =
-    !cell.quitacao
-      ? []
-      : [
-          `Inadimplência de ${month}: ${valorLabel}`,
-          quitada
-            ? `Quitada em ${formatCompetenciaCurta(cell.quitacao.competencia)}: ${formatCurrency(cell.quitacao.valor)}`
-            : `Pago ${formatCurrency(cell.quitacao.valor)} em ${formatCompetenciaCurta(cell.quitacao.competencia)}${
-                cell.valor === null ? "" : ` · em aberto ${formatCurrency(Math.max(0, cell.valor - cell.quitacao.valor))}`
-              }`,
-        ]
-  const linhas = [...quitacaoLinhas, ...dividaLinhas]
+  const linhas = [...(quitacaoDescrita?.linhas ?? []), ...dividaLinhas]
   // Sem valor do mes, a celula mostra o saldo da divida registrada depois.
   const valorCelula = cell.valor ?? cell.divida?.saldo ?? null
 
@@ -501,6 +502,20 @@ function descreverDivida(divida: IndicadoresHeatDivida, month: string): string[]
     divida.quitada ? `Quitada: não consta mais no fechamento seguinte a ${formatCompetenciaCurta(divida.saldoEm)}` : null,
   ]
   return linhas.filter((linha): linha is string => Boolean(linha))
+}
+
+// Mesmo nome + ✅ da celula inadimplente-quitada, para o mes que foi quitado
+// sem ter sido gravado como inadimplente.
+function TenantNameComQuitacao({ name, quitada }: { name: string | null; quitada: boolean }) {
+  if (!quitada) return <TenantName name={name} emphasis />
+  return (
+    <span className="flex items-center justify-center gap-1 text-[11px] font-semibold leading-tight">
+      <span className="truncate" title={name?.trim() || undefined}>
+        {name?.trim() || "Inquilino não informado"}
+      </span>
+      <Check aria-hidden className="size-3.5 shrink-0" />
+    </span>
+  )
 }
 
 function TenantName({ name, emphasis = false }: { name: string | null; emphasis?: boolean }) {

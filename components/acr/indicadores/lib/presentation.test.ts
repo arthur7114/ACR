@@ -14,6 +14,7 @@ import {
   formatReference,
   filterMonthlySeriesPeriod,
   getFinancialReferences,
+  descreverQuitacao,
   isInadimplenciaQuitada,
 } from "./presentation.ts"
 
@@ -605,4 +606,47 @@ test("unidade que quitou a competência não aparece em aberto no painel de inad
 
 test("formatCompetenciaCurta segue o rótulo dos cabeçalhos do mapa", () => {
   assert.equal(formatCompetenciaCurta("2026-07-01"), "jul. de 2026")
+})
+
+// Grand Maracanau 204: maio foi quitado em junho (466,93, origem 2026-05), mas
+// o snapshot de maio ficou `ocupado` porque o fechamento de maio registrou o
+// pagamento de ABRIL. O sinal de quitacao vivia so dentro do ramo de
+// inadimplente: junho ganhava o ✅ e maio, a mesma quitacao, nao.
+test("descreverQuitacao: mes quitado vale mesmo com o snapshot gravado como ocupado", () => {
+  const descrita = descreverQuitacao(
+    { statusOcupacao: "ocupado", valor: 0, quitacao: { competencia: "2026-06-01", valor: 466.93 } },
+    "mai. de 2026",
+  )
+  assert.equal(descrita?.completa, true)
+  assert.deepEqual(descrita?.linhas, [`Quitada em jun. de 2026: ${formatCurrency(466.93)}`])
+})
+
+test("descreverQuitacao: inadimplente mantem o valor em aberto e a recuperacao parcial", () => {
+  assert.deepEqual(
+    descreverQuitacao(
+      { statusOcupacao: "inadimplente", valor: 700, quitacao: { competencia: "2026-07-01", valor: 300 } },
+      "jun. de 2026",
+    ),
+    {
+      completa: false,
+      linhas: [
+        `Inadimplência de jun. de 2026: ${formatCurrency(700)}`,
+        `Pago ${formatCurrency(300)} em jul. de 2026 · em aberto ${formatCurrency(400)}`,
+      ],
+    },
+  )
+  assert.deepEqual(
+    descreverQuitacao(
+      { statusOcupacao: "inadimplente", valor: null, quitacao: { competencia: "2026-07-01", valor: 50 } },
+      "jun. de 2026",
+    ),
+    {
+      completa: true,
+      linhas: ["Inadimplência de jun. de 2026: valor não apurado", `Quitada em jul. de 2026: ${formatCurrency(50)}`],
+    },
+  )
+})
+
+test("descreverQuitacao: sem recuperacao apontando para o mes nao ha o que afirmar", () => {
+  assert.equal(descreverQuitacao({ statusOcupacao: "ocupado", valor: 0, quitacao: null }, "mai. de 2026"), null)
 })

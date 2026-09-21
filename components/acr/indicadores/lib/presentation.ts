@@ -320,6 +320,41 @@ export function isInadimplenciaQuitada(cell: Pick<IndicadoresHeatCell, "statusOc
   return cell.valor === null || cell.quitacao.valor + 0.01 >= cell.valor
 }
 
+export interface QuitacaoDescrita {
+  /** A recuperação cobre o que estava em aberto — vale o sinal de quitação. */
+  completa: boolean
+  linhas: string[]
+}
+
+// A recuperação de um atraso aponta para a competência que ela liquidou, e isso
+// independe do status que o snapshot daquele mês registrou. O 204 do Grand
+// Maracanaú paga sempre um mês atrasado: maio foi quitado em junho (R$ 466,93,
+// origem 2026-05) e mesmo assim ficou `ocupado`, porque o fechamento de maio
+// registrou o pagamento de ABRIL. O sinal de quitação vivia só dentro do ramo
+// de inadimplente do mapa — junho aparecia com o ✅ e maio, a mesma quitação,
+// sem ele. Fora do estado inadimplente não há saldo em aberto a confrontar: a
+// recuperação posterior é a única evidência sobre a competência e vale inteira.
+export function descreverQuitacao(
+  cell: Pick<IndicadoresHeatCell, "statusOcupacao" | "valor" | "quitacao">,
+  month: string,
+): QuitacaoDescrita | null {
+  if (!cell.quitacao) return null
+  const inadimplente = cell.statusOcupacao === "inadimplente"
+  const emAberto = inadimplente ? cell.valor : null
+  const completa = emAberto === null || cell.quitacao.valor + 0.01 >= emAberto
+  const quando = formatCompetenciaCurta(cell.quitacao.competencia)
+  const pago = formatCurrency(cell.quitacao.valor)
+  const linhas = [
+    inadimplente
+      ? `Inadimplência de ${month}: ${emAberto === null ? "valor não apurado" : formatCurrency(emAberto)}`
+      : null,
+    completa
+      ? `Quitada em ${quando}: ${pago}`
+      : `Pago ${pago} em ${quando} · em aberto ${formatCurrency(Math.max(0, (emAberto ?? 0) - cell.quitacao.valor))}`,
+  ]
+  return { completa, linhas: linhas.filter((linha): linha is string => linha !== null) }
+}
+
 // Mesmo rótulo curto dos cabeçalhos do mapa ("jul. de 2026"), para meses que
 // podem estar fora do período exibido (a quitação pode ter vindo depois).
 export function formatCompetenciaCurta(competencia: string): string {
