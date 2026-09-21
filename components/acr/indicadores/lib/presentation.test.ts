@@ -15,6 +15,7 @@ import {
   filterMonthlySeriesPeriod,
   getFinancialReferences,
   descreverQuitacao,
+  descreverRecebimentoParcial,
   isInadimplenciaQuitada,
 } from "./presentation.ts"
 
@@ -649,4 +650,27 @@ test("descreverQuitacao: inadimplente mantem o valor em aberto e a recuperacao p
 
 test("descreverQuitacao: sem recuperacao apontando para o mes nao ha o que afirmar", () => {
   assert.equal(descreverQuitacao({ statusOcupacao: "ocupado", valor: 0, quitacao: null }, "mai. de 2026"), null)
+})
+
+// A intensidade do verde no apto codificava "quanto do aluguel faltou". A
+// legenda do mapa descrevia OUTRA grandeza (percentual de unidades em risco do
+// empreendimento), entao o mesmo tom queria dizer duas coisas na mesma tabela
+// (feedback do cliente, 2026-09-21). Tirando o degrade, o numero tem de ir para
+// o tooltip — senao a informacao nao muda de lugar, some.
+test("descreverRecebimentoParcial: apto ocupado que recebeu menos que o esperado", () => {
+  assert.deepEqual(
+    descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: 150.5 }, "ago. de 2026"),
+    `Faltou ${formatCurrency(150.5)} do aluguel esperado de ago. de 2026`,
+  )
+})
+
+test("descreverRecebimentoParcial: sem falta, sem valor apurado e inadimplente não produzem linha", () => {
+  // Pagou tudo.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: 0 }, "ago. de 2026"), null)
+  // Sem esperado cadastrado: `null` é ausência de apuração, nunca zero.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: null }, "ago. de 2026"), null)
+  // Inadimplente já tem a própria linha, com o valor em aberto.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "inadimplente", valor: 400 }, "ago. de 2026"), null)
+  // Vago não deve nada.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "vago", valor: 700 }, "ago. de 2026"), null)
 })

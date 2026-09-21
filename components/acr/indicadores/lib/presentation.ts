@@ -320,6 +320,24 @@ export function isInadimplenciaQuitada(cell: Pick<IndicadoresHeatCell, "statusOc
   return cell.valor === null || cell.quitacao.valor + 0.01 >= cell.valor
 }
 
+// A celula do apto codificava em intensidade de verde o quanto do aluguel
+// faltou, enquanto a legenda do mapa descrevia outra grandeza — o percentual de
+// UNIDADES em risco do empreendimento. Mesmo tom, dois significados, na mesma
+// tabela. Tirada a rampa do apto, o numero vem para o tooltip: derivacao mora
+// aqui, nao na cor.
+//
+// So para quem esta ocupado: o inadimplente ja imprime o proprio valor em
+// aberto, e vago nao deve nada. `null` em `valor` e ausencia de apuracao (sem
+// aluguel esperado cadastrado), nunca zero.
+export function descreverRecebimentoParcial(
+  cell: Pick<IndicadoresHeatCell, "statusOcupacao" | "valor">,
+  month: string,
+): string | null {
+  if (cell.statusOcupacao !== "ocupado" && cell.statusOcupacao !== "em_rescisao") return null
+  if (cell.valor === null || cell.valor <= 0) return null
+  return `Faltou ${formatCurrency(cell.valor)} do aluguel esperado de ${month}`
+}
+
 export interface QuitacaoDescrita {
   /** A recuperação cobre o que estava em aberto — vale o sinal de quitação. */
   completa: boolean
