@@ -641,3 +641,38 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
   referência, não parcela da soma, e nenhuma está na extração. Ficam para
   decisão do Arthur.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — o TOTAL impresso de cada seção vira conferência (2026-09-21)
+
+- **Ponto alterado:** a extração passa a copiar a linha **TOTAL** impressa ao pé
+  de cada seção (`totais_secoes`), e um recheck determinístico compara a nossa
+  soma das linhas contra ela, **coluna a coluna**.
+- **Por quê:** recalcular a soma das linhas é coerente consigo mesmo e não prova
+  nada. Se a extração perde uma coluna inteira, a nossa soma erra junto e o
+  fechamento passa — foi o que aconteceu no Grand Castelão I ago/2026, que
+  perdeu ÁGUA (R$ 47,60 por apto). O total impresso é a única testemunha externa.
+- **Coluna a coluna, não só o total:** se apenas o TOTAL fosse comparado, uma
+  água que sumiu da coluna mas entrou no total passaria.
+- **`null` é "esta seção não tem essa coluna", nunca zero.** O layout varia por
+  imobiliária e até por mês no mesmo empreendimento (Grand Maracanaú imprime
+  ENCARGOS e não tem ÁGUA; Grand Castelão teve LIXO até dez/2024). Conferir
+  contra zero acusaria divergência em documento correto.
+- **Tolerância proporcional às linhas.** A planilha guarda precisão cheia (a aba
+  do Castelão traz IPTU `3.676834725940346`) e imprime cada célula arredondada.
+  O TOTAL impresso soma os valores cheios; nós só enxergamos os impressos. Em 21
+  linhas a deriva chega a 7 centavos — tolerância fixa de um centavo acusaria
+  divergência num documento perfeitamente correto.
+- **Ausência não é aprovação.** Sem total impresso o recheck **não emite nada**.
+  Um "passed" ali afirmaria uma conferência que não aconteceu. Vale para os
+  layouts B e C, que não imprimem total por seção, e para análises persistidas
+  antes deste campo.
+- **Divergência bloqueia o parecer técnico** (`status: failed`), como qualquer
+  outro recheck determinístico. Só afeta análises novas.
+- **Exceção registrada na allowlist do CA27:** `prestacao-rechecks.ts` lê as
+  colunas **cruas**. Passar pelo resolvedor canônico inverteria o objetivo — ele
+  aplica fallbacks (água lida da observação, total derivado da base) que
+  reconstroem justamente o valor perdido, e a coluna faltante deixaria de
+  aparecer. Nenhum número daí alimenta tela ou persistência.
+- **Ainda não coberto:** o parser de Excel não popula `totais_secoes`, embora a
+  planilha traga a linha TOTAL de graça. Upload `.xlsx` segue sem conferência.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

@@ -149,6 +149,45 @@ export const inadimplenciaAcumuladaSchema = z
 
 export type InadimplenciaAcumulada = z.infer<typeof inadimplenciaAcumuladaSchema>
 
+// Linha TOTAL impressa ao pe de cada secao do documento.
+//
+// A prestacao e a planilha da imobiliaria impressa, e toda secao dela fecha com
+// um TOTAL por coluna. Ate aqui o sistema recalculava as somas e nunca olhava
+// para esse total: uma coluna perdida na extracao (Grand Castelao I ago/2026
+// perdeu AGUA, R$ 47,60 por apto) passava calada, porque a nossa soma das
+// linhas erradas era coerente com ela mesma.
+//
+// Com o total impresso em maos, o rodape deixa de ser so uma conta nossa e vira
+// CONFERENCIA: soma divergente e erro de extracao denunciado sozinho, em todo
+// fechamento, sem ninguem abrir o PDF.
+//
+// As colunas variam por imobiliaria e ate por mes no mesmo empreendimento
+// (Grand Maracanau imprime ENCARGOS e nao tem AGUA; Grand Castelao teve LIXO
+// ate dez/2024). Por isso todas sao opcionais: `null` e "esta secao nao tem
+// essa coluna", nunca zero.
+export const totalSecaoSchema = z
+  .object({
+    secao: z.enum(["vigencia", "intermediacao", "acordos_rescisoes", "inadimplencias"]),
+    /** Cabecalho impresso, como esta no documento. */
+    rotulo: z.string().nullable(),
+    aluguel: z.number().nullable(),
+    desconto: z.number().nullable(),
+    aluguel_com_desconto: z.number().nullable(),
+    garagem: z.number().nullable(),
+    agua: z.number().nullable(),
+    iptu: z.number().nullable(),
+    lixo: z.number().nullable(),
+    seguro_incendio: z.number().nullable(),
+    encargos: z.number().nullable(),
+    total: z.number().nullable(),
+    comissao: z.number().nullable(),
+    repasse: z.number().nullable(),
+    confianca: z.number().min(0).max(1),
+  })
+  .strict()
+
+export type TotalSecao = z.infer<typeof totalSecaoSchema>
+
 export const colunaNaoLidaSchema = z
   .object({
     coluna: z.string(),
@@ -224,6 +263,7 @@ export const prestacaoAnalysisSchema = z
         total_repassar: z.number().nullable(),
       })
       .strict(),
+    totais_secoes: z.array(totalSecaoSchema).optional(),
     campos_ausentes: z.array(z.string()),
     observacoes: z.array(z.string()),
     confianca_geral: z.number().min(0).max(1),
@@ -245,6 +285,10 @@ export interface PrestacaoAnalysis {
     total_comissoes: number | null
     total_repassar: number | null
   }
+  // Opcional de proposito: analises persistidas antes deste campo nao o tem, e
+  // parsers de layout que nao imprimem TOTAL por secao (B e C) tambem nao.
+  // Ausente = "nao ha total impresso para conferir", nunca "os totais batem".
+  totais_secoes?: TotalSecao[]
   campos_ausentes: string[]
   observacoes: string[]
   confianca_geral: number

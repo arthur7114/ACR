@@ -3235,3 +3235,41 @@ login.
 documento, mas são referência, não parcela da soma, e nenhuma está na extração.
 Adicioná-las custa uma mudança de schema mais reprocessamento dos fechamentos —
 sem isso apareceriam vazias.
+
+## Ciclo — TOTAL impresso por seção vira rede de proteção (2026-09-21)
+
+Escolhido pelo Arthur como primeiro passo, na frente das colunas ENCARGOS e
+LIXO, porque protege todo fechamento futuro em vez de só exibir mais dado.
+
+**O problema que resolve.** O sistema recalculava as somas e nunca olhava para o
+total impresso. Soma coerente consigo mesma não prova nada: quando a extração
+perde uma coluna, a nossa conta erra junto. Grand Castelão I ago/2026 perdeu
+ÁGUA (R$ 47,60 por apto) e o fechamento passou limpo. Ninguém teria visto sem
+abrir o PDF ao lado da tela.
+
+**O que entrou.** `totais_secoes` no schema de extração e no prompt — uma
+entrada por seção, com o valor de cada coluna como impresso. E
+`conferirTotaisDeSecao` em `prestacao-rechecks.ts`, comparando coluna a coluna.
+
+Três decisões que o documento ditou:
+
+1. **`null` ≠ zero.** O layout muda por imobiliária e por mês. Maracanaú imprime
+   ENCARGOS e não tem ÁGUA; Castelão teve LIXO até dez/2024. Coluna ausente não
+   é conferida.
+2. **Tolerância proporcional.** A planilha guarda precisão cheia e imprime
+   arredondado; em 21 linhas a deriva chega a 7 centavos. Verificado por
+   red-green: com tolerância fixa de um centavo o teste do Castelão falha.
+3. **Sem total impresso, nenhum recheck.** Emitir "passed" afirmaria uma
+   conferência que não houve.
+
+`pnpm test` 693 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Próximos, na ordem combinada.** Colunas ENCARGOS (Maracanaú) e LIXO
+(Castelão), que hoje nem são extraídas; depois a água do Castelão ago/2026,
+quando a aba `AGO 26` ou o PDF aparecer.
+
+**Lacuna declarada.** O parser de Excel não popula `totais_secoes`, embora a
+planilha traga a linha TOTAL de graça e ali a conferência seria exata, sem
+arredondamento. Upload `.xlsx` segue sem rede.
