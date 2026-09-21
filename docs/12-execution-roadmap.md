@@ -3147,3 +3147,27 @@ R$ 1.290,00 que a Visão geral mostra na linha de intermediação.
 (IPTU, água, seguro): `ComponentesIntermediacao` já carrega o detalhe e
 `normalizarItemLegado` já o preenche, mas o pedido é "replicar exatamente as
 colunas da planilha" — falta o print da aba para definir ordem e nomes.
+
+## Ciclo — varredura de nomenclatura do drawer, fechamento (2026-09-21)
+
+Último resíduo do P1 do mapa de bugs. Dois rótulos no drawer do imóvel ainda
+falavam "acordo", que é o nome do lançamento, não do fato:
+
+- seção "Acordos parcelados" → **"Inadimplência parcelada"**;
+- título do card "Acordo" → **"Inadimplência parcelada"**, ou **"Rescisão
+  parcelada"** quando `acordo.tipo === "rescisao"`.
+
+Não viraram "Inadimplência paga" (o nome usado no tile e na linha do tempo)
+porque o card pode ter parcela em aberto; "paga" só é verdade quando o selo ao
+lado diz que quitou.
+
+`view-receita.tsx` ficou de fora de propósito: é a aba "Conciliação financeira",
+marcada para remoção no item 12 do mapa.
+
+`pnpm test` 679 passando (1 skip: fixtures congeladas ausentes), `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**P1 encerrado.** Segue aberto no mapa: quebrar a coluna "Encargos" da
+intermediação (falta o print da planilha), P3 (aluguel potencial + barra
+empilhada) e P4.

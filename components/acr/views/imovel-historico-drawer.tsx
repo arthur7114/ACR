@@ -278,7 +278,7 @@ export function ImovelHistoricoDrawer({
               {/* Acordos parcelados (Nível 2) */}
               {acordos.length > 0 && (
                 <div className="mb-4">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Acordos parcelados</p>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">Inadimplência parcelada</p>
                   <div className="space-y-3">
                     {acordos.map((acordo) => (
                       <AcordoCard key={acordo.id} acordo={acordo} baixando={baixando} onToggle={toggleParcela} />
@@ -332,7 +332,11 @@ function AcordoCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[14px] font-semibold text-[#1A2B1C]">
-              {acordo.tipo === "rescisao" ? "Acordo de rescisão" : "Acordo"}
+              {/* "Acordo" sozinho nao diz do que se trata. Aqui e um plano de
+                  pagamento que pode estar EM ABERTO, entao "inadimplencia paga"
+                  mentiria enquanto houver parcela pendente — o selo ao lado e
+                  que diz se quitou. */}
+              {acordo.tipo === "rescisao" ? "Rescisão parcelada" : "Inadimplência parcelada"}
             </span>
             <span
               className="rounded-full px-2 py-0.5 text-[11px] font-medium"

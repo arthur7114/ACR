@@ -557,3 +557,21 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
   (IPTU, água, seguro). Depende do print da aba da cliente para replicar ordem e
   nomes — os dados já existem em `ComponentesIntermediacao`.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — fecha a varredura de nomenclatura do drawer (2026-09-21)
+
+- **Ponto alterado:** no drawer do imóvel, a seção "Acordos parcelados" vira
+  **"Inadimplência parcelada"** e o título do card, antes "Acordo", vira
+  **"Inadimplência parcelada"** (ou **"Rescisão parcelada"** quando
+  `acordo.tipo === "rescisao"`).
+- **Por quê:** completa o pedido "dar uma revisada geral nas nomenclaturas". A
+  palavra "acordo" é jargão de quem lança o dado, não de quem lê a tela: para a
+  cliente o fato é dívida antiga sendo paga em parcelas.
+- **Por que aqui não é "Inadimplência paga"**, como no tile: o card descreve um
+  plano de pagamento que pode ter parcela **em aberto**. Dizer "paga" mentiria
+  enquanto houver parcela pendente — quem diz se quitou é o selo ao lado.
+- **Fora do escopo de propósito:** `components/acr/indicadores/tabs/view-receita.tsx`
+  ("Acordos recebidos", "Atrasos pagos"). É a aba "Conciliação financeira" que a
+  cliente pediu para remover (item 12 do mapa); renomear ali agora é trabalho
+  jogado fora.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
