@@ -57,18 +57,31 @@ const VALUE_STACK: Series[] = [
   },
 ]
 
-// Lidas so pelo tooltip e pela tabela acessivel: sao o detalhe do cinza.
+// Lidas so pelo tooltip e pela tabela acessivel: sao PARTE do detalhe do cinza.
 //
-// As quatro, nao duas. A identidade que o sistema ja verifica
-// (`serie_realizacao_do_ponto`) e potencial − vacancia − inadimplencia −
-// descontos + ajustes = recebido; logo o cinza e a soma das tres primeiras
-// menos os ajustes. Listar so vacancia e inadimplencia deixaria o bloco cinza
-// maior que a explicacao dele em todo mes com desconto.
+// Medido em mai-ago/2026, consolidado: estas quatro nao fecham o cinza em mes
+// nenhum (14.240,84 contra 9.991,18; 18.891,46 contra 16.640,82; 23.195,60
+// contra 15.126,84; 22.108,03 contra 11.732,09). A identidade completa esta na
+// aba Receita e tem dez termos — faltam aqui `ajustesClassificados`, cobrado
+// como intermediacao, mes proporcional, ocupado sem recebimento, ocupado
+// parcial e recebido em vago. Enquanto o ponto mensal nao carregar todos, o
+// tooltip lista causas, nao uma decomposicao fechada, e o cinza NAO pode ser
+// empilhado com estas cores sem mentir sobre o que ele e.
 const VALUE_DETALHE: Series[] = [
   { key: "vacancia", label: "Vacância", color: "#d9a441", read: (point) => point.vacancia, format: formatCurrency },
   { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: (point) => point.inadimplencia, format: formatCurrency },
   { key: "descontos", label: "Descontos", color: "#8a6f3f", read: (point) => point.descontos, format: formatCurrency },
-  { key: "ajustes", label: "Ajustes documentados", color: "#5a6b7f", read: (point) => point.outrosAjustes, format: formatCurrency },
+  // NAO e "ajustes documentados": este campo e `valoresSemClassificacao`, o
+  // resto que fecha a identidade da ponte e arma o bloqueio de confirmacao
+  // (CA-IND06). "Ajustes documentados" e `ajustesClassificados` — o mes
+  // proporcional de quem rescindiu —, que a aba Receita exibe com esse nome e
+  // que NAO passa por aqui. O grafico chamava o dinheiro inexplicado de
+  // documentado, e o cliente perguntou o que era (2026-09-21).
+  //
+  // E costuma ser NEGATIVO no consolidado (mai a ago/2026: -2.124,83, -1.125,32,
+  // -4.034,38, -5.187,97), entao nao e uma parcela do cinza: entrou dinheiro que
+  // a decomposicao nao soube nomear.
+  { key: "sem_classificacao", label: "Sem classificação", color: "#5a6b7f", read: (point) => point.outrosAjustes, format: formatCurrency },
 ]
 
 const VALUE_TOTAL: Series = {

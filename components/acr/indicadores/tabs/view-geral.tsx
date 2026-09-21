@@ -378,9 +378,9 @@ export function ViewGeral({
           help={metric === "valor" ? {
             short: "Quanto do aluguel potencial foi realizado em cada mês.",
             title: "Realização do aluguel, mês a mês",
-            definition: "Cada barra é o aluguel potencial do mês: em verde o que foi recebido, em cinza o que não se concretizou. Passe o mouse sobre um mês para ver os valores e o que compõe o cinza: vacância, inadimplência, descontos e ajustes documentados.",
+            definition: "Cada barra é o aluguel potencial do mês: em verde o que foi recebido, em cinza o que não se concretizou. O hover lista as causas conhecidas do cinza — vacância, inadimplência, descontos — e o que a decomposição não soube classificar. Elas não somam o cinza inteiro: a conta fechada tem dez termos e está na aba Receita.",
             source: "Vigências para o potencial; histórico mensal por imóvel para o recebido e as perdas.",
-            limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor do mês.",
+            limitation: "Cada mês vale o que o fechamento daquele mês declara. Aluguel de uma competência recebido em outro mês não muda o valor do mês. \"Sem classificação\" pode ser negativo: é dinheiro que entrou e a decomposição não soube nomear.",
           } : {
             short: "Ocupação e inadimplência do histórico mês a mês.",
             title: "Evolução mensal em percentual",
