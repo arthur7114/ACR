@@ -330,6 +330,22 @@ export interface IndicadoresMonthlyPoint {
   inadimplencia: number | null
   descontos: number | null
   outrosAjustes: number | null
+  // As parcelas que abrem `outrosAjustes` (= `valoresSemClassificacao`). Sem
+  // elas o ponto fechava a identidade mas não sabia dizer do que o não realizado
+  // é feito: o gráfico listava quatro causas que não somavam o bloco cinza em
+  // mês nenhum. Com estas, o cinza decompõe exato — medido em mai–ago/2026.
+  //
+  // Duas delas NÃO são perda: `cobradoComoIntermediacao` (o dinheiro entrou pela
+  // seção de intermediação) e `mesProporcionalContratoNovo` (o mês cheio nunca
+  // foi devido). Em ago/2026 as duas somam R$ 5.451,62 de um cinza de
+  // R$ 22.108,03 — um quarto do bloco.
+  ajustesClassificados: number | null
+  cobradoComoIntermediacao: number | null
+  mesProporcionalContratoNovo: number | null
+  ocupadoSemRecebimento: number | null
+  ocupadoRecebimentoParcial: number | null
+  recebidoEmVago: number | null
+  restoNaoExplicado: number | null
   ocupacaoPercentual: number | null
   inadimplenciaPercentual: number | null
   coberturaPercentual: number | null

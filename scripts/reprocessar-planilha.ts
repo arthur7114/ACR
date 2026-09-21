@@ -4,12 +4,21 @@
 // do pacote (documentos, comprovante, despesas, reajuste) é preservado, e o
 // STATUS do fechamento é mantido para não regredir o estado do eGestor.
 //
+// A fonte pode ser a planilha (`--planilha`, leitura determinística) ou o PDF
+// da prestação (`--pdf`, extração por IA). O PDF existe porque nem todo
+// empreendimento tem a aba do mês na planilha que a cliente compartilha: o
+// Grand Castelão de ago/2026 só existe como PDF, e foi justamente ele que
+// perdeu a coluna ÁGUA na extração original.
+//
 // Dry-run por padrão. Uso:
 //   node --import tsx scripts/reprocessar-planilha.ts --fechamento <uuid> --planilha <arquivo.xlsx> [--commit]
+//   node --import tsx scripts/reprocessar-planilha.ts --fechamento <uuid> --pdf <arquivo.pdf> [--commit]
 import { readFileSync } from "node:fs"
+import { basename } from "node:path"
 import { pathToFileURL } from "node:url"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { parseExcelPrestacao } from "@/lib/server/excel-parser"
+import { extractPrestacaoAliveFromPdf } from "@/lib/server/analyze-prestacao"
 import { validatePackage } from "@/lib/server/package-rechecks"
 import {
   buildPackageMovimentacoes,
@@ -71,15 +80,35 @@ function resumo(analysis: PackageAnalysis) {
 function parseArgs(argv: string[]) {
   let fechamentoId: string | null = null
   let planilha: string | null = null
+  let pdf: string | null = null
   let commit = false
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--commit") { commit = true; continue }
     if (argv[i] === "--fechamento") { fechamentoId = argv[i + 1] ?? null; i += 1; continue }
     if (argv[i] === "--planilha") { planilha = argv[i + 1] ?? null; i += 1; continue }
+    if (argv[i] === "--pdf") { pdf = argv[i + 1] ?? null; i += 1; continue }
     throw new Error(`Argumento desconhecido: ${argv[i]}`)
   }
-  if (!fechamentoId || !planilha) throw new Error("Uso: --fechamento <uuid> --planilha <arquivo.xlsx> [--commit]")
-  return { fechamentoId, planilha, commit }
+  if (!fechamentoId) throw new Error("Falta --fechamento <uuid>.")
+  // Exatamente uma fonte: com as duas, qual venceu ficaria implícito na ordem
+  // de leitura do código, que é o pior lugar para essa decisão morar.
+  if (Boolean(planilha) === Boolean(pdf)) {
+    throw new Error("Informe exatamente uma fonte: --planilha <arquivo.xlsx> OU --pdf <arquivo.pdf>.")
+  }
+  return { fechamentoId, planilha, pdf, commit }
+}
+
+async function lerPrestacao(options: { planilha: string | null; pdf: string | null }, competencia: string) {
+  if (options.planilha) return parseExcelPrestacao(readFileSync(options.planilha), competencia)
+  const caminho = options.pdf as string
+  return extractPrestacaoAliveFromPdf(
+    {
+      fileName: basename(caminho),
+      fileType: "application/pdf",
+      fileBase64: readFileSync(caminho).toString("base64"),
+    },
+    competencia,
+  )
 }
 
 async function main() {
@@ -95,7 +124,7 @@ async function main() {
   const anterior = fechamento.analise_completa as PackageAnalysis
   if (!anterior?.prestacao) throw new Error("Fechamento sem análise para reprocessar.")
   const competencia = String(fechamento.competencia).slice(0, 7)
-  const prestacao = parseExcelPrestacao(readFileSync(options.planilha), competencia)
+  const prestacao = await lerPrestacao(options, competencia)
 
   // Preserva imobiliária/empreendimento já resolvidos: o nome lido da planilha
   // não é fonte de identidade cadastral.

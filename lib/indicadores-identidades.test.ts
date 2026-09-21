@@ -74,6 +74,18 @@ function dados(overrides: Partial<IndicadoresData> = {}): IndicadoresData {
         inadimplencia: 6210.19,
         descontos: 20,
         outrosAjustes: -3945.36,
+        // As parcelas que abrem `outrosAjustes`: -3.945,36 = -(2.150,00 cobrado
+        // na seção de intermediação + 1.795,36 de mês proporcional de contrato
+        // novo). Nenhuma das duas é perda, e juntas explicam o não realizado
+        // (89.120,05 - 67.484,30 = 21.635,75) junto com vacância, inadimplência
+        // e descontos.
+        ajustesClassificados: 0,
+        cobradoComoIntermediacao: 2150,
+        mesProporcionalContratoNovo: 1795.36,
+        ocupadoSemRecebimento: 0,
+        ocupadoRecebimentoParcial: 0,
+        recebidoEmVago: 0,
+        restoNaoExplicado: 0,
       },
     ],
     receitasPorImovel: [],

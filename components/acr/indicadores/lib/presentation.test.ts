@@ -14,6 +14,8 @@ import {
   formatReference,
   filterMonthlySeriesPeriod,
   getFinancialReferences,
+  descreverQuitacao,
+  descreverRecebimentoParcial,
   isInadimplenciaQuitada,
 } from "./presentation.ts"
 
@@ -485,6 +487,13 @@ test("identidade da realizacao fecha o gráfico e cita apenas o que existe no me
     inadimplencia: 6166.84,
     descontos: 20,
     outrosAjustes: -1032.7,
+    ajustesClassificados: 0,
+    cobradoComoIntermediacao: 1032.7,
+    mesProporcionalContratoNovo: 0,
+    ocupadoSemRecebimento: 0,
+    ocupadoRecebimentoParcial: 0,
+    recebidoEmVago: 0,
+    restoNaoExplicado: 0,
     ocupacaoPercentual: 87.2,
     inadimplenciaPercentual: 6,
     coberturaPercentual: 99.2,
@@ -525,6 +534,13 @@ test("nota de reatribuicao declara o sentido do deslocamento", async () => {
     inadimplencia: 2631.9,
     descontos: 133.53,
     outrosAjustes: 551.63,
+    ajustesClassificados: 0,
+    cobradoComoIntermediacao: 0,
+    mesProporcionalContratoNovo: 0,
+    ocupadoSemRecebimento: 0,
+    ocupadoRecebimentoParcial: 0,
+    recebidoEmVago: 551.63,
+    restoNaoExplicado: 0,
     ocupacaoPercentual: 87.2,
     inadimplenciaPercentual: 4.3,
     coberturaPercentual: 98.3,
@@ -605,4 +621,70 @@ test("unidade que quitou a competência não aparece em aberto no painel de inad
 
 test("formatCompetenciaCurta segue o rótulo dos cabeçalhos do mapa", () => {
   assert.equal(formatCompetenciaCurta("2026-07-01"), "jul. de 2026")
+})
+
+// Grand Maracanau 204: maio foi quitado em junho (466,93, origem 2026-05), mas
+// o snapshot de maio ficou `ocupado` porque o fechamento de maio registrou o
+// pagamento de ABRIL. O sinal de quitacao vivia so dentro do ramo de
+// inadimplente: junho ganhava o ✅ e maio, a mesma quitacao, nao.
+test("descreverQuitacao: mes quitado vale mesmo com o snapshot gravado como ocupado", () => {
+  const descrita = descreverQuitacao(
+    { statusOcupacao: "ocupado", valor: 0, quitacao: { competencia: "2026-06-01", valor: 466.93 } },
+    "mai. de 2026",
+  )
+  assert.equal(descrita?.completa, true)
+  assert.deepEqual(descrita?.linhas, [`Quitada em jun. de 2026: ${formatCurrency(466.93)}`])
+})
+
+test("descreverQuitacao: inadimplente mantem o valor em aberto e a recuperacao parcial", () => {
+  assert.deepEqual(
+    descreverQuitacao(
+      { statusOcupacao: "inadimplente", valor: 700, quitacao: { competencia: "2026-07-01", valor: 300 } },
+      "jun. de 2026",
+    ),
+    {
+      completa: false,
+      linhas: [
+        `Inadimplência de jun. de 2026: ${formatCurrency(700)}`,
+        `Pago ${formatCurrency(300)} em jul. de 2026 · em aberto ${formatCurrency(400)}`,
+      ],
+    },
+  )
+  assert.deepEqual(
+    descreverQuitacao(
+      { statusOcupacao: "inadimplente", valor: null, quitacao: { competencia: "2026-07-01", valor: 50 } },
+      "jun. de 2026",
+    ),
+    {
+      completa: true,
+      linhas: ["Inadimplência de jun. de 2026: valor não apurado", `Quitada em jul. de 2026: ${formatCurrency(50)}`],
+    },
+  )
+})
+
+test("descreverQuitacao: sem recuperacao apontando para o mes nao ha o que afirmar", () => {
+  assert.equal(descreverQuitacao({ statusOcupacao: "ocupado", valor: 0, quitacao: null }, "mai. de 2026"), null)
+})
+
+// A intensidade do verde no apto codificava "quanto do aluguel faltou". A
+// legenda do mapa descrevia OUTRA grandeza (percentual de unidades em risco do
+// empreendimento), entao o mesmo tom queria dizer duas coisas na mesma tabela
+// (feedback do cliente, 2026-09-21). Tirando o degrade, o numero tem de ir para
+// o tooltip — senao a informacao nao muda de lugar, some.
+test("descreverRecebimentoParcial: apto ocupado que recebeu menos que o esperado", () => {
+  assert.deepEqual(
+    descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: 150.5 }, "ago. de 2026"),
+    `Faltou ${formatCurrency(150.5)} do aluguel esperado de ago. de 2026`,
+  )
+})
+
+test("descreverRecebimentoParcial: sem falta, sem valor apurado e inadimplente não produzem linha", () => {
+  // Pagou tudo.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: 0 }, "ago. de 2026"), null)
+  // Sem esperado cadastrado: `null` é ausência de apuração, nunca zero.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "ocupado", valor: null }, "ago. de 2026"), null)
+  // Inadimplente já tem a própria linha, com o valor em aberto.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "inadimplente", valor: 400 }, "ago. de 2026"), null)
+  // Vago não deve nada.
+  assert.equal(descreverRecebimentoParcial({ statusOcupacao: "vago", valor: 700 }, "ago. de 2026"), null)
 })

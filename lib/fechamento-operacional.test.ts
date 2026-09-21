@@ -100,8 +100,11 @@ test("separa acordos, rescisoes e inadimplencia paga no breakdown da receita", (
     acordos: 300,
     rescisoes: 935.98,
     inadimplenciasPagas: 707.37,
+    // Antes a intermediacao era descartada aqui e o total ia a 1.993,35 — o que
+    // fazia a decomposicao da tela nao fechar com o recebido. Linha propria.
+    intermediacao: 900,
     outros: 50,
-    total: 1993.35,
+    total: 2893.35,
   })
 })
 
@@ -395,4 +398,58 @@ test("unidadeDaDescricao lê apto, sala e galpão, e não inventa unidade", () =
   assert.equal(unidadeDaDescricao("Apartamento 7 - seguro"), "apto 7")
   assert.equal(unidadeDaDescricao("Tarifa PIX"), null)
   assert.equal(unidadeDaDescricao(null), null)
+})
+
+// Grand Castelao I ago/2026 (feedback do cliente, 2026-09-21): a decomposicao de
+// RECEITAS somava R$ 14.003,51 e o total exibido era R$ 15.447,13. A diferenca
+// eram os R$ 1.443,63 recebidos na secao de intermediacao, que o breakdown
+// pulava — dinheiro que entrou, dentro do total, ausente das partes.
+test("intermediacao entra no breakdown: as partes tem que somar o total exibido", () => {
+  const prestacao = {
+    acordos_rescisoes_recebidos: [
+      { tipo: "intermediacao", apto: "3", inquilino: "E", valor: 670, total_recebido: 721.82, comissao: 402, repasse: 319.82, confianca: 0.95 },
+      { tipo: "intermediacao", apto: "8", inquilino: "F", valor: 670, total_recebido: 721.81, comissao: 402, repasse: 319.81, confianca: 0.95 },
+      { tipo: "atraso", apto: "5", inquilino: "G", valor: 846.47, total_recebido: 846.47, comissao: 0, confianca: 0.95 },
+    ],
+  } as PrestacaoAnalysis
+
+  const resumo = calcularResumoReceitasAdicionais(prestacao)
+  assert.equal(resumo.intermediacao, 1443.63)
+  assert.equal(resumo.inadimplenciasPagas, 846.47)
+  // Vigencia 13.157,04 + estas adicionais = 15.447,14, o recebido do documento
+  // (um centavo de arredondamento das linhas impressas).
+  assert.equal(resumo.total, 2290.1)
+})
+
+// Galpao Jose Walter ago/2026 (feedback do cliente, 2026-09-21: "comissao esta
+// indo para as despesas"). A NFS-e da propria administradora, R$ 267,88, e a
+// MESMA taxa ja deduzida na linha do aluguel. A conciliacao sabe disso e poe a
+// despesa em zero; o card listava o item cru e exibia "Outros R$ 267,88" com
+// "Abatido do repasse - R$ 0,00" logo abaixo. A comissao aparecia como despesa
+// do locador, e as partes nao somavam o total.
+test("despesa ja retida como comissao nao e listada como despesa do locador", () => {
+  const grupos = desdobrarDespesasFechamento({
+    totalDespesas: 0,
+    resumoItens: [],
+    despesas: [
+      {
+        tipo: "outro",
+        valor: 267.88,
+        fornecedor: "PLURAL ADMINISTRAÇÃO DE IMÓVEIS LTDA",
+        observacao: "Taxa de administração.",
+        referencia: "NFS-e",
+        endereco: null,
+        pago_em: null,
+        pago_por: null,
+        vencimento: null,
+        unidade_consumidora: null,
+        confianca: 0.94,
+      },
+    ] as never,
+  })
+
+  const itens = grupos.flatMap((grupo) => grupo.itens)
+  const soma = Math.round(itens.reduce((total, item) => total + item.valor, 0) * 100) / 100
+  assert.equal(soma, 0)
+  assert.ok(itens.some((item) => /já retido como comissão/i.test(item.descricao)))
 })

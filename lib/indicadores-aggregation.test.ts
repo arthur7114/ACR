@@ -126,6 +126,7 @@ interface SnapshotFixture {
   modeloReceita?: "fixo" | "variavel" | "nao_aplicavel"
   aluguelRecebidoCompetencia?: number | null
   atrasosRecuperados?: number | null
+  atrasosCompetenciaOrigem?: string | null
   outrosRecebimentos?: number | null
   entradasPassagem?: number | null
   saidasPassagem?: number | null
@@ -2566,4 +2567,60 @@ test("efetivo de administracao soma a base dos acordos, que tambem pagam a taxa"
   }))
   assert.equal(result.resumo.taxas.administracao.efetivo, 7)
   assert.equal(result.resumo.taxas.administracao.contrato, 7)
+})
+
+// Grand Maracanau 204 (RAPHAEL, mai-ago/2026): o inquilino paga sempre um mes
+// atrasado. O balao de maio vinha com os pagamentos de julho e agosto — que
+// liquidaram junho e julho — porque o filtro era so "pagamento de fechamento
+// posterior a esta competencia". O recebido declara qual vigencia quitou; a
+// celula mostra o que quitou ELA.
+function makeAtrasoCronicoInput() {
+  const divida = { valor: 440.84, apto: "204", inquilino: "RAPHAEL DA COSTA ALMEIDA LIMA", condicao: "VIGÊNCIA DE MAIO E JUNHO DE 2026" }
+  const pagamento = (competenciaOriginal: string, valor: number) => ({
+    tipo: "atraso" as const,
+    apto: "204",
+    inquilino: "RAPHAEL DA COSTA ALMEIDA LIMA",
+    valor,
+    total_recebido: valor,
+    comissao: 0,
+    competencia_original: competenciaOriginal,
+  })
+  return makeInput({
+    competencia: "2026-08-01",
+    imoveisAtivos: [makeProperty({ unidade: "204", inquilinoNome: "RAPHAEL DA COSTA ALMEIDA LIMA", aluguelEsperadoAtual: 400 })],
+    fechamentos: [
+      makeClosing({ id: "f-mai", competencia: "2026-05-01", analiseCompleta: makeAnalysis({ receitas: [], intermediacoes: [pagamento("2026-04", 417.66)], inadimplencias: [divida] }) }),
+      makeClosing({ id: "f-jun", competencia: "2026-06-01", analiseCompleta: makeAnalysis({ receitas: [], intermediacoes: [pagamento("2026-05", 466.93)], inadimplencias: [divida] }) }),
+      makeClosing({ id: "f-jul", competencia: "2026-07-01", analiseCompleta: makeAnalysis({ receitas: [], intermediacoes: [pagamento("2026-06", 466.93)], inadimplencias: [divida] }) }),
+      makeClosing({ id: "f-ago", competencia: "2026-08-01", analiseCompleta: makeAnalysis({ receitas: [], intermediacoes: [pagamento("2026-07", 587.11)], inadimplencias: [divida] }) }),
+    ],
+    snapshots: [
+      makeSnapshot({ fechamentoId: "f-mai", competencia: "2026-05-01", statusOcupacao: "ocupado", aluguelEsperado: 400, aluguelRecebido: 417.66, atrasosRecuperados: 417.66, atrasosCompetenciaOrigem: "2026-04-01", inquilinoNome: "RAPHAEL DA COSTA ALMEIDA LIMA" }),
+      makeSnapshot({ fechamentoId: "f-jun", competencia: "2026-06-01", statusOcupacao: "inadimplente", aluguelEsperado: 400, aluguelRecebido: 466.93, atrasosRecuperados: 466.93, atrasosCompetenciaOrigem: "2026-05-01", inquilinoNome: "RAPHAEL DA COSTA ALMEIDA LIMA" }),
+      makeSnapshot({ fechamentoId: "f-jul", competencia: "2026-07-01", statusOcupacao: "inadimplente", aluguelEsperado: 400, aluguelRecebido: 466.93, atrasosRecuperados: 466.93, atrasosCompetenciaOrigem: "2026-06-01", inquilinoNome: "RAPHAEL DA COSTA ALMEIDA LIMA" }),
+      makeSnapshot({ fechamentoId: "f-ago", competencia: "2026-08-01", statusOcupacao: "inadimplente", aluguelEsperado: 400, aluguelRecebido: 587.11, atrasosRecuperados: 587.11, atrasosCompetenciaOrigem: "2026-07-01", inquilinoNome: "RAPHAEL DA COSTA ALMEIDA LIMA" }),
+    ],
+  })
+}
+
+test("atraso cronico: a celula so lista o pagamento que quitou a competencia dela", () => {
+  const data = aggregateIndicadores(makeAtrasoCronicoInput())
+  const celulas = data.heat.linhas.find((linha) => linha.unidade === "204")?.celulas
+  const maio = celulas?.find((cell) => cell.competencia === "2026-05-01")
+  const junho = celulas?.find((cell) => cell.competencia === "2026-06-01")
+
+  // Antes: maio trazia 466,93 (jun), 466,93 (jul) e 587,11 (ago) — dois deles de
+  // vigencias que nao eram a dela.
+  assert.deepEqual(
+    maio?.divida?.pagamentos.map((pagamento) => `${pagamento.competencia}:${pagamento.valor}`),
+    ["2026-06-01:466.93"],
+  )
+  assert.deepEqual(
+    junho?.divida?.pagamentos.map((pagamento) => `${pagamento.competencia}:${pagamento.valor}`),
+    ["2026-07-01:466.93"],
+  )
+  // A quitacao de maio existe mesmo com o mes gravado como ocupado: o
+  // fechamento de maio registrou o pagamento de ABRIL.
+  assert.equal(maio?.statusOcupacao, "ocupado")
+  assert.deepEqual(maio?.quitacao, { competencia: "2026-06-01", valor: 466.93 })
 })

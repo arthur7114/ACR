@@ -1408,6 +1408,13 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       inadimplencia: monthlyRealization.inadimplenciaMes,
       descontos: monthlyRealization.descontos,
       outrosAjustes: monthlyRealization.outrosAjustes,
+      ajustesClassificados: monthlyRealization.ajustesClassificados,
+      cobradoComoIntermediacao: monthlyRealization.cobradoComoIntermediacao,
+      mesProporcionalContratoNovo: monthlyRealization.mesProporcionalContratoNovo,
+      ocupadoSemRecebimento: monthlyRealization.ocupadoSemRecebimento,
+      ocupadoRecebimentoParcial: monthlyRealization.ocupadoRecebimentoParcial,
+      recebidoEmVago: monthlyRealization.recebidoEmVago,
+      restoNaoExplicado: monthlyRealization.restoNaoExplicado,
       ocupacaoPercentual: occupancy.percentual,
       inadimplenciaPercentual: percentage(occupancy.inadimplentes, occupancy.denominador),
       coberturaPercentual: occupancy.coberturaPercentual,
@@ -1554,6 +1561,8 @@ interface LedgerPagamento {
   inquilinoKey: string
   valor: number
   descricao: string | null
+  /** Vigencia que este pagamento liquidou, quando o documento a declara. */
+  competenciaOrigem: string | null
 }
 
 interface PropertyLedger {
@@ -1701,6 +1710,7 @@ function buildPropertyLedger(
         inquilinoKey: normalizePropertyKeyPart(recebido.inquilino ?? ""),
         valor,
         descricao: recebido.observacao?.trim() || null,
+        competenciaOrigem: competenciaMesToDatabase(recebido.competencia_original),
       })
     }
   }
@@ -1741,10 +1751,17 @@ function resolveDivida(
       .reduce((total, item) => total + item.valor, 0),
   )
   const ultimoFechamento = ledger.fechamentos.at(-1) ?? saldoEm
+  // O recebido declara qual vigencia quitou. Sem esse filtro a celula de maio do
+  // 204 do Grand Maracanau (RAPHAEL, que paga sempre um mes atrasado) listava os
+  // pagamentos de junho, julho e agosto — e ate o de maio, que liquidou ABRIL.
+  // Origem ausente continua aparecendo: nao da para atribuir, e esconder o
+  // pagamento seria pior que mostra-lo no mes errado.
   const pagamentos = ledger.pagamentos
     .filter(
       (pagamento) =>
-        pagamento.fechamentoCompetencia >= competencia
+        (pagamento.competenciaOrigem === null
+          ? pagamento.fechamentoCompetencia >= competencia
+          : pagamento.competenciaOrigem === competencia)
         && (primeiro.inquilinoKey === "" || pagamento.inquilinoKey === "" || pagamento.inquilinoKey === primeiro.inquilinoKey),
     )
     .map((pagamento) => ({

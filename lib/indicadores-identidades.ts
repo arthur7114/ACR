@@ -202,6 +202,38 @@ export const IDENTIDADES_INDICADORES: IdentidadeKpi[] = [
       }
     },
   },
+  {
+    id: "serie_decomposicao_do_nao_realizado",
+    descricao:
+      "série mensal: o bloco não realizado (contratado − recebido) é a soma exata das suas parcelas nomeadas",
+    // O gráfico empilha essas parcelas. Enquanto ele listava quatro delas, a
+    // soma não batia o cinza em mês nenhum (ago/2026: 11.732,09 contra
+    // 22.108,03) e o cliente lia "vacância + inadimplência" num bloco que tem
+    // seis pedaços — dois dos quais nem são perda. Esta identidade é o que
+    // impede a barra de voltar a afirmar uma decomposição que não fecha.
+    avaliar: (data) => {
+      const ponto = data.serieMensal.find((p) => p.competencia === data.meta.competencia)
+      if (!ponto) return null
+      return {
+        esperado: somaEstrita([
+          ponto.aluguelContratado,
+          ponto.aluguelRecebido === null ? null : -ponto.aluguelRecebido,
+        ]),
+        obtido: somaEstrita([
+          ponto.vacancia,
+          ponto.recebidoEmVago === null ? null : -ponto.recebidoEmVago,
+          ponto.inadimplencia,
+          ponto.descontos,
+          ponto.cobradoComoIntermediacao,
+          ponto.mesProporcionalContratoNovo,
+          ponto.ocupadoSemRecebimento,
+          ponto.ocupadoRecebimentoParcial,
+          ponto.ajustesClassificados === null ? null : -ponto.ajustesClassificados,
+          ponto.restoNaoExplicado === null ? null : -ponto.restoNaoExplicado,
+        ]),
+      }
+    },
+  },
 ]
 
 export function verificarIdentidades(

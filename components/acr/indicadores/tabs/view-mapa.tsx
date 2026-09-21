@@ -23,6 +23,8 @@ import {
   formatCompetenciaCurta,
   formatCount,
   formatCurrency,
+  descreverQuitacao,
+  descreverRecebimentoParcial,
   isInadimplenciaQuitada,
   occupancyLabel,
   type HeatGroup,
@@ -165,7 +167,7 @@ export function ViewMapa({
                 </tbody>
               </table>
             </div>
-            <HeatLegend metric={heatMetric} />
+            <HeatLegend metric={heatMetric} expandido={expanded.size > 0} />
           </>
         ) : (
           <EmptyState
@@ -362,7 +364,7 @@ function UnitCell({
     return (
       <td
         aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${status === "vago" ? "" : `, ${tenantAriaLabel(cell.inquilinoNome ?? fallbackTenant)}`}`}
-        className={cn(UNIT_CELL_BASE, heatTone(cell.vacanciaPercentual))}
+        className={cn(UNIT_CELL_BASE, status === "vago" ? UNIT_TONE.vago : UNIT_TONE.honrado)}
       >
         <span className="block font-semibold">{occupancyLabel(status)}</span>
         {status !== "vago" && <TenantName name={cell.inquilinoNome ?? fallbackTenant} />}
@@ -374,6 +376,9 @@ function UnitCell({
   // inquilino e a cor diz o estado. Vago fica branco e escrito; desconhecido
   // continua escrito porque nao ha inquilino a mostrar.
   const dividaLinhas = cell.divida ? descreverDivida(cell.divida, month) : []
+  // Resolvida ANTES dos ramos de status: a quitacao de uma competencia nao
+  // depende de como o snapshot daquele mes classificou a unidade.
+  const quitacaoDescrita = descreverQuitacao(cell, month)
   if (status === "vago") {
     // Rescisao no mes: a unidade terminou vaga, mas o que aconteceu foi uma
     // saida com proporcional. A celula diz "Rescisao" e o hover traz o
@@ -392,7 +397,7 @@ function UnitCell({
     return (
       <td
         aria-label={`${unit}, ${month}: ${rescisao ? "Rescisão" : "Vago"}${linhas.filter(Boolean).slice(1).map((linha) => `, ${linha}`).join("")}`}
-        className={cn(UNIT_CELL_BASE, "p-0 bg-white text-acr-muted-2 ring-1 ring-inset ring-acr-line")}
+        className={cn(UNIT_CELL_BASE, "p-0", UNIT_TONE.vago)}
       >
         <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
           <span className="block font-semibold">{rescisao ? "Rescisão" : "Vago"}</span>
@@ -403,7 +408,7 @@ function UnitCell({
   }
   if (status === "desconhecido") {
     return (
-      <td aria-label={`${unit}, ${month}: Desconhecido`} className={cn(UNIT_CELL_BASE, "bg-[#f4f6f4] text-acr-muted-2")}>
+      <td aria-label={`${unit}, ${month}: Desconhecido`} className={cn(UNIT_CELL_BASE, UNIT_TONE.semDado)}>
         <span className="block font-semibold">Desconhecido</span>
       </td>
     )
@@ -414,14 +419,23 @@ function UnitCell({
   const inquilino = inquilinoOuAtual(cell, fallbackTenant)
 
   if (status !== "inadimplente") {
+    // Mes que o snapshot nao marcou como inadimplente mas que uma recuperacao
+    // posterior quitou (o inquilino que paga sempre um mes atrasado) recebe o
+    // mesmo tratamento do mes inadimplente quitado: ✅ e as duas linhas curtas.
+    const linhas = [
+      ...(quitacaoDescrita?.linhas ?? []),
+      descreverRecebimentoParcial(cell, month),
+      ...dividaLinhas,
+    ].filter((linha): linha is string => Boolean(linha))
+    const quitadaAqui = quitacaoDescrita?.completa ?? false
     return (
       <td
-        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}, ${tenantAriaLabel(inquilino)}${dividaLinhas.map((linha) => `, ${linha}`).join("")}`}
-        className={cn(UNIT_CELL_BASE, dividaLinhas.length > 0 && "p-0", heatTone(cell.inadimplenciaPercentual))}
+        aria-label={`${unit}, ${month}: ${occupancyLabel(status)}${quitadaAqui ? ", inadimplência quitada" : ""}, ${tenantAriaLabel(inquilino)}${linhas.map((linha) => `, ${linha}`).join("")}`}
+        className={cn(UNIT_CELL_BASE, linhas.length > 0 && "p-0", UNIT_TONE.honrado)}
       >
-        {dividaLinhas.length > 0 ? (
-          <Hint lines={dividaLinhas} side="bottom" className="px-2 py-2.5 text-center">
-            <TenantName name={inquilino} emphasis />
+        {linhas.length > 0 ? (
+          <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
+            <TenantNameComQuitacao name={inquilino} quitada={quitadaAqui} />
           </Hint>
         ) : (
           <TenantName name={inquilino} emphasis />
@@ -433,20 +447,12 @@ function UnitCell({
   // Inadimplente: vermelho enquanto em aberto; verde com o sinal de quitacao
   // quando um mes posterior recuperou o atraso desta competencia. O historico
   // nao apaga que a inadimplencia existiu — o hover conta quanto e quando.
+  // `isInadimplenciaQuitada` tambem cobre a divida que sumiu do fechamento
+  // seguinte, sem recuperacao apontando para ca — por isso nao vira so o
+  // `completa` do descritor.
   const quitada = isInadimplenciaQuitada(cell)
   const valorLabel = cell.valor === null ? "valor não apurado" : formatCurrency(cell.valor)
-  const quitacaoLinhas =
-    !cell.quitacao
-      ? []
-      : [
-          `Inadimplência de ${month}: ${valorLabel}`,
-          quitada
-            ? `Quitada em ${formatCompetenciaCurta(cell.quitacao.competencia)}: ${formatCurrency(cell.quitacao.valor)}`
-            : `Pago ${formatCurrency(cell.quitacao.valor)} em ${formatCompetenciaCurta(cell.quitacao.competencia)}${
-                cell.valor === null ? "" : ` · em aberto ${formatCurrency(Math.max(0, cell.valor - cell.quitacao.valor))}`
-              }`,
-        ]
-  const linhas = [...quitacaoLinhas, ...dividaLinhas]
+  const linhas = [...(quitacaoDescrita?.linhas ?? []), ...dividaLinhas]
   // Sem valor do mes, a celula mostra o saldo da divida registrada depois.
   const valorCelula = cell.valor ?? cell.divida?.saldo ?? null
 
@@ -455,7 +461,7 @@ function UnitCell({
       aria-label={`${unit}, ${month}: ${quitada ? "inadimplência quitada" : "Inadimplente"}, ${tenantAriaLabel(inquilino)}${
         cell.valor === null ? "" : `, ${valorLabel}`
       }${linhas.slice(1).map((linha) => `, ${linha}`).join("")}`}
-      className={cn(UNIT_CELL_BASE, "p-0", quitada ? "acr-heat-q0" : "acr-heat-q5")}
+      className={cn(UNIT_CELL_BASE, "p-0", quitada ? UNIT_TONE.honrado : UNIT_TONE.emAberto)}
     >
       <Hint lines={linhas} side="bottom" className="px-2 py-2.5 text-center">
         <span className="flex items-center justify-center gap-1 text-[11px] font-semibold leading-tight">
@@ -503,6 +509,20 @@ function descreverDivida(divida: IndicadoresHeatDivida, month: string): string[]
   return linhas.filter((linha): linha is string => Boolean(linha))
 }
 
+// Mesmo nome + ✅ da celula inadimplente-quitada, para o mes que foi quitado
+// sem ter sido gravado como inadimplente.
+function TenantNameComQuitacao({ name, quitada }: { name: string | null; quitada: boolean }) {
+  if (!quitada) return <TenantName name={name} emphasis />
+  return (
+    <span className="flex items-center justify-center gap-1 text-[11px] font-semibold leading-tight">
+      <span className="truncate" title={name?.trim() || undefined}>
+        {name?.trim() || "Inquilino não informado"}
+      </span>
+      <Check aria-hidden className="size-3.5 shrink-0" />
+    </span>
+  )
+}
+
 function TenantName({ name, emphasis = false }: { name: string | null; emphasis?: boolean }) {
   const label = name?.trim() || "Inquilino não informado"
   return (
@@ -522,6 +542,20 @@ function tenantAriaLabel(name: string | null) {
   return name?.trim() ? `inquilino ${name.trim()}` : "inquilino não informado"
 }
 
+// A rampa 0-1% ... 75%+ descreve o percentual de UNIDADES em risco, e so a
+// linha do empreendimento tem essa grandeza. O apto usava a mesma rampa para
+// outra coisa (quanto do aluguel dele faltou) e, quando inadimplente, nem
+// usava: a cor ja era fixa. O mesmo vermelho queria dizer "mais de 75% das
+// unidades" numa linha e "este inquilino nao pagou" na de baixo (feedback do
+// cliente, 2026-09-21). O apto passa a ter paleta categorica, declarada aqui e
+// listada na legenda; o quanto faltou vive no tooltip.
+const UNIT_TONE = {
+  honrado: "acr-heat-q0",
+  emAberto: "acr-heat-q5",
+  vago: "bg-white text-acr-muted-2 ring-1 ring-inset ring-acr-line",
+  semDado: "bg-[#f4f6f4] text-acr-muted-2",
+} as const
+
 function heatTone(value: number | null): string {
   if (value === null) return "bg-[#f4f6f4] text-acr-muted-2"
   if (value <= 1) return "acr-heat-q0"
@@ -532,32 +566,64 @@ function heatTone(value: number | null): string {
   return "acr-heat-q5"
 }
 
-function HeatLegend({ metric }: { metric: HeatMetric }) {
+// Duas legendas porque sao duas leituras. A rampa vale para a linha do
+// empreendimento, que e um agregado (percentual de unidades em risco). O
+// apartamento nao tem escala: tem estado. Enquanto a legenda era uma so, o
+// cliente lia a faixa de percentual e tentava aplica-la aos aptos abaixo
+// (2026-09-21: "essa legenda nao esta correspondente aos apartamentos").
+function HeatLegend({ metric, expandido }: { metric: HeatMetric; expandido: boolean }) {
   const ranges = ["0–1%", "1–10%", "10–25%", "25–50%", "50–75%", "75%+"]
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-acr-line px-5 py-4 text-[11px] text-acr-muted-2 sm:px-6">
-      {ranges.map((range, index) => (
-        <span key={range} className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
+    <div className="space-y-3 border-t border-acr-line px-5 py-4 text-[11px] text-acr-muted-2 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="font-semibold text-acr-ink">
+          Empreendimento — {metric === "inad" ? "unidades inadimplentes" : "unidades vagas"}
         </span>
-      ))}
-      {metric === "inad" && (
+        {ranges.map((range, index) => (
+          <span key={range} className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
+          </span>
+        ))}
         <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="size-3 rounded-sm bg-white ring-1 ring-inset ring-acr-line" /> vago
+          <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.semDado, "ring-1 ring-inset ring-acr-line-2")} /> sem dado
         </span>
+      </div>
+
+      {expandido && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="font-semibold text-acr-ink">Apartamento — estado do mês</span>
+          {metric === "inad" ? (
+            <>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.honrado)} /> pagou
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className={cn("inline-flex size-3 items-center justify-center rounded-sm", UNIT_TONE.honrado)}>
+                  <Check className="size-2.5" />
+                </span>{" "}
+                quitou depois
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.emAberto)} /> em aberto
+              </span>
+            </>
+          ) : (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.honrado)} /> ocupado
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.vago)} /> vago
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.semDado, "ring-1 ring-inset ring-acr-line-2")} /> sem dado
+          </span>
+          <span className="w-full text-acr-muted-2">
+            O apartamento não tem escala: a cor diz o estado. Quanto faltou do aluguel está no detalhe de cada mês.
+          </span>
+        </div>
       )}
-      {metric === "inad" && (
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="inline-flex size-3 items-center justify-center rounded-sm acr-heat-q0">
-            <Check className="size-2.5" />
-          </span>{" "}
-          inadimplência quitada depois
-        </span>
-      )}
-      <span className="inline-flex items-center gap-1.5">
-        <span aria-hidden="true" className="size-3 rounded-sm bg-[#f4f6f4] ring-1 ring-inset ring-acr-line-2" /> sem dado
-      </span>
     </div>
   )
 }
