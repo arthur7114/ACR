@@ -1022,6 +1022,61 @@ test("nota fiscal da propria taxa de administracao nao vira despesa em dobro", (
     result.totals.total_receitas - result.totals.total_comissoes - result.totals.total_despesas,
     2700,
   )
+
+  // O recheck confrontava o total do DOCUMENTO (300) com a retencao recalculada
+  // (0) e dava `failed` — um bloqueio que ninguem consegue resolver, porque os
+  // dois lados estao certos e medem coisas diferentes. O cliente ficou com
+  // "Resolva primeiro" numa tela cujo unico botao era "Atualizar", que refaz o
+  // mesmo calculo. Continua visivel, como aviso, dizendo o que houve.
+  const despesasCheck = result.rechecks.find((item) => item.id === "total_despesas")
+  assert.ok(despesasCheck)
+  assert.equal(despesasCheck.status, "warning")
+  assert.match(despesasCheck.message, /já está dentro da retenção declarada pelo extrato/)
+})
+
+test("despesa externa alem do que o extrato reteve continua sendo divergencia visivel", () => {
+  // Mesmo formato, mas o extrato declara retencao MAIOR que a comissao: ha
+  // espaco para a despesa externa e ela deve ser conferida normalmente.
+  const prestacao = createPrestacao({
+    resumo_financeiro: {
+      ...createPrestacao().resumo_financeiro,
+      comissao_administracao: 300,
+      total_comissao_despesas: 500,
+      total_a_repassar: 2500,
+      recebidos_em_nome_locador: 3000,
+    },
+  })
+
+  const result = validatePackage({
+    documents: requiredDocuments,
+    prestacao,
+    repasse: createRepasse(2500),
+    despesas: {
+      despesas: [
+        {
+          tipo: "energia",
+          valor: 200,
+          fornecedor: "ENEL",
+          observacao: null,
+          referencia: null,
+          endereco: null,
+          pago_em: null,
+          pago_por: null,
+          vencimento: null,
+          unidade_consumidora: null,
+          confianca: 0.94,
+        },
+      ],
+      total_despesas: 200,
+      campos_ausentes: [],
+      observacoes: [],
+      confianca_geral: 0.94,
+    } as never,
+    reajuste: null,
+  })
+
+  assert.equal(result.totals.total_despesas, 200)
+  assert.equal(result.rechecks.find((item) => item.id === "total_despesas")?.status, "passed")
 })
 
 // Canários GM I / Maracanaú ago/2026 (feedback do cliente em 2026-09-17, pontos

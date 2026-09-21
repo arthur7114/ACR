@@ -509,7 +509,7 @@ function buildRechecks({
     checkAgreementCompetencies(prestacao),
     checkDuplicateAgreementPayments(prestacao, historicalAgreementKeys),
     compareResumoFormula(prestacao, totals),
-    compareDespesasTotal(despesas, totals.total_despesas),
+    compareDespesasTotal(despesas, totals.total_despesas, prestacao?.resumo_financeiro.total_comissao_despesas ?? null),
     compareRepasse(totals),
     checkConfidence("prestacao_confidence", "Confianca da prestacao", getLowestPrestacaoConfidence(prestacao)),
     checkConfidence("repasse_confidence", "Confianca do comprovante", repasse?.confianca_geral ?? null),
@@ -963,6 +963,7 @@ function totaisDosAcordos(prestacao: PrestacaoAnalysis | null) {
 function compareDespesasTotal(
   despesas: DespesasAnalysis | null,
   calculated: number,
+  consolidadoRetido: number | null,
 ): PrestacaoRecheck {
   if (!despesas) {
     if (calculated === 0) {
@@ -987,7 +988,32 @@ function compareDespesasTotal(
     }
   }
 
-  return compareTotal("total_despesas", "Total de despesas", "Despesas", despesas.total_despesas, calculated)
+  // Quando o extrato traz o consolidado retido, e ele quem reconcilia o repasse,
+  // e `calculated` ja e a parte da retencao que sobra ALEM da comissao. Um
+  // documento de despesa que declare mais que isso esta descrevendo retencao que
+  // o extrato ja contou — tipicamente a NFS-e da propria taxa de administracao
+  // (Galpao Jose Walter, ago/2026: R$ 267,88 nos dois lugares).
+  //
+  // Confrontar os dois numeros dava `failed` num caso em que ambos estao certos
+  // e medem coisas diferentes: um bloqueio que ninguem consegue resolver, numa
+  // tela cujo unico botao refaz o mesmo calculo. Vira aviso, dizendo o que
+  // houve — nao passa calado, porque a nota existe e alguem precisa saber que
+  // ela nao foi retida de novo.
+  const declarado = despesas.total_despesas
+  if (consolidadoRetido !== null && declarado !== null && roundMoney(declarado) > calculated + MONEY_TOLERANCE) {
+    const absorvido = roundMoney(roundMoney(declarado) - calculated)
+    return {
+      id: "total_despesas",
+      label: "Total de despesas",
+      status: "warning",
+      message: `O documento de despesas soma ${formatBRL(declarado)}, e ${formatBRL(absorvido)} disso já está dentro da retenção declarada pelo extrato (${formatBRL(consolidadoRetido)}). Contado uma vez só: retê-lo de novo derrubaria o repasse.`,
+      expected: calculated,
+      actual: roundMoney(declarado),
+      difference: absorvido,
+    }
+  }
+
+  return compareTotal("total_despesas", "Total de despesas", "Despesas", declarado, calculated)
 }
 
 function zeroWhenNoReceipt(total: number, value: number | null) {
