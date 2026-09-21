@@ -152,6 +152,16 @@ async function main() {
     p_esperado_atualizado_em: fechamento.atualizado_em,
     p_fechamento_patch: {
       status: fechamento.status,
+      // O RPC aplica o patch como UPDATE de coluna: chave ausente vira NULL.
+      // Omitir os totais aqui zerou as colunas financeiras do Jose Walter
+      // ago/2026 na primeira execucao deste script. Sao os mesmos numeros de
+      // antes — a checagem acima ja garantiu que nao mudaram.
+      total_receitas: analysis.totals.total_receitas,
+      total_despesas: analysis.totals.total_despesas,
+      total_comissoes: analysis.totals.total_comissoes,
+      total_repassar: analysis.totals.total_a_repassar,
+      valor_repassado_comprovante: analysis.totals.valor_comprovado,
+      diferenca_total: analysis.totals.diferenca_repasse,
       parecer_tecnico: {
         parecer: analysis.parecer,
         rechecks: analysis.rechecks,
