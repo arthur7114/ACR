@@ -54,3 +54,80 @@ export function receitaEsperadaInadimplente(
   if (aluguelEsperado === null || aluguelEsperado === 0) return null
   return Number(aluguelEsperado.toFixed(2))
 }
+
+// ---------------------------------------------------------------------------
+// Saldo em aberto ao longo do historico da unidade.
+//
+// Contar MESES que ja estiveram inadimplentes e historico, nao divida. O
+// drawer do imovel exibia "Inadimplente 3" para a Luana (apto 7 GM II) quando
+// junho ja tinha sido pago em julho e julho em agosto — so agosto seguia
+// devendo. O numero estava certo e a leitura, errada: quem ve "3" entende que
+// a unidade deve tres meses.
+//
+// A quitacao NAO e inferida aqui: ela ja vive no snapshot, em
+// `atrasos_competencia_origem`, escrita quando o documento diz a que mes o
+// atraso recuperado se refere (estruturado em `competencia_original` ou pelo
+// texto, "VIGENCIA DE JUNHO DE 2026"). E a mesma evidencia que o mapa de calor
+// usa para pintar a competencia como quitada. Mes sem origem informada nunca e
+// dado como pago por chute.
+
+export interface SnapshotInadimplente {
+  competencia: string // "YYYY-MM-DD"
+  statusOcupacao: string | null
+  cobrancaEsperada: number | null
+  aluguelEsperado: number | null
+  atrasosRecuperados: number | null
+  atrasosCompetenciaOrigem: string | null
+}
+
+export interface ResumoInadimplencia {
+  /** Meses que ja estiveram inadimplentes — o historico. */
+  meses: number
+  /** Desses, quantos um mes POSTERIOR declarou ter quitado. */
+  quitadas: number
+  /** Os que seguem devendo. */
+  emAberto: number
+  competenciasEmAberto: string[]
+  /**
+   * Soma da cobranca esperada dos meses em aberto. `null` quando algum deles
+   * nao tem base de calculo: zero afirmaria que a unidade nao deve nada, que e
+   * a mesma mentira que `receitaEsperadaInadimplente` evita. Sem nenhum mes em
+   * aberto o valor e 0 — ai a ausencia de divida e fato, nao desconhecimento.
+   */
+  valorEmAberto: number | null
+}
+
+export function resumirInadimplencia(snapshots: SnapshotInadimplente[]): ResumoInadimplencia {
+  const inadimplentes = snapshots.filter((s) => s.statusOcupacao === "inadimplente")
+
+  // Um pagamento so quita uma divida que JA existia: origem apontando para mes
+  // igual ou posterior ao proprio pagamento e erro de atribuicao, nao
+  // adiantamento. Set desdobra pagamentos repetidos para a mesma competencia
+  // (parcelamento) numa quitacao so.
+  const quitadas = new Set(
+    snapshots
+      .filter(
+        (s) =>
+          s.atrasosCompetenciaOrigem !== null
+          && (s.atrasosRecuperados ?? 0) > 0
+          && s.atrasosCompetenciaOrigem < s.competencia,
+      )
+      .map((s) => s.atrasosCompetenciaOrigem as string),
+  )
+
+  const emAberto = inadimplentes.filter((s) => !quitadas.has(s.competencia))
+  const bases = emAberto.map((s) => s.cobrancaEsperada ?? s.aluguelEsperado)
+  // Zero e placeholder de cadastro migrado, nao cobranca: trata como ausente.
+  const semBase = bases.some((base) => base === null || base === 0)
+  const conhecidas = bases.filter((base): base is number => base !== null && base !== 0)
+
+  return {
+    meses: inadimplentes.length,
+    quitadas: inadimplentes.filter((s) => quitadas.has(s.competencia)).length,
+    emAberto: emAberto.length,
+    competenciasEmAberto: emAberto.map((s) => s.competencia).sort(),
+    valorEmAberto: semBase
+      ? null
+      : Number(conhecidas.reduce((total, base) => total + base, 0).toFixed(2)),
+  }
+}

@@ -506,3 +506,31 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
 - **"de N meses" fica visível** porque é exatamente a informação que faltava: diz
   que o percentual não é do mês em tela antes de o leitor comparar com o de cima.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — histórico do imóvel fala de dívida, não de meses (2026-09-21)
+
+- **Ponto alterado:** o tile "Inadimplente" (contagem de meses que já estiveram
+  inadimplentes) vira **"Em aberto"**: quantas competências seguem devendo, com
+  o valor somado embaixo. O histórico (N meses, M já quitados) vai para a
+  tooltip.
+- **Por quê:** a cliente abriu a Luana (apto 7, GM II) e viu "Inadimplente 3"
+  quando junho já fora pago em julho e julho em agosto — só agosto seguia
+  devendo. O número estava certo e a leitura, errada: "3" lê como "deve três
+  meses". Medido: 8 das 12 unidades com histórico de inadimplência exibiam
+  número inflado, três delas mostrando inadimplência com tudo já quitado.
+- **Quitação não é inferida na tela.** Vem de `atrasos_competencia_origem` no
+  snapshot, a mesma evidência que o mapa de calor usa. Mês sem origem informada
+  nunca é dado como pago por chute, e pagamento anterior à dívida não a quita.
+- **Valor em aberto** usa `cobranca_esperada` (CA-IND26: mesma base da Revisão e
+  dos Indicadores). Sem base de cálculo em algum mês aberto o valor é "—", nunca
+  R$ 0,00 — zero afirmaria que a unidade não deve nada.
+- **Linha do tempo:** competência inadimplente já quitada ganha o selo
+  "quitada depois". O mês continua na linha — quitada não é o mesmo que não ter
+  acontecido.
+- **Nomenclatura:** "Acordo" vira **"Inadimplência paga"**, igual ao atraso — são
+  o mesmo fato para quem lê (dívida antiga paga, negociada em parcelas ou não), e
+  na Luana os dois eventos são R$ 894,18 quitando o mês anterior. Os tipos
+  `acordo` e `atraso` continuam distintos no dado, porque a tabela de acordos
+  parcelados depende deles; os dois tiles viram um só, com a divisão na tooltip.
+  "Meses obs." vira "Meses", com a definição na tooltip.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

@@ -39,7 +39,19 @@ export interface InquilinoPeriodo {
 export interface ImovelHistoricoResumo {
   mesesObservados: number
   mesesPago: number
+  /** Meses que JA estiveram inadimplentes — historico, nao divida. */
   mesesInadimplente: number
+  /**
+   * Desses, quantos seguem devendo: um mes posterior nao declarou ter quitado.
+   * E o numero que responde "quanto essa unidade deve", que `mesesInadimplente`
+   * nao responde (Luana, apto 7 GM II: 3 meses, 2 quitados, 1 em aberto).
+   */
+  inadimplenciasEmAberto: number
+  inadimplenciasQuitadas: number
+  /** Quais competencias seguem devendo — a linha do tempo marca as outras como quitadas. */
+  competenciasEmAberto: string[]
+  /** Cobranca esperada somada dos meses em aberto; `null` = sem base de calculo. */
+  valorEmAberto: number | null
   mesesVago: number
   acordos: number
   rescisoes: number

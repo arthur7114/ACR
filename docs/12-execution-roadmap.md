@@ -3059,3 +3059,53 @@ e `pnpm lint` limpos.
 
 **Próximo passo.** P1: histórico do imóvel (inadimplências em aberto × meses no
 histórico) e revisão de nomenclaturas.
+
+## 2026-09-21 — P1: histórico do imóvel mostra dívida em aberto, não meses
+
+**Pedido.** "No detalhamento do histórico do imóvel, analisei a Luana e lá consta
+3 inadimplências mas atualmente só tem 1 em aberto. Ali deve mostrar o total em
+aberto e o valor também. Também tem que chamar o que for de acordo de
+inadimplência paga. Dar uma revisada geral nas nomenclaturas."
+
+**Caso reproduzido (Luana, apto 7 GM II — a mesma unidade da vaga do P0).**
+
+| competência | evento | valor | observação |
+|---|---|---|---|
+| mai/26 | pago | 810,44 | |
+| jun/26 | inadimplente | 0 | |
+| jul/26 | inadimplente + acordo | 894,18 | "VIGÊNCIA DE **JUNHO**" |
+| ago/26 | inadimplente + atraso | 894,18 | "VIGÊNCIA DE **JULHO**" |
+
+Três meses marcados, dois já quitados, só agosto em aberto. E os dois pagamentos
+são o mesmo fato com dois nomes — por isso a nomenclatura e o saldo eram o mesmo
+problema.
+
+**Implementação.** `resumirInadimplencia` em `lib/inadimplencia-mes.ts` (puro,
+7 testes): separa meses inadimplentes em quitados × em aberto e soma a cobrança
+esperada dos abertos. A quitação **não é inferida ali** — já vive no snapshot,
+em `atrasos_competencia_origem`, escrita a partir de `competencia_original` ou
+do texto ("VIGÊNCIA DE JUNHO DE 2026") pelo mesmo parser que o mapa de calor usa.
+Guardas: pagamento anterior à dívida não quita (erro de atribuição, não
+adiantamento); pagamentos repetidos para a mesma competência contam uma quitação
+só (parcelamento); mês sem base de cálculo deixa o valor em "—", nunca R$ 0,00.
+
+`getImovelHistorico` lê `imovel_competencias` para isso em vez de recalcular da
+linha do tempo — recalcular criaria uma terceira leitura da mesma dívida.
+
+**Tela.** Tile "Inadimplente" → **"Em aberto"** com contagem e valor; histórico
+("3 meses inadimplentes · 2 já quitados") na tooltip. Competência já quitada
+ganha o selo "quitada depois" na linha do tempo — o mês continua lá, com o estado
+certo. "Acordo" → "Inadimplência paga", e os tiles "Acordos" + "Inad. pagas"
+viram um só. "Meses obs." → "Meses". Tipos `acordo` e `atraso` seguem distintos
+no dado (a tabela de acordos parcelados depende deles).
+
+**Verificação contra o banco.** Luana: Em aberto 1 · R$ 741,31 (a cobrança já com
+a vaga do P0), tooltip "3 meses inadimplentes no histórico · 2 já quitados".
+Varredura das 12 unidades com histórico de inadimplência: **8 exibiam número
+inflado**, incluindo Grand Castelão I un.105, Grand Messejana I un.1 e LOCMAIS
+Galpão 03, que mostravam inadimplência com tudo já quitado.
+
+`pnpm test` 674 passando, `tsc --noEmit` e `pnpm lint` limpos.
+
+**Próximo passo.** Resto do P1/P2: totais e componentes da tabela de
+intermediação.

@@ -15,6 +15,7 @@ import {
   User,
   X,
 } from "lucide-react"
+import { Hint } from "@/components/acr/hint-tooltip"
 import { formatBRL } from "@/lib/format"
 import type { EventoImovel, EventoTipo, ImovelHistorico } from "@/lib/imovel-historico-types"
 import type { Acordo } from "@/lib/acordos-types"
@@ -35,7 +36,11 @@ const tipoMeta: Record<EventoTipo, { label: string; color: string; bg: string; i
   pago: { label: "Aluguel pago", color: "#166534", bg: "#EFF7F1", icon: CheckCircle },
   inadimplente: { label: "Inadimplente", color: "#991B1B", bg: "#FEF2F2", icon: AlertTriangle },
   vago: { label: "Vago", color: "#6B7280", bg: "#F3F4F6", icon: DoorOpen },
-  acordo: { label: "Acordo", color: "#9A3412", bg: "#FFF7ED", icon: Handshake },
+  // "Acordo" nao dizia nada para a cliente: o fato e que uma divida antiga foi
+  // paga, negociada em parcelas ou nao. Mesmo rotulo do `atraso`, que e o mesmo
+  // fato sem negociacao — o icone e a observacao distinguem. Luana, apto 7 GM II:
+  // os dois eventos sao R$ 894,18 quitando o mes anterior.
+  acordo: { label: "Inadimplência paga", color: "#9A3412", bg: "#FFF7ED", icon: Handshake },
   rescisao: { label: "Rescisão", color: "#9F1239", bg: "#FFF1F2", icon: ArrowLeftRight },
   atraso: { label: "Inadimplência paga", color: "#1D4ED8", bg: "#EFF6FF", icon: CalendarClock },
   intermediacao: { label: "Intermediação", color: "#0F766E", bg: "#F0FDFA", icon: Receipt },
@@ -192,14 +197,58 @@ export function ImovelHistoricoDrawer({
               {/* Métricas */}
               {resumo && historico && historico.eventos.length > 0 && (
                 <div className="mb-4 grid grid-cols-3 gap-2">
-                  <Metric label="Meses obs." value={resumo.mesesObservados} />
+                  <Metric
+                    label="Meses"
+                    value={resumo.mesesObservados}
+                    hint={["Competências com fechamento processado para esta unidade."]}
+                  />
                   <Metric label="Pago" value={resumo.mesesPago} tone="#166534" />
-                  <Metric label="Inadimplente" value={resumo.mesesInadimplente} tone="#991B1B" />
                   <Metric label="Vago" value={resumo.mesesVago} tone="#6B7280" />
-                  <Metric label="Acordos" value={resumo.acordos} tone="#9A3412" />
+                  {/* "Inadimplente 3" para a Luana (apto 7 GM II) contava MESES que
+                      ja estiveram inadimplentes, com dois deles ja pagos. Quem le 3
+                      entende que a unidade deve tres meses. O tile passa a mostrar o
+                      que segue em aberto, com o valor; o historico vai para a
+                      tooltip. */}
+                  <Metric
+                    label="Em aberto"
+                    value={resumo.inadimplenciasEmAberto}
+                    tone="#991B1B"
+                    sub={
+                      resumo.inadimplenciasEmAberto === 0
+                        ? null
+                        : resumo.valorEmAberto === null
+                          ? "valor —"
+                          : formatBRL(resumo.valorEmAberto)
+                    }
+                    hint={[
+                      resumo.inadimplenciasEmAberto === 0
+                        ? "Nenhuma competência em aberto."
+                        : `${resumo.inadimplenciasEmAberto} ${resumo.inadimplenciasEmAberto === 1 ? "competência segue devendo" : "competências seguem devendo"}.`,
+                      `${resumo.mesesInadimplente} ${resumo.mesesInadimplente === 1 ? "mês inadimplente" : "meses inadimplentes"} no histórico · ${resumo.inadimplenciasQuitadas} já ${resumo.inadimplenciasQuitadas === 1 ? "quitado" : "quitados"}.`,
+                      resumo.valorEmAberto === null && resumo.inadimplenciasEmAberto > 0
+                        ? "Valor desconhecido: falta a cobrança esperada de algum desses meses. Zero afirmaria que a unidade não deve nada."
+                        : null,
+                      "Uma competência é dada como quitada quando um mês posterior registra o pagamento apontando para ela.",
+                    ]}
+                  />
+                  {/* Acordo e atraso sao o mesmo fato para quem le: divida antiga
+                      paga. Somados num tile so. */}
+                  <Metric
+                    label="Inad. pagas"
+                    value={resumo.acordos + resumo.atrasosQuitados}
+                    tone="#1D4ED8"
+                    hint={[
+                      "Meses anteriores que foram quitados depois.",
+                      `${resumo.acordos} ${resumo.acordos === 1 ? "negociado em acordo" : "negociados em acordo"} · ${resumo.atrasosQuitados} ${resumo.atrasosQuitados === 1 ? "pago em atraso" : "pagos em atraso"}.`,
+                    ]}
+                  />
                   <Metric label="Rescisões" value={resumo.rescisoes} tone="#9F1239" />
-                  <Metric label="Inad. pagas" value={resumo.atrasosQuitados} tone="#1D4ED8" />
-                  <Metric label="Intermed." value={resumo.intermediacoes} tone="#0F766E" />
+                  <Metric
+                    label="Intermed."
+                    value={resumo.intermediacoes}
+                    tone="#0F766E"
+                    hint={["Intermediações: comissão de locação nova nesta unidade."]}
+                  />
                   <Metric label="Reajustes" value={resumo.reajustes} tone="#5B3F97" />
                 </div>
               )}
@@ -245,7 +294,14 @@ export function ImovelHistoricoDrawer({
                   <div className="relative pl-7">
                     <div className="absolute left-[10px] top-1 bottom-1 w-0.5 bg-[#E1E8E2]" />
                     {historico.eventos.map((evento, index) => (
-                      <TimelineItem key={`${evento.competencia}-${evento.tipo}-${index}`} evento={evento} />
+                      <TimelineItem
+                        key={`${evento.competencia}-${evento.tipo}-${index}`}
+                        evento={evento}
+                        quitado={
+                          evento.tipo === "inadimplente"
+                          && !historico.resumo.competenciasEmAberto.includes(evento.competencia)
+                        }
+                      />
                     ))}
                   </div>
                 </>
@@ -332,7 +388,7 @@ function AcordoCard({
   )
 }
 
-function TimelineItem({ evento }: { evento: EventoImovel }) {
+function TimelineItem({ evento, quitado }: { evento: EventoImovel; quitado?: boolean }) {
   const meta = tipoMeta[evento.tipo]
   const Icon = meta.icon
   const valorPrincipal = evento.total
@@ -349,6 +405,14 @@ function TimelineItem({ evento }: { evento: EventoImovel }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <TipoBadge tipo={evento.tipo} />
+            {/* Sem esta marca, jun e jul da Luana liam como divida viva mesmo
+                depois de pagas em jul e ago. Quitada != nao aconteceu: o mes
+                continua na linha do tempo, com o estado certo. */}
+            {quitado && (
+              <span className="inline-flex items-center rounded-full bg-[#EFF7F1] px-2 py-0.5 text-[11px] font-medium text-[#166534]">
+                quitada depois
+              </span>
+            )}
             <span className="text-[12px] text-[#6B7F6E]">{evento.competenciaLabel}</span>
           </div>
           {evento.inquilino && <p className="mt-1 text-[13px] text-[#3D4F3F]">{evento.inquilino}</p>}
@@ -381,14 +445,35 @@ function TipoBadge({ tipo }: { tipo: EventoTipo }) {
   )
 }
 
-function Metric({ label, value, tone = "#1A2B1C" }: { label: string; value: number; tone?: string }) {
-  return (
+function Metric({
+  label,
+  value,
+  tone = "#1A2B1C",
+  sub,
+  hint,
+}: {
+  label: string
+  value: number
+  tone?: string
+  /** Valor de apoio sob o rótulo (ex.: quanto os meses em aberto somam). */
+  sub?: string | null
+  /** Derivação e ressalva — não ficam soltas na tela. */
+  hint?: Array<string | null | undefined | false>
+}) {
+  const corpo = (
     <div className="acr-card px-3 py-2 text-center">
       <p className="text-[18px] font-bold tabular-nums" style={{ color: tone }}>
         {value}
       </p>
       <p className="text-[10px] font-medium uppercase tracking-wide text-[#6B7F6E]">{label}</p>
+      {sub && <p className="mt-0.5 text-[11px] font-semibold tabular-nums" style={{ color: tone }}>{sub}</p>}
     </div>
+  )
+  if (!hint) return corpo
+  return (
+    <Hint lines={hint} label={`Detalhe de ${label}`}>
+      {corpo}
+    </Hint>
   )
 }
 
