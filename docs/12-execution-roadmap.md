@@ -3171,3 +3171,35 @@ login.
 **P1 encerrado.** Segue aberto no mapa: quebrar a coluna "Encargos" da
 intermediação (falta o print da planilha), P3 (aluguel potencial + barra
 empilhada) e P4.
+
+## Ciclo — colunas da intermediação em paridade com o documento (2026-09-21)
+
+Fecha o item que estava parado esperando um print da planilha. A fonte não é a
+planilha: é o documento de repasse da imobiliária (Arthur, 2026-09-21). E ele já
+estava mapeado no repositório — o JSON Schema de extração
+(`lib/server/analyze-prestacao.ts`) enumera as colunas da seção, e as tabelas de
+Receitas por imóvel e de Acordos já as replicam. Não foi preciso pedir o PDF.
+
+**Colunas agora:** Apto · Inquilino · **Aluguel · Garagem · Água · IPTU ·
+Seg. inc.** · Total recebido · Comissão interm. · % · Repasse · Competência · Obs.
+
+"Base comissionável" e "Encargos" saíram da tabela e foram para a tooltip do
+"Total" no rodapé: são derivação nossa, não coluna do documento.
+
+**A sobra.** A água nem sempre vem estruturada — em 7 das 10 linhas reais ela
+aparece só no texto, e em 3 nem isso. Quando as colunas somam menos que o total
+impresso, a diferença é declarada (⚠ na célula do total, conta na tooltip), não
+absorvida por uma coluna qualquer nem escondida.
+
+**Verificação contra o banco.** 7 fechamentos com intermediação, mai a ago/2026.
+A identidade colunas + sobra = total recebido fecha em todos. GM II ago/2026:
+alu 2.100,00 + gar 50,00 + água 203,10 + IPTU 4,29 = 2.357,39, comissão
+1.290,00 — os mesmos números do rodapé anterior, agora abertos.
+
+`pnpm test` 683 passando (1 skip), `tsc --noEmit` e `pnpm lint` limpos. Sem
+verificação em navegador — a aplicação está atrás de login.
+
+**Achado que vira pedido.** Grand Castelão I ago/2026, aptos 3 e 101: sobra de
+R$ 47,60 em cada, exatamente a água da linha de jul/2026 do mesmo
+empreendimento. A extração de agosto provavelmente perdeu a coluna ÁGUA. Um PDF
+de repasse de Castelão I ago/2026 confirma e permite corrigir na extração.

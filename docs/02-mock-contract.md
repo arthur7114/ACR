@@ -575,3 +575,37 @@ Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada 
   cliente pediu para remover (item 12 do mapa); renomear ali agora é trabalho
   jogado fora.
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — tabela de intermediação replica as colunas do documento (2026-09-21)
+
+- **Ponto alterado:** a tabela de Intermediação troca as colunas derivadas
+  "Base comissionável" e "Encargos" pelas colunas impressas no documento de
+  repasse: **Aluguel · Garagem · Água · IPTU · Seg. inc.**, seguidas de Total
+  recebido · Comissão interm. · % · Repasse.
+- **Por quê:** paridade com o documento de repasse da imobiliária, que é a fonte
+  (Arthur, 2026-09-21). As tabelas de Receitas por imóvel e de Acordos já
+  replicavam essas colunas; a de intermediação era a única que colapsava tudo em
+  duas derivações, e conferir contra o documento exigia abrir os dois lado a lado.
+- **Base e encargos não sumiram — viraram tooltip.** São derivação nossa, não
+  coluna do documento, e derivação mora em tooltip. Ficam nas linhas do `Hint`
+  do "Total" no rodapé, junto com a explicação de que a comissão incide só sobre
+  a base. O cabeçalho do "%" diz a mesma coisa em uma linha.
+- **Alinhamento à direita** nas colunas de dinheiro, como nas outras duas tabelas.
+- **Componente ausente continua "-", nunca zero.** E quando as colunas somam
+  menos que o total impresso, a diferença é declarada: ⚠ na célula do total da
+  linha, com a conta na tooltip, e uma linha no `Hint` do rodapé. Não virou
+  coluna nova porque o documento não tem uma — mas uma tabela que não fecha em
+  silêncio é pior que uma sobra declarada.
+- **Uma normalização só:** `componentesLinhaIntermediacao` vive no módulo
+  canônico e é a mesma que o rodapé soma (CA27). Ela reaproveita
+  `normalizarItemLegado`, então herda o fallback que lê `ÁGUA: R$ ...` da
+  observação quando o campo não veio estruturado.
+- **Verificado** nos 7 fechamentos com intermediação de mai a ago/2026: a
+  identidade colunas + sobra = total recebido fecha em todos. Três linhas
+  marcam ⚠ — Grand Castelão I ago/2026 (aptos 3 e 101, sobra R$ 47,60 cada) e
+  LOCMAIS mai/2026 (SALA 05, R$ 38,08).
+- **Pendente de confirmação no documento:** os R$ 47,60 de Castelão I batem
+  exatamente com a água da linha de jul/2026 do mesmo empreendimento, o que
+  indica que a extração de agosto perdeu a coluna ÁGUA. Falta um PDF de repasse
+  de Castelão I ago/2026 para confirmar e corrigir na extração.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

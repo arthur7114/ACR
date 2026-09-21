@@ -8,6 +8,7 @@ import {
   resolverRecebimentoLegado,
   resolverRecebimentosLegados,
   totalizarRecebimentos,
+  componentesLinhaIntermediacao,
   type RecebimentoExtraordinario,
 } from "./recebimentos-extraordinarios"
 
@@ -470,4 +471,66 @@ test("lista vazia devolve zeros, nao desconhecido", () => {
   assert.equal(totais.baseComissionavel, null)
   assert.equal(totais.encargos, null)
   assert.equal(totais.percentual, null)
+})
+
+// --------------------------------------------------------------------------
+// Colunas do documento de repasse (paridade pedida pela cliente, set/2026).
+
+test("componentes da linha reproduzem as colunas do documento", () => {
+  // GM II ago/2026, apto 8: a agua vem so no texto, e `aguaDeclarada` a resgata.
+  const componentes = componentesLinhaIntermediacao(
+    {
+      ...INTERM_OK,
+      aluguel: 700,
+      garagem: 25,
+      iptu: 1.43,
+      seguro_incendio: 0,
+      observacao: "INTERMEDIAÇÕES DE JULHO 2026. IPTU (8/12). ÁGUA: R$ 67,70",
+    },
+    794.13,
+  )
+  assert.equal(componentes.aluguel, 700)
+  assert.equal(componentes.garagem, 25)
+  assert.equal(componentes.agua, 67.7)
+  assert.equal(componentes.iptu, 1.43)
+  assert.equal(componentes.seguro, 0)
+  // Colunas fecham com o total impresso.
+  assert.equal(componentes.naoDetalhado, 0)
+})
+
+test("componente ausente nao vira zero e a sobra fica declarada", () => {
+  // Grand Castelao I ago/2026, apto 3: a agua nao veio estruturada nem com o
+  // rotulo na observacao. As colunas somam 694,59 contra um total de 742,19 —
+  // a diferenca tem de aparecer, nao ser absorvida por uma coluna qualquer.
+  const componentes = componentesLinhaIntermediacao(
+    { ...INTERM_OK, aluguel: 690, garagem: 0, iptu: 4.59, seguro_incendio: 0, observacao: "IPTU (8/12). SEGURO QUITADO." },
+    742.19,
+  )
+  assert.equal(componentes.agua, null)
+  assert.equal(componentes.naoDetalhado, 47.6)
+})
+
+test("rodape soma cada coluna do documento", () => {
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, agua: 20, iptu: 30, seguro_incendio: 5, total_recebido: 805, comissao: 375, repasse: 430 },
+    { ...INTERM_OK, apto: "205", aluguel: 400, garagem: 0, iptu: 20, seguro_incendio: 0, total_recebido: 420, comissao: 200, repasse: 220 },
+  ])
+  assert.equal(totais.componentes.aluguel, 1100)
+  assert.equal(totais.componentes.garagem, 50)
+  assert.equal(totais.componentes.iptu, 50)
+  assert.equal(totais.componentes.seguro, 5)
+  // Uma linha sem agua nao pode zerar a coluna de agua da outra.
+  assert.equal(totais.componentes.agua, 20)
+  assert.equal(totais.componentes.naoDetalhado, 0)
+  // A identidade que a tabela promete: as colunas somam o total recebido.
+  const soma = 1100 + 50 + 20 + 50 + 5
+  assert.equal(soma, totais.totalRecebido)
+})
+
+test("coluna sem nenhuma linha informada fica desconhecida, nao zero", () => {
+  const totais = totalizarRecebimentos([
+    { ...INTERM_OK, aluguel: 700, garagem: 50, iptu: 30, total_recebido: 780, comissao: 375, repasse: 405 },
+  ])
+  assert.equal(totais.componentes.seguro, null)
+  assert.equal(totais.componentes.agua, null)
 })

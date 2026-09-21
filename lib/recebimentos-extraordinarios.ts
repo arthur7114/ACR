@@ -243,6 +243,65 @@ export function resolverRecebimentosLegados<T extends RecebimentoLegado>(
   return resolvidos
 }
 
+// ---------------------------------------------------------------------------
+// Colunas do documento de repasse.
+//
+// A cliente pediu (set/2026) que a tabela de intermediacao replique as colunas
+// do documento de repasse da imobiliaria, como as tabelas de receitas e de
+// acordos ja fazem. O documento imprime, por linha: ALUGUEL, GARAGEM, AGUA,
+// IPTU, SEGURO INCENDIO, TOTAL, COMISSAO, REPASSE.
+//
+// Base comissionavel e encargos NAO sao colunas do documento — sao derivacoes
+// nossas. Por isso saem da tabela e vao para a tooltip do rodape.
+
+export interface ComponentesLinhaIntermediacao {
+  aluguel: number | null
+  garagem: number | null
+  agua: number | null
+  iptu: number | null
+  seguro: number | null
+  /**
+   * Parte do total recebido que nenhuma coluna explica. Acontece quando a agua
+   * nao veio estruturada nem com o rotulo "AGUA: R$ ..." na observacao: as
+   * colunas somam menos que o total impresso (Grand Castelao I ago/2026, apto
+   * 3: 690 + 4,59 = 694,59 contra um total de 742,19).
+   *
+   * Nao vira coluna, porque o documento nao tem uma — vira aviso no rodape. Uma
+   * tabela que nao fecha em silencio e pior que uma sobra declarada.
+   */
+  naoDetalhado: number
+}
+
+export function componentesLinhaIntermediacao(
+  item: RecebimentoLegado,
+  totalRecebido: number,
+): ComponentesLinhaIntermediacao {
+  const normalizado = normalizarItemLegado(item)
+  if (normalizado.tipo !== "intermediacao") {
+    return { aluguel: null, garagem: null, agua: null, iptu: null, seguro: null, naoDetalhado: 0 }
+  }
+  // `outrosEncargos` e a agua — `normalizarItemLegado` ja aplica o fallback de
+  // leitura da observacao. Aqui so se renomeia para o nome da coluna impressa.
+  const { aluguel, garagem, iptu, seguro, outrosEncargos } = normalizado.componentes
+  const conhecidos = (aluguel ?? 0) + (garagem ?? 0) + (iptu ?? 0) + (seguro ?? 0) + (outrosEncargos ?? 0)
+  return {
+    aluguel,
+    garagem,
+    agua: outrosEncargos,
+    iptu,
+    seguro,
+    naoDetalhado: roundMoney(totalRecebido - conhecidos),
+  }
+}
+
+// Soma de uma coluna: `null` so quando NENHUMA linha informou o componente.
+// Uma linha sem agua nao pode zerar a coluna de agua das outras.
+function somarColuna(valores: Array<number | null>): number | null {
+  const informados = valores.filter((valor): valor is number => valor !== null)
+  if (informados.length === 0) return null
+  return roundMoney(informados.reduce((total, valor) => total + valor, 0))
+}
+
 export interface TotaisRecebimentos {
   /** Linhas com efeito financeiro — as unicas somadas. */
   linhas: number
@@ -258,6 +317,8 @@ export interface TotaisRecebimentos {
   repasse: number
   /** Comissao sobre base. `null` quando alguma linha nao tem base. */
   percentual: number | null
+  /** Soma de cada coluna do documento, para o rodape da tabela. */
+  componentes: ComponentesLinhaIntermediacao
 }
 
 /**
@@ -298,7 +359,19 @@ export function totalizarRecebimentos(itens: RecebimentoLegado[]): TotaisRecebim
         )
   const todasComBase = conhecidas.length === resolvidos.length && resolvidos.length > 0
 
+  const porLinha = resolvidos.map(({ item, financeiro }) =>
+    componentesLinhaIntermediacao(item, financeiro.totalRecebido),
+  )
+
   return {
+    componentes: {
+      aluguel: somarColuna(porLinha.map((c) => c.aluguel)),
+      garagem: somarColuna(porLinha.map((c) => c.garagem)),
+      agua: somarColuna(porLinha.map((c) => c.agua)),
+      iptu: somarColuna(porLinha.map((c) => c.iptu)),
+      seguro: somarColuna(porLinha.map((c) => c.seguro)),
+      naoDetalhado: roundMoney(porLinha.reduce((total, c) => total + c.naoDetalhado, 0)),
+    },
     linhas: resolvidos.length,
     pendentes: itens.length - resolvidos.length,
     basesDesconhecidas: bases.length - conhecidas.length,
