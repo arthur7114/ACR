@@ -2927,3 +2927,427 @@ atual (ou a vigência do mês) como anterior — mesma guarda.
 **Backfill em produção.** Dry-run nos 22 fechamentos aprovados: só as duas
 unidades previstas mudam; todas as intermediações de jun–ago já batiam
 (`ja_aplicado`). 5 testes em `lib/server/contrato-novo-cadastro.test.ts`.
+
+## 2026-09-21 — P0 do feedback da cliente: denominador da comissão e vaga do inadimplente
+
+**Pedido.** Atacar o P0 do mapa em `docs/PLAN-bugs-feedback-cliente-2026-09-21.md`:
+comissão "6,1% efetivo" contra 7% na Revisão, vaga de moto fora da inadimplência
+do apto 7 GM II, e ocupação acumulada supostamente sem filtro de imóvel.
+
+### 1. % efetivo da administração passava pelo denominador errado
+
+**Causa raiz.** `efetivo = comissão ÷ economicRevenue`, com
+`economicRevenue = analise.totals.total_receitas` — a receita do fechamento
+inteiro, que inclui acordos, rescisões, intermediações e atrasos. A taxa de
+administração não incide sobre eles. A Revisão sempre usou
+`base_comissao_administracao` (`commissionBaseComponents`, `lib/comissao.ts`):
+aluguel com desconto + garagem + água + IPTU + seguro + encargos de atraso.
+Denominador maior, percentual menor — 700 ÷ 11.475,41 = 6,1%; 700 ÷ 10.000 = 7%.
+
+**Consequência que importava mais que o número.** O alerta "efetivo acima do
+contrato" — criado para pegar a taxa retida duas vezes em ago/2026 — nunca
+acendia, porque o denominador inflado sempre puxa o efetivo para baixo.
+
+**Implementação.** `administrationBase` em `lib/indicadores-aggregation.ts` =
+soma **estrita** de `base_comissao_administracao` dos fechamentos do recorte
+(um único ausente ⇒ "—", porque somar parte da base inflaria o percentual)
+**mais** o total dos recebimentos extraordinários que pagam administração.
+Filtrado por imóvel a linha já É a base: `receita_total` do snapshot soma
+exatamente os componentes comissionáveis da unidade. O campo entrou no tipo e
+no schema Zod de `lib/server/indicadores.ts`. 3 testes novos; o canário do José
+Walter (16% × 8%) passou a declarar a base e segue acusando a retenção dobrada.
+
+**Correção do próprio conserto (mesma sessão).** A primeira versão trocava só o
+denominador por `base_comissao_administracao` e parava aí. Errado pela metade: o
+NUMERADOR (`total_comissoes`) é a administração do fechamento inteiro e inclui a
+taxa cobrada sobre acordo, rescisão e atraso, que incide sobre o TOTAL pago pelo
+inquilino (`recebimentos-extraordinarios.ts`). Sem somar essa base, Grand
+Messejana II ago/2026 exibia 8,02% onde a Revisão mostra 7,00% — e o alerta de
+retenção dobrada acendia em 5 empreendimentos de julho e 4 de agosto, todos
+falso positivo. Intermediação continua fora: comissão própria, base própria.
+
+Pego na conferência contra o banco, não pelos testes — o caso sintético não
+tinha recebimento extraordinário. Verificação atual: nos 14 fechamentos de jul e
+ago/2026 o efetivo reproduz exatamente o percentual da Revisão e coincide com a
+taxa de contrato em todos; zero alertas. Correção é em tempo de leitura, não
+toca snapshot: nenhum backfill novo.
+
+### 2. Vaga de garagem fora da cobrança esperada do inadimplente
+
+**Causa raiz, confirmada no banco.** Grand Messejana II apto 7: vigência com
+`aluguel_contratado = 716,31` e `garagem_contratada = null`, enquanto a vaga de
+moto (R$ 25,00, "VAGA DE GARAGEM PARA MOTO" na observação) foi paga e registrada
+em `garagem_recebida` até a unidade ficar inadimplente. O `?? 0` em
+`indicadores-snapshots.ts` transformava a ausência em zero e cobrava 716,31 em
+vez de 741,31.
+
+**Alcance medido.** 49 dos 56 imóveis com vaga observada estão sem
+`garagem_contratada` (cadastro migrado). 4 já passaram por inadimplência,
+R$ 202,27 subestimados. Não é caso isolado: é classe.
+
+**Implementação.** `loadObservedGarages` busca a última `garagem_recebida > 0`
+de competência **anterior** por imóvel; `mapIndicadoresProperties` a expõe como
+`garagemObservada`; a cobrança esperada passa a ser
+`aluguel + (garagemContratada ?? garagemObservada ?? 0)`. Precedência: contrato
+vence observação; `garagem_recebida = 0` em mês inadimplente é "não pagou", não
+"não tem vaga", e por isso a busca exige valor positivo; receita variável
+continua sem cobrança esperada. Mesma lógica que `receitaEsperadaInadimplente`
+já usava ao recorrer ao último mês pago — evidência do documento, não inferência
+do cadastro. 3 testes novos.
+
+**Versão do snapshot: `recebimentos-canonicos-v3.4`.** Conferido contra o banco:
+apto 7 passa a calcular 741,31, e 13 das 27 unidades do GM II herdam a vaga.
+
+**Backfill executado em produção (2026-09-21).** Dry-run antes: 31 fechamentos,
+469 updates, 0 inserts. Diff de conteúdo conferido linha a linha antes de gravar:
+
+- 322 linhas mudam só `calculo_versao`/checksum — nenhum valor.
+- 147 mudam `cobranca_esperada`, **todas para cima** (delta R$ 1,67 a R$ 130,00).
+  8 são linhas inadimplentes, efeito direto na inadimplência do mês; as demais
+  também movem vacância e a acumulada derivada, que leem o mesmo campo.
+- 7 mudam `aluguel_esperado` e **não vêm deste conserto**: são os casos do ciclo
+  de 2026-09-18 (GM II 26 660 → 700, LOCMAIS Galpão 02 1.700 → 1.830, Grand
+  Castelão I 1 690 → 761,30 e mais quatro), cujos snapshots nunca tinham sido
+  rematerializados depois da correção de cadastro. Pegaram carona.
+
+Pós-commit: segunda execução devolve 469 skips (idempotente) e
+`verify-indicadores-snapshots` dá `ok: true` — cobertura 100%, zero duplicatas,
+469 checksums válidos, 31 reconciliações sem falha, tabelas-fonte intactas.
+
+GM II apto 7 agora: mai/26 ocupado 716,31; jun–ago inadimplente **741,31**.
+
+> **Resíduo conhecido:** a vaga observada só olha competência ANTERIOR, então o
+> primeiro mês em que a vaga aparece mantém a cobrança esperada sem ela (apto 7,
+> mai/26: 716,31 com R$ 25,00 de vaga recebida). Não afeta a inadimplência —
+> num mês pago a vaga entra pelo recebido — mas o teto daquele mês fica curto.
+> Some quando o cadastro receber `garagem_contratada` de verdade.
+
+### 3. Ocupação acumulada "sem filtro de imóvel" — era legibilidade, não filtro
+
+Verificado em três camadas. Agregação: `applyScope` filtra os snapshots por
+`filtros.imovelId` e `historicalSnapshots` filtra de novo por
+`expectedPropertyIds`. API real, competência 2026-08: carteira 402 de 467
+unidade-mês; filtro de imóvel (GM II apto 7) 4 de 4, R$ 2.865,24; filtro de
+empreendimento (GM II) 90 de 108, R$ 60.550,77 — todos corretamente recortados.
+Camada de tela e do PDF passam `imovelId` na query e no link de exportação.
+
+Fica um teste de regressão (`ocupacao acumulada respeita o filtro de imovel`).
+
+**Resolvido com o print da cliente (Grand Messejana II, ago/2026).** A linha dizia:
+
+```
+24 de 27 imóveis · R$ 16.332,71 de aluguel contratado
+acumulado desde mai. de 2026: 83,3% · 90 de 108 unidade-mês · R$ 60.550,77
+```
+
+O dado sempre esteve recortado — 108 é 27 unidades × 4 meses e R$ 60.550,77 é o
+contratado somado da janela. O que a linha não dizia é que a **unidade de conta
+muda** entre as duas: quem lê "27 imóveis" e vê "108" logo abaixo conclui, com
+razão, que o filtro não pegou.
+
+Correção pela regra da casa (derivação vai para tooltip, não solta na tela — a
+mesma que o docstring de `hint-tooltip.tsx` enuncia): a linha visível fica
+`acumulado de 4 meses desde mai. de 2026: 83,3%`, com "de 4 meses" dizendo de
+cara que o número não é do mês em tela. A contagem, a definição de unidade-mês e
+o valor contratado passam para o `Hint`.
+
+**Validação.** `pnpm test` 667 testes (1 skip de fixture local), `tsc --noEmit`
+e `pnpm lint` limpos.
+
+**Docs.** `docs/02-mock-contract.md` (ajuste do denominador do % efetivo) e
+`docs/PLAN-bugs-feedback-cliente-2026-09-21.md`.
+
+**Próximo passo.** P1: histórico do imóvel (inadimplências em aberto × meses no
+histórico) e revisão de nomenclaturas.
+
+## 2026-09-21 — P1: histórico do imóvel mostra dívida em aberto, não meses
+
+**Pedido.** "No detalhamento do histórico do imóvel, analisei a Luana e lá consta
+3 inadimplências mas atualmente só tem 1 em aberto. Ali deve mostrar o total em
+aberto e o valor também. Também tem que chamar o que for de acordo de
+inadimplência paga. Dar uma revisada geral nas nomenclaturas."
+
+**Caso reproduzido (Luana, apto 7 GM II — a mesma unidade da vaga do P0).**
+
+| competência | evento | valor | observação |
+|---|---|---|---|
+| mai/26 | pago | 810,44 | |
+| jun/26 | inadimplente | 0 | |
+| jul/26 | inadimplente + acordo | 894,18 | "VIGÊNCIA DE **JUNHO**" |
+| ago/26 | inadimplente + atraso | 894,18 | "VIGÊNCIA DE **JULHO**" |
+
+Três meses marcados, dois já quitados, só agosto em aberto. E os dois pagamentos
+são o mesmo fato com dois nomes — por isso a nomenclatura e o saldo eram o mesmo
+problema.
+
+**Implementação.** `resumirInadimplencia` em `lib/inadimplencia-mes.ts` (puro,
+7 testes): separa meses inadimplentes em quitados × em aberto e soma a cobrança
+esperada dos abertos. A quitação **não é inferida ali** — já vive no snapshot,
+em `atrasos_competencia_origem`, escrita a partir de `competencia_original` ou
+do texto ("VIGÊNCIA DE JUNHO DE 2026") pelo mesmo parser que o mapa de calor usa.
+Guardas: pagamento anterior à dívida não quita (erro de atribuição, não
+adiantamento); pagamentos repetidos para a mesma competência contam uma quitação
+só (parcelamento); mês sem base de cálculo deixa o valor em "—", nunca R$ 0,00.
+
+`getImovelHistorico` lê `imovel_competencias` para isso em vez de recalcular da
+linha do tempo — recalcular criaria uma terceira leitura da mesma dívida.
+
+**Tela.** Tile "Inadimplente" → **"Em aberto"** com contagem e valor; histórico
+("3 meses inadimplentes · 2 já quitados") na tooltip. Competência já quitada
+ganha o selo "quitada depois" na linha do tempo — o mês continua lá, com o estado
+certo. "Acordo" → "Inadimplência paga", e os tiles "Acordos" + "Inad. pagas"
+viram um só. "Meses obs." → "Meses". Tipos `acordo` e `atraso` seguem distintos
+no dado (a tabela de acordos parcelados depende deles).
+
+**Verificação contra o banco.** Luana: Em aberto 1 · R$ 741,31 (a cobrança já com
+a vaga do P0), tooltip "3 meses inadimplentes no histórico · 2 já quitados".
+Varredura das 12 unidades com histórico de inadimplência: **8 exibiam número
+inflado**, incluindo Grand Castelão I un.105, Grand Messejana I un.1 e LOCMAIS
+Galpão 03, que mostravam inadimplência com tudo já quitado.
+
+`pnpm test` 674 passando, `tsc --noEmit` e `pnpm lint` limpos.
+
+**Próximo passo.** Resto do P1/P2: totais e componentes da tabela de
+intermediação.
+
+## 2026-09-21 — Totais da tabela de intermediação
+
+**Pedido.** "Totais da tabela de intermediação."
+
+**Estado anterior.** A tabela não tinha rodapé; o único total era a comissão
+impressa no cabeçalho da seção.
+
+**Implementação.** `totalizarRecebimentos` em
+`lib/recebimentos-extraordinarios.ts` (5 testes), ao lado da resolução que já é
+a via única desses valores — o rodapé não é uma segunda conta, é a mesma.
+Alimenta também o total do cabeçalho, que antes somava por conta própria.
+
+Três regras que o rodapé respeita:
+
+1. **Pendente não soma** (CA27.2) — mas é declarada. Sumir com ela em silêncio
+   seria pior que não ter rodapé.
+2. **Base desconhecida não vira zero.** A célula mostra "-"; somar como zero
+   daria uma base menor que a real.
+3. **% só existe quando toda linha tem base.** Com uma base faltando, a comissão
+   soma N linhas e a base N-1: a divisão mente para cima — o mesmo erro que o
+   efetivo de administração tinha.
+
+Contagens de pendente e de base não apurável vão na tooltip do "Total", com ⚠ no
+rótulo quando existem.
+
+**Verificação contra o banco.** 7 fechamentos com intermediação entre mai e
+ago/2026. A identidade base + encargos = total recebido fecha em todos os 7, e os
+percentuais caem em cima do contrato (60% e 70%). GM II ago/2026: base
+R$ 2.150,00 + encargos R$ 207,39 = R$ 2.357,39, comissão R$ 1.290,00 — o mesmo
+R$ 1.290,00 que a Visão geral mostra na linha de intermediação.
+
+`pnpm test` 679 passando, `tsc --noEmit` e `pnpm lint` limpos.
+
+**Próximo passo.** Quebrar a coluna "Encargos" nos componentes da planilha
+(IPTU, água, seguro): `ComponentesIntermediacao` já carrega o detalhe e
+`normalizarItemLegado` já o preenche, mas o pedido é "replicar exatamente as
+colunas da planilha" — falta o print da aba para definir ordem e nomes.
+
+## Ciclo — varredura de nomenclatura do drawer, fechamento (2026-09-21)
+
+Último resíduo do P1 do mapa de bugs. Dois rótulos no drawer do imóvel ainda
+falavam "acordo", que é o nome do lançamento, não do fato:
+
+- seção "Acordos parcelados" → **"Inadimplência parcelada"**;
+- título do card "Acordo" → **"Inadimplência parcelada"**, ou **"Rescisão
+  parcelada"** quando `acordo.tipo === "rescisao"`.
+
+Não viraram "Inadimplência paga" (o nome usado no tile e na linha do tempo)
+porque o card pode ter parcela em aberto; "paga" só é verdade quando o selo ao
+lado diz que quitou.
+
+`view-receita.tsx` ficou de fora de propósito: é a aba "Conciliação financeira",
+marcada para remoção no item 12 do mapa.
+
+`pnpm test` 679 passando (1 skip: fixtures congeladas ausentes), `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**P1 encerrado.** Segue aberto no mapa: quebrar a coluna "Encargos" da
+intermediação (falta o print da planilha), P3 (aluguel potencial + barra
+empilhada) e P4.
+
+## Ciclo — colunas da intermediação em paridade com o documento (2026-09-21)
+
+Fecha o item que estava parado esperando um print da planilha. A fonte não é a
+planilha: é o documento de repasse da imobiliária (Arthur, 2026-09-21). E ele já
+estava mapeado no repositório — o JSON Schema de extração
+(`lib/server/analyze-prestacao.ts`) enumera as colunas da seção, e as tabelas de
+Receitas por imóvel e de Acordos já as replicam. Não foi preciso pedir o PDF.
+
+**Colunas agora:** Apto · Inquilino · **Aluguel · Garagem · Água · IPTU ·
+Seg. inc.** · Total recebido · Comissão interm. · % · Repasse · Competência · Obs.
+
+"Base comissionável" e "Encargos" saíram da tabela e foram para a tooltip do
+"Total" no rodapé: são derivação nossa, não coluna do documento.
+
+**A sobra.** A água nem sempre vem estruturada — em 7 das 10 linhas reais ela
+aparece só no texto, e em 3 nem isso. Quando as colunas somam menos que o total
+impresso, a diferença é declarada (⚠ na célula do total, conta na tooltip), não
+absorvida por uma coluna qualquer nem escondida.
+
+**Verificação contra o banco.** 7 fechamentos com intermediação, mai a ago/2026.
+A identidade colunas + sobra = total recebido fecha em todos. GM II ago/2026:
+alu 2.100,00 + gar 50,00 + água 203,10 + IPTU 4,29 = 2.357,39, comissão
+1.290,00 — os mesmos números do rodapé anterior, agora abertos.
+
+`pnpm test` 683 passando (1 skip), `tsc --noEmit` e `pnpm lint` limpos. Sem
+verificação em navegador — a aplicação está atrás de login.
+
+**Achado que vira pedido.** Grand Castelão I ago/2026, aptos 3 e 101: sobra de
+R$ 47,60 em cada, exatamente a água da linha de jul/2026 do mesmo
+empreendimento. A extração de agosto provavelmente perdeu a coluna ÁGUA. Um PDF
+de repasse de Castelão I ago/2026 confirma e permite corrigir na extração.
+
+## Ciclo — desconto da intermediação, lido do documento (2026-09-21)
+
+O PDF estava nos Downloads do Arthur o tempo todo: `1. PRESTAÇÃO DE CONTAS
+LOCAÇÃO AGOSTO 20.pdf`, GRAND MESSEJANA II. (O arquivo chamado "2. REPASSE ..."
+é o comprovante do Inter, não o extrato.)
+
+Ele confirmou a paridade das colunas implementada no ciclo anterior **e revelou
+duas que faltavam**: DESCONTO e ALUGUEL C/ DESCONTO. A segunda é a que soma no
+TOTAL impresso.
+
+**Bug latente fechado.** `resolverBase` usava o aluguel cheio. Numa linha com
+desconto a base comissionável sairia maior que a real, junto com a comissão
+derivada do percentual e o % da tela. Nenhuma das 7 intermediações persistidas
+tem desconto, então a verificação contra o banco mostra os 7 fechamentos com
+números idênticos aos de antes — o erro nunca chegou a produzir número errado, e
+agora não vai.
+
+**Verificação contra o documento.** A seção de intermediação de GM II ago/2026
+fecha coluna a coluna: alu 2.100,00 · gar 50,00 · água 203,10 · IPTU 4,29 =
+2.357,39 · comissão 1.290,00 · repasse 1.067,39. O documento imprime 4,30 /
+2.357,40 / 1.067,40 porque arredonda cada coluna isolada; mantivemos a soma
+exata, com o motivo registrado no teste.
+
+`pnpm test` 686 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Decisão pendente do Arthur.** REAJUSTE, VENC. e CARÊNCIA também são colunas do
+documento, mas são referência, não parcela da soma, e nenhuma está na extração.
+Adicioná-las custa uma mudança de schema mais reprocessamento dos fechamentos —
+sem isso apareceriam vazias.
+
+## Ciclo — TOTAL impresso por seção vira rede de proteção (2026-09-21)
+
+Escolhido pelo Arthur como primeiro passo, na frente das colunas ENCARGOS e
+LIXO, porque protege todo fechamento futuro em vez de só exibir mais dado.
+
+**O problema que resolve.** O sistema recalculava as somas e nunca olhava para o
+total impresso. Soma coerente consigo mesma não prova nada: quando a extração
+perde uma coluna, a nossa conta erra junto. Grand Castelão I ago/2026 perdeu
+ÁGUA (R$ 47,60 por apto) e o fechamento passou limpo. Ninguém teria visto sem
+abrir o PDF ao lado da tela.
+
+**O que entrou.** `totais_secoes` no schema de extração e no prompt — uma
+entrada por seção, com o valor de cada coluna como impresso. E
+`conferirTotaisDeSecao` em `prestacao-rechecks.ts`, comparando coluna a coluna.
+
+Três decisões que o documento ditou:
+
+1. **`null` ≠ zero.** O layout muda por imobiliária e por mês. Maracanaú imprime
+   ENCARGOS e não tem ÁGUA; Castelão teve LIXO até dez/2024. Coluna ausente não
+   é conferida.
+2. **Tolerância proporcional.** A planilha guarda precisão cheia e imprime
+   arredondado; em 21 linhas a deriva chega a 7 centavos. Verificado por
+   red-green: com tolerância fixa de um centavo o teste do Castelão falha.
+3. **Sem total impresso, nenhum recheck.** Emitir "passed" afirmaria uma
+   conferência que não houve.
+
+`pnpm test` 693 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Próximos, na ordem combinada.** Colunas ENCARGOS (Maracanaú) e LIXO
+(Castelão), que hoje nem são extraídas; depois a água do Castelão ago/2026,
+quando a aba `AGO 26` ou o PDF aparecer.
+
+**Lacuna declarada.** O parser de Excel não popula `totais_secoes`, embora a
+planilha traga a linha TOTAL de graça e ali a conferência seria exata, sem
+arredondamento. Upload `.xlsx` segue sem rede.
+
+## Ciclo — colunas LIXO e ENCARGOS (2026-09-21)
+
+Segundo passo da ordem combinada. Fecha a lacuna que o levantamento dos layouts
+revelou: das colunas que as planilhas imprimem, duas não existiam em lugar
+nenhum do sistema — `LIXO` (Grand Castelão até dez/2024) e `ENCARGOS` (Grand
+Maracanaú). A segunda é literalmente a que o pedido original citava entre
+parênteses, "(coluna encargos)".
+
+**Cuidado com a colisão de nome.** Já havia um `encargos` no módulo canônico,
+mas derivado: tudo que o TOTAL soma além de principal e garagem. A coluna do
+Maracanaú é outra coisa — um valor impresso. Em intermediação ela entrou como
+`encargosImpressos`, nome deliberadamente longo para a diferença não escapar
+numa revisão futura. Em acordos/rescisões/atrasos as duas novas colunas entram
+no `encargos` derivado, que é exatamente o que ele significa.
+
+Nenhuma das duas comissiona: a base segue aluguel c/ desconto + garagem.
+
+O recheck de seção do ciclo anterior passa a conferir as duas — documento que
+imprime ENCARGOS com extração que não o captura agora acusa.
+
+**Sem regressão.** Os 7 fechamentos com intermediação saem com números
+idênticos, e as duas colunas vêm `null` nas análises persistidas: estado correto
+até reprocessamento, porque `null` é "não sei", não "zero".
+
+`pnpm test` 696 passando (1 skip), `pnpm test:canary` 6, `tsc --noEmit` e
+`pnpm lint` limpos. Sem verificação em navegador — a aplicação está atrás de
+login.
+
+**Restam, das lacunas declaradas.** O parser de Excel não popula
+`totais_secoes`; a tabela "Receitas por imóvel" não mostra lixo nem encargos
+(os campos já são extraídos); e a água do Grand Castelão I ago/2026 depende da
+aba `AGO 26` ou do PDF.
+
+## Ciclo — fecha as lacunas declaradas e o P3 (2026-09-21)
+
+Cinco entregas, pedidas como "fecha os em aberto".
+
+**Excel com rede.** O parser agora lê a linha TOTAL de cada seção e alimenta
+`totais_secoes`. Verificado contra a planilha real do Castelão em 4 competências
+e 2 layouts de coluna: 12 rechecks passando. E a prova do valor: apagando a
+coluna ÁGUA das linhas de jul/2026, o recheck acusa `água (documento R$ 47,60,
+linhas R$ 0,00)` e bloqueia — a falha de ago/2026, pega.
+
+**Correção de rota minha:** eu havia dito que no Excel a conferência seria
+exata. Não é. O parser lê os valores exibidos por decisão antiga, e a célula
+TOTAL é fórmula sobre os cheios: 5 centavos de deriva em 27 linhas no GM II.
+
+**Erro do ciclo anterior corrigido.** Eu havia criado campos `lixo`/`encargos`
+nas linhas regulares sem ver que `outros_recebimentos` já era a casa de ENCARGOS
+desde 2026-09-02 — e que ela entra na base da comissão. Campo paralelo = dupla
+contagem ou base silenciosamente menor, que é o bug do João Cordeiro de volta.
+Os dois campos ficaram só onde não há `outros_recebimentos`: intermediação e
+acordos.
+
+**Coluna "Outros"** na tabela Receitas por imóvel: o valor já pesava na comissão
+e não aparecia na tela.
+
+**P3.** "Aluguel contratado" virou "Aluguel potencial" em Indicadores e no
+relatório — menos no cabeçalho do CSV, que é contrato de exportação. E a linha
+de teto virou barra empilhada: verde o recebido, cinza o não realizado, a barra
+inteira é o potencial.
+
+O cinza tem piso em zero (recebido acima do potencial acontece) e é `null`
+quando falta uma das pontas. O tooltip o explica com **quatro** parcelas, não
+duas: a identidade `serie_realizacao_do_ponto` inclui descontos e ajustes, e
+listar só vacância e inadimplência deixaria o bloco maior que a explicação.
+
+Vacância e inadimplência saíram do gráfico para o tooltip. É perda na primeira
+leitura, registrada para a cliente poder pedir de volta.
+
+`pnpm test` 699 passando (1 skip), `tsc --noEmit` e `pnpm lint` limpos. **Sem
+verificação visual do gráfico** — a aplicação está atrás de login.
+
+**O que segue em aberto, e por quê.** Água do Castelão I ago/2026 (falta a aba
+`AGO 26`); P4 inteiro (lista de valores da cliente, regra do Terreno Castelão,
+decisão sobre remover a Conciliação financeira); regra dos 15+1 dias (bloqueada
+por schema: `imovel_vigencias` é mensal por constraint e não há data de saída).

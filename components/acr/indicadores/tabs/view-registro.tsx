@@ -68,7 +68,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
         help={{
           short: "Abra os valores que formam a competência.",
           title: "Detalhamento por imóvel",
-          definition: "Uma linha por imóvel e competência, com aluguel contratado, recebimentos, retenções e repasse calculado.",
+          definition: "Uma linha por imóvel e competência, com aluguel potencial, recebimentos, retenções e repasse calculado.",
           source: "Fechamentos da competência e histórico mensal por imóvel.",
           limitation: "Receitas sem imóvel vinculado (acordos, atrasos e intermediação) entram no total da competência, mas não aparecem em nenhuma linha desta tabela.",
         }}
@@ -117,7 +117,7 @@ export function ViewRegistro({ data }: { data: IndicadoresData }) {
                   <SortableHeader label="Imóvel" sortKey="unidade" sort={sort} onSort={updateSort} />
                   <SortableHeader label="Empreendimento" sortKey="empreendimentoNome" sort={sort} onSort={updateSort} />
                   <th scope="col" className="px-3 py-3 text-left font-semibold">Inquilino / status</th>
-                  <SortableHeader label="Aluguel contratado" sortKey="aluguelEsperado" sort={sort} onSort={updateSort} right />
+                  <SortableHeader label="Aluguel potencial" sortKey="aluguelEsperado" sort={sort} onSort={updateSort} right />
                   <th scope="col" className="px-3 py-3 text-right font-semibold">Reajuste</th>
                   <SortableHeader label="Recebido da competência" sortKey="aluguelRecebidoCompetencia" sort={sort} onSort={updateSort} right />
                   <th scope="col" className="px-3 py-3 text-right font-semibold">Atrasos recuperados</th>
@@ -222,7 +222,7 @@ function buildVisaoGeral(row: IndicadoresPropertyRevenue) {
     itens: [
       { label: "Situação", valor: occupancyLabel(row.statusOcupacao) },
       { label: "Inquilino", valor: row.inquilinoNome ?? "—" },
-      { label: "Aluguel contratado", valor: formatContractedRent(row.aluguelEsperado, row.modeloReceita) },
+      { label: "Aluguel potencial", valor: formatContractedRent(row.aluguelEsperado, row.modeloReceita) },
       { label: "Recebido da competência", valor: formatCurrency(row.aluguelRecebidoCompetencia) },
       { label: "Atrasos recuperados", valor: formatCurrency(resolveMetricValue(row.atrasosRecuperados)) },
       { label: "Outros recebimentos", valor: formatCurrency(resolveMetricValue(row.outrosRecebimentos)) },
@@ -326,7 +326,7 @@ function MobileRevenueRow({ row, onAbrir }: { row: IndicadoresPropertyRevenue; o
       </summary>
       <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-acr-line py-4 text-xs">
         <MobileValue label="Status" value={<StatusChip status={row.statusOcupacao} />} />
-        <MobileValue label="Aluguel contratado" value={formatContractedRent(row.aluguelEsperado, row.modeloReceita)} />
+        <MobileValue label="Aluguel potencial" value={formatContractedRent(row.aluguelEsperado, row.modeloReceita)} />
         <MobileValue label="Atrasos recuperados" value={formatCurrency(resolveMetricValue(row.atrasosRecuperados))} />
         <MobileValue label="Outros recebimentos" value={formatCurrency(resolveMetricValue(row.outrosRecebimentos))} />
         <MobileValue label="Receitas do fechamento" value={formatCurrency(row.receitaTotal)} />

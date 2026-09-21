@@ -85,6 +85,7 @@ interface AnalysisFixture {
     saidas_passagem?: number | null
     total_tarifas?: number | null
     repasse_declarado?: number | null
+    base_comissao_administracao?: number | null
   }
   prestacao: PrestacaoFixture | null
   despesasPagas?: Array<{
@@ -212,6 +213,7 @@ function makeAnalysis(overrides: {
       total_iptu: 50,
       total_seguro_incendio: 25,
       repasse_embutido: false,
+      base_comissao_administracao: 2_000,
       ...overrides.totals,
     },
     prestacao: {
@@ -2274,7 +2276,12 @@ test("taxa efetiva de administracao acusa retencao acima do contrato", () => {
   const result = aggregateIndicadores(makeInput({
     regrasAtivas: [{ ...makeRule(), taxaAdministracaoPercent: 8, taxaIntermediacaoPercent: 60 }],
     fechamentos: [makeClosing({
-      analiseCompleta: makeAnalysis({ totals: { total_receitas: 3348.52, total_comissoes: 535.76 } }),
+      // Fechamento sem acordos nem intermediacoes: a base comissionavel coincide
+      // com a receita. 267,88 sobre 3.348,52 e exatamente os 8% do contrato — a
+      // segunda retencao dobra o efetivo e e isso que o indicador tem de acusar.
+      analiseCompleta: makeAnalysis({
+        totals: { total_receitas: 3348.52, total_comissoes: 535.76, base_comissao_administracao: 3348.52 },
+      }),
     })],
   }))
   assert.equal(result.resumo.taxas.administracao.contrato, 8)
@@ -2432,4 +2439,131 @@ test("vigencia fixa sem aluguel sai da soma e entra na cobertura, sem anular o t
   assert.equal(result.realizacaoAluguel.contratado, 1_000)
   assert.equal(result.cobertura.contratos.ausentes, 1)
   assert.equal(result.cobertura.lacunas.find((l) => l.codigo === "contrato_ausente")?.quantidade, 1)
+})
+
+
+test("taxa efetiva de administracao usa a base comissionavel, nao a receita do fechamento", () => {
+  // Queixa da cliente: a Visao geral dizia "6,1% efetivo" onde a Revisao do MESMO
+  // fechamento mostra 7%. Nao era divergencia de valor, era de denominador.
+  //
+  // A comissao de administracao incide sobre `base_comissao_administracao`
+  // (aluguel com desconto + garagem + agua + IPTU + seguro + encargos de atraso),
+  // que e o numero que a Revisao usa e mostra no tooltip do valor calculado.
+  // O efetivo dividia por `total_receitas`, a receita do fechamento INTEIRO, que
+  // inclui acordos, rescisoes, intermediacoes e atrasos — itens sobre os quais a
+  // taxa de administracao nao incide. Denominador maior, percentual menor:
+  // 700 / 11.475,41 = 6,1%; 700 / 10.000 = 7%.
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [{ ...makeRule(), taxaAdministracaoPercent: 7 }],
+    fechamentos: [
+      makeClosing({
+        analiseCompleta: makeAnalysis({
+          totals: {
+            total_receitas: 11_475.41,
+            total_comissoes: 700,
+            base_comissao_administracao: 10_000,
+          },
+        }),
+      }),
+    ],
+  }))
+  assert.equal(result.resumo.taxas.administracao.efetivo, 7)
+  assert.equal(result.resumo.taxas.administracao.contrato, 7)
+})
+
+test("sem base comissionavel declarada o efetivo de administracao e desconhecido", () => {
+  // Fail-closed: analise antiga que nao gravou a base nao vira "percentual da
+  // receita" com outro nome. "—" e honesto; 6,1% mentia e ainda apagava o alerta
+  // de taxa retida em dobro, que compara efetivo contra contrato.
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [{ ...makeRule(), taxaAdministracaoPercent: 7 }],
+    fechamentos: [
+      makeClosing({
+        analiseCompleta: makeAnalysis({
+          totals: {
+            total_receitas: 11_475.41,
+            total_comissoes: 700,
+            base_comissao_administracao: null,
+          },
+        }),
+      }),
+    ],
+  }))
+  assert.equal(result.resumo.taxas.administracao.efetivo, null)
+})
+
+
+test("ocupacao acumulada respeita o filtro de imovel", () => {
+  // Reportado em set/2026 como "a segunda linha do descritivo da Ocupacao nao
+  // filtra pelo imovel". Nao reproduziu: a agregacao filtra os snapshots duas
+  // vezes (applyScope por `filtros.imovelId` e depois por `expectedPropertyIds`),
+  // e a conferencia contra o banco real deu os tres recortes corretos. O teste
+  // fica como guarda: a janela acumulada le os MESMOS snapshots da competencia,
+  // e qualquer atalho que a alimente por fora do escopo quebra aqui.
+  //
+  // Imovel A: ocupado em abril e maio. Imovel B: vago em abril, ocupado em maio.
+  // Sem filtro: 3 de 4 unidade-mes. Filtrado em A: 2 de 2.
+  const props = ["a", "b"].map((id) => makeProperty({ id, unidade: id }))
+  const snapshots = [
+    makeSnapshot({ imovelId: "a", competencia: "2026-04-01", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+    makeSnapshot({ imovelId: "b", competencia: "2026-04-01", statusOcupacao: "vago", aluguelEsperado: 100, aluguelRecebido: 0, aluguelRecebidoCompetencia: 0 }),
+    makeSnapshot({ imovelId: "a", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+    makeSnapshot({ imovelId: "b", statusOcupacao: "ocupado", aluguelEsperado: 100 }),
+  ]
+
+  const semFiltro = aggregateIndicadores(makeInput({ imoveisAtivos: props, snapshots }))
+  assert.equal(semFiltro.resumo.ocupacaoAcumulada!.numerador, 3)
+  assert.equal(semFiltro.resumo.ocupacaoAcumulada!.denominador, 4)
+
+  const filtrado = aggregateIndicadores(makeInput({
+    imoveisAtivos: props,
+    snapshots,
+    filtros: { empresaId: null, empreendimentoId: null, imovelId: "a" },
+  }))
+  const acc = filtrado.resumo.ocupacaoAcumulada!
+  assert.equal(acc.numerador, 2)
+  assert.equal(acc.denominador, 2)
+  assert.equal(acc.percentual, 100)
+  assert.equal(acc.valorContratado, 200)
+})
+
+
+test("efetivo de administracao soma a base dos acordos, que tambem pagam a taxa", () => {
+  // Conferido contra os 14 fechamentos de jul e ago/2026: so este pareamento
+  // reproduz, em todos, o mesmo percentual que a Revisao mostra.
+  //
+  // O numerador (`total_comissoes`) e a comissao de ADMINISTRACAO do fechamento
+  // inteiro — inclui a que incide sobre acordo, rescisao e atraso, cobrada sobre
+  // o TOTAL pago pelo inquilino (`recebimentos-extraordinarios.ts`). Entao o
+  // denominador tem de somar essa mesma base.
+  //
+  // Intermediacao fica de fora: tem comissao propria, base propria
+  // (aluguel + garagem do contrato novo) e linha propria na tela. Deixa-la no
+  // denominador — como fazia `total_receitas` — era o erro original.
+  //
+  // Linhas: base 10.000, comissao 700 (7%). Acordo: 2.000 recebidos, 140 de
+  // administracao. Intermediacao: 3.000 recebidos, 1.800 de comissao propria.
+  // total_comissoes = 840 (so administracao) · total_receitas = 15.000.
+  // Antigo: 840/15.000 = 5,6%. So a base das linhas: 840/10.000 = 8,4%.
+  // Certo: 840/12.000 = 7%.
+  const result = aggregateIndicadores(makeInput({
+    regrasAtivas: [{ ...makeRule(), taxaAdministracaoPercent: 7, taxaIntermediacaoPercent: 60 }],
+    fechamentos: [
+      makeClosing({
+        analiseCompleta: makeAnalysis({
+          totals: {
+            total_receitas: 15_000,
+            total_comissoes: 840,
+            base_comissao_administracao: 10_000,
+          },
+          intermediacoes: [
+            { tipo: "acordo", apto: "101", inquilino: "Maria", valor: 2_000, total_recebido: 2_000, comissao: 140, repasse: 1_860, confianca: 0.9 },
+            { tipo: "intermediacao", apto: "102", inquilino: "Novo Locatario", valor: 3_000, total_recebido: 3_000, comissao: 1_800, repasse: 1_200, confianca: 0.9 },
+          ],
+        }),
+      }),
+    ],
+  }))
+  assert.equal(result.resumo.taxas.administracao.efetivo, 7)
+  assert.equal(result.resumo.taxas.administracao.contrato, 7)
 })

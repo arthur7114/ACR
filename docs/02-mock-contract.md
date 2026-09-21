@@ -286,7 +286,7 @@ Se uma etapa precisar divergir do mock, o agente deve explicar antes de editar:
 ### Ajuste registrado — indicadores do contrato: taxas, acordos, reajuste e receita de locação (2026-09-16)
 
 - Ponto alterado: auditoria dos 13 indicadores do contrato contra `getIndicadores` mostrou 3 ausentes (rentabilidade, reajuste, acordos/rescisões com quantidade e valor) e 4 pela metade (percentual das taxas, vagas na receita, valor de ocupação, % de vacância).
-- Visão geral: Vacância ganha "% do contratado"; Ocupação ganha o aluguel contratado das unidades ocupadas; Comissões ganha uma linha por taxa com valor, % efetivo (comissão ÷ receita) e % de contrato — o efetivo acima do contrato acende, e é o sinal que faltou para a taxa retida duas vezes em ago/2026. Grade de apoio passa de 5 para 4 colunas e recebe dois cards: **Receita de locação** (aluguel + vagas, com cobertura das vagas) e **Rentabilidade**.
+- Visão geral: Vacância ganha "% do contratado"; Ocupação ganha o aluguel contratado das unidades ocupadas; Comissões ganha uma linha por taxa com valor, % efetivo (comissão ÷ base comissionável — ver o ajuste de 2026-09-21) e % de contrato — o efetivo acima do contrato acende, e é o sinal que faltou para a taxa retida duas vezes em ago/2026. Grade de apoio passa de 5 para 4 colunas e recebe dois cards: **Receita de locação** (aluguel + vagas, com cobertura das vagas) e **Rentabilidade**.
 - Rentabilidade fica **declaradamente vazia**: é retorno sobre ativo e o cadastro não tem valor venal nem de aquisição de nenhuma unidade. Sem isso, qualquer número seria repasse ÷ contratado com outro nome. O card existe, mostra "—" e diz por quê no tooltip.
 - Percentual de contrato só aparece quando todos os pares do recorte têm a mesma taxa; com taxas diferentes fica "—". Média de contratos distintos seria número inventado.
 - Conciliação financeira: painel **Acordos e rescisões** com quatro colunas separadas — acordos, rescisões, intermediações (com comissão) e atrasos pagos — cada uma com contagem e valor. Não há total somado: dinheiro entrando e inquilino saindo são fatos diferentes. Atraso ou acordo sem competência de origem aparece à parte, porque não abate o saldo em aberto.
@@ -456,3 +456,299 @@ Manter estes nomes como referencia de copy e seed/demo, salvo decisao documentad
 ## Como atualizar este doc
 
 Atualize este contrato quando o mock mudar ou quando uma implementacao aprovada substituir um comportamento do mock. Registre a mudanca tambem em `12-execution-roadmap.md`.
+
+### Ajuste registrado — denominador do % efetivo de administração (2026-09-21)
+
+- **Ponto alterado:** o % efetivo da comissão de administração passa a dividir
+  pela base sobre a qual a taxa realmente incide — `base_comissao_administracao`
+  (linhas regulares) **mais** o total dos recebimentos extraordinários que pagam
+  administração (acordo, rescisão, atraso) — e não por `total_receitas`.
+- **Por quê:** a cliente reportou "6,1% efetivo" na Visão geral contra 7% na
+  Revisão do mesmo fechamento. Não era divergência de valor, era de denominador.
+  `total_receitas` soma também acordos, rescisões, intermediações e atrasos, e a
+  taxa de administração não incide sobre eles. Denominador maior, percentual menor.
+- **Consequência que importa mais que o número:** como o denominador inflado
+  sempre puxa o efetivo para baixo, o alerta "efetivo acima do contrato" —
+  criado justamente para pegar a taxa retida duas vezes em ago/2026 — nunca
+  acendia. O sintoma estava mascarado.
+- **Fonte única:** a base já era calculada uma vez por `commissionBaseComponents`
+  (`lib/comissao.ts`) e gravada em `analise_completa.totals`. A Revisão já a
+  mostra no tooltip do valor calculado. Os indicadores passam a ler o mesmo
+  número em vez de recalcular por outro caminho.
+- **Fail-closed:** fechamento sem a base declarada deixa o efetivo em "—". Somar
+  só os fechamentos que declaram produziria uma base menor que a real e um
+  percentual maior que o real — exatamente o erro que acende o alerta à toa.
+- **Intermediação fica fora do denominador da administração.** Tem comissão
+  própria, base própria (aluguel + garagem do contrato novo) e linha própria na
+  tela. Deixá-la dentro — como `total_receitas` fazia — era o erro original;
+  tirá-la sem somar a base de acordo/rescisão/atraso é o erro simétrico, que
+  levava 7,00% a exibir 8,02% e acendia retenção dobrada onde não houve.
+- **Verificação:** nos 14 fechamentos de jul e ago/2026, o efetivo agora
+  reproduz exatamente o percentual que a Revisão mostra do mesmo fechamento, e
+  coincide com a taxa de contrato em todos. Antes: 5,6% a 6,4%.
+- **Não muda:** o efetivo da intermediação e o % de contrato.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — derivação da ocupação acumulada sai da tela (2026-09-21)
+
+- **Ponto alterado:** a segunda linha do descritivo da Ocupação passa a exibir
+  só `acumulado de N meses desde <mês>: <percentual>`. A contagem em
+  unidade-mês, a definição da unidade e o aluguel contratado da janela vão para
+  a tooltip (`Hint`).
+- **Por quê:** com um empreendimento filtrado, a linha exibia "24 de 27 imóveis"
+  e logo abaixo "90 de 108 unidade-mês · R$ 60.550,77". Os dois números estão
+  certos e recortados — 108 é 27 unidades × 4 meses — mas a linha trocava a
+  unidade de conta sem avisar, e a cliente leu como filtro que não pegou. O
+  defeito era de leitura, não de cálculo: verificado que a agregação, a query e
+  a API recortam corretamente nos três níveis de filtro.
+- **Regra aplicada:** a mesma que `components/acr/hint-tooltip.tsx` enuncia —
+  quando o número já se explica sozinho, a derivação não fica solta embaixo dele.
+- **"de N meses" fica visível** porque é exatamente a informação que faltava: diz
+  que o percentual não é do mês em tela antes de o leitor comparar com o de cima.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — histórico do imóvel fala de dívida, não de meses (2026-09-21)
+
+- **Ponto alterado:** o tile "Inadimplente" (contagem de meses que já estiveram
+  inadimplentes) vira **"Em aberto"**: quantas competências seguem devendo, com
+  o valor somado embaixo. O histórico (N meses, M já quitados) vai para a
+  tooltip.
+- **Por quê:** a cliente abriu a Luana (apto 7, GM II) e viu "Inadimplente 3"
+  quando junho já fora pago em julho e julho em agosto — só agosto seguia
+  devendo. O número estava certo e a leitura, errada: "3" lê como "deve três
+  meses". Medido: 8 das 12 unidades com histórico de inadimplência exibiam
+  número inflado, três delas mostrando inadimplência com tudo já quitado.
+- **Quitação não é inferida na tela.** Vem de `atrasos_competencia_origem` no
+  snapshot, a mesma evidência que o mapa de calor usa. Mês sem origem informada
+  nunca é dado como pago por chute, e pagamento anterior à dívida não a quita.
+- **Valor em aberto** usa `cobranca_esperada` (CA-IND26: mesma base da Revisão e
+  dos Indicadores). Sem base de cálculo em algum mês aberto o valor é "—", nunca
+  R$ 0,00 — zero afirmaria que a unidade não deve nada.
+- **Linha do tempo:** competência inadimplente já quitada ganha o selo
+  "quitada depois". O mês continua na linha — quitada não é o mesmo que não ter
+  acontecido.
+- **Nomenclatura:** "Acordo" vira **"Inadimplência paga"**, igual ao atraso — são
+  o mesmo fato para quem lê (dívida antiga paga, negociada em parcelas ou não), e
+  na Luana os dois eventos são R$ 894,18 quitando o mês anterior. Os tipos
+  `acordo` e `atraso` continuam distintos no dado, porque a tabela de acordos
+  parcelados depende deles; os dois tiles viram um só, com a divisão na tooltip.
+  "Meses obs." vira "Meses", com a definição na tooltip.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — rodapé de totais na tabela de intermediação (2026-09-21)
+
+- **Ponto alterado:** a tabela de Intermediação ganha `<tfoot>` com base
+  comissionável, encargos, total recebido, comissão, % e repasse.
+- **Por quê:** a tabela não somava nada. O único total era a comissão no
+  cabeçalho da seção, e conferir a soma contra a planilha exigia somar à mão.
+- **Soma só o que tem efeito financeiro.** Linha pendente fica de fora (CA27.2),
+  mas não some em silêncio: a contagem vai na tooltip do "Total", com um ⚠ no
+  rótulo quando há pendente ou base não apurável.
+- **Base desconhecida não vira zero.** A célula mostra "-" e o rodapé soma só as
+  demais; nesse caso o **%** fica "—", porque a comissão somaria N linhas e a
+  base N-1, e a divisão mentiria para cima. Mesmo erro que o efetivo de
+  administração tinha nos Indicadores.
+- **Uma soma só:** `totalizarRecebimentos` vive no módulo canônico
+  (`lib/recebimentos-extraordinarios.ts`) e alimenta o cabeçalho e o rodapé. A
+  tela não recalcula por fora (CA27).
+- **Verificado** nos 7 fechamentos com intermediação de mai a ago/2026: a
+  identidade base + encargos = total recebido fecha em todos.
+- **Ainda não feito:** quebrar a coluna "Encargos" nos componentes da planilha
+  (IPTU, água, seguro). Depende do print da aba da cliente para replicar ordem e
+  nomes — os dados já existem em `ComponentesIntermediacao`.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — fecha a varredura de nomenclatura do drawer (2026-09-21)
+
+- **Ponto alterado:** no drawer do imóvel, a seção "Acordos parcelados" vira
+  **"Inadimplência parcelada"** e o título do card, antes "Acordo", vira
+  **"Inadimplência parcelada"** (ou **"Rescisão parcelada"** quando
+  `acordo.tipo === "rescisao"`).
+- **Por quê:** completa o pedido "dar uma revisada geral nas nomenclaturas". A
+  palavra "acordo" é jargão de quem lança o dado, não de quem lê a tela: para a
+  cliente o fato é dívida antiga sendo paga em parcelas.
+- **Por que aqui não é "Inadimplência paga"**, como no tile: o card descreve um
+  plano de pagamento que pode ter parcela **em aberto**. Dizer "paga" mentiria
+  enquanto houver parcela pendente — quem diz se quitou é o selo ao lado.
+- **Fora do escopo de propósito:** `components/acr/indicadores/tabs/view-receita.tsx`
+  ("Acordos recebidos", "Atrasos pagos"). É a aba "Conciliação financeira" que a
+  cliente pediu para remover (item 12 do mapa); renomear ali agora é trabalho
+  jogado fora.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — tabela de intermediação replica as colunas do documento (2026-09-21)
+
+- **Ponto alterado:** a tabela de Intermediação troca as colunas derivadas
+  "Base comissionável" e "Encargos" pelas colunas impressas no documento de
+  repasse: **Aluguel · Garagem · Água · IPTU · Seg. inc.**, seguidas de Total
+  recebido · Comissão interm. · % · Repasse.
+- **Por quê:** paridade com o documento de repasse da imobiliária, que é a fonte
+  (Arthur, 2026-09-21). As tabelas de Receitas por imóvel e de Acordos já
+  replicavam essas colunas; a de intermediação era a única que colapsava tudo em
+  duas derivações, e conferir contra o documento exigia abrir os dois lado a lado.
+- **Base e encargos não sumiram — viraram tooltip.** São derivação nossa, não
+  coluna do documento, e derivação mora em tooltip. Ficam nas linhas do `Hint`
+  do "Total" no rodapé, junto com a explicação de que a comissão incide só sobre
+  a base. O cabeçalho do "%" diz a mesma coisa em uma linha.
+- **Alinhamento à direita** nas colunas de dinheiro, como nas outras duas tabelas.
+- **Componente ausente continua "-", nunca zero.** E quando as colunas somam
+  menos que o total impresso, a diferença é declarada: ⚠ na célula do total da
+  linha, com a conta na tooltip, e uma linha no `Hint` do rodapé. Não virou
+  coluna nova porque o documento não tem uma — mas uma tabela que não fecha em
+  silêncio é pior que uma sobra declarada.
+- **Uma normalização só:** `componentesLinhaIntermediacao` vive no módulo
+  canônico e é a mesma que o rodapé soma (CA27). Ela reaproveita
+  `normalizarItemLegado`, então herda o fallback que lê `ÁGUA: R$ ...` da
+  observação quando o campo não veio estruturado.
+- **Verificado** nos 7 fechamentos com intermediação de mai a ago/2026: a
+  identidade colunas + sobra = total recebido fecha em todos. Três linhas
+  marcam ⚠ — Grand Castelão I ago/2026 (aptos 3 e 101, sobra R$ 47,60 cada) e
+  LOCMAIS mai/2026 (SALA 05, R$ 38,08).
+- **Pendente de confirmação no documento:** os R$ 47,60 de Castelão I batem
+  exatamente com a água da linha de jul/2026 do mesmo empreendimento, o que
+  indica que a extração de agosto perdeu a coluna ÁGUA. Falta um PDF de repasse
+  de Castelão I ago/2026 para confirmar e corrigir na extração.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — desconto da intermediação, conferido contra o documento (2026-09-21)
+
+- **Fonte:** `1. PRESTAÇÃO DE CONTAS LOCAÇÃO AGOSTO 20.pdf` (GRAND MESSEJANA II),
+  seção "INTERMEDIAÇÕES DE JULHO 2026". O "2. REPASSE ..." é só o comprovante
+  bancário do Inter; quem tem as colunas é a prestação de contas.
+- **Colunas do documento, na ordem impressa:** NOME · APTO · REAJUSTE · ALUGUEL ·
+  DESCONTO · ALUGUEL C/ DESCONTO · GARAGEM · ÁGUA · IPTU · SEG INC. · TOTAL ·
+  COMISSÃO · REPASSE · OBSERVAÇÃO · VENC. · CARÊNCIA. São as **mesmas** da seção
+  de vigência regular.
+- **Ponto alterado:** entram as colunas **Desconto** e **Aluguel c/ desc.**, e a
+  base comissionável passa a ser `aluguel c/ desconto + garagem`.
+- **Por que isso é correção, não cosmética:** `resolverBase` somava o aluguel
+  **cheio**. Numa linha com desconto a base ficaria maior que a real, e com ela
+  a comissão derivada do percentual e o % exibido. Nenhuma das 7 intermediações
+  já persistidas tem desconto, então nenhum número muda hoje — a verificação
+  contra o banco confirma os 7 inalterados. O erro era latente, não ativo.
+- **Precedência do líquido:** coluna impressa > aluguel − desconto > aluguel
+  cheio. Sem aluguel nenhum a base fica desconhecida e o item vira pendência,
+  nunca comissão sobre base inventada.
+- **Extração:** `desconto` e `aluguel_com_desconto` entram no JSON Schema dos
+  itens de `acordos_rescisoes_recebidos`. Análises já persistidas não têm os
+  campos — a coluna Desconto mostra "-" e `aluguel c/ desc.` cai no aluguel
+  cheio, que é o valor certo quando não houve desconto.
+- **Um centavo de propósito.** A linha TOTAL impressa diz IPTU 4,30, TOTAL
+  2.357,40 e REPASSE 1.067,40; o documento arredonda cada coluna por conta
+  própria. A soma exata é 4,29 / 2.357,39 / 1.067,39, e é ela que a tela mostra:
+  herdar o arredondamento do documento quebraria a identidade colunas = total.
+- **Colunas do documento ainda ausentes:** REAJUSTE, VENC. e CARÊNCIA. São
+  referência, não parcela da soma, e nenhuma está na extração. Ficam para
+  decisão do Arthur.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — o TOTAL impresso de cada seção vira conferência (2026-09-21)
+
+- **Ponto alterado:** a extração passa a copiar a linha **TOTAL** impressa ao pé
+  de cada seção (`totais_secoes`), e um recheck determinístico compara a nossa
+  soma das linhas contra ela, **coluna a coluna**.
+- **Por quê:** recalcular a soma das linhas é coerente consigo mesmo e não prova
+  nada. Se a extração perde uma coluna inteira, a nossa soma erra junto e o
+  fechamento passa — foi o que aconteceu no Grand Castelão I ago/2026, que
+  perdeu ÁGUA (R$ 47,60 por apto). O total impresso é a única testemunha externa.
+- **Coluna a coluna, não só o total:** se apenas o TOTAL fosse comparado, uma
+  água que sumiu da coluna mas entrou no total passaria.
+- **`null` é "esta seção não tem essa coluna", nunca zero.** O layout varia por
+  imobiliária e até por mês no mesmo empreendimento (Grand Maracanaú imprime
+  ENCARGOS e não tem ÁGUA; Grand Castelão teve LIXO até dez/2024). Conferir
+  contra zero acusaria divergência em documento correto.
+- **Tolerância proporcional às linhas.** A planilha guarda precisão cheia (a aba
+  do Castelão traz IPTU `3.676834725940346`) e imprime cada célula arredondada.
+  O TOTAL impresso soma os valores cheios; nós só enxergamos os impressos. Em 21
+  linhas a deriva chega a 7 centavos — tolerância fixa de um centavo acusaria
+  divergência num documento perfeitamente correto.
+- **Ausência não é aprovação.** Sem total impresso o recheck **não emite nada**.
+  Um "passed" ali afirmaria uma conferência que não aconteceu. Vale para os
+  layouts B e C, que não imprimem total por seção, e para análises persistidas
+  antes deste campo.
+- **Divergência bloqueia o parecer técnico** (`status: failed`), como qualquer
+  outro recheck determinístico. Só afeta análises novas.
+- **Exceção registrada na allowlist do CA27:** `prestacao-rechecks.ts` lê as
+  colunas **cruas**. Passar pelo resolvedor canônico inverteria o objetivo — ele
+  aplica fallbacks (água lida da observação, total derivado da base) que
+  reconstroem justamente o valor perdido, e a coluna faltante deixaria de
+  aparecer. Nenhum número daí alimenta tela ou persistência.
+- **Ainda não coberto:** o parser de Excel não popula `totais_secoes`, embora a
+  planilha traga a linha TOTAL de graça. Upload `.xlsx` segue sem conferência.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — colunas LIXO e ENCARGOS (2026-09-21)
+
+- **Ponto alterado:** entram `lixo` e `encargos` na extração (linhas regulares e
+  de acordos/intermediação) e duas colunas na tabela de Intermediação.
+- **Por quê:** são as duas colunas do documento que ainda não existiam em lugar
+  nenhum do sistema. **"coluna encargos" é o que o pedido original dizia** — é a
+  coluna do Grand Maracanaú, não o agregado derivado que a tabela mostrava antes.
+- **`ComponentesIntermediacao.encargosImpressos` ≠ `ComponentesRecebimento.encargos`.**
+  O primeiro é a coluna impressa do Maracanaú, um balde residual que soma no
+  TOTAL da linha; o segundo é derivado (tudo além de principal e garagem). O
+  nome longo existe para a colisão não passar despercebida em revisão.
+- **Nenhuma comissiona.** Lixo e encargos entram no total e no repasse, nunca na
+  base: a base segue sendo aluguel c/ desconto + garagem.
+- **Em acordos/rescisões/atrasos** as duas entram no `encargos` derivado, que já
+  significa "tudo que o TOTAL soma além de principal e garagem".
+- **`null` é ausência de coluna, nunca zero.** Uma linha sem lixo não zera a
+  coluna de lixo das outras no rodapé.
+- **O recheck de seção confere as duas.** Documento que imprime ENCARGOS e
+  extração que não o captura passa a acusar divergência.
+- **Sem regressão:** os 7 fechamentos com intermediação saem com números
+  idênticos; `lixo` e `encargos` vêm `null` nas análises já persistidas, o que é
+  o estado correto até reprocessamento.
+- **Ainda não feito:** a tabela "Receitas por imóvel" não ganhou as colunas,
+  embora os campos passem a ser extraídos também para as linhas regulares.
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — Excel, "Outros" nas receitas, aluguel potencial e barra empilhada (2026-09-21)
+
+**1. Parser de Excel popula `totais_secoes`.** `locateTable` já usava a linha
+TOTAL como critério de parada; agora também a devolve, e `buildTotalSecao` a lê
+pelo mesmo mapa de cabeçalho que leu as linhas. Verificado contra a planilha real
+do Grand Castelão em 4 competências e 2 layouts (dez/2024 com LIXO, jan/2025 em
+diante sem): 12 rechecks, todos passando.
+
+- **Correção do que eu havia afirmado:** a conferência pelo Excel **não é
+  exata**. O parser lê os valores *exibidos* (decisão antiga e deliberada),
+  enquanto a célula TOTAL é fórmula sobre os valores cheios. No GM II a deriva é
+  de 5 centavos em 27 linhas. A mesma tolerância proporcional cobre.
+- **Prova do valor:** removendo a coluna ÁGUA das linhas do Castelão jul/2026, o
+  recheck acusa `água (documento R$ 47,60, linhas R$ 0,00)` e o parecer bloqueia
+  — exatamente a falha de ago/2026.
+
+**2. LIXO e ENCARGOS nas linhas regulares vão para `outros_recebimentos`, não
+para campos próprios.** Correção de um erro do ciclo anterior: `outros_recebimentos`
+já era a casa de ENCARGOS desde 2026-09-02 e **entra na base da comissão**
+(`commissionBaseComponents`), com medição registrada (João Cordeiro jun/2026).
+Um campo paralelo teria criado dupla contagem ou perda silenciosa da base. Os
+campos `lixo`/`encargos` ficam só nas seções de intermediação e acordos, que não
+têm `outros_recebimentos`.
+
+**3. Coluna "Outros" na tabela Receitas por imóvel.** O valor entrava na base da
+comissão e não aparecia em lugar nenhum da tela.
+
+**4. "Aluguel contratado" → "Aluguel potencial"** em toda a superfície de
+Indicadores e no relatório. O cabeçalho do CSV (`aluguel_contratado`) **não**
+mudou: é contrato de exportação e renomear quebraria planilhas da cliente em
+silêncio.
+
+**5. Barra empilhada no lugar da linha de teto.** Uma barra por mês que sobe até
+o aluguel potencial — verde o recebido, cinza o não realizado. A linha some.
+
+- **O cinza é `potencial − recebido`, com piso em zero** (recebido acima do
+  potencial existe: atraso recuperado no mês) e `null` quando falta qualquer um
+  dos dois, para não afirmar perda que ninguém apurou.
+- **O tooltip explica o cinza com quatro parcelas, não duas.** A identidade que
+  o sistema já verifica (`serie_realizacao_do_ponto`) é potencial − vacância −
+  inadimplência − descontos + ajustes = recebido. Listar só vacância e
+  inadimplência deixaria o bloco maior que a explicação dele em todo mês com
+  desconto.
+- **Vacância e inadimplência saíram do gráfico e ficaram no tooltip**, conforme
+  o pedido ("a parte que não foi recebida em cinza"). É perda de informação na
+  primeira leitura — registrada aqui para a cliente poder pedir de volta.
+- **Sem verificação visual:** a aplicação está atrás de login.
+
+- **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.

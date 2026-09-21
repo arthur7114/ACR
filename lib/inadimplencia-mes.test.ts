@@ -1,6 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { ehInadimplenteDoMes, receitaEsperadaInadimplente, type SnapshotReceita } from "./inadimplencia-mes.ts"
+import {
+  ehInadimplenteDoMes,
+  receitaEsperadaInadimplente,
+  resumirInadimplencia,
+  type SnapshotInadimplente,
+  type SnapshotReceita,
+} from "./inadimplencia-mes.ts"
 
 test("detecta inadimplente do mes pelo marcador INADIMPLENCIA da observacao", () => {
   assert.equal(ehInadimplenteDoMes({ observacao: "INADIMPLÊNCIA" }), true)
@@ -71,4 +77,75 @@ test("aluguel de cadastro em zero nao vira inadimplencia de R$ 0,00: fica descon
   // Cobranca esperada em zero (vigencia migrada) e o mesmo placeholder.
   assert.equal(receitaEsperadaInadimplente([], 500, 0), 500)
   assert.equal(receitaEsperadaInadimplente([], 0, 0), null)
+})
+
+
+// Cenario real Luana, apto 7 GM II (queixa de set/2026: "consta 3
+// inadimplencias mas atualmente so tem 1 em aberto"). Junho foi pago em julho
+// e julho foi pago em agosto; so agosto segue devendo.
+const LUANA: SnapshotInadimplente[] = [
+  { competencia: "2026-05-01", statusOcupacao: "ocupado", cobrancaEsperada: 716.31, aluguelEsperado: 716.31, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  { competencia: "2026-06-01", statusOcupacao: "inadimplente", cobrancaEsperada: 741.31, aluguelEsperado: 716.31, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  { competencia: "2026-07-01", statusOcupacao: "inadimplente", cobrancaEsperada: 741.31, aluguelEsperado: 716.31, atrasosRecuperados: 894.18, atrasosCompetenciaOrigem: "2026-06-01" },
+  { competencia: "2026-08-01", statusOcupacao: "inadimplente", cobrancaEsperada: 741.31, aluguelEsperado: 716.31, atrasosRecuperados: 894.18, atrasosCompetenciaOrigem: "2026-07-01" },
+]
+
+test("separa inadimplencia em aberto de inadimplencia ja quitada", () => {
+  const r = resumirInadimplencia(LUANA)
+  assert.equal(r.meses, 3)
+  assert.equal(r.quitadas, 2)
+  assert.equal(r.emAberto, 1)
+  assert.deepEqual(r.competenciasEmAberto, ["2026-08-01"])
+  assert.equal(r.valorEmAberto, 741.31)
+})
+
+test("mes quitado no proprio mes seguinte nao conta duas vezes", () => {
+  // Dois pagamentos apontando para a MESMA competencia quitam uma divida so.
+  const r = resumirInadimplencia([
+    { competencia: "2026-06-01", statusOcupacao: "inadimplente", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+    { competencia: "2026-07-01", statusOcupacao: "ocupado", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: 350, atrasosCompetenciaOrigem: "2026-06-01" },
+    { competencia: "2026-08-01", statusOcupacao: "ocupado", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: 350, atrasosCompetenciaOrigem: "2026-06-01" },
+  ])
+  assert.equal(r.meses, 1)
+  assert.equal(r.quitadas, 1)
+  assert.equal(r.emAberto, 0)
+  assert.equal(r.valorEmAberto, 0)
+})
+
+test("pagamento ANTERIOR a divida nao a quita", () => {
+  // Atraso recuperado em maio nao pode quitar a inadimplencia de junho: quitar
+  // uma divida que ainda nao existia e erro de atribuicao, nao adiantamento.
+  const r = resumirInadimplencia([
+    { competencia: "2026-05-01", statusOcupacao: "ocupado", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: 700, atrasosCompetenciaOrigem: "2026-06-01" },
+    { competencia: "2026-06-01", statusOcupacao: "inadimplente", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  ])
+  assert.equal(r.emAberto, 1)
+  assert.equal(r.valorEmAberto, 700)
+})
+
+test("sem base de calculo o valor em aberto e desconhecido, nunca R$ 0,00", () => {
+  // Mesma regra de `receitaEsperadaInadimplente`: zero afirmaria que a unidade
+  // inadimplente nao devia nada. Contagem continua sendo exibida.
+  const r = resumirInadimplencia([
+    { competencia: "2026-06-01", statusOcupacao: "inadimplente", cobrancaEsperada: null, aluguelEsperado: null, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  ])
+  assert.equal(r.emAberto, 1)
+  assert.equal(r.valorEmAberto, null)
+})
+
+test("cobranca esperada vence o aluguel esperado na soma em aberto", () => {
+  // A cobranca inclui a vaga; o aluguel sozinho subestima (conserto de set/2026).
+  const r = resumirInadimplencia([
+    { competencia: "2026-08-01", statusOcupacao: "inadimplente", cobrancaEsperada: 741.31, aluguelEsperado: 716.31, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  ])
+  assert.equal(r.valorEmAberto, 741.31)
+})
+
+test("unidade sem inadimplencia devolve zero em aberto, nao desconhecido", () => {
+  const r = resumirInadimplencia([
+    { competencia: "2026-08-01", statusOcupacao: "ocupado", cobrancaEsperada: 700, aluguelEsperado: 700, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+  ])
+  assert.equal(r.meses, 0)
+  assert.equal(r.emAberto, 0)
+  assert.equal(r.valorEmAberto, 0)
 })

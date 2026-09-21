@@ -30,6 +30,14 @@ const ALLOWLIST = new Set([
   // Verificador read-only da equação do repasse sobre o estado persistido:
   // lê os itens do JSON e resolve a comissão por resolverRecebimentosLegados.
   "scripts/verify-reconciliacao-repasse.ts",
+  // Conferência contra o TOTAL impresso: lê as colunas CRUAS de propósito.
+  // Passar pelo resolvedor canônico aqui inverteria o objetivo do recheck — ele
+  // aplica fallbacks (água lida da observação, total derivado da base) que
+  // reconstroem justamente o valor que a extração perdeu, e a coluna faltante
+  // deixaria de aparecer. É o único lugar do sistema que precisa enxergar o
+  // dado como ele chegou. Nenhum número daqui alimenta tela ou persistência:
+  // a saída é um PrestacaoRecheck de status.
+  "lib/server/prestacao-rechecks.ts",
   // Usos não financeiros (eventos de rescisão, dedup, chaves, sincronização)
   // Classificação de unidade: lê apenas `tipo` e `apto` da seção de
   // intermediações para saber QUAIS unidades são intermediadas. Nenhum valor

@@ -27,6 +27,8 @@ import {
   aguaDeclarada,
   resolverRecebimentoLegado,
   resolverRecebimentosLegados,
+  totalizarRecebimentos,
+  componentesLinhaIntermediacao,
 } from "@/lib/recebimentos-extraordinarios"
 import { contarVagasDeTexto } from "@/lib/vagas"
 import { classificarLancamento } from "@/lib/despesas-locador"
@@ -68,6 +70,25 @@ import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
+
+// Colunas de dinheiro da tabela de intermediação — alinhadas à direita, como
+// nas tabelas de receitas e de acordos.
+const COLUNAS_NUMERICAS_INTERMEDIACAO = new Set([
+  "Aluguel",
+  "Desconto",
+  "Aluguel c/ desc.",
+  "Garagem",
+  "Água",
+  "IPTU",
+  "Seg. inc.",
+  "Lixo",
+  "Encargos",
+  "Total recebido",
+  "Comissão interm.",
+  "%",
+  "Repasse",
+])
+
 
 type StatusEvento = {
   id: string
@@ -398,12 +419,13 @@ function sumRows(rows: ReceitaPorImovel[]) {
       agua: totals.agua + (row.agua ?? 0),
       iptu: totals.iptu + (row.iptu ?? 0),
       seguro: totals.seguro + (row.seguro_incendio ?? 0),
+      outros: totals.outros + (row.outros_recebimentos ?? 0),
       total: totals.total + row.total,
       totalComDesconto: totals.totalComDesconto + getTotalComDesconto(row),
       comissao: totals.comissao + (row.comissao ?? 0),
       repasse: totals.repasse + (row.repasse ?? 0),
     }),
-    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, total: 0, totalComDesconto: 0, comissao: 0, repasse: 0 },
+    { aluguel: 0, aluguelComDesconto: 0, garagem: 0, vagas: 0, agua: 0, iptu: 0, seguro: 0, outros: 0, total: 0, totalComDesconto: 0, comissao: 0, repasse: 0 },
   )
 }
 
@@ -778,7 +800,9 @@ export function RevisaoView({
   const acordosRepasseTotal = acordosResolvidos.reduce((sum, { financeiro }) => sum + financeiro.repasse, 0)
   // Total da intermediacao (taxa retida) e seu percentual, quando houver.
   const intermediacoesResolvidas = resolverRecebimentosLegados(intermediacoes)
-  const intermediacaoValor = intermediacoesResolvidas.reduce((sum, { financeiro }) => sum + financeiro.comissao, 0)
+  // Uma soma so, do modulo canonico, para o cabecalho e para o rodape da tabela.
+  const intermediacaoTotais = totalizarRecebimentos(intermediacoes)
+  const intermediacaoValor = intermediacaoTotais.comissao
   const intermediacaoPercent = (() => {
     for (const { financeiro } of intermediacoesResolvidas) {
       if (financeiro.percentualRealizado !== null) return financeiro.percentualRealizado
@@ -1371,22 +1395,29 @@ export function RevisaoView({
             <span className="text-[13px] font-semibold text-[#0F766E] tabular-nums">{formatBRL(intermediacaoValor)}</span>
           </div>
           <div className="max-h-[320px] overflow-auto">
-            <table className="w-full min-w-[1180px] text-sm">
+            <table className="w-full min-w-[1820px] text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
                   {[
                     { label: "Apto" },
                     { label: "Inquilino" },
-                    { label: "Base comissionável", title: "Componentes comissionáveis da linha: aluguel + garagem (CA14.2)" },
-                    { label: "Encargos", title: "IPTU, água, seguro e outros encargos — compõem o total e o repasse, não a base" },
-                    { label: "Total recebido" },
+                    { label: "Aluguel", title: "Coluna ALUGUEL da linha no documento — valor cheio" },
+                    { label: "Desconto", title: "Coluna DESCONTO da linha" },
+                    { label: "Aluguel c/ desc.", title: "Coluna ALUGUEL C/ DESCONTO — é este valor que soma no total e sobre o qual a comissão incide" },
+                    { label: "Garagem", title: "Coluna GARAGEM da linha" },
+                    { label: "Água", title: "Coluna ÁGUA da linha" },
+                    { label: "IPTU", title: "Coluna IPTU da linha" },
+                    { label: "Seg. inc.", title: "Seguro incêndio da linha" },
+                    { label: "Lixo", title: "Coluna LIXO — só algumas imobiliárias imprimem" },
+                    { label: "Encargos", title: "Coluna ENCARGOS impressa no documento (Grand Maracanaú) — não é a soma derivada de água, IPTU e seguro" },
+                    { label: "Total recebido", title: "Total impresso na linha — é o que soma nos totais" },
                     { label: "Comissão interm.", title: "Comissão de intermediação" },
-                    { label: "%" },
+                    { label: "%", title: "Comissão sobre a base comissionável (aluguel c/ desconto + garagem), não sobre o total" },
                     { label: "Repasse" },
                     { label: "Competência" },
                     { label: "Obs", title: "Observação" },
                   ].map(({ label, title }) => (
-                    <th key={label} title={title} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
+                    <th key={label} title={title} className={`px-4 py-3 text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E] ${COLUNAS_NUMERICAS_INTERMEDIACAO.has(label) ? "text-right" : "text-left"}`}>
                       {label}
                     </th>
                   ))}
@@ -1400,7 +1431,7 @@ export function RevisaoView({
                       <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 bg-[#FFFBEB]">
                         <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                         <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                        <td className="px-4 py-3" colSpan={6}>
+                        <td className="px-4 py-3" colSpan={13}>
                           <span className="inline-flex items-center rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]" title={resolucao.pendencia.descricao}>
                             Pendente — sem efeito financeiro
                           </span>
@@ -1410,25 +1441,98 @@ export function RevisaoView({
                       </tr>
                     )
                   }
-                  const encargos = resolucao.baseComissionavel === null
-                    ? null
-                    : Math.round((resolucao.totalRecebido - resolucao.baseComissionavel) * 100) / 100
+                  const componentes = componentesLinhaIntermediacao(item, resolucao.totalRecebido)
+                  // Sobra maior que um centavo: as colunas nao explicam o total
+                  // impresso (agua ausente da extracao, tipicamente). A celula
+                  // do total marca ⚠ em vez de a tabela nao fechar em silencio.
+                  const sobra = Math.abs(componentes.naoDetalhado) > 0.01 ? componentes.naoDetalhado : null
                   return (
                     <tr key={`interm-${item.apto}-${item.inquilino}-${index}`} className="border-b border-[#EEF1EE] last:border-0 hover:bg-[#F0FDFA]">
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.apto ?? "-"}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.inquilino ?? "-"}</td>
-                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{resolucao.baseComissionavel !== null ? formatBRL(resolucao.baseComissionavel) : "-"}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{encargos !== null ? formatBRL(encargos) : "-"}</td>
-                      <td className="px-4 py-3 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(resolucao.totalRecebido)}</td>
-                      <td className="px-4 py-3 tabular-nums font-semibold text-[#0F766E]">{formatBRL(resolucao.comissao)}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatPercent(resolucao.percentualRealizado)}</td>
-                      <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{formatBRL(resolucao.repasse)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.aluguel !== null ? formatBRL(componentes.aluguel) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.desconto !== null ? formatBRL(componentes.desconto) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]">{componentes.aluguelComDesconto !== null ? formatBRL(componentes.aluguelComDesconto) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.garagem !== null ? formatBRL(componentes.garagem) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.agua !== null ? formatBRL(componentes.agua) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.iptu !== null ? formatBRL(componentes.iptu) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.seguro !== null ? formatBRL(componentes.seguro) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.lixo !== null ? formatBRL(componentes.lixo) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{componentes.encargos !== null ? formatBRL(componentes.encargos) : "-"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-medium text-[#1A2B1C]" title={sobra !== null ? `As colunas somam ${formatBRL(resolucao.totalRecebido - sobra)}; o documento imprime ${formatBRL(resolucao.totalRecebido)}. Diferença de ${formatBRL(sobra)} sem componente informado — quase sempre a água, que não veio estruturada.` : undefined}>
+                        {formatBRL(resolucao.totalRecebido)}
+                        {sobra !== null && <span className="ml-1 text-[11px] font-medium text-[#92400E]">⚠</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#0F766E]">{formatBRL(resolucao.comissao)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatPercent(resolucao.percentualRealizado)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-[#3D4F3F]">{formatBRL(resolucao.repasse)}</td>
                       <td className="px-4 py-3 text-[#3D4F3F]">{item.competencia_recebimento ?? item.competencia_original ?? competencia}</td>
                       <td className="max-w-[320px] px-4 py-3 text-[12px] leading-snug text-[#6B7F6E]">{item.observacao ?? "-"}</td>
                     </tr>
                   )
                 })}
               </tbody>
+              {/* Rodape pedido pela cliente (set/2026): a tabela nao somava nada,
+                  e o unico total era a comissao no cabecalho da secao. Soma so o
+                  que tem efeito financeiro; pendente e base desconhecida sao
+                  declaradas na tooltip em vez de sumirem. */}
+              <tfoot>
+                <tr className="border-t border-[#99F6E4] bg-[#F0FDFA] font-semibold text-[#1A2B1C]">
+                  <td className="px-4 py-3" colSpan={2}>
+                    <Hint
+                      lines={[
+                        `${intermediacaoTotais.linhas} ${intermediacaoTotais.linhas === 1 ? "intermediação somada" : "intermediações somadas"}.`,
+                        intermediacaoTotais.pendentes > 0
+                          ? `${intermediacaoTotais.pendentes} pendente${intermediacaoTotais.pendentes === 1 ? "" : "s"} fora do total — sem efeito financeiro até a revisão.`
+                          : null,
+                        intermediacaoTotais.basesDesconhecidas > 0
+                          ? `${intermediacaoTotais.basesDesconhecidas} sem base comissionável apurável, e por isso o % fica “—”.`
+                          : null,
+                        intermediacaoTotais.baseComissionavel !== null
+                          ? `Base comissionável (aluguel c/ desconto + garagem): ${formatBRL(intermediacaoTotais.baseComissionavel)}. A comissão incide só sobre ela.`
+                          : null,
+                        intermediacaoTotais.encargos !== null
+                          ? `Tudo fora da base (água, IPTU, seguro, lixo e a coluna ENCARGOS): ${formatBRL(intermediacaoTotais.encargos)}. Compõe o total e o repasse, não a base.`
+                          : null,
+                        Math.abs(intermediacaoTotais.componentes.naoDetalhado) > 0.01
+                          ? `${formatBRL(intermediacaoTotais.componentes.naoDetalhado)} do total não tem coluna informada — as linhas com ⚠ no total. Quase sempre é a água, que nem sempre vem estruturada no documento.`
+                          : null,
+                      ]}
+                      label="Detalhe dos totais de intermediação"
+                    >
+                      <span>Total</span>
+                      {(intermediacaoTotais.pendentes > 0
+                        || intermediacaoTotais.basesDesconhecidas > 0
+                        || Math.abs(intermediacaoTotais.componentes.naoDetalhado) > 0.01) && (
+                        <span className="ml-1.5 text-[11px] font-medium text-[#92400E]">⚠</span>
+                      )}
+                    </Hint>
+                  </td>
+                  {([
+                    intermediacaoTotais.componentes.aluguel,
+                    intermediacaoTotais.componentes.desconto,
+                    intermediacaoTotais.componentes.aluguelComDesconto,
+                    intermediacaoTotais.componentes.garagem,
+                    intermediacaoTotais.componentes.agua,
+                    intermediacaoTotais.componentes.iptu,
+                    intermediacaoTotais.componentes.seguro,
+                    intermediacaoTotais.componentes.lixo,
+                    intermediacaoTotais.componentes.encargos,
+                  ] as Array<number | null>).map((valor, indice) => (
+                    <td key={`interm-total-${indice}`} className="px-4 py-3 text-right tabular-nums">
+                      {valor !== null ? formatBRL(valor) : "-"}
+                    </td>
+                  ))}
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(intermediacaoTotais.totalRecebido)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-[#0F766E]">{formatBRL(intermediacaoTotais.comissao)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {intermediacaoTotais.percentual !== null ? formatPercent(intermediacaoTotais.percentual) : "-"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">{formatBRL(intermediacaoTotais.repasse)}</td>
+                  <td className="px-4 py-3"></td>
+                  <td className="px-4 py-3"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </section>
@@ -1483,6 +1587,7 @@ export function RevisaoView({
                   { label: "Água" },
                   { label: "IPTU" },
                   { label: "Seg. inc.", title: "Seguro incêndio" },
+                  { label: "Outros", title: "Colunas de receita do locador que só algumas imobiliárias imprimem — ENCARGOS (Grand Maracanaú) e LIXO (Grand Castelão). Entram na base da comissão." },
                   { label: "Total" },
                   { label: "Comissão" },
                   { label: "Repasse" },
@@ -1548,6 +1653,7 @@ export function RevisaoView({
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.agua !== null ? formatBRL(row.agua) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.iptu !== null ? formatBRL(row.iptu) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.seguro_incendio !== null ? formatBRL(row.seguro_incendio) : "-"}</td>
+                    <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{typeof row.outros_recebimentos === "number" ? formatBRL(row.outros_recebimentos) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums font-medium text-[#1A2B1C]">{formatBRL(row.total)}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.comissao !== null ? formatBRL(row.comissao) : "-"}</td>
                     <td className="px-4 py-3.5 tabular-nums text-[#3D4F3F]">{row.repasse !== null ? formatBRL(row.repasse) : "-"}</td>
@@ -1563,7 +1669,7 @@ export function RevisaoView({
                 })
               ) : (
                 <tr>
-                  <td colSpan={14} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
+                  <td colSpan={15} className="px-4 py-8 text-center text-[13px] text-[#6B7F6E]">Nenhum imóvel encontrado para os filtros atuais.</td>
                 </tr>
               )}
             </tbody>
@@ -1579,6 +1685,7 @@ export function RevisaoView({
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.agua)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.iptu)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.seguro)}</td>
+                <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.outros)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.total)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.comissao)}</td>
                 <td className="px-4 py-3 tabular-nums">{formatBRL(rowTotalsExibicao.repasse)}</td>

@@ -1,6 +1,7 @@
 import { createSupabaseAdmin } from "./supabase"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
+import { resumirInadimplencia, type SnapshotInadimplente } from "@/lib/inadimplencia-mes"
 import type { PackageAnalysis, ReceitaPorImovel, AcordoRescisaoRecebido } from "@/lib/prestacao-types"
 import type {
   EventoImovel,
@@ -135,6 +136,12 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     (a, b) => b.competencia.localeCompare(a.competencia) || ordemTipo[a.tipo] - ordemTipo[b.tipo],
   )
 
+  // Saldo em aberto vem do SNAPSHOT, nao da linha do tempo. A quitacao ja esta
+  // resolvida la (`atrasos_competencia_origem`) e a cobranca esperada e a mesma
+  // base que Revisao e Indicadores usam (CA-IND26) — recalcular aqui criaria uma
+  // terceira leitura da mesma divida.
+  const inadimplencia = await resumirInadimplenciaDaUnidade(supabase, query.empreendimentoId, alvo)
+
   const inquilinos = derivarInquilinos(eventos)
   const mensais = eventos.filter((e) => e.tipo === "pago" || e.tipo === "inadimplente" || e.tipo === "vago")
   const mesesObservados = new Set(mensais.map((e) => e.competencia)).size
@@ -143,7 +150,11 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
   const resumo = {
     mesesObservados,
     mesesPago: mensais.filter((e) => e.tipo === "pago").length,
-    mesesInadimplente: mensais.filter((e) => e.tipo === "inadimplente").length,
+    mesesInadimplente: inadimplencia.meses,
+    inadimplenciasEmAberto: inadimplencia.emAberto,
+    inadimplenciasQuitadas: inadimplencia.quitadas,
+    competenciasEmAberto: inadimplencia.competenciasEmAberto,
+    valorEmAberto: inadimplencia.valorEmAberto,
     mesesVago: mensais.filter((e) => e.tipo === "vago").length,
     acordos: eventos.filter((e) => e.tipo === "acordo").length,
     rescisoes: eventos.filter((e) => e.tipo === "rescisao").length,
@@ -227,6 +238,44 @@ function derivarInquilinos(eventos: EventoImovel[]): InquilinoPeriodo[] {
     .sort((a, b) => b.ultimaCompetencia.localeCompare(a.ultimaCompetencia))
 }
 
+
+// Le os snapshots da unidade e devolve o saldo em aberto. Sem snapshot (unidade
+// fora do cadastro ou competencias nao materializadas) devolve o resumo vazio —
+// zero em aberto e desconhecido, nunca uma divida inventada.
+async function resumirInadimplenciaDaUnidade(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  empreendimentoId: string,
+  alvo: string,
+) {
+  const { data: imoveis, error: erroImoveis } = await supabase
+    .from("imoveis")
+    .select("id, unidade")
+    .eq("empreendimento_id", empreendimentoId)
+  if (erroImoveis) throw erroImoveis
+  const imovel = (imoveis ?? []).find((row) => aptoKey(row.unidade) === alvo)
+  if (!imovel) return resumirInadimplencia([])
+
+  const { data, error } = await supabase
+    .from("imovel_competencias")
+    .select(
+      "competencia, status_ocupacao, cobranca_esperada, aluguel_esperado, atrasos_recuperados, atrasos_competencia_origem",
+    )
+    .eq("imovel_id", imovel.id)
+    .order("competencia", { ascending: true })
+  if (error) throw error
+
+  const snapshots: SnapshotInadimplente[] = (data ?? []).map((row) => ({
+    competencia: String(row.competencia).slice(0, 10),
+    statusOcupacao: row.status_ocupacao ?? null,
+    cobrancaEsperada: numOrNull(row.cobranca_esperada),
+    aluguelEsperado: numOrNull(row.aluguel_esperado),
+    atrasosRecuperados: numOrNull(row.atrasos_recuperados),
+    atrasosCompetenciaOrigem: row.atrasos_competencia_origem
+      ? String(row.atrasos_competencia_origem).slice(0, 10)
+      : null,
+  }))
+  return resumirInadimplencia(snapshots)
+}
 
 // Uma vigencia nova com aluguel contratado diferente da anterior e um reajuste.
 // Vigencia migrada do cadastro ("Cadastro de imoveis migrado") nao tem

@@ -1775,6 +1775,93 @@ test("cobranca esperada sem garagem contratada e o proprio aluguel, nunca inferi
   assert.equal(row.cobranca_esperada, 700)
 })
 
+test("vaga observada entra na cobranca esperada quando a vigencia nao a declara", () => {
+  // Grand Messejana II, apto 7, ago/2026: a vaga de moto custa R$ 25,00 e foi
+  // paga todo mes ate a unidade ficar inadimplente ("VAGA DE GARAGEM PARA MOTO"
+  // na observacao, garagem_recebida 25,00 em maio). O cadastro foi migrado sem
+  // `garagem_contratada`, e o `?? 0` cobrava o inadimplente so pelo aluguel:
+  // 716,31 em vez de 741,31. Medido em set/2026: 49 dos 56 imoveis com vaga
+  // observada estao sem a vaga na vigencia.
+  //
+  // A vaga observada em mes PAGO e evidencia do documento, nao inferencia do
+  // cadastro — a mesma precedencia que `receitaEsperadaInadimplente` ja usa ao
+  // recorrer ao ultimo mes pago.
+  const { rows } = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "gm2-7",
+        unit: "7",
+        expectedRent: 716.31,
+        garagemContratada: null,
+        garagemObservada: 25,
+        revenueModel: "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária X",
+        developmentName: "Grand Messejana II",
+      },
+    ],
+    fechamentoId: "gm2-agosto",
+    competencia: "2026-08",
+    analysis: prestacaoFixture({
+      receita: { apto: "7", inquilino: "Inquilino", aluguel: 0, total: 0, observacao: "INADIMPLÊNCIA" },
+    }),
+  })
+
+  assert.equal(rows[0]?.status_ocupacao, "inadimplente")
+  assert.equal(rows[0]?.cobranca_esperada, 741.31)
+})
+
+test("garagem contratada da vigencia vence a observada", () => {
+  // A vaga observada e so o ultimo recurso. Quando o contrato diz o valor, e o
+  // contrato que manda — inclusive quando um reajuste ja mudou a vaga e o mes
+  // anterior ainda traz o valor antigo.
+  const { rows } = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "x-204",
+        unit: "10",
+        expectedRent: 414.86,
+        garagemContratada: 52.07,
+        garagemObservada: 25,
+        revenueModel: "fixo",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária X",
+        developmentName: "Residencial X",
+      },
+    ],
+    fechamentoId: "x-julho",
+    competencia: "2026-07",
+    analysis: prestacaoFixture({ receita: { inquilino: "Inquilino", aluguel: 414.86, total: 466.93 } }),
+  })
+
+  assert.equal(rows[0]?.cobranca_esperada, 466.93)
+})
+
+test("receita variavel ignora a vaga observada", () => {
+  // Locacao por app nao tem cobranca esperada; somar vaga aqui inventaria um
+  // teto que o contrato nao promete.
+  const { rows } = buildIndicadoresSnapshotRows({
+    properties: [
+      {
+        id: "app-1",
+        unit: "1",
+        expectedRent: null,
+        garagemContratada: null,
+        garagemObservada: 25,
+        revenueModel: "variavel",
+        expectedRentSource: "vigencia",
+        realEstateAgencyName: "Imobiliária X",
+        developmentName: "Residencial X",
+      },
+    ],
+    fechamentoId: "app-julho",
+    competencia: "2026-07",
+    analysis: prestacaoFixture({ receita: { inquilino: "AIRBNB", aluguel: 0, total: 0 } }),
+  })
+
+  assert.equal(rows[0]?.cobranca_esperada, null)
+})
+
 test("receita variavel nao tem cobranca esperada", () => {
   const row = statusFor(
     prestacaoFixture({ receita: { inquilino: "AIRBNB", aluguel: 0, total: 0 } }),
