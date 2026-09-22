@@ -3501,3 +3501,24 @@ Restaurado na re-execução com os mesmos números (3.348,52 / 0 / 267,88 /
 explicitamente. O RPC também APAGA as movimentações não-manuais antes de
 reinserir — por isso elas são reconstruídas e repassadas; snapshots são upsert e
 ficam intocados com `null`.
+
+## Feedback de 22/09/2026
+
+### Indicadores — aluguel potencial sem marca na barra
+
+Grand Messejana I ago/2026: "aluguel potencial não está aparecendo na barra". O
+potencial só existia no tooltip, como uma linha com traço de cor que não
+correspondia a nada no gráfico; a legenda dizia "a barra inteira é o aluguel
+potencial". Agora cada barra tem uma marca no valor do potencial e o rótulo
+compacto acima (16 mil em ago/2026 = R$ 15.992,86). A marca fica no potencial,
+não no topo da pilha: se uma parcela vier sem dado, o vão até a marca aparece
+em vez de o teto descer junto. No tooltip o potencial virou cabeçalho, separado
+das parcelas.
+
+### Mapa — uma legenda por vez
+
+"A legenda ficou com muita informação": a correção de 21/09 empilhava a
+legenda das faixas do empreendimento e a dos estados do apartamento, mais uma
+frase explicativa. Agora é uma por vez — fechado, as faixas; com um
+empreendimento aberto, os estados do apartamento. A frase saiu; o detalhe de
+quanto faltou continua no tooltip de cada célula.
