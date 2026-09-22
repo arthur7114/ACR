@@ -566,63 +566,46 @@ function heatTone(value: number | null): string {
   return "acr-heat-q5"
 }
 
-// Duas legendas porque sao duas leituras. A rampa vale para a linha do
-// empreendimento, que e um agregado (percentual de unidades em risco). O
-// apartamento nao tem escala: tem estado. Enquanto a legenda era uma so, o
-// cliente lia a faixa de percentual e tentava aplica-la aos aptos abaixo
-// (2026-09-21: "essa legenda nao esta correspondente aos apartamentos").
+// Duas leituras, duas legendas. A rampa vale para a linha do empreendimento,
+// que e um agregado (percentual de unidades em risco). O apartamento nao tem
+// escala: tem estado (2026-09-21: "essa legenda nao esta correspondente aos
+// apartamentos").
+//
+// Mas uma por vez (22/09: "a legenda ficou com muita informacao"). Com um
+// empreendimento aberto, o que se le sao os apartamentos, e a legenda e a
+// deles; fechado, e a das faixas. A faixa do empreendimento aberto continua
+// explicada no tooltip da propria celula.
 function HeatLegend({ metric, expandido }: { metric: HeatMetric; expandido: boolean }) {
   const ranges = ["0–1%", "1–10%", "10–25%", "25–50%", "50–75%", "75%+"]
+  const item = (tone: string, label: string, check = false) => (
+    <span key={label} className="inline-flex items-center gap-1.5">
+      <span aria-hidden="true" className={cn("inline-flex size-3 items-center justify-center rounded-sm", tone)}>
+        {check && <Check className="size-2.5" />}
+      </span>
+      {label}
+    </span>
+  )
+  const semDado = item(cn(UNIT_TONE.semDado, "ring-1 ring-inset ring-acr-line-2"), "sem dado")
 
   return (
-    <div className="space-y-3 border-t border-acr-line px-5 py-4 text-[11px] text-acr-muted-2 sm:px-6">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span className="font-semibold text-acr-ink">
-          Empreendimento — {metric === "inad" ? "unidades inadimplentes" : "unidades vagas"}
-        </span>
-        {ranges.map((range, index) => (
-          <span key={range} className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className={`size-3 rounded-sm acr-heat-q${index}`} /> {range}
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-acr-line px-5 py-4 text-[11px] text-acr-muted-2 sm:px-6">
+      {expandido ? (
+        <>
+          <span className="font-semibold text-acr-ink">Apartamento</span>
+          {metric === "inad"
+            ? [item(UNIT_TONE.honrado, "pagou"), item(UNIT_TONE.honrado, "quitou depois", true), item(UNIT_TONE.emAberto, "em aberto")]
+            : item(UNIT_TONE.honrado, "ocupado")}
+          {item(UNIT_TONE.vago, "vago")}
+          {semDado}
+        </>
+      ) : (
+        <>
+          <span className="font-semibold text-acr-ink">
+            {metric === "inad" ? "Unidades inadimplentes" : "Unidades vagas"}
           </span>
-        ))}
-        <span className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.semDado, "ring-1 ring-inset ring-acr-line-2")} /> sem dado
-        </span>
-      </div>
-
-      {expandido && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="font-semibold text-acr-ink">Apartamento — estado do mês</span>
-          {metric === "inad" ? (
-            <>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.honrado)} /> pagou
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className={cn("inline-flex size-3 items-center justify-center rounded-sm", UNIT_TONE.honrado)}>
-                  <Check className="size-2.5" />
-                </span>{" "}
-                quitou depois
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.emAberto)} /> em aberto
-              </span>
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.honrado)} /> ocupado
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.vago)} /> vago
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className={cn("size-3 rounded-sm", UNIT_TONE.semDado, "ring-1 ring-inset ring-acr-line-2")} /> sem dado
-          </span>
-          <span className="w-full text-acr-muted-2">
-            O apartamento não tem escala: a cor diz o estado. Quanto faltou do aluguel está no detalhe de cada mês.
-          </span>
-        </div>
+          {ranges.map((range, index) => item(`acr-heat-q${index}`, range))}
+          {semDado}
+        </>
       )}
     </div>
   )

@@ -113,8 +113,9 @@ const PERCENT_SERIES: Series[] = [
 ]
 
 const WIDTH = 760
-const HEIGHT = 232
-const PAD = { top: 14, right: 16, bottom: 28, left: 56 }
+// Topo com folga para o rotulo do aluguel potencial acima de cada barra.
+const HEIGHT = 246
+const PAD = { top: 28, right: 16, bottom: 28, left: 56 }
 const PLOT_H = HEIGHT - PAD.top - PAD.bottom
 const GRID_STEPS = 4
 const MONTH_WIDTH = 84
@@ -152,11 +153,18 @@ export function MonthlySeries({
   const barWidth = Math.min(stacked ? BAR_MAX * 1.5 : BAR_MAX, (band - BAND_PADDING * 2 - BAR_GAP * (colunas - 1)) / colunas)
   const groupWidth = barWidth * colunas + BAR_GAP * (colunas - 1)
   // Empilhado, o topo e a soma da pilha — que e o proprio aluguel potencial.
+  // O potencial entra no maximo tambem: se uma parcela faltar, a marca do
+  // teto ainda precisa caber no grafico.
   const maxValue = stacked
     ? niceCeiling(
         Math.max(
           1,
-          ...series.map((point) => definitions.reduce((total, item) => total + (item.read(point) ?? 0), 0)),
+          ...series.map((point) =>
+            Math.max(
+              point.aluguelContratado ?? 0,
+              definitions.reduce((total, item) => total + (item.read(point) ?? 0), 0),
+            ),
+          ),
         ),
       )
     : 100
@@ -171,8 +179,7 @@ export function MonthlySeries({
 
   return (
     <div className="px-4 pb-4 pt-2 sm:px-5">
-      {/* Legenda: só o que é cada segmento da barra. O total da pilha é o
-          aluguel potencial e não precisa de chave própria — é a barra inteira. */}
+      {/* Legenda: cada segmento da barra, e a marca do potencial no topo. */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5" aria-hidden="true">
         {definitions.map((item) => (
           <span key={item.key} className="inline-flex items-center gap-1.5 text-xs text-acr-muted-2">
@@ -181,8 +188,9 @@ export function MonthlySeries({
           </span>
         ))}
         {stacked && (
-          <span className="text-xs text-acr-muted-2">
-            A barra inteira é o aluguel potencial do mês.
+          <span className="inline-flex items-center gap-1.5 text-xs text-acr-muted-2">
+            <span className="h-0.5 w-3.5 rounded-full" style={{ background: VALUE_TOTAL.color }} />
+            {VALUE_TOTAL.label} (topo da barra)
           </span>
         )}
       </div>
@@ -303,6 +311,41 @@ export function MonthlySeries({
                 )
               })
             })}
+
+            {/* O potencial na propria barra (cliente, 22/09: "aluguel
+                potencial nao esta aparecendo na barra"). Antes ele so existia
+                no tooltip, como uma linha sem marca correspondente no grafico.
+                A marca fica no valor do potencial, nao no topo da pilha: se
+                uma parcela vier sem dado, a pilha fica curta e o vao ate a
+                marca mostra isso, em vez de o teto descer junto. */}
+            {stacked &&
+              series.map((point, index) => {
+                if (point.aluguelContratado === null || point.aluguelContratado <= 0) return null
+                const tetoY = y(point.aluguelContratado)
+                const x = barX(index, 0)
+                const isDimmed = hovered !== null && hovered.index !== index
+                return (
+                  <g key={`${point.competencia}-potencial`} opacity={isDimmed ? 0.45 : 1} pointerEvents="none">
+                    <line
+                      x1={x - 4}
+                      x2={x + barWidth + 4}
+                      y1={tetoY}
+                      y2={tetoY}
+                      stroke={VALUE_TOTAL.color}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                    />
+                    <text
+                      x={x + barWidth / 2}
+                      y={tetoY - 6}
+                      textAnchor="middle"
+                      className="fill-acr-ink text-[11px] font-semibold tabular-nums"
+                    >
+                      {formatCompactCurrency(point.aluguelContratado)}
+                    </text>
+                  </g>
+                )
+              })}
           </svg>
 
           {activePoint && hovered && (
@@ -374,10 +417,13 @@ function SeriesTooltip({
         {items.map((item) => {
           const value = item.read(point)
           const isHighlighted = highlighted === item.key
+          // O potencial e o total do mes, nao mais uma parcela: fecha o
+          // cabecalho do tooltip, separado das parcelas que o compoem.
+          const isTotal = item.key === VALUE_TOTAL.key
           return (
             <li
               key={item.key}
-              className={`flex items-center justify-between gap-4 rounded px-1 -mx-1 ${isHighlighted ? "bg-acr-page" : ""}`}
+              className={`flex items-center justify-between gap-4 rounded px-1 -mx-1 ${isHighlighted ? "bg-acr-page" : ""} ${isTotal ? "mb-1.5 rounded-none border-b border-acr-line pb-1.5" : ""}`}
             >
               <span className="inline-flex items-center gap-1.5 text-acr-muted-2">
                 <span className="h-0.5 w-3 rounded-full" style={{ background: item.color }} />
