@@ -258,6 +258,69 @@ test("lancamento sem mes vai para a primeira competencia no split", () => {
   assert.equal(maio!.total, 500)
 })
 
+test("comissao datada pelo mes do pagamento acompanha o aluguel na ordem em que foi pago", () => {
+  // Cliente, 2026-09-25: a administradora passou a datar a comissao pelo mes
+  // em que o boleto foi pago, nao pela competencia do aluguel. Ago/26 do Joao
+  // Cordeiro 0002521: junho pago em agosto (comissao 08/2026) e julho pago em
+  // setembro (comissao 09/2026). Nenhuma das duas casa com o mes do aluguel.
+  const receitas = buildReceitas(
+    [{ ...APTO_B_JULHO, ultimoPagamento: "07/2026" }],
+    [
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "06/2026", credito: 788.22, saldo: 788.22 }),
+      lancamento({ codigo: "0002521", descricao: "DESCONTO FORNECIDO NO PAGAMENTO", mesAno: "06/2026", debito: 0.27, saldo: 787.95 }),
+      lancamento({ codigo: "0002521", descricao: "ENCARGOS FINANCEIROS POR ATRASO", mesAno: "06/2026", credito: 87.4, saldo: 875.35 }),
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "07/2026", credito: 788.22, saldo: 1663.57 }),
+      lancamento({ codigo: "0002521", descricao: "DESCONTO FORNECIDO NO PAGAMENTO", mesAno: "07/2026", debito: 0.26, saldo: 1663.31 }),
+      lancamento({ codigo: "0002521", descricao: "ENCARGOS FINANCEIROS POR ATRASO", mesAno: "07/2026", credito: 88.44, saldo: 1751.75 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "08/2026", debito: 43.78, saldo: 1707.97 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "09/2026", debito: 43.83, saldo: 1664.14 }),
+    ],
+    "2026-08",
+  )
+
+  const junho = receitas.find((r) => r.competencia_original === "06/2026")
+  const julho = receitas.find((r) => r.competencia_original === "07/2026")
+  assert.equal(junho!.comissao, 43.78)
+  assert.equal(julho!.comissao, 43.83)
+  assert.equal(junho!.repasse, 831.57) // 788,22 + 87,40 - 0,27 - 43,78
+  assert.equal(julho!.repasse, 832.57) // 788,22 + 88,44 - 0,26 - 43,83
+  // A soma dos repasses do apto continua sendo o saldo final do grupo.
+  assert.equal(Math.round((junho!.repasse! + julho!.repasse!) * 100) / 100, 1664.14)
+})
+
+test("comissao do pagamento que coincide com o mes de outro aluguel nao troca de competencia", () => {
+  // Cenario de set/26: agosto pago em setembro (comissao 09/2026) e setembro
+  // pago em outubro (comissao 10/2026). A comissao 09/2026 e de AGOSTO, mesmo
+  // tendo o mesmo MES/ANO do aluguel de setembro.
+  const receitas = buildReceitas(
+    [{ ...APTO_B_JULHO, ultimoPagamento: "07/2026" }],
+    [
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "08/2026", credito: 800, saldo: 800 }),
+      lancamento({ codigo: "0002521", descricao: "ALUGUEL", mesAno: "09/2026", credito: 900, saldo: 1700 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "09/2026", debito: 40, saldo: 1660 }),
+      lancamento({ codigo: "0002521", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "10/2026", debito: 45, saldo: 1615 }),
+    ],
+    "2026-09",
+  )
+  assert.equal(receitas.find((r) => r.competencia_original === "08/2026")!.comissao, 40)
+  assert.equal(receitas.find((r) => r.competencia_original === "09/2026")!.comissao, 45)
+})
+
+test("comissoes em quantidade diferente dos alugueis continuam na regra anterior", () => {
+  // Sem pareamento 1:1 nao ha como saber qual comissao e de qual mes; o
+  // comportamento anterior (tudo na primeira) preserva o total do apto.
+  const receitas = buildReceitas(
+    [{ codigo: "0002599", endereco: "Rua C", aluguel: 500, ultimoPagamento: null, situacao: null }],
+    [
+      lancamento({ codigo: "0002599", descricao: "ALUGUEL", mesAno: "04/2026", credito: 500, saldo: 500 }),
+      lancamento({ codigo: "0002599", descricao: "ALUGUEL", mesAno: "05/2026", credito: 500, saldo: 1000 }),
+      lancamento({ codigo: "0002599", descricao: "COMISSAO DA ADMINISTRADORA (5,00%)", mesAno: "06/2026", debito: 50, saldo: 950 }),
+    ],
+  )
+  assert.equal(receitas.find((r) => r.competencia_original === "04/2026")!.comissao, 50)
+  assert.equal(receitas.find((r) => r.competencia_original === "05/2026")!.comissao, null)
+})
+
 const FIXTURE = join(
   process.cwd(),
   "docs/Artefatos/extratoagrupado - cesar rego - REF 03-26 (1).pdf",

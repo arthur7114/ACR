@@ -477,8 +477,11 @@ export function buildReceitas(
     // um acumulado do grupo, o repasse por mes vira o liquido (creditos-debitos)
     // daquele mes.
     const primeiroMes = mesesAluguel[0]
+    const comissaoPorMes = parearComissoesPorPagamento(grupo, mesesAluguel)
     const linhasPorMes = mesesAluguel.map((mes) => {
       const itens = grupo.filter((item) => {
+        const mesPareado = comissaoPorMes.get(item)
+        if (mesPareado) return mesPareado === mes
         if (item.mesAno === mes) return true
         const foraDaLista = !item.mesAno || !mesesAluguel.includes(item.mesAno)
         return foraDaLista && mes === primeiroMes
@@ -490,6 +493,31 @@ export function buildReceitas(
     })
     return [...linhaEmAberto, ...linhasPorMes]
   })
+}
+
+// Desde ago/26 a administradora data a COMISSAO pelo mes em que o boleto foi
+// pago, nao pela competencia do aluguel (cliente, 2026-09-25): junho pago em
+// agosto sai com comissao 08/2026. O MES/ANO da comissao nao identifica mais o
+// aluguel — pode ate coincidir com o de OUTRO mes do mesmo grupo (agosto pago
+// em setembro sai 09/2026 ao lado do aluguel de setembro). Com exatamente uma
+// comissao por mes, os pagamentos seguem a ordem das competencias: a mais
+// antiga e do aluguel mais antigo. No formato antigo (mesmo mes) a ordem da o
+// mesmo resultado. Fora disso o mapa volta vazio e vale a regra por MES/ANO.
+function parearComissoesPorPagamento(grupo: Lancamento[], mesesAluguel: string[]): Map<Lancamento, string> {
+  const pareamento = new Map<Lancamento, string>()
+  const comissoes = grupo.filter((item) => item.debito !== null && normalize(item.descricao).includes("COMISSAO"))
+  const datadas = comissoes.filter((item) => item.mesAno && parseMesAno(item.mesAno))
+  if (datadas.length !== comissoes.length || datadas.length !== mesesAluguel.length) return pareamento
+
+  const ordem = (mesAno: string) => {
+    const { month, year } = parseMesAno(mesAno)!
+    return year * 12 + month
+  }
+  const meses = [...mesesAluguel].filter((mes) => parseMesAno(mes)).sort((a, b) => ordem(a) - ordem(b))
+  if (meses.length !== mesesAluguel.length) return pareamento
+  const porPagamento = [...datadas].sort((a, b) => ordem(a.mesAno!) - ordem(b.mesAno!))
+  porPagamento.forEach((comissao, index) => pareamento.set(comissao, meses[index]))
+  return pareamento
 }
 
 function isContratoAtivo(imovel: RelacaoImovel | null): boolean {

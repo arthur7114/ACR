@@ -3522,3 +3522,32 @@ legenda das faixas do empreendimento e a dos estados do apartamento, mais uma
 frase explicativa. Agora é uma por vez — fechado, as faixas; com um
 empreendimento aberto, os estados do apartamento. A frase saiu; o detalhe de
 quanto faltou continua no tooltip de cada célula.
+
+---
+
+## Feedback de 25/09/2026
+
+### César Rêgo — comissão passou a vir datada pelo pagamento
+
+Vídeo do cliente sobre a prestação ago/2026 (ainda não subida): a administradora
+mudou o sistema e o MÊS/ANO da COMISSAO agora é o mês em que o boleto foi pago,
+não a competência do aluguel. Aluguel 08/2026 sai com comissão 09/2026; o
+0002521 (João Cordeiro, apto B) pagou junho em agosto e julho em setembro, com
+comissões 08/2026 e 09/2026.
+
+Aptos com um só mês de aluguel não mudam: o grupo inteiro vira uma linha. O
+erro estava no split multi-mês: nenhuma das duas comissões casava com 06 ou 07,
+e a regra "fora da lista vai para a primeira competência" punha as duas em
+junho (87,61) e deixava julho sem comissão. Totais do documento seguiam certos;
+a atribuição por competência nos indicadores, não.
+
+`parearComissoesPorPagamento`: com exatamente uma comissão por mês de aluguel,
+elas seguem a ordem das competências (a mais antiga paga o aluguel mais
+antigo), sem olhar se o MÊS/ANO coincide — em set/26 agosto pago em setembro
+sai com comissão 09/2026 ao lado do aluguel de setembro, e casar por mês
+trocaria as duas. No formato antigo (comissão no mesmo mês) a ordem dá o mesmo
+resultado; o extrato de março reprocessado não mudou. Conferido pelo valor:
+43,78 = 5% de 788,22 + 87,40 (junho); 43,83 = 5% de 788,22 + 88,44 (julho).
+Qualquer outra forma cai no comportamento anterior, que preserva o total do
+apto. PDF real ago/2026 reprocessado: totais inalterados (comissão 659,71,
+líquido 14.732,15), junho 43,78 / julho 43,83.
