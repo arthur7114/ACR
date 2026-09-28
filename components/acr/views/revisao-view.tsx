@@ -38,6 +38,7 @@ import {
   calcularResumoComissaoFechamento,
   calcularResumoReceitasAdicionais,
   desdobrarDespesasFechamento,
+  totalDespesasExibicao,
 } from "@/lib/fechamento-operacional"
 import {
   aptoKey,
@@ -862,8 +863,9 @@ export function RevisaoView({
   const outrasDespesasExibicao = outrasComissoesDespesas.filter(
     (item) => classificarLancamento(item.descricao) === "despesa",
   )
+  const despesasExibidas = totalDespesasExibicao(totals)
   const despesasDesdobradas = desdobrarDespesasFechamento({
-    totalDespesas: totals.total_despesas,
+    totalDespesas: despesasExibidas,
     resumoItens: outrasDespesasExibicao,
     despesas: despesas?.despesas ?? [],
   })
@@ -1100,7 +1102,7 @@ export function RevisaoView({
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">−</span>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#D97706]">Despesas</p>
-                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#D97706]">{formatBRL(totals.total_despesas)}</p>
+                <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#D97706]">{formatBRL(despesasExibidas)}</p>
                 <p className="text-[11px] text-[#6B7F6E]">{despesasItemCount} item(ns)</p>
               </div>
               <span className="px-1 text-[18px] font-light text-[#A0B2A3]">=</span>
@@ -1217,7 +1219,7 @@ export function RevisaoView({
                 </div>
 
                 {/* Despesas */}
-                <ExpenseBreakdownCard groups={despesasDesdobradas} total={totals.total_despesas} />
+                <ExpenseBreakdownCard groups={despesasDesdobradas} total={despesasExibidas} />
             </div>
             </div>
 
@@ -2428,7 +2430,7 @@ export function RevisaoView({
                     <dt className="text-[#6B7F6E]">Comissão principal</dt>
                     <dd className="text-right font-medium text-[#1A2B1C]">{resumo?.comissao_administracao === null || resumo?.comissao_administracao === undefined ? "-" : formatBRL(resumo.comissao_administracao)}</dd>
                     <dt className="text-[#6B7F6E]">Outras comissões/despesas</dt>
-                    <dd className="text-right font-medium text-[#1A2B1C]">{formatBRL(totals.total_despesas)}</dd>
+                    <dd className="text-right font-medium text-[#1A2B1C]">{formatBRL(despesasExibidas)}</dd>
                     <dt className="text-[#6B7F6E]">Total comissão + despesas</dt>
                     <dd className="text-right font-medium text-[#1A2B1C]">{formatBRL(totals.total_comissao_despesas)}</dd>
                     <dt className="text-[#6B7F6E]">Recebidos locador</dt>

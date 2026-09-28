@@ -7,6 +7,7 @@ import {
   calcularIptuRecebidoExibicao,
   calcularResumoReceitasAdicionais,
   desdobrarDespesasFechamento,
+  totalDespesasExibicao,
   unidadeDaDescricao,
 } from "./fechamento-operacional.ts"
 
@@ -452,4 +453,28 @@ test("despesa ja retida como comissao nao e listada como despesa do locador", ()
   const soma = Math.round(itens.reduce((total, item) => total + item.valor, 0) * 100) / 100
   assert.equal(soma, 0)
   assert.ok(itens.some((item) => /já retido como comissão/i.test(item.descricao)))
+})
+
+test("tarifa declarada à parte entra no total de despesas exibido e fecha o card", () => {
+  // Galpão Pompílio Gomes ago/2026: o recorte César Rêgo guarda a TED em
+  // total_tarifas, fora de total_despesas. A tela mostrava Despesas R$ 0,00 e
+  // um "já retido como comissão" de −5,55 anulando a própria TED.
+  const totals = { total_despesas: 0, total_tarifas: 5.55 }
+  const total = totalDespesasExibicao(totals)
+  assert.equal(total, 5.55)
+
+  const grupos = desdobrarDespesasFechamento({
+    totalDespesas: total,
+    resumoItens: [{ descricao: "Tarifa bancária do fechamento", valor: 5.55, confianca: 1 }],
+  })
+  assert.deepEqual(
+    grupos.map((grupo) => [grupo.categoria, grupo.total]),
+    [["tarifas", 5.55]],
+  )
+})
+
+test("sem tarifa declarada à parte, o total exibido é o próprio total_despesas", () => {
+  // Nos demais layouts a TED já está dentro de total_despesas (ADR-0001).
+  assert.equal(totalDespesasExibicao({ total_despesas: 16.1 }), 16.1)
+  assert.equal(totalDespesasExibicao({ total_despesas: 0.53, total_tarifas: 5.55 }), 6.08)
 })

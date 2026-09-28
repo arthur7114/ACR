@@ -203,12 +203,13 @@ export function parseCesarRegoPrestacao(lines: TextLine[], competencia: string):
       `Inadimplencia acumulada nao apuravel para ${acumuladas.semBase.join(", ")}: a Relacao de Imoveis nao informa ultimo pagamento ou aluguel. A metrica permanece desconhecida para esses imoveis.`,
     )
   }
-  const resumo = buildResumo(resumoValores, receitas, alertas)
-  receitas = reconcileReceitaTotals(
+  const reconciliadas = reconcileReceitaTotals(
     receitas,
-    resumo.recebidosEmNomeLocador,
+    resumoValores.get("alugueis_creditados") ?? null,
     alertas,
   )
+  receitas = reconciliadas.receitas
+  const resumo = buildResumo(resumoValores, receitas, alertas, reconciliadas.descontosRetidos)
 
   const totalLinhasReceitas = roundMoney(receitas.reduce((total, row) => total + row.total, 0))
   const totalLinhasComissoes = roundMoney(receitas.reduce((total, row) => total + (row.comissao ?? 0), 0))
@@ -713,19 +714,31 @@ function buildReceitaDoGrupo(
   })
 }
 
+// Desconto da linha tem dois destinos no extrato. O lancado com COMIS? Sim
+// (ex.: REEMBOLSO AO INQUILINO/DESC. LOCATARIO) sai do proprio credito de
+// aluguel e ja vem liquido em ALUGUEIS CREDITADOS; o com COMIS? Nao (DESCONTO
+// FORNECIDO NO PAGAMENTO) fica retido dentro de OUTROS DEBITOS. A coluna nao
+// chega ate aqui, mas a sobra das linhas sobre ALUGUEIS CREDITADOS diz quais
+// foram abatidos. Os demais sao os retidos, devolvidos para o RESUMO.
+// O abatido ainda e lido como desconto retido pela reconciliacao de despesas;
+// trata-lo como reembolso (bruto, ADR-0001) depende de o recorte por
+// empreendimento tambem passar a receita bruta — decisao em aberto.
 function reconcileReceitaTotals(
   receitas: ReceitaPorImovel[],
   sourceRevenue: number | null,
   alertas: string[],
 ) {
-  if (sourceRevenue === null) return receitas
+  const somaDescontos = roundMoney(receitas.reduce((total, row) => total + (row.desconto ?? 0), 0))
+  if (sourceRevenue === null) return { receitas, descontosRetidos: somaDescontos }
   let reduction = roundMoney(
     receitas.reduce((total, row) => total + row.total, 0) - sourceRevenue,
   )
+  let abatido = 0
   const reconciled = receitas.map((row) => {
     if (reduction <= 0 || !row.desconto) return row
     const applied = Math.min(row.desconto, reduction)
     reduction = roundMoney(reduction - applied)
+    abatido = roundMoney(abatido + applied)
     return { ...row, total: roundMoney(row.total - applied) }
   })
   const difference = roundMoney(
@@ -736,7 +749,7 @@ function reconcileReceitaTotals(
       `ALUGUEIS CREDITADOS nao foi integralmente distribuido pelas linhas: diferenca de ${formatBRL(difference)}.`,
     )
   }
-  return reconciled
+  return { receitas: reconciled, descontosRetidos: roundMoney(somaDescontos - abatido) }
 }
 
 function buildReceita(
@@ -827,7 +840,16 @@ function collectResumoValor(line: TextLine, valores: Map<string, number>) {
   }
 }
 
-function buildResumo(valores: Map<string, number>, receitas: ReceitaPorImovel[], alertas: string[]) {
+// `descontosRetidos`: descontos das linhas que estao dentro de OUTROS DEBITOS.
+// A reconciliacao de despesas os itemiza pela linha (`Desconto — <apto>`), entao
+// o agregado sai sem eles — senao cada centavo conta duas vezes e a lista
+// inteira e descartada por exceder o retido.
+export function buildResumo(
+  valores: Map<string, number>,
+  receitas: ReceitaPorImovel[],
+  alertas: string[],
+  descontosRetidos = 0,
+) {
   const recebidosEmNomeLocador = valores.get("alugueis_creditados") ?? null
   const totalARepassar = valores.get("total_liquido") ?? null
   const comissaoAdministracao =
@@ -837,9 +859,21 @@ function buildResumo(valores: Map<string, number>, receitas: ReceitaPorImovel[],
     alertas.push("Bloco RESUMO incompleto: ALUGUEIS CREDITADOS ou TOTAL LIQUIDO nao foram localizados.")
   }
 
+  const itens = new Map(valores)
+  const outrosDebitos = valores.get("outros_debitos")
+  if (outrosDebitos !== undefined && descontosRetidos > 0) {
+    if (descontosRetidos <= outrosDebitos + 0.01) {
+      itens.set("outros_debitos", roundMoney(outrosDebitos - descontosRetidos))
+    } else {
+      alertas.push(
+        `Descontos por linha (${formatBRL(descontosRetidos)}) excedem OUTROS DEBITOS (${formatBRL(outrosDebitos)}); agregado mantido como impresso.`,
+      )
+    }
+  }
+
   const outrasDespesas: PrestacaoResumoDespesa[] = []
   const pushDespesa = (key: string, descricao: string, sinal: 1 | -1 = 1) => {
-    const valor = valores.get(key)
+    const valor = itens.get(key)
     if (valor !== undefined && valor !== 0) {
       outrasDespesas.push({ descricao, valor: roundMoney(sinal * valor), confianca: 1.0 })
     }

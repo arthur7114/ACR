@@ -5,6 +5,7 @@ import test from "node:test"
 import {
   buildInadimplenciasAcumuladas,
   buildReceitas,
+  buildResumo,
   extractPdfTextLines,
   isCesarRegoConsolidado,
   parseCesarRegoHeader,
@@ -377,4 +378,45 @@ test("extrato consolidado infere a inadimplencia acumulada da Relacao de Imoveis
   assert.equal(aptoB?.inquilino, "JOAO CORDEIRO,488 APART. B")
   assert.equal(aptoB?.competencia_original, "03/2026")
   assert.equal(aptoB?.aluguel_esperado, 788.22)
+})
+
+test("OUTROS DEBITOS sai sem os descontos que as linhas já itemizam", () => {
+  // Agosto/2026: OUTROS DÉBITOS 342,57 = IPTU de passagem 342,04 + descontos
+  // do 0002521 (0,27 + 0,26, COMIS? Não). A reconciliação itemiza os descontos
+  // pela linha; o agregado não pode trazê-los de novo.
+  const valores = new Map([
+    ["alugueis_creditados", 15_403.49],
+    ["comissoes", 659.71],
+    ["outros_debitos", 342.57],
+    ["outros_creditos", 342.04],
+    ["ted", 11.1],
+    ["total_liquido", 14_732.15],
+  ])
+  const alertas: string[] = []
+  const resumo = buildResumo(valores, [], alertas, 0.53)
+
+  assert.deepEqual(
+    resumo.outrasDespesas.map((item) => [item.descricao, item.valor]),
+    [
+      ["Outros debitos", 342.04],
+      ["Outros creditos (reduz despesas)", -342.04],
+      ["Taxa de transferencia TED", 11.1],
+    ],
+  )
+  assert.equal(resumo.totalOutrasDespesas, 11.1)
+  assert.equal(resumo.totalComissaoDespesas, 671.34)
+  assert.deepEqual(alertas, [])
+})
+
+test("desconto por linha maior que OUTROS DEBITOS mantém o valor impresso e alerta", () => {
+  const valores = new Map([
+    ["alugueis_creditados", 1_000],
+    ["outros_debitos", 0.2],
+    ["total_liquido", 950],
+  ])
+  const alertas: string[] = []
+  const resumo = buildResumo(valores, [], alertas, 0.53)
+
+  assert.equal(resumo.outrasDespesas.find((item) => item.descricao === "Outros debitos")?.valor, 0.2)
+  assert.equal(alertas.length, 1)
 })

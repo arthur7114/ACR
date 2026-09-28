@@ -229,10 +229,6 @@ export function buildCesarMonthRepairs(
       })
     return { closure, propertyCodes, rows }
   })
-  const globalPassageNet = roundMoney(
-    sumRows(parsed.receitas_por_imovel, "saidas_passagem") -
-      sumRows(parsed.receitas_por_imovel, "entradas_passagem"),
-  )
   const lineDeductions = allocations.map((allocation) =>
     Math.max(
       roundMoney(
@@ -245,14 +241,7 @@ export function buildCesarMonthRepairs(
       0,
     ),
   )
-  const globalFee = Math.max(
-    roundMoney(
-      retainedNonCommission(parsed) -
-        globalPassageNet -
-        lineDeductions.reduce((total, value) => total + value, 0),
-    ),
-    0,
-  )
+  const globalFee = Math.max(sourceBankFee(parsed), 0)
   const feeAllocations = [...allocations]
     .filter((allocation) => allocation.rows.length > 0)
     .sort(
@@ -377,24 +366,16 @@ export function buildCesarMonthRepairs(
   }
 }
 
-// Retido fora da comissão, lido dos totais declarados do RESUMO (ALUGUÉIS
-// CREDITADOS − TOTAL LÍQUIDO − COMISSÕES). A lista itemizada não serve de fonte:
-// a normalização a zera quando os descontos das linhas já estão somados em
-// OUTROS DÉBITOS (agosto/2026), e a TED sumia junto.
-function retainedNonCommission(parsed: PrestacaoAnalysis): number {
-  const resumo = parsed.resumo_financeiro
-  if (
-    resumo.recebidos_em_nome_locador === null ||
-    resumo.total_a_repassar === null ||
-    resumo.comissao_administracao === null
-  ) {
-    return resumo.total_outras_comissoes_despesas ?? 0
-  }
-  return roundMoney(
-    resumo.recebidos_em_nome_locador -
-      resumo.total_a_repassar -
-      resumo.comissao_administracao,
-  )
+// Tarifa bancária do extrato: o saldo somado das linhas (TOTAL BRUTO) menos o
+// TOTAL LÍQUIDO — PIX, TED e TX são as únicas deduções abaixo do bruto. O saldo
+// já desconta comissão, descontos retidos e IPTU de passagem, e a normalização
+// não mexe nele. Recebidos e a lista de despesas ela mexe: o reembolso volta ao
+// bruto (ADR-0001) e viraria tarifa; com a lista zerada, a TED sumia
+// (agosto/2026).
+function sourceBankFee(parsed: PrestacaoAnalysis): number {
+  const totalLiquido = parsed.resumo_financeiro.total_a_repassar
+  if (totalLiquido === null) return 0
+  return roundMoney(sumRows(parsed.receitas_por_imovel, "repasse") - totalLiquido)
 }
 
 function applyFinancialDimensions(
