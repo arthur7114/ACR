@@ -330,6 +330,75 @@ test("César Rêgo julho preserva os valores exatos e elimina totais consolidado
   )
 })
 
+test("César Rêgo agosto rateia a TED mesmo quando o desconto por linha já está em OUTROS DÉBITOS", () => {
+  // Extrato real de agosto/2026: OUTROS DÉBITOS 342,57 = IPTU 342,04 + os dois
+  // descontos de 0002521 (0,27 + 0,26). A normalização conta os descontos das
+  // linhas por cima de "Outros débitos", acha itemizado > retido e zera a lista
+  // — a TED de 11,10 não pode sumir junto.
+  const parsed = makePrestacao("Documento consolidado", "2026-08", [
+    makeRow({ apto: "0002520", aluguel: 1_237.05, total: 1_237.05, comissao: 61.85, repasse: 1_175.2 }),
+    makeRow({ apto: "0002521", aluguel: 875.89, desconto: 0.27, total: 875.62, comissao: 43.78, repasse: 831.57 }),
+    makeRow({ apto: "0002521", aluguel: 876.92, desconto: 0.26, total: 876.66, comissao: 43.83, repasse: 832.57 }),
+    makeRow({
+      apto: "0002526",
+      aluguel: 6_896.75,
+      iptu: 193.02,
+      total: 6_896.75,
+      comissao: 283.59,
+      repasse: 6_613.16,
+      entradas_passagem: 193.02,
+      saidas_passagem: 193.02,
+    }),
+    makeRow({
+      apto: "0002527",
+      aluguel: 5_517.41,
+      iptu: 149.02,
+      total: 5_517.41,
+      comissao: 226.66,
+      repasse: 5_290.75,
+      entradas_passagem: 149.02,
+      saidas_passagem: 149.02,
+    }),
+  ])
+  parsed.imobiliaria = "Cesar Rego Imoveis"
+  parsed.resumo_financeiro = {
+    ...parsed.resumo_financeiro,
+    total_linhas_receitas: 15_403.49,
+    total_linhas_comissoes: 659.71,
+    total_linhas_repasse: 14_743.25,
+    comissao_administracao: 659.71,
+    outras_comissoes_despesas: [
+      { descricao: "Outros debitos", valor: 342.57, confianca: 1 },
+      { descricao: "Outros creditos (reduz despesas)", valor: -342.04, confianca: 1 },
+      { descricao: "Taxa de transferencia TED", valor: 11.1, confianca: 1 },
+    ],
+    total_outras_comissoes_despesas: 11.63,
+    total_comissao_despesas: 671.34,
+    recebidos_em_nome_locador: 15_403.49,
+    total_a_repassar: 14_732.15,
+    repasse_embutido: true,
+  }
+  // Mesmo caminho da produção: validação normaliza o consolidado, e o persist
+  // recorta para o empreendimento do fechamento.
+  const normalized = refreshPackageValidation(makePackage(parsed), {})
+
+  const joao = scopeCesarRegoAnalysisToDevelopment(normalized, "João Cordeiro")
+  const pompilio = scopeCesarRegoAnalysisToDevelopment(normalized, "Galpão Pompilio Gomes")
+
+  assert.deepEqual(
+    [joao.totals.total_tarifas, joao.totals.total_despesas, joao.totals.total_a_repassar],
+    [5.55, 0.53, 2_833.79],
+  )
+  assert.deepEqual(
+    [pompilio.totals.total_tarifas, pompilio.totals.total_despesas, pompilio.totals.total_a_repassar],
+    [5.55, 0, 11_898.36],
+  )
+  assert.equal(
+    Math.round((joao.totals.total_a_repassar + pompilio.totals.total_a_repassar) * 100) / 100,
+    14_732.15,
+  )
+})
+
 function makePackage(
   prestacao: PrestacaoAnalysis,
   values: {

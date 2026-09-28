@@ -247,7 +247,7 @@ export function buildCesarMonthRepairs(
   )
   const globalFee = Math.max(
     roundMoney(
-      (parsed.resumo_financeiro.total_outras_comissoes_despesas ?? 0) -
+      retainedNonCommission(parsed) -
         globalPassageNet -
         lineDeductions.reduce((total, value) => total + value, 0),
     ),
@@ -375,6 +375,26 @@ export function buildCesarMonthRepairs(
     difference,
     transferDifference,
   }
+}
+
+// Retido fora da comissão, lido dos totais declarados do RESUMO (ALUGUÉIS
+// CREDITADOS − TOTAL LÍQUIDO − COMISSÕES). A lista itemizada não serve de fonte:
+// a normalização a zera quando os descontos das linhas já estão somados em
+// OUTROS DÉBITOS (agosto/2026), e a TED sumia junto.
+function retainedNonCommission(parsed: PrestacaoAnalysis): number {
+  const resumo = parsed.resumo_financeiro
+  if (
+    resumo.recebidos_em_nome_locador === null ||
+    resumo.total_a_repassar === null ||
+    resumo.comissao_administracao === null
+  ) {
+    return resumo.total_outras_comissoes_despesas ?? 0
+  }
+  return roundMoney(
+    resumo.recebidos_em_nome_locador -
+      resumo.total_a_repassar -
+      resumo.comissao_administracao,
+  )
 }
 
 function applyFinancialDimensions(
