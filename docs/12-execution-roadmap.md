@@ -3551,3 +3551,31 @@ resultado; o extrato de março reprocessado não mudou. Conferido pelo valor:
 Qualquer outra forma cai no comportamento anterior, que preserva o total do
 apto. PDF real ago/2026 reprocessado: totais inalterados (comissão 659,71,
 líquido 14.732,15), junho 43,78 / julho 43,83.
+
+## Feedback de 28/09/2026
+
+### César Rêgo — TED de ago/2026 não chegava aos fechamentos
+
+Prints do cliente: Galpão Pompílio Gomes e João Cordeiro ago/2026 sem a TED de
+R$ 5,55 em "Outras despesas". O extrato declara TED 11,10 e TOTAL LÍQUIDO
+14.732,15; os dois repasses somavam 14.743,25 — o TOTAL BRUTO, ou seja, a TED
+inteira ficou de fora.
+
+O parser lia certo. Quem perdia era a normalização (`reconciliarResumoDespesas`):
+OUTROS DÉBITOS 342,57 já contém os dois descontos do 0002521 (0,27 + 0,26) além
+do IPTU de passagem 342,04, e a normalização soma de novo os descontos das
+linhas. Itemizado 12,16 > retido 11,63, então ela zera a lista inteira. O
+recorte por empreendimento (`buildCesarMonthRepairs`) calculava a tarifa a partir
+dessa lista, via `total_outras_comissoes_despesas` — e recebia zero.
+
+Correção no recorte: o retido fora da comissão sai dos totais declarados
+(ALUGUÉIS CREDITADOS − TOTAL LÍQUIDO − COMISSÕES), que a normalização não
+mexe. Maio e junho tinham o mesmo desconto de centavos e hoje também
+perderiam a TED se reprocessados. Só passaram porque foram processados antes
+desse caminho. Replay dos PDFs reais de maio a agosto: maio–julho idênticos ao
+gravado, agosto com 5,55 em cada, repasses 2.833,79 (João Cordeiro) e 11.898,36
+(Pompílio), somando os 14.732,15 do extrato.
+
+A dupla contagem dentro de `reconciliarResumoDespesas` para o layout César Rêgo
+continua lá: ela zera a lista do consolidado, e o recorte deixou de depender
+disso. Os fechamentos de agosto já gravados precisam ser reprocessados.
