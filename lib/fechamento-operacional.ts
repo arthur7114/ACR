@@ -301,6 +301,16 @@ function despesaToItem(item: Despesa): ItemDespesaFechamento {
   }
 }
 
+// Despesas do locador exibidas na Revisão. O recorte do extrato consolidado
+// (César Rêgo) guarda a tarifa bancária em `total_tarifas`, FORA de
+// `total_despesas` — é a convenção que os indicadores leem para não descontá-la
+// duas vezes. Na tela a TED é despesa do locador (ADR-0001) e aparece no grupo
+// Tarifas; sem somá-la aqui, o card anulava a própria TED com um "já retido
+// como comissão" e o cabeçalho não fechava com o repasse (Pompílio ago/2026).
+export function totalDespesasExibicao(totals: { total_despesas: number; total_tarifas?: number | null }): number {
+  return roundMoney(totals.total_despesas + (totals.total_tarifas ?? 0))
+}
+
 export function desdobrarDespesasFechamento({
   totalDespesas,
   resumoItens = [],

@@ -3579,3 +3579,34 @@ gravado, agosto com 5,55 em cada, repasses 2.833,79 (João Cordeiro) e 11.898,36
 A dupla contagem dentro de `reconciliarResumoDespesas` para o layout César Rêgo
 continua lá: ela zera a lista do consolidado, e o recorte deixou de depender
 disso. Os fechamentos de agosto já gravados precisam ser reprocessados.
+
+### César Rêgo — dupla contagem do desconto e TED fora do card de despesas
+
+**Dupla contagem (parser).** OUTROS DÉBITOS já contém os descontos lançados
+com COMIS? Não (DESCONTO FORNECIDO NO PAGAMENTO), e `reconciliarResumoDespesas`
+os itemiza de novo pela linha (`Desconto — <apto>`). O parser agora devolve o
+agregado sem os descontos retidos, que é o contrato do layout C (descontos vão
+no campo da linha, não em `outras_comissoes_despesas`). Agosto: "Outros débitos"
+sai 342,04; o consolidado reconcilia sem pendência (junho e agosto também).
+
+**Rateio da tarifa.** `buildCesarMonthRepairs` passa a tirar a tarifa do saldo
+das linhas: TOTAL BRUTO − TOTAL LÍQUIDO. É a mesma conta de antes quando os
+recebidos batem com as linhas, mas não depende de recebidos nem da lista, que
+a normalização altera.
+
+**Card de despesas na Revisão.** O recorte guarda a TED em `total_tarifas`,
+fora de `total_despesas` — é a convenção que os indicadores leem. A Revisão só
+lia `total_despesas`. Pompílio ago/2026, mesmo depois do reprocessamento,
+mostrava Despesas R$ 0,00 ao lado do repasse de 11.898,36, e o card anulava a
+TED com "já retido como comissão −5,55". Julho, já lançado, estava igual.
+`totalDespesasExibicao` soma a tarifa declarada à parte. Replay mar–ago: a
+conta receitas − comissão − despesas = repasse fecha em todos os fechamentos;
+os valores gravados não mudam.
+
+**Em aberto — reembolso abatido de ALUGUÉIS CREDITADOS** (março e maio, 0002520,
+REEMBOLSO AO INQUILINO/DESC. LOCATARIO 113,27, COMIS? Sim). A reconciliação
+ainda o lê como desconto retido e zera a lista. Tratá-lo como reembolso
+(bruto, ADR-0001) exige que o recorte também passe a receita bruta. Isso muda
+a receita de fechamentos já aprovados e lançados, então a decisão fica com o
+Arthur. Até lá, o card de maio do João Cordeiro mostra 5,81 "não discriminado"
+— valor certo, sem o desdobramento.
