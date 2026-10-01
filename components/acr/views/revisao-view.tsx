@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
+import { realizedCommissionBase } from "@/lib/comissao"
 import {
   aguaDeclarada,
   resolverRecebimentoLegado,
@@ -856,7 +857,9 @@ export function RevisaoView({
   })()
   // Comissao realizada = comissao das linhas da tabela / total das linhas da tabela
   // (mensal regular; nao mistura comissao de acordos nem o recebido bruto com acordos).
-  const comissaoRealizadaPercent = rowTotals.total > 0 ? (rowTotals.comissao / rowTotals.total) * 100 : null
+  // O IPTU de passagem entra no denominador: e comissionado, mas fica fora do total.
+  const baseRealizada = realizedCommissionBase(linhasImoveis)
+  const comissaoRealizadaPercent = baseRealizada > 0 ? (rowTotals.comissao / baseRealizada) * 100 : null
   const outrasComissoesDespesas = resumo?.outras_comissoes_despesas ?? []
   // Comissão e intermediação têm baldes próprios. Em análises antigas, ambas
   // podem aparecer misturadas no array genérico; só despesas reais entram aqui.

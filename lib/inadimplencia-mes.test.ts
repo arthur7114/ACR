@@ -149,3 +149,18 @@ test("unidade sem inadimplencia devolve zero em aberto, nao desconhecido", () =>
   assert.equal(r.emAberto, 0)
   assert.equal(r.valorEmAberto, 0)
 })
+
+// Cenario real Joao Cordeiro 0002521 (flat B), queixa de 01/10/2026: "ja quitou
+// os meses atrasados". Paga sempre dois meses depois: 04+05 em jun, 06+07 em ago.
+// Com a origem unica nula nos dois meses, julho seguia em aberto.
+test("mes que quita duas competencias marca as duas como quitadas", () => {
+  const r = resumirInadimplencia([
+    { competencia: "2026-06-01", statusOcupacao: "inadimplente", cobrancaEsperada: 788.22, aluguelEsperado: 788.22, atrasosRecuperados: 1576.18, atrasosCompetenciaOrigem: null, atrasosOrigens: [{ competencia: "2026-04-01", valor: 788.22 }, { competencia: "2026-05-01", valor: 788.22 }] },
+    { competencia: "2026-07-01", statusOcupacao: "inadimplente", cobrancaEsperada: 788.22, aluguelEsperado: 788.22, atrasosRecuperados: null, atrasosCompetenciaOrigem: null },
+    { competencia: "2026-08-01", statusOcupacao: "inadimplente", cobrancaEsperada: 788.22, aluguelEsperado: 788.22, atrasosRecuperados: 1575.91, atrasosCompetenciaOrigem: null, atrasosOrigens: [{ competencia: "2026-06-01", valor: 788.22 }, { competencia: "2026-07-01", valor: 788.22 }] },
+  ])
+  assert.equal(r.meses, 3)
+  assert.equal(r.quitadas, 2)
+  assert.deepEqual(r.competenciasEmAberto, ["2026-08-01"])
+  assert.equal(r.valorEmAberto, 788.22)
+})

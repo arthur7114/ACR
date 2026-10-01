@@ -63,3 +63,26 @@ export function calculatedAdminCommission(
   if (taxaPercent === null || taxaPercent === undefined) return null
   return round((base * taxaPercent) / 100)
 }
+
+// Denominador da "taxa realizada" = total das linhas + IPTU de passagem.
+//
+// No extrato Cesar Rego o IPTU pode entrar e sair na mesma linha (credito e
+// debito iguais em `entradas_passagem`/`saidas_passagem`) e fica FORA do
+// `total` da linha, mas a imobiliaria comissiona sobre ele. Galpao Pompilio
+// Gomes ago/2026: 4% sobre 12.414,16 + 342,04 = 510,25, exatamente o cobrado;
+// dividindo so pelo total, a tela mostrava 4,11% contra 4% cadastrados e o
+// cliente via uma diferenca que nao existia (mai a ago, todos os meses).
+//
+// So conta a passagem COMPLETA. Credito sem debito e devolucao de IPTU, e essa
+// nao e comissionada: Galpao Jose Walter jun/2026 tem 445,95 de "Dev.parc de
+// IPTU" e 8% exatos sobre o aluguel; somar a devolucao derrubaria para 7,02%.
+export function realizedCommissionBase(rows: ReceitaPorImovel[]): number {
+  return round(
+    rows.reduce((total, row) => {
+      const entrada = Number(row.entradas_passagem) || 0
+      const saida = Number(row.saidas_passagem) || 0
+      const passagemCompleta = entrada > 0 && round(entrada) === round(saida)
+      return total + row.total + (passagemCompleta ? entrada : 0)
+    }, 0),
+  )
+}

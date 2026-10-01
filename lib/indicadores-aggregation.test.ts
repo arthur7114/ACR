@@ -127,6 +127,7 @@ interface SnapshotFixture {
   aluguelRecebidoCompetencia?: number | null
   atrasosRecuperados?: number | null
   atrasosCompetenciaOrigem?: string | null
+  atrasosOrigens?: Array<{ competencia: string; valor: number }> | null
   outrosRecebimentos?: number | null
   entradasPassagem?: number | null
   saidasPassagem?: number | null
@@ -610,6 +611,9 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     // Ocupado esperava 1.000, recebeu 900 com 50 de desconto: 50 de deficit.
     ocupadoSemRecebimento: 0,
     ocupadoRecebimentoParcial: 50,
+    inadimplenciaPagaDepois: 0,
+    ocupadoSemRecebimentoPagoDepois: 0,
+    ocupadoParcialPagoDepois: 0,
     recebidoEmVago: 0,
     restoNaoExplicado: 0,
     valoresSemClassificacao: -50,
@@ -2623,4 +2627,93 @@ test("atraso cronico: a celula so lista o pagamento que quitou a competencia del
   // fechamento de maio registrou o pagamento de ABRIL.
   assert.equal(maio?.statusOcupacao, "ocupado")
   assert.deepEqual(maio?.quitacao, { competencia: "2026-06-01", valor: 466.93 })
+})
+
+// Joao Cordeiro 0002521 (flat B), queixa de 01/10/2026: "ja quitou os meses
+// atrasados". Em ago/2026 ele pagou 06 e 07 de uma vez. Com origem unica nula,
+// o mapa seguia com julho vermelho; cada mes recebe so o valor da sua origem.
+test("mes que quita duas competencias pinta as duas como quitadas, cada uma com o seu valor", () => {
+  const inquilino = "JOAO CORDEIRO,488 APART. B"
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-08-01",
+      imoveisAtivos: [makeProperty({ unidade: "0002521", inquilinoNome: inquilino, aluguelEsperadoAtual: 788.22 })],
+      fechamentos: [
+        makeClosing({ id: "f-jun", competencia: "2026-06-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+        makeClosing({ id: "f-jul", competencia: "2026-07-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+        makeClosing({ id: "f-ago", competencia: "2026-08-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+      ],
+      snapshots: [
+        makeSnapshot({ fechamentoId: "f-jun", competencia: "2026-06-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, atrasosRecuperados: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-jul", competencia: "2026-07-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, atrasosRecuperados: null, inquilinoNome: inquilino }),
+        makeSnapshot({
+          fechamentoId: "f-ago",
+          competencia: "2026-08-01",
+          statusOcupacao: "inadimplente",
+          aluguelEsperado: 788.22,
+          aluguelRecebido: 1575.91,
+          atrasosRecuperados: 1575.91,
+          atrasosCompetenciaOrigem: null,
+          atrasosOrigens: [
+            { competencia: "2026-06-01", valor: 788.22 },
+            { competencia: "2026-07-01", valor: 788.22 },
+          ],
+          inquilinoNome: inquilino,
+        }),
+      ],
+    }),
+  )
+  const celulas = data.heat.linhas.find((linha) => linha.unidade === "0002521")?.celulas
+  const quitacao = (competencia: string) => celulas?.find((cell) => cell.competencia === competencia)?.quitacao
+  assert.deepEqual(quitacao("2026-06-01"), { competencia: "2026-08-01", valor: 788.22 })
+  assert.deepEqual(quitacao("2026-07-01"), { competencia: "2026-08-01", valor: 788.22 })
+  assert.equal(quitacao("2026-08-01"), null)
+})
+
+// Decisao do Arthur (01/10/2026): "se pagar depois de uma competencia anterior,
+// atualiza". O grafico mensal tira o valor quitado da parcela de perda (sem
+// mudar a identidade da realizacao) e o percentual de inadimplentes em aberto
+// deixa de contar quem ja quitou.
+test("serie mensal: mes pago depois e atualizado, cada um com o seu valor", () => {
+  const inquilino = "JOAO CORDEIRO,488 APART. B"
+  const atrasado = (competencia: string, valor: number, origens: Array<{ competencia: string; valor: number }>) =>
+    ({ aluguelRecebido: valor, aluguelRecebidoCompetencia: null, atrasosRecuperados: valor, atrasosCompetenciaOrigem: null, atrasosOrigens: origens, competencia })
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-08-01",
+      imoveisAtivos: [makeProperty({ unidade: "0002521", inquilinoNome: inquilino, aluguelEsperadoAtual: 788.22 })],
+      fechamentos: ["05", "06", "07", "08"].map((mes) =>
+        makeClosing({ id: `f-${mes}`, competencia: `2026-${mes}-01`, analiseCompleta: makeAnalysis({ receitas: [] }) }),
+      ),
+      snapshots: [
+        makeSnapshot({ fechamentoId: "f-05", competencia: "2026-05-01", statusOcupacao: "ocupado", aluguelEsperado: 788.22, aluguelRecebido: null, desconto: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-06", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, inquilinoNome: inquilino, ...atrasado("2026-06-01", 788.22, [{ competencia: "2026-04-01", valor: 788.22 }, { competencia: "2026-05-01", valor: 788.22 }]) }),
+        makeSnapshot({ fechamentoId: "f-07", competencia: "2026-07-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-08", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, inquilinoNome: inquilino, ...atrasado("2026-08-01", 1576.44, [{ competencia: "2026-06-01", valor: 788.22 }, { competencia: "2026-07-01", valor: 788.22 }]) }),
+      ],
+    }),
+  )
+  const ponto = (competencia: string) => data.serieMensal.find((p) => p.competencia === competencia)
+  assert.equal(ponto("2026-05-01")?.ocupadoSemRecebimentoPagoDepois, 788.22)
+  assert.equal(ponto("2026-06-01")?.inadimplenciaPagaDepois, 788.22)
+  assert.equal(ponto("2026-07-01")?.inadimplenciaPagaDepois, 788.22)
+  assert.equal(ponto("2026-07-01")?.inadimplenciaPercentualEmAberto, 0)
+  // Agosto segue devendo: nada o quitou ainda.
+  assert.equal(ponto("2026-08-01")?.inadimplenciaPagaDepois, 0)
+  assert.equal(ponto("2026-08-01")?.inadimplenciaPercentualEmAberto, 100)
+  // A parcela original fica: a identidade da realizacao nao muda.
+  assert.equal(ponto("2026-07-01")?.inadimplencia, 788.22)
+})
+
+// Galpoes da Cesar Rego (Jose Walter, Pompilio, Joao Cordeiro): o extrato so
+// traz desconto quando ha. Com todos nulos a realizacao virava desconhecida.
+test("desconto nulo em unidade com linha conta como zero; sem linha segue desconhecido", () => {
+  const comLinha = aggregateIndicadores(
+    makeInput({ snapshots: [makeSnapshot({ desconto: null, aluguelRecebido: 1000, aluguelEsperado: 1000, qualidade: "completo" })] }),
+  )
+  assert.equal(comLinha.realizacaoAluguel.descontos, 0)
+  const semLinha = aggregateIndicadores(
+    makeInput({ snapshots: [makeSnapshot({ desconto: null, aluguelRecebido: null, aluguelEsperado: 1000, qualidade: "sem_linha" })] }),
+  )
+  assert.equal(semLinha.realizacaoAluguel.descontos, null)
 })

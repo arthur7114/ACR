@@ -71,6 +71,20 @@ export function receitaEsperadaInadimplente(
 // usa para pintar a competencia como quitada. Mes sem origem informada nunca e
 // dado como pago por chute.
 
+// Colunas do snapshot de que a quitacao depende. Quem le o snapshot para
+// resumir inadimplencia seleciona por esta lista; coluna nova de atraso que
+// ficar fora dela quebra indicadores-snapshots-leitores.test.ts.
+export const COLUNAS_QUITACAO = [
+  "atrasos_recuperados",
+  "atrasos_competencia_origem",
+  "atrasos_origens",
+] as const
+
+export interface AtrasoOrigem {
+  competencia: string // "YYYY-MM-DD"
+  valor: number
+}
+
 export interface SnapshotInadimplente {
   competencia: string // "YYYY-MM-DD"
   statusOcupacao: string | null
@@ -78,6 +92,30 @@ export interface SnapshotInadimplente {
   aluguelEsperado: number | null
   atrasosRecuperados: number | null
   atrasosCompetenciaOrigem: string | null
+  atrasosOrigens?: AtrasoOrigem[] | null
+}
+
+// Meses anteriores que o atraso recuperado deste snapshot quita, com o valor de
+// cada um. Com DUAS ou mais origens a lista vem de `atrasos_origens` (Joao
+// Cordeiro 0002521: 06+07 pagos em ago/2026); com uma so, de
+// `atrasos_competencia_origem`, e o valor e o atraso inteiro. Sem origem
+// informada a lista e vazia: o pagamento nao e atribuido a mes nenhum.
+export function origensDoAtraso(snapshot: {
+  competencia: string
+  atrasosRecuperados?: number | null
+  atrasosCompetenciaOrigem?: string | null
+  atrasosOrigens?: AtrasoOrigem[] | null
+}): AtrasoOrigem[] {
+  if ((snapshot.atrasosRecuperados ?? 0) <= 0) return []
+  const origens =
+    snapshot.atrasosOrigens && snapshot.atrasosOrigens.length > 0
+      ? snapshot.atrasosOrigens
+      : snapshot.atrasosCompetenciaOrigem
+        ? [{ competencia: snapshot.atrasosCompetenciaOrigem, valor: snapshot.atrasosRecuperados ?? 0 }]
+        : []
+  // Um pagamento so quita uma divida que JA existia: origem igual ou posterior
+  // ao proprio pagamento e erro de atribuicao, nao adiantamento.
+  return origens.filter((origem) => origem.competencia < snapshot.competencia)
 }
 
 export interface ResumoInadimplencia {
@@ -100,19 +138,10 @@ export interface ResumoInadimplencia {
 export function resumirInadimplencia(snapshots: SnapshotInadimplente[]): ResumoInadimplencia {
   const inadimplentes = snapshots.filter((s) => s.statusOcupacao === "inadimplente")
 
-  // Um pagamento so quita uma divida que JA existia: origem apontando para mes
-  // igual ou posterior ao proprio pagamento e erro de atribuicao, nao
-  // adiantamento. Set desdobra pagamentos repetidos para a mesma competencia
-  // (parcelamento) numa quitacao so.
+  // Set desdobra pagamentos repetidos para a mesma competencia (parcelamento)
+  // numa quitacao so.
   const quitadas = new Set(
-    snapshots
-      .filter(
-        (s) =>
-          s.atrasosCompetenciaOrigem !== null
-          && (s.atrasosRecuperados ?? 0) > 0
-          && s.atrasosCompetenciaOrigem < s.competencia,
-      )
-      .map((s) => s.atrasosCompetenciaOrigem as string),
+    snapshots.flatMap((s) => origensDoAtraso(s).map((origem) => origem.competencia)),
   )
 
   const emAberto = inadimplentes.filter((s) => !quitadas.has(s.competencia))

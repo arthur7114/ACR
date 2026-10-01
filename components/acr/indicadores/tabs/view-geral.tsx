@@ -45,13 +45,21 @@ import {
   ToggleButton,
 } from "../primitives/dashboard-ui"
 
-const OCCUPANCY_FILLS: Array<{ key: keyof IndicadoresOccupancy; label: string; fill: string }> = [
-  { key: "ocupados", label: "Ocupado", fill: "bg-acr-green" },
-  { key: "alugadosApp", label: "Alugado por app", fill: "bg-[#5b3f97]" },
-  { key: "inadimplentes", label: "Inadimplente", fill: "bg-acr-red" },
-  { key: "emRescisao", label: "Em rescisão", fill: "bg-[#315b88]" },
-  { key: "vagos", label: "Vago", fill: "bg-acr-amber" },
-  { key: "desconhecidos", label: "Desconhecido", fill: "bg-[#b9c2ba]" },
+// Ocupacao fala de vacancia, nao de pagamento (Arthur, 01/10/2026: "se estiver
+// falando de vacancia, nao cita inadimplencia"). Inadimplente e ocupado: o
+// Joao Cordeiro ago/2026 aparecia "Ocupado 1 · Inadimplente 1" e o cliente lia
+// um imovel so ocupado, quando eram dois. Inadimplencia tem card proprio.
+const OCCUPANCY_FILLS: Array<{
+  key: string
+  label: string
+  fill: string
+  read: (occupancy: IndicadoresOccupancy) => number
+}> = [
+  { key: "ocupados", label: "Ocupado", fill: "bg-acr-green", read: (o) => o.ocupados + o.inadimplentes },
+  { key: "alugadosApp", label: "Alugado por app", fill: "bg-[#5b3f97]", read: (o) => o.alugadosApp },
+  { key: "emRescisao", label: "Em rescisão", fill: "bg-[#315b88]", read: (o) => o.emRescisao },
+  { key: "vagos", label: "Vago", fill: "bg-acr-amber", read: (o) => o.vagos },
+  { key: "desconhecidos", label: "Desconhecido", fill: "bg-[#b9c2ba]", read: (o) => o.desconhecidos },
 ]
 
 export function ViewGeral({
@@ -560,12 +568,12 @@ function OccupancyDistribution({
   occupancy: IndicadoresOccupancy
   note?: string | null
 }) {
-  const segments: BarSegment[] = OCCUPANCY_FILLS.filter((item) => (occupancy[item.key] as number) > 0).map((item) => ({
+  const segments: BarSegment[] = OCCUPANCY_FILLS.filter((item) => item.read(occupancy) > 0).map((item) => ({
     key: item.key,
     label: item.label,
-    value: occupancy[item.key] as number,
+    value: item.read(occupancy),
     fill: item.fill,
-    display: formatCount(occupancy[item.key] as number),
+    display: formatCount(item.read(occupancy)),
   }))
 
   return (

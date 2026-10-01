@@ -1542,6 +1542,39 @@ test("atrasos de meses de origem diferentes deixam a origem indefinida, nunca um
   assert.equal(row.atrasos_competencia_origem, null)
 })
 
+test("dois meses de origem viram lista com o valor de cada um (Joao Cordeiro 0002521, ago/2026)", () => {
+  // O flat B paga dois meses atrasado: em ago/2026 quitou 06 e 07 juntos. Com
+  // so a origem unica (nula), nenhum dos dois era dado como quitado.
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [
+        { tipo: "atraso", valor: 300, competencia_original: "04/2026" },
+        { tipo: "atraso", valor: 200, competencia_original: "05/2026" },
+      ],
+    }),
+    700,
+  )
+
+  assert.deepEqual(row.atrasos_origens, [
+    { competencia: "2026-04-01", valor: 300 },
+    { competencia: "2026-05-01", valor: 200 },
+  ])
+})
+
+test("origem unica nao grava a lista: a coluna so chega a RPC quando precisa", () => {
+  const row = statusFor(
+    prestacaoFixture({
+      receita: { inquilino: "Inquilino", aluguel: 700, total: 700 },
+      acordos: [{ tipo: "atraso", valor: 466.93, competencia_original: "05/2026" }],
+    }),
+    700,
+  )
+
+  assert.equal(row.atrasos_competencia_origem, "2026-05-01")
+  assert.equal("atrasos_origens" in row, false)
+})
+
 test("acordo de rescisao nao define origem de atraso", () => {
   const row = statusFor(
     prestacaoFixture({
