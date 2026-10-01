@@ -3610,3 +3610,71 @@ ainda o lê como desconto retido e zera a lista. Tratá-lo como reembolso
 a receita de fechamentos já aprovados e lançados, então a decisão fica com o
 Arthur. Até lá, o card de maio do João Cordeiro mostra 5,81 "não discriminado"
 — valor certo, sem o desdobramento.
+
+## Feedback de 01/10/2026
+
+### César Rêgo — taxa realizada do Pompílio mostrava 4,11% contra 4% cadastrados
+
+Márcio apontou "está dando diferença" no card de comissão do Galpão Pompílio
+Gomes ago/2026. A comissão cobrada estava certa: 4% sobre aluguel + IPTU
+(12.414,16 + 342,04 = 12.756,20 → 510,25), o mesmo "Valor calculado" da tela.
+O erro era só o denominador da taxa realizada: o IPTU desse extrato é de
+passagem (crédito e débito na mesma linha) e fica fora do `total` da linha,
+então 510,25 / 12.414,16 dava 4,11%.
+
+`realizedCommissionBase` (`lib/comissao.ts`) soma ao total da linha o IPTU de
+passagem completa (entrada = saída). Devolução de IPTU (crédito sem débito)
+não entra — José Walter jun/2026 cairia de 8,00% para 7,02%. Recheck e Revisão
+usam o mesmo helper. Replay mai–ago/2026: só os quatro meses do Pompílio mudam,
+todos de 4,11% para 4,00%; nenhum outro fechamento se altera. A Revisão calcula
+na hora, então a tela corrige sem reprocessar.
+
+### João Cordeiro 0002521 (flat B) — meses pagos em atraso seguiam em aberto
+
+Márcio: "flat B já quitou os meses atrasados". O inquilino paga sempre dois
+meses depois: 04+05 em jun/2026, 06+07 em ago/2026. O snapshot guarda uma só
+origem do atraso (`atrasos_competencia_origem`) e, com duas, grava nula. Nenhum
+dos dois meses era dado como quitado: o mapa e o "Unidades em aberto" seguiam
+com julho e agosto. No banco inteiro, só esses dois snapshots têm atraso pago
+sem origem.
+
+Migration `202610010001_atrasos_varias_origens.sql`: coluna `atrasos_origens`
+jsonb, `[{competencia, valor}]`, gravada só com duas ou mais origens (com uma
+continua valendo a coluna antiga). O valor de cada origem é o aluguel cheio da
+linha: o desconto de 0,26 concedido no atraso também encerra a dívida, e com o
+líquido a quitação ficava "parcial" por centavos. `origensDoAtraso`
+(`lib/inadimplencia-mes.ts`) é o leitor único: mapa (`resolveQuitacao`), resumo
+do imóvel e histórico.
+
+**Aplicado em 01/10/2026:** migration via psql numa transação, registrada em
+`supabase_migrations.schema_migrations`; backfill gravou 2 snapshots (0002521
+jun e ago), 471 sem mudança, tabelas de origem intactas. Verificador `ok`
+(473/473 checksums, 33 conciliações). Indicadores reais conferidos: jun e jul
+quitados em ago, ago em aberto R$ 788,22; histórico 3 meses, 2 quitados, 1 em
+aberto.
+
+**O verificador acusou as 2 linhas novas como checksum inválido** — falso
+positivo: `calculatePersistedSnapshotChecksum` tem lista de colunas à mão e a
+nova não estava nela (e o jsonb devolve as chaves em outra ordem). Mesma classe
+A do registro de incidentes, agora do lado de quem LÊ.
+`lib/server/indicadores-snapshots-leitores.test.ts` tira as colunas do builder
+e exige cada uma no select, no zod e no `mapSnapshot` dos indicadores, no
+select/tipo/checksum do verificador, e toda coluna `atrasos_*` em
+`COLUNAS_QUITACAO` e no select do histórico. Coluna ignorada de propósito vai
+para a lista com o motivo. Prova: tirar `atrasos_origens` do select do
+verificador quebra o teste.
+
+**Em aberto, decisão de produto:** o gráfico de evolução mensal é por
+competência. Jun e jul seguem vermelhos porque naquele mês o aluguel não
+entrou; o pagamento de ago aparece como atraso recuperado. Mai está "ocupado sem
+recebimento", não inadimplente, porque o fechamento de maio não tem o marcador
+de INADIMPLENCIA. O card de ocupação mostra "Ocupado 1 · Inadimplente 1" (partição);
+o cliente lê como "2 ocupados, 1 inadimplente".
+
+### Indicadores — aba "Conciliação financeira" removida
+
+Pedido explícito da ACR (01/10/2026, "Excluir" sobre a aba), item 12 do plano
+de 21/09. Saiu a aba inteira (`view-receita.tsx`), com a ponte contábil, a
+tabela de realização do aluguel e as contagens de acordos/rescisões/
+intermediações/atrasos. A realização continua no gráfico de evolução mensal da
+Visão geral. Link antigo `?tab=receita` cai na Visão geral.

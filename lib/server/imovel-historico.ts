@@ -258,7 +258,9 @@ async function resumirInadimplenciaDaUnidade(
   const { data, error } = await supabase
     .from("imovel_competencias")
     .select(
-      "competencia, status_ocupacao, cobranca_esperada, aluguel_esperado, atrasos_recuperados, atrasos_competencia_origem",
+      // Texto literal para o Supabase tipar o resultado. As colunas de atraso
+      // tem de bater com COLUNAS_QUITACAO (indicadores-snapshots-leitores.test.ts).
+      "competencia, status_ocupacao, cobranca_esperada, aluguel_esperado, atrasos_recuperados, atrasos_competencia_origem, atrasos_origens",
     )
     .eq("imovel_id", imovel.id)
     .order("competencia", { ascending: true })
@@ -272,6 +274,12 @@ async function resumirInadimplenciaDaUnidade(
     atrasosRecuperados: numOrNull(row.atrasos_recuperados),
     atrasosCompetenciaOrigem: row.atrasos_competencia_origem
       ? String(row.atrasos_competencia_origem).slice(0, 10)
+      : null,
+    atrasosOrigens: Array.isArray(row.atrasos_origens)
+      ? (row.atrasos_origens as Array<{ competencia: string; valor: number }>).map((origem) => ({
+          competencia: String(origem.competencia).slice(0, 10),
+          valor: Number(origem.valor),
+        }))
       : null,
   }))
   return resumirInadimplencia(snapshots)
