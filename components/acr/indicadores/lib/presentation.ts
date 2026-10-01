@@ -7,7 +7,7 @@ import type {
 
 export type DashboardMetric = "valor" | "percentual"
 export type HeatMetric = "inad" | "vac"
-export type DashboardTab = "geral" | "receita" | "mapa" | "imoveis"
+export type DashboardTab = "geral" | "mapa" | "imoveis"
 export type MonthlySeriesPeriod = "3" | "6" | "12" | "custom"
 export type ConfidenceStatus = "confirmado" | "em_conferencia" | "incompleto" | "com_divergencia"
 

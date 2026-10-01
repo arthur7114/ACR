@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils"
 import { EmptyState } from "../indicadores/primitives/dashboard-ui"
 import { formatDateTime, getClosingsCoverage, type DashboardMetric, type DashboardTab, type HeatMetric } from "../indicadores/lib/presentation"
 import { ViewGeral } from "../indicadores/tabs/view-geral"
-import { ViewReceita } from "../indicadores/tabs/view-receita"
 import { ViewMapa } from "../indicadores/tabs/view-mapa"
 import { ViewRegistro } from "../indicadores/tabs/view-registro"
 
@@ -15,7 +14,6 @@ type Filters = { competencia: string; empresaId: string; empreendimentoId: strin
 
 const TABS: Array<{ id: DashboardTab; label: string }> = [
   { id: "geral", label: "Visão geral" },
-  { id: "receita", label: "Conciliação financeira" },
   { id: "mapa", label: "Riscos por imóvel" },
   { id: "imoveis", label: "Detalhamento por imóvel" },
 ]
@@ -214,7 +212,6 @@ export function IndicadoresView() {
           ) : (
             <div id={`indicadores-panel-${tab}`} role="tabpanel" aria-labelledby={`indicadores-tab-${tab}`} tabIndex={0} className="min-w-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acr-green">
               {tab === "geral" && <ViewGeral data={data} metric={metric} onMetricChange={changeMetric} />}
-              {tab === "receita" && <ViewReceita data={data} />}
               {tab === "mapa" && <ViewMapa data={data} heatMetric={heatMetric} onHeatMetricChange={changeHeatMetric} />}
               {tab === "imoveis" && <ViewRegistro data={data} />}
             </div>
@@ -377,7 +374,9 @@ function getUrlState(): { filters: Filters; tab: DashboardTab; metric: Dashboard
   }
   const params = new URLSearchParams(window.location.search)
   const rawTab = params.get("tab")
-  const tab: DashboardTab = rawTab === "receita" || rawTab === "mapa" || rawTab === "imoveis" ? rawTab : rawTab === "registro" ? "imoveis" : "geral"
+  // "receita" era a Conciliação financeira, removida a pedido da cliente
+  // (01/10/2026): link antigo cai na Visão geral.
+  const tab: DashboardTab = rawTab === "mapa" || rawTab === "imoveis" ? rawTab : rawTab === "registro" ? "imoveis" : "geral"
   const rawMetric = params.get("metric")
   const metric: DashboardMetric = rawMetric === "percentual" || rawMetric === "pct" ? "percentual" : "valor"
   const heatMetric: HeatMetric = params.get("heatMetric") === "vac" ? "vac" : "inad"

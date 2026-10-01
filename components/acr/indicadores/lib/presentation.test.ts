@@ -343,7 +343,6 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     "./presentation.ts",
     "../primitives/dashboard-ui.tsx",
     "../tabs/view-geral.tsx",
-    "../tabs/view-receita.tsx",
     "../tabs/view-mapa.tsx",
     "../tabs/view-registro.tsx",
     "../../views/indicadores-view.tsx",
@@ -374,18 +373,17 @@ test("mantém a nomenclatura de negócio e remove termos técnicos da interface"
     // D25 — rótulos do antigo bloco de repasse.
     '"Repasse e evidências"',
     '"Diferença no universo comprovado"',
+    // Aba removida a pedido da cliente (01/10/2026).
+    '"Conciliação financeira"',
   ]) {
     assert.equal(source.includes(retiredTerm), false, `termo aposentado encontrado: ${retiredTerm}`)
   }
 
   for (const requiredTerm of [
-    "Conciliação financeira",
     "Riscos por imóvel",
     "Detalhamento por imóvel",
     // D25 — o par comparável e o veredito ficam explícitos; comprovante ausente
     // nunca deve voltar a ser lido como divergência.
-    "Confirmado pelo banco",
-    "Calculado com comprovante",
     "Confere com o banco",
   ]) {
     assert.equal(source.includes(requiredTerm), true, `termo obrigatório ausente: ${requiredTerm}`)
