@@ -13,6 +13,7 @@ import {
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { IndicadoresRevenueModel } from "@/lib/indicadores-types"
+import type { AtrasoOrigem } from "@/lib/inadimplencia-mes"
 import type { createSupabaseAdmin } from "./supabase"
 
 // v3: estado final × eventos (rescisão deixa de ser status), cobrança esperada
@@ -88,6 +89,13 @@ export interface IndicadoresSnapshotRow {
    * Campo distinto de `competencia_original`, que descreve o ALUGUEL da linha.
    */
   atrasos_competencia_origem?: string | null
+  /**
+   * Origens do atraso quando o mes quita DUAS ou mais competencias anteriores,
+   * cada uma com o valor que o documento atribui a ela. Ausente com origem
+   * unica (vale `atrasos_competencia_origem`) — assim o campo so chega a RPC
+   * no caso que precisa dele.
+   */
+  atrasos_origens?: AtrasoOrigem[]
   outros_recebimentos?: number | null
   entradas_passagem?: number | null
   saidas_passagem?: number | null
@@ -500,23 +508,39 @@ function buildSnapshotRow(input: {
   // descartada e o atraso nascia sem origem, indistinguível do aluguel do mês.
   // Só vale quando há uma origem única e anterior: com atrasos de meses
   // diferentes somados num valor só, apontar um deles seria invenção.
-  const recoveredOrigins = new Set<string>()
+  const recoveredOrigins = new Map<string, number>()
+  const addOrigin = (origem: string | null, valor: number | null) => {
+    if (!origem) return
+    recoveredOrigins.set(origem, roundMoney((recoveredOrigins.get(origem) ?? 0) + (valor ?? 0)))
+  }
   for (const line of propertyLines) {
     if (!belongsToEarlierCompetence(line, input.competencia)) continue
     // Mesmo resolvedor de `belongsToEarlierCompetence`: a origem pode ter vindo
     // do texto da observação, e não só do campo estruturado.
-    const origem = resolveLineCompetence(line, input.competencia)
-    if (origem) recoveredOrigins.add(origem)
+    // Valor que a linha LIQUIDA: o aluguel cheio. O desconto concedido no
+    // atraso tambem encerra a divida (flat B pagou 787,96 de 788,22 com 0,26 de
+    // desconto); com o liquido a quitacao ficava "parcial" por centavos.
+    addOrigin(resolveLineCompetence(line, input.competencia), line.aluguel ?? line.aluguel_com_desconto ?? null)
   }
-  for (const { item } of agreementsResolvidos) {
+  for (const { item, financeiro } of agreementsResolvidos) {
     if (!isRecuperacaoDeAtraso(item, input.competencia)) continue
-    const origem = normalizeOptionalCompetence(item.competencia_original)
-    if (origem) recoveredOrigins.add(origem)
+    addOrigin(normalizeOptionalCompetence(item.competencia_original), financeiro.totalRecebido)
   }
-  const [origemUnica] = [...recoveredOrigins]
+  const competenciaAtual = normalizeCompetence(input.competencia)
+  const origensAnteriores = [...recoveredOrigins]
+    .filter(([competencia]) => competencia < competenciaAtual)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([competencia, valor]) => ({ competencia, valor }))
   const recoveredOrigin =
-    recoveredOrigins.size === 1 && origemUnica < normalizeCompetence(input.competencia)
-      ? origemUnica
+    recoveredOrigins.size === 1 && origensAnteriores.length === 1
+      ? origensAnteriores[0].competencia
+      : null
+  // Dois meses pagos de uma vez (Joao Cordeiro 0002521, flat B: 04+05 em jun,
+  // 06+07 em ago/2026). Com a origem unica nula, nenhum dos dois era quitado.
+  // Cada origem leva o valor da propria linha, entao nada e atribuido no chute.
+  const recoveredOriginsList =
+    recoveredOrigins.size >= 2 && origensAnteriores.length === recoveredOrigins.size
+      ? origensAnteriores
       : null
   const otherFromLines = sumKnownMoney(
     propertyLines.map((line) => {
@@ -634,6 +658,7 @@ function buildSnapshotRow(input: {
     garagem_recebida: garagemRecebida,
     atrasos_recuperados: recoveredLate,
     atrasos_competencia_origem: recoveredOrigin,
+    ...(recoveredOriginsList ? { atrasos_origens: recoveredOriginsList } : {}),
     outros_recebimentos: otherReceipts,
     entradas_passagem: passageEntries,
     saidas_passagem: passageExits,

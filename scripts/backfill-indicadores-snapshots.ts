@@ -280,6 +280,7 @@ interface DatabaseSnapshotRow {
   aluguel_competencia: number | string | null
   atrasos_recuperados: number | string | null
   atrasos_competencia_origem: string | null
+  atrasos_origens?: Array<{ competencia: string; valor: number | string }> | null
   outros_recebimentos: number | string | null
   entradas_passagem: number | string | null
   saidas_passagem: number | string | null
@@ -362,7 +363,7 @@ async function loadExistingSnapshots(supabase: SupabaseAdmin, options: BackfillO
       `imovel_id,fechamento_id,competencia,status_ocupacao,status_origem,inquilino_nome,
        aluguel_esperado,aluguel_esperado_origem,cobranca_esperada,eventos,garagem_recebida,
        aluguel_recebido,receita_total,desconto,
-       aluguel_competencia,atrasos_recuperados,atrasos_competencia_origem,outros_recebimentos,entradas_passagem,
+       aluguel_competencia,atrasos_recuperados,atrasos_competencia_origem,atrasos_origens,outros_recebimentos,entradas_passagem,
        saidas_passagem,comissao_administracao,repasse_apurado,vencimento_referencia,
        competencia_original,competencia_recebimento,dia_vencimento,modelo_receita,
        status_mensal_explicito,quantidade_linhas,origem,qualidade,calculo_versao,checksum,
@@ -441,6 +442,14 @@ function calculatePersistedSnapshotChecksum(snapshot: DatabaseSnapshotRow) {
     aluguel_competencia: nullableNumber(snapshot.aluguel_competencia),
     atrasos_recuperados: nullableNumber(snapshot.atrasos_recuperados),
     atrasos_competencia_origem: snapshot.atrasos_competencia_origem,
+    // jsonb devolve as chaves em outra ordem ({valor, competencia}); remontar
+    // na ordem do builder e o que deixa o hash reproduzivel.
+    atrasos_origens: snapshot.atrasos_origens
+      ? snapshot.atrasos_origens.map((origem) => ({
+          competencia: normalizeCompetence(origem.competencia),
+          valor: nullableNumber(origem.valor) as number,
+        }))
+      : undefined,
     outros_recebimentos: nullableNumber(snapshot.outros_recebimentos),
     entradas_passagem: nullableNumber(snapshot.entradas_passagem),
     saidas_passagem: nullableNumber(snapshot.saidas_passagem),

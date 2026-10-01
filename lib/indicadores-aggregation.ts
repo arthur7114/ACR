@@ -2,6 +2,7 @@ import { normalizeCodigoImovel } from "./codigo-imovel"
 import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
+import { origensDoAtraso, type AtrasoOrigem } from "./inadimplencia-mes"
 import {
   recortarDespesaOperacional,
   type RecorteDespesaOperacional,
@@ -197,6 +198,8 @@ export interface IndicadoresSnapshotInput {
   // Competência ("YYYY-MM-01") do mês anterior que o atraso recuperado quita.
   // Nula quando o documento não informa ou quando há mais de uma origem.
   atrasosCompetenciaOrigem?: string | null
+  // Com DUAS ou mais origens no mesmo mes, cada uma com seu valor. Ver origensDoAtraso.
+  atrasosOrigens?: AtrasoOrigem[] | null
   outrosRecebimentos?: number | null
   entradasPassagem?: number | null
   saidasPassagem?: number | null
@@ -1808,16 +1811,17 @@ function resolveQuitacao(
   historico: IndicadoresSnapshotInput[],
   competencia: string,
 ): IndicadoresHeatCell["quitacao"] {
-  const recuperacoes = historico.filter(
-    (snapshot) =>
-      snapshot.competencia > competencia
-      && snapshot.atrasosCompetenciaOrigem === competencia
-      && (snapshot.atrasosRecuperados ?? 0) > 0,
+  // Um mes pode quitar varios: o flat B do Joao Cordeiro pagou 06 e 07 juntos em
+  // ago/2026. Cada competencia recebe so o valor da propria origem.
+  const recuperacoes = historico.flatMap((snapshot) =>
+    origensDoAtraso(snapshot)
+      .filter((origem) => origem.competencia === competencia)
+      .map((origem) => ({ competencia: snapshot.competencia, valor: origem.valor })),
   )
   if (recuperacoes.length === 0) return null
   return {
-    competencia: recuperacoes.map((snapshot) => snapshot.competencia).sort().at(-1) as string,
-    valor: roundMoney(recuperacoes.reduce((total, snapshot) => total + (snapshot.atrasosRecuperados ?? 0), 0)),
+    competencia: recuperacoes.map((recuperacao) => recuperacao.competencia).sort().at(-1) as string,
+    valor: roundMoney(recuperacoes.reduce((total, recuperacao) => total + recuperacao.valor, 0)),
   }
 }
 

@@ -127,6 +127,7 @@ interface SnapshotFixture {
   aluguelRecebidoCompetencia?: number | null
   atrasosRecuperados?: number | null
   atrasosCompetenciaOrigem?: string | null
+  atrasosOrigens?: Array<{ competencia: string; valor: number }> | null
   outrosRecebimentos?: number | null
   entradasPassagem?: number | null
   saidasPassagem?: number | null
@@ -2623,4 +2624,45 @@ test("atraso cronico: a celula so lista o pagamento que quitou a competencia del
   // fechamento de maio registrou o pagamento de ABRIL.
   assert.equal(maio?.statusOcupacao, "ocupado")
   assert.deepEqual(maio?.quitacao, { competencia: "2026-06-01", valor: 466.93 })
+})
+
+// Joao Cordeiro 0002521 (flat B), queixa de 01/10/2026: "ja quitou os meses
+// atrasados". Em ago/2026 ele pagou 06 e 07 de uma vez. Com origem unica nula,
+// o mapa seguia com julho vermelho; cada mes recebe so o valor da sua origem.
+test("mes que quita duas competencias pinta as duas como quitadas, cada uma com o seu valor", () => {
+  const inquilino = "JOAO CORDEIRO,488 APART. B"
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-08-01",
+      imoveisAtivos: [makeProperty({ unidade: "0002521", inquilinoNome: inquilino, aluguelEsperadoAtual: 788.22 })],
+      fechamentos: [
+        makeClosing({ id: "f-jun", competencia: "2026-06-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+        makeClosing({ id: "f-jul", competencia: "2026-07-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+        makeClosing({ id: "f-ago", competencia: "2026-08-01", analiseCompleta: makeAnalysis({ receitas: [] }) }),
+      ],
+      snapshots: [
+        makeSnapshot({ fechamentoId: "f-jun", competencia: "2026-06-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, atrasosRecuperados: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-jul", competencia: "2026-07-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, atrasosRecuperados: null, inquilinoNome: inquilino }),
+        makeSnapshot({
+          fechamentoId: "f-ago",
+          competencia: "2026-08-01",
+          statusOcupacao: "inadimplente",
+          aluguelEsperado: 788.22,
+          aluguelRecebido: 1575.91,
+          atrasosRecuperados: 1575.91,
+          atrasosCompetenciaOrigem: null,
+          atrasosOrigens: [
+            { competencia: "2026-06-01", valor: 788.22 },
+            { competencia: "2026-07-01", valor: 788.22 },
+          ],
+          inquilinoNome: inquilino,
+        }),
+      ],
+    }),
+  )
+  const celulas = data.heat.linhas.find((linha) => linha.unidade === "0002521")?.celulas
+  const quitacao = (competencia: string) => celulas?.find((cell) => cell.competencia === competencia)?.quitacao
+  assert.deepEqual(quitacao("2026-06-01"), { competencia: "2026-08-01", valor: 788.22 })
+  assert.deepEqual(quitacao("2026-07-01"), { competencia: "2026-08-01", valor: 788.22 })
+  assert.equal(quitacao("2026-08-01"), null)
 })

@@ -114,6 +114,7 @@ const snapshotRowsSchema = z.array(
     aluguel_competencia: databaseMoneySchema.optional(),
     atrasos_recuperados: databaseMoneySchema.optional(),
     atrasos_competencia_origem: z.string().nullable().optional(),
+    atrasos_origens: z.array(z.object({ competencia: z.string(), valor: z.coerce.number() })).nullable().optional(),
     observacao: z.string().nullable().optional(),
     outros_recebimentos: databaseMoneySchema.optional(),
     entradas_passagem: databaseMoneySchema.optional(),
@@ -455,7 +456,7 @@ async function loadSnapshotRows(
         `imovel_id, fechamento_id, competencia, status_ocupacao, status_origem,
          inquilino_nome, aluguel_esperado, cobranca_esperada, eventos,
          garagem_recebida, aluguel_recebido, aluguel_competencia,
-         atrasos_recuperados, atrasos_competencia_origem, outros_recebimentos, entradas_passagem, saidas_passagem, observacao,
+         atrasos_recuperados, atrasos_competencia_origem, atrasos_origens, outros_recebimentos, entradas_passagem, saidas_passagem, observacao,
          receita_total, desconto, comissao_administracao, repasse_apurado,
          vencimento_referencia, competencia_original, competencia_recebimento,
          dia_vencimento, modelo_receita, status_mensal_explicito, origem,
@@ -588,6 +589,12 @@ function mapSnapshot(row: z.infer<typeof snapshotRowsSchema>[number]): Indicador
     atrasosRecuperados: nullableOptionalMoney(row.atrasos_recuperados),
     atrasosCompetenciaOrigem: row.atrasos_competencia_origem
       ? normalizeCompetence(row.atrasos_competencia_origem)
+      : null,
+    atrasosOrigens: row.atrasos_origens
+      ? row.atrasos_origens.map((origem) => ({
+          competencia: normalizeCompetence(origem.competencia),
+          valor: roundMoney(origem.valor),
+        }))
       : null,
     outrosRecebimentos: nullableOptionalMoney(row.outros_recebimentos),
     entradasPassagem: nullableOptionalMoney(row.entradas_passagem),
