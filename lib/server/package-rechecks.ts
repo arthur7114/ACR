@@ -15,7 +15,7 @@ import type { CommercialRuleForValidation } from "./regras-comerciais"
 import { reconciliarResumoDespesas } from "@/lib/despesas-locador"
 import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
 import { resolveReceitaCompetencias } from "@/lib/competencia-fechamento"
-import { commissionBaseComponents, calculatedAdminCommission as computeAdminCommission } from "@/lib/comissao"
+import { commissionBaseComponents, calculatedAdminCommission as computeAdminCommission, realizedCommissionBase } from "@/lib/comissao"
 import { ensureReceitaLineIds } from "./fechamento-corrections"
 
 const MONEY_TOLERANCE = 0.01
@@ -430,8 +430,10 @@ function calculateTotals(
   const totalComissaoDespesas = roundMoney(consolidadoRetido ?? totalComissoes + totalDespesas)
   const comissaoIntermediacao = totalComissaoIntermediacao(prestacao)
   // Comissao realizada = comissao das linhas / total das linhas da tabela (mensal regular),
-  // sem misturar comissao de acordos nem o recebido bruto com acordos.
-  const realizedCommissionPercent = lineTotalReceitas > 0 ? roundPercent((lineTotalComissoes / lineTotalReceitas) * 100) : null
+  // sem misturar comissao de acordos nem o recebido bruto com acordos. O IPTU de
+  // passagem entra no denominador porque tambem e comissionado (ver realizedCommissionBase).
+  const realizedBase = realizedCommissionBase(rows)
+  const realizedCommissionPercent = realizedBase > 0 ? roundPercent((lineTotalComissoes / realizedBase) * 100) : null
   const totalRepasseBruto = roundMoney(resumo?.total_linhas_repasse ?? lineTotalRepasse)
   const totalARepassar = roundMoney(resumo?.total_a_repassar ?? totalReceitas - totalComissaoDespesas - comissaoIntermediacao)
   // Sem comprovante separado, mas com repasse embutido no extrato: o proprio

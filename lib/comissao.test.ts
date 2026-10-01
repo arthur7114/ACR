@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { ReceitaPorImovel } from "./prestacao-types"
-import { calculatedAdminCommission, commissionBaseComponents } from "./comissao"
+import { calculatedAdminCommission, commissionBaseComponents, realizedCommissionBase } from "./comissao"
 
 function row(overrides: Partial<ReceitaPorImovel>): ReceitaPorImovel {
   return {
@@ -66,4 +66,23 @@ test("encargo financeiro por atraso entra na base da comissao", () => {
   assert.equal(base.totalOutrosRecebimentos, 176.1)
   assert.equal(base.base, 2989.33)
   assert.equal(calculatedAdminCommission(base.base, 5), 149.47)
+})
+
+test("taxa realizada inclui o IPTU de passagem comissionado (Pompilio Gomes ago/2026)", () => {
+  const rows = [
+    row({ aluguel: 6896.75, iptu: 193.02, total: 6896.75, comissao: 283.59, entradas_passagem: 193.02, saidas_passagem: 193.02 }),
+    row({ aluguel: 5517.41, iptu: 149.02, total: 5517.41, comissao: 226.66, entradas_passagem: 149.02, saidas_passagem: 149.02 }),
+  ]
+  const base = realizedCommissionBase(rows)
+  assert.equal(base, 12756.2)
+  assert.equal(Math.round((510.25 / base) * 10000) / 100, 4)
+})
+
+test("sem IPTU de passagem a base da taxa realizada e o total das linhas", () => {
+  assert.equal(realizedCommissionBase([row({ total: 1000 }), row({ total: 500.5 })]), 1500.5)
+})
+
+test("devolucao de IPTU (credito sem debito) nao entra na base da taxa realizada (Jose Walter jun/2026)", () => {
+  const rows = [row({ aluguel: 3200, iptu: 445.95, total: 3200, comissao: 256, entradas_passagem: 445.95, saidas_passagem: null })]
+  assert.equal(realizedCommissionBase(rows), 3200)
 })
