@@ -53,6 +53,8 @@ function dados(overrides: Partial<IndicadoresData> = {}): IndicadoresData {
       ajustesClassificados: 0,
       // Decomposicao real de julho/2026: os R$ 3.945,36 que a ponte chamava de
       // "sem documento" sao tres causas nomeaveis, e elas fecham em zero.
+      cobradoComoIntermediacao: 0,
+      mesProporcionalContratoNovo: 0,
       ocupadoSemRecebimento: 2031.98,
       ocupadoRecebimentoParcial: 2314.49,
       recebidoEmVago: 401.11,
@@ -288,4 +290,36 @@ test("unidade inadimplente devolve o gap a inadimplencia e nao entra no residuo"
   )
 
   assert.deepEqual(contribuicoes, [])
+})
+
+// Carteira ago/2026: a identidade acusava 5.451,62 (esperado 263,65, obtido
+// -5.187,97) num calculo que fechava. A diferenca e a intermediacao mais o mes
+// proporcional, que `restoNaoExplicado` ja descontava e a identidade nao.
+test("decomposicao do resto inclui intermediacao e mes proporcional", () => {
+  const base = dados().realizacaoAluguel
+  const realizacao = {
+    ...base,
+    cobradoComoIntermediacao: 3656.26,
+    mesProporcionalContratoNovo: 1795.36,
+    ocupadoSemRecebimento: 0,
+    ocupadoRecebimentoParcial: 0,
+    recebidoEmVago: 263.65,
+    restoNaoExplicado: 0,
+    valoresSemClassificacao: -5187.97,
+  }
+  const falhas = verificarIdentidades(dados({ realizacaoAluguel: realizacao }))
+  assert.equal(falhas.find((falha) => falha.id === "realizacao_decomposicao_do_resto"), undefined)
+
+  // E continua acusando quando a intermediacao some da conta.
+  const semIntermediacao = verificarIdentidades(
+    dados({ realizacaoAluguel: { ...realizacao, cobradoComoIntermediacao: 0 } }),
+  ).find((falha) => falha.id === "realizacao_decomposicao_do_resto")
+  assert.equal(semIntermediacao?.diferenca, 3656.26)
+})
+
+test("mes sem atraso nao e lado ausente: atraso nulo e zero", () => {
+  const falhas = verificarIdentidades(
+    dados({ realizacaoAluguel: { ...dados().realizacaoAluguel, atrasosRecuperados: null, alugueisRecebidosMes: 67484.3 } }),
+  )
+  assert.equal(falhas.find((falha) => falha.id === "realizacao_alugueis_do_mes"), undefined)
 })

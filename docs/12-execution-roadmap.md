@@ -3680,9 +3680,28 @@ verificador quebra o teste.
   ocupação soma inadimplente em "Ocupado" (ago: "Ocupado 2"). Inadimplência
   tem card próprio.
 
-As identidades `realizacao_*` divergem na carteira de ago/2026 (5.451,62 =
-intermediação + proporcional, fora da identidade de decomposição do resto). É
-igual no main, então não é regressão; ficou como tarefa separada.
+### Identidades da realização — três falsos alarmes, todos anteriores
+
+Rodando `verificarIdentidades` em cada empreendimento de mai a ago/2026 havia 20
+avisos. Nenhum era erro de cálculo:
+
+1. **`realizacao_decomposicao_do_resto` (carteira ago, 5.451,62):** a
+   identidade não descontava intermediação nem mês proporcional, que
+   `restoNaoExplicado` já desconta. Agora são as mesmas cinco parcelas.
+2. **Galpões da Cesar Rego (José Walter, Pompílio, João Cordeiro), "lado
+   ausente" em todo mês:** o extrato só traz desconto quando há. Com todos
+   nulos, `descontos` virava null e a realização inteira ficava desconhecida.
+   Desconto nulo em unidade com linha conta como zero; sem linha
+   (`qualidade = sem_linha`) segue desconhecido. Depois: os três fecham com
+   resto 0,00 em todos os meses.
+3. **`realizacao_alugueis_do_mes` / `resumo_aluguel_recebido` (LOCMAIS,
+   Messejana, Castelão):** atraso nulo é "nenhum atraso", e o cálculo já o
+   tratava como zero; a identidade não. `somaRecebidos` só considera
+   desconhecido quando os dois lados são nulos.
+
+Sobra só TERRENO CASTELÃO mai/2026: aluguel cadastrado zero (placeholder de
+migração), desconhecido de propósito (CA-IND22). Carteira: zero avisos de mai
+a ago.
 
 ### Indicadores — aba "Conciliação financeira" removida
 

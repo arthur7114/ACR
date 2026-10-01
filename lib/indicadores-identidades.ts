@@ -47,6 +47,15 @@ export interface DivergenciaIdentidade {
 const arredondar = (valor: number) => Math.round((valor + Number.EPSILON) * 100) / 100
 
 /** Soma que devolve null se qualquer parcela for desconhecida. */
+// Atraso nulo e "nenhum atraso no mes": o snapshot so grava o campo quando
+// houve. A soma estrita transformava todo mes sem atraso em "lado ausente"
+// (LOCMAIS, Messejana, Castelao), enquanto o calculo que ela confere ja tratava
+// o nulo como zero. So os dois nulos juntos sao desconhecidos.
+function somaRecebidos(competencia: number | null, atrasos: number | null): number | null {
+  if (competencia === null && atrasos === null) return null
+  return arredondar((competencia ?? 0) + (atrasos ?? 0))
+}
+
 function somaEstrita(valores: Array<number | null | undefined>): number | null {
   let total = 0
   for (const valor of valores) {
@@ -108,9 +117,15 @@ export const IDENTIDADES_INDICADORES: IdentidadeKpi[] = [
   {
     id: "realizacao_decomposicao_do_resto",
     descricao:
-      "realização: −ocupado sem recebimento − ocupado parcial + recebido em vago + resto não explicado = valores sem classificação",
+      "realização: −cobrado como intermediação − mês proporcional − ocupado sem recebimento − ocupado parcial + recebido em vago + resto não explicado = valores sem classificação",
+    // As cinco parcelas sao as mesmas de `restoNaoExplicado` em
+    // buildRentRealization. Faltavam intermediacao e mes proporcional: a
+    // carteira de ago/2026 acusava 5.451,62 de divergencia — exatamente a soma
+    // das duas — num calculo que fechava.
     avaliar: ({ realizacaoAluguel: r }) => ({
       esperado: somaEstrita([
+        r.cobradoComoIntermediacao === null ? null : -r.cobradoComoIntermediacao,
+        r.mesProporcionalContratoNovo === null ? null : -r.mesProporcionalContratoNovo,
         r.ocupadoSemRecebimento === null ? null : -r.ocupadoSemRecebimento,
         r.ocupadoRecebimentoParcial === null ? null : -r.ocupadoRecebimentoParcial,
         r.recebidoEmVago,
@@ -123,7 +138,7 @@ export const IDENTIDADES_INDICADORES: IdentidadeKpi[] = [
     id: "realizacao_alugueis_do_mes",
     descricao: "realização: recebido da competência + atrasos recuperados = aluguéis recebidos no mês",
     avaliar: ({ realizacaoAluguel: r }) => ({
-      esperado: somaEstrita([r.recebidoCompetencia, r.atrasosRecuperados]),
+      esperado: somaRecebidos(r.recebidoCompetencia, r.atrasosRecuperados),
       obtido: r.alugueisRecebidosMes,
     }),
   },
@@ -131,7 +146,7 @@ export const IDENTIDADES_INDICADORES: IdentidadeKpi[] = [
     id: "resumo_aluguel_recebido",
     descricao: "resumo: aluguel recebido da competência + atrasos recuperados = aluguel recebido (v1)",
     avaliar: ({ resumo: s }) => ({
-      esperado: somaEstrita([s.aluguelRecebidoCompetencia, s.atrasosRecuperados]),
+      esperado: somaRecebidos(s.aluguelRecebidoCompetencia, s.atrasosRecuperados),
       obtido: s.aluguelRecebido,
     }),
   },

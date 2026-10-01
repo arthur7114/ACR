@@ -2704,3 +2704,16 @@ test("serie mensal: mes pago depois e atualizado, cada um com o seu valor", () =
   // A parcela original fica: a identidade da realizacao nao muda.
   assert.equal(ponto("2026-07-01")?.inadimplencia, 788.22)
 })
+
+// Galpoes da Cesar Rego (Jose Walter, Pompilio, Joao Cordeiro): o extrato so
+// traz desconto quando ha. Com todos nulos a realizacao virava desconhecida.
+test("desconto nulo em unidade com linha conta como zero; sem linha segue desconhecido", () => {
+  const comLinha = aggregateIndicadores(
+    makeInput({ snapshots: [makeSnapshot({ desconto: null, aluguelRecebido: 1000, aluguelEsperado: 1000, qualidade: "completo" })] }),
+  )
+  assert.equal(comLinha.realizacaoAluguel.descontos, 0)
+  const semLinha = aggregateIndicadores(
+    makeInput({ snapshots: [makeSnapshot({ desconto: null, aluguelRecebido: null, aluguelEsperado: 1000, qualidade: "sem_linha" })] }),
+  )
+  assert.equal(semLinha.realizacaoAluguel.descontos, null)
+})

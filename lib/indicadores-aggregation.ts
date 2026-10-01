@@ -1087,7 +1087,15 @@ function buildRentRealization(
             .filter((snapshot) => snapshot.statusOcupacao === "inadimplente")
             .reduce((total, snapshot) => total + pagoDepoisDe(snapshot, gapInadimplencia(snapshot)), 0),
         )
-  const discounts = sumKnown(snapshots.map((snapshot) => snapshot.desconto))
+  // Desconto nulo em unidade COM linha no documento e "nao houve desconto": o
+  // extrato da Cesar Rego so traz o campo quando ha desconto. Somar so os
+  // conhecidos dava null nos tres galpoes (Jose Walter, Pompilio Gomes, Joao
+  // Cordeiro) e derrubava a realizacao inteira para desconhecida — as
+  // identidades acusavam "lado ausente" em todo mes. Sem linha segue
+  // desconhecido: ai nao ha documento dizendo nada.
+  const discounts = sumKnown(
+    snapshots.map((snapshot) => snapshot.desconto ?? (snapshot.qualidade === "sem_linha" ? null : 0)),
+  )
   const classifiedAdjustments =
     snapshots.length === 0 || contracted === null
       ? null
