@@ -1029,6 +1029,9 @@ function buildRentRealization(
   contracted: number | null,
   competencia: string,
   intermediadas: Set<string> = new Set(),
+  // Valor que meses POSTERIORES declararam ter pago desta competencia, por
+  // imovel (ver pagoDepoisPorImovel). Vazio = nada foi pago depois.
+  pagoDepois: Map<string, number> = new Map(),
 ): IndicadoresRentRealization {
   const received = sumKnown(
     snapshots.map(currentRent),
@@ -1059,20 +1062,31 @@ function buildRentRealization(
     if (snapshot.aluguelEsperado === null) return null
     return Math.max(0, roundMoney(snapshot.aluguelEsperado - recebido))
   })
+  const gapInadimplencia = (snapshot: IndicadoresSnapshotInput) => {
+    const receivedCurrent = currentRent(snapshot)
+    if (snapshot.aluguelEsperado === null) return null
+    // O status mensal explícito de inadimplência comprova a ausência do
+    // pagamento da competência mesmo quando o documento não traz uma
+    // linha de recebimento que pudesse materializar R$ 0,00.
+    return Math.max(
+      0,
+      roundMoney(snapshot.aluguelEsperado - (receivedCurrent ?? 0)),
+    )
+  }
   const delinquency =
-    contracted === null
+    contracted === null ? null : sumForStatus(snapshots, "inadimplente", gapInadimplencia)
+  // Parte da inadimplencia que um mes posterior quitou. Nunca passa do que a
+  // propria unidade ficou devendo: pagamento maior (encargos) nao apaga outra.
+  const pagoDepoisDe = (snapshot: IndicadoresSnapshotInput, perda: number | null) =>
+    perda === null ? 0 : Math.min(perda, pagoDepois.get(snapshot.imovelId) ?? 0)
+  const inadimplenciaPagaDepois =
+    delinquency === null
       ? null
-      : sumForStatus(snapshots, "inadimplente", (snapshot) => {
-          const receivedCurrent = currentRent(snapshot)
-          if (snapshot.aluguelEsperado === null) return null
-          // O status mensal explícito de inadimplência comprova a ausência do
-          // pagamento da competência mesmo quando o documento não traz uma
-          // linha de recebimento que pudesse materializar R$ 0,00.
-          return Math.max(
-            0,
-            roundMoney(snapshot.aluguelEsperado - (receivedCurrent ?? 0)),
-          )
-        })
+      : roundMoney(
+          snapshots
+            .filter((snapshot) => snapshot.statusOcupacao === "inadimplente")
+            .reduce((total, snapshot) => total + pagoDepoisDe(snapshot, gapInadimplencia(snapshot)), 0),
+        )
   const discounts = sumKnown(snapshots.map((snapshot) => snapshot.desconto))
   const classifiedAdjustments =
     snapshots.length === 0 || contracted === null
@@ -1121,19 +1135,22 @@ function buildRentRealization(
         deficitDaLinha(snapshot, contratado) - deficitDaLinha(snapshot, esperadoMes),
       )
       const restante = deficitDaLinha(snapshot, esperadoMes)
+      const pago = pagoDepoisDe(snapshot, restante)
       return recebido === 0
         ? {
             ...acc,
             proporcional: acc.proporcional + proporcional,
             semRecebimento: acc.semRecebimento + restante,
+            semRecebimentoPagoDepois: acc.semRecebimentoPagoDepois + pago,
           }
         : {
             ...acc,
             proporcional: acc.proporcional + proporcional,
             parcial: acc.parcial + restante,
+            parcialPagoDepois: acc.parcialPagoDepois + pago,
           }
     },
-    { intermediacao: 0, proporcional: 0, semRecebimento: 0, parcial: 0 },
+    { intermediacao: 0, proporcional: 0, semRecebimento: 0, parcial: 0, semRecebimentoPagoDepois: 0, parcialPagoDepois: 0 },
   )
 
   const semSnapshots = snapshots.length === 0
@@ -1191,6 +1208,9 @@ function buildRentRealization(
     mesProporcionalContratoNovo,
     ocupadoSemRecebimento,
     ocupadoRecebimentoParcial,
+    inadimplenciaPagaDepois,
+    ocupadoSemRecebimentoPagoDepois: semSnapshots ? null : roundMoney(causas.semRecebimentoPagoDepois),
+    ocupadoParcialPagoDepois: semSnapshots ? null : roundMoney(causas.parcialPagoDepois),
     recebidoEmVago,
     restoNaoExplicado,
     valoresSemClassificacao: unclassifiedValues,
@@ -1356,6 +1376,7 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       monthlyContractedRent,
       competencia,
       intermediadasDosFechamentos(snapshots, analyses, input.imoveisAtivos),
+      pagoDepoisPorImovel(scope.snapshots, competencia),
     )
     const receitaBase = input.filtros.imovelId
       ? sumKnown(snapshots.map((snapshot) => snapshot.receitaTotal))
@@ -1416,10 +1437,17 @@ function buildMonthlySeries(input: IndicadoresAggregationInput, scope: Aggregati
       mesProporcionalContratoNovo: monthlyRealization.mesProporcionalContratoNovo,
       ocupadoSemRecebimento: monthlyRealization.ocupadoSemRecebimento,
       ocupadoRecebimentoParcial: monthlyRealization.ocupadoRecebimentoParcial,
+      inadimplenciaPagaDepois: monthlyRealization.inadimplenciaPagaDepois,
+      ocupadoSemRecebimentoPagoDepois: monthlyRealization.ocupadoSemRecebimentoPagoDepois,
+      ocupadoParcialPagoDepois: monthlyRealization.ocupadoParcialPagoDepois,
       recebidoEmVago: monthlyRealization.recebidoEmVago,
       restoNaoExplicado: monthlyRealization.restoNaoExplicado,
       ocupacaoPercentual: occupancy.percentual,
       inadimplenciaPercentual: percentage(occupancy.inadimplentes, occupancy.denominador),
+      inadimplenciaPercentualEmAberto: percentage(
+        occupancy.inadimplentes - inadimplentesQuitados(snapshots, scope.snapshots, competencia),
+        occupancy.denominador,
+      ),
       coberturaPercentual: occupancy.coberturaPercentual,
       qualidade: hasGap || expectedPairs.size === 0 ? ("preliminar" as const) : ("completa" as const),
       competenciaAjusteReceita: roundMoney((reallocation?.receitaIn ?? 0) - (reallocation?.receitaOut ?? 0)),
@@ -1823,6 +1851,42 @@ function resolveQuitacao(
     competencia: recuperacoes.map((recuperacao) => recuperacao.competencia).sort().at(-1) as string,
     valor: roundMoney(recuperacoes.reduce((total, recuperacao) => total + recuperacao.valor, 0)),
   }
+}
+
+// Quanto meses POSTERIORES pagaram de cada imovel referente a `competencia`.
+// Mesma evidencia do mapa (origensDoAtraso): o grafico mensal "atualiza" o mes
+// pago depois, em vez de deixa-lo vermelho para sempre (Joao Cordeiro 0002521,
+// out/2026: jun e jul quitados em ago seguiam como inadimplencia no grafico).
+function pagoDepoisPorImovel(
+  historico: IndicadoresSnapshotInput[],
+  competencia: string,
+): Map<string, number> {
+  const pago = new Map<string, number>()
+  for (const snapshot of historico) {
+    if (snapshot.competencia <= competencia) continue
+    for (const origem of origensDoAtraso(snapshot)) {
+      if (origem.competencia !== competencia) continue
+      pago.set(snapshot.imovelId, roundMoney((pago.get(snapshot.imovelId) ?? 0) + origem.valor))
+    }
+  }
+  return pago
+}
+
+// Inadimplentes do mes cuja divida um mes posterior quitou por inteiro — a mesma
+// regra da celula verde do mapa (isInadimplenciaQuitada).
+function inadimplentesQuitados(
+  snapshots: IndicadoresSnapshotInput[],
+  historico: IndicadoresSnapshotInput[],
+  competencia: string,
+) {
+  const pago = pagoDepoisPorImovel(historico, competencia)
+  return snapshots.filter((snapshot) => {
+    if (snapshot.statusOcupacao !== "inadimplente") return false
+    const valorPago = pago.get(snapshot.imovelId)
+    if (valorPago === undefined) return false
+    const devido = snapshot.aluguelEsperado === null ? null : Math.max(0, snapshot.aluguelEsperado - (currentRent(snapshot) ?? 0))
+    return devido === null || valorPago + 0.01 >= devido
+  }).length
 }
 
 function buildHeatCell(

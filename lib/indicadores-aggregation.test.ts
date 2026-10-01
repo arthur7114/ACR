@@ -611,6 +611,9 @@ test("reconcilia aluguel contratado, vacância, inadimplência, descontos e ajus
     // Ocupado esperava 1.000, recebeu 900 com 50 de desconto: 50 de deficit.
     ocupadoSemRecebimento: 0,
     ocupadoRecebimentoParcial: 50,
+    inadimplenciaPagaDepois: 0,
+    ocupadoSemRecebimentoPagoDepois: 0,
+    ocupadoParcialPagoDepois: 0,
     recebidoEmVago: 0,
     restoNaoExplicado: 0,
     valoresSemClassificacao: -50,
@@ -2665,4 +2668,39 @@ test("mes que quita duas competencias pinta as duas como quitadas, cada uma com 
   assert.deepEqual(quitacao("2026-06-01"), { competencia: "2026-08-01", valor: 788.22 })
   assert.deepEqual(quitacao("2026-07-01"), { competencia: "2026-08-01", valor: 788.22 })
   assert.equal(quitacao("2026-08-01"), null)
+})
+
+// Decisao do Arthur (01/10/2026): "se pagar depois de uma competencia anterior,
+// atualiza". O grafico mensal tira o valor quitado da parcela de perda (sem
+// mudar a identidade da realizacao) e o percentual de inadimplentes em aberto
+// deixa de contar quem ja quitou.
+test("serie mensal: mes pago depois e atualizado, cada um com o seu valor", () => {
+  const inquilino = "JOAO CORDEIRO,488 APART. B"
+  const atrasado = (competencia: string, valor: number, origens: Array<{ competencia: string; valor: number }>) =>
+    ({ aluguelRecebido: valor, aluguelRecebidoCompetencia: null, atrasosRecuperados: valor, atrasosCompetenciaOrigem: null, atrasosOrigens: origens, competencia })
+  const data = aggregateIndicadores(
+    makeInput({
+      competencia: "2026-08-01",
+      imoveisAtivos: [makeProperty({ unidade: "0002521", inquilinoNome: inquilino, aluguelEsperadoAtual: 788.22 })],
+      fechamentos: ["05", "06", "07", "08"].map((mes) =>
+        makeClosing({ id: `f-${mes}`, competencia: `2026-${mes}-01`, analiseCompleta: makeAnalysis({ receitas: [] }) }),
+      ),
+      snapshots: [
+        makeSnapshot({ fechamentoId: "f-05", competencia: "2026-05-01", statusOcupacao: "ocupado", aluguelEsperado: 788.22, aluguelRecebido: null, desconto: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-06", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, inquilinoNome: inquilino, ...atrasado("2026-06-01", 788.22, [{ competencia: "2026-04-01", valor: 788.22 }, { competencia: "2026-05-01", valor: 788.22 }]) }),
+        makeSnapshot({ fechamentoId: "f-07", competencia: "2026-07-01", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, aluguelRecebido: null, inquilinoNome: inquilino }),
+        makeSnapshot({ fechamentoId: "f-08", statusOcupacao: "inadimplente", aluguelEsperado: 788.22, inquilinoNome: inquilino, ...atrasado("2026-08-01", 1576.44, [{ competencia: "2026-06-01", valor: 788.22 }, { competencia: "2026-07-01", valor: 788.22 }]) }),
+      ],
+    }),
+  )
+  const ponto = (competencia: string) => data.serieMensal.find((p) => p.competencia === competencia)
+  assert.equal(ponto("2026-05-01")?.ocupadoSemRecebimentoPagoDepois, 788.22)
+  assert.equal(ponto("2026-06-01")?.inadimplenciaPagaDepois, 788.22)
+  assert.equal(ponto("2026-07-01")?.inadimplenciaPagaDepois, 788.22)
+  assert.equal(ponto("2026-07-01")?.inadimplenciaPercentualEmAberto, 0)
+  // Agosto segue devendo: nada o quitou ainda.
+  assert.equal(ponto("2026-08-01")?.inadimplenciaPagaDepois, 0)
+  assert.equal(ponto("2026-08-01")?.inadimplenciaPercentualEmAberto, 100)
+  // A parcela original fica: a identidade da realizacao nao muda.
+  assert.equal(ponto("2026-07-01")?.inadimplencia, 788.22)
 })

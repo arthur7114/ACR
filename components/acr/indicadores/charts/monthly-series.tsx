@@ -38,6 +38,10 @@ const perda = (ler: (p: MonthlyPoint) => number | null): Series["read"] => (poin
 
 const centavos = (valor: number) => Math.round(valor * 100) / 100
 
+// Parcela de perda sem o que um mes posterior quitou (vai para "Pago depois").
+const menosPagoDepois = (parcela: number | null, pagoDepois: number | null | undefined) =>
+  parcela === null ? null : Math.max(0, centavos(parcela - (pagoDepois ?? 0)))
+
 // UMA barra que sobe ate o aluguel potencial (pedido da cliente, set/2026):
 // verde o que entrou, e acima dele o que nao se concretizou. O que mudou em
 // 21/09, a pedido dela de novo ("nao esta aparecendo na barra inadimplencia e
@@ -63,6 +67,24 @@ const VALUE_STACK: Series[] = [
     read: (point) => point.aluguelRecebido,
     format: formatCurrency,
   },
+  // Mes pago depois e atualizado (decisao do Arthur, 01/10/2026: "se pagar
+  // depois de uma competencia anterior, atualiza"). O valor sai da parcela de
+  // perda em que nasceu e entra aqui, colado no verde: o bloco continua somando
+  // o mesmo potencial, e jun/jul do flat B do Joao Cordeiro deixam de ser
+  // vermelhos depois de quitados em ago.
+  {
+    key: "pago_depois",
+    label: "Pago depois (atraso quitado)",
+    color: "#8cc79a",
+    read: perda((point) =>
+      centavos(
+        (point.inadimplenciaPagaDepois ?? 0) +
+          (point.ocupadoSemRecebimentoPagoDepois ?? 0) +
+          (point.ocupadoParcialPagoDepois ?? 0),
+      ),
+    ),
+    format: formatCurrency,
+  },
   {
     key: "vacancia",
     label: "Vacância",
@@ -74,10 +96,10 @@ const VALUE_STACK: Series[] = [
     ),
     format: formatCurrency,
   },
-  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: perda((point) => point.inadimplencia), format: formatCurrency },
+  { key: "inadimplencia", label: "Inadimplência", color: "#9f2a2a", read: perda((point) => menosPagoDepois(point.inadimplencia, point.inadimplenciaPagaDepois)), format: formatCurrency },
   { key: "descontos", label: "Descontos", color: "#8a6f3f", read: perda((point) => point.descontos), format: formatCurrency },
-  { key: "ocupado_sem_recebimento", label: "Ocupado sem recebimento", color: "#b4553a", read: perda((point) => point.ocupadoSemRecebimento), format: formatCurrency },
-  { key: "ocupado_parcial", label: "Ocupado, pagou menos", color: "#c98a5e", read: perda((point) => point.ocupadoRecebimentoParcial), format: formatCurrency },
+  { key: "ocupado_sem_recebimento", label: "Ocupado sem recebimento", color: "#b4553a", read: perda((point) => menosPagoDepois(point.ocupadoSemRecebimento, point.ocupadoSemRecebimentoPagoDepois)), format: formatCurrency },
+  { key: "ocupado_parcial", label: "Ocupado, pagou menos", color: "#c98a5e", read: perda((point) => menosPagoDepois(point.ocupadoRecebimentoParcial, point.ocupadoParcialPagoDepois)), format: formatCurrency },
   { key: "intermediacao", label: "Cobrado como intermediação", color: "#4a7fa5", read: perda((point) => point.cobradoComoIntermediacao), format: formatCurrency },
   { key: "proporcional", label: "Mês proporcional (contrato novo)", color: "#7fa8c4", read: perda((point) => point.mesProporcionalContratoNovo), format: formatCurrency },
   {
@@ -109,7 +131,7 @@ const VALUE_TOTAL: Series = {
 // é a leitura que acompanha a ocupação.
 const PERCENT_SERIES: Series[] = [
   { key: "ocupacao", label: "Ocupação", color: "#2d8c3a", read: (point) => point.ocupacaoPercentual, format: formatPercent },
-  { key: "inadimplencia", label: "Inadimplentes", color: "#9f2a2a", read: (point) => point.inadimplenciaPercentual, format: formatPercent },
+  { key: "inadimplencia", label: "Inadimplentes", color: "#9f2a2a", read: (point) => point.inadimplenciaPercentualEmAberto ?? point.inadimplenciaPercentual, format: formatPercent },
 ]
 
 const WIDTH = 760

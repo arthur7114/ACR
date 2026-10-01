@@ -293,6 +293,15 @@ export interface IndicadoresRentRealization {
   ocupadoSemRecebimento: number | null
   /** Deficit de unidades ocupadas que receberam menos que o esperado, ja liquido de desconto. */
   ocupadoRecebimentoParcial: number | null
+  /**
+   * Quanto das tres parcelas de perda (inadimplencia, ocupado sem recebimento,
+   * ocupado que pagou menos) um mes POSTERIOR quitou. Fica DENTRO da parcela:
+   * a identidade da realizacao nao muda; quem apresenta tira daqui e mostra
+   * como "pago depois".
+   */
+  inadimplenciaPagaDepois: number | null
+  ocupadoSemRecebimentoPagoDepois: number | null
+  ocupadoParcialPagoDepois: number | null
   /** Dinheiro recebido em unidade classificada como vaga (rescisao no meio do mes, proporcional). */
   recebidoEmVago: number | null
   /** Parte do resto que as tres causas acima nao explicam. Zero em 2026-05 e 2026-07. */
@@ -344,10 +353,17 @@ export interface IndicadoresMonthlyPoint {
   mesProporcionalContratoNovo: number | null
   ocupadoSemRecebimento: number | null
   ocupadoRecebimentoParcial: number | null
+  // Dentro das parcelas acima: o que um mes posterior quitou. O grafico mostra
+  // como "Pago depois" e desconta da parcela de origem.
+  inadimplenciaPagaDepois: number | null
+  ocupadoSemRecebimentoPagoDepois: number | null
+  ocupadoParcialPagoDepois: number | null
   recebidoEmVago: number | null
   restoNaoExplicado: number | null
   ocupacaoPercentual: number | null
   inadimplenciaPercentual: number | null
+  /** Inadimplentes que seguem devendo: sai quem um mes posterior quitou por inteiro. */
+  inadimplenciaPercentualEmAberto: number | null
   coberturaPercentual: number | null
   qualidade: IndicadoresQuality
   // Saldo reatribuido por competencia original (positivo = recebeu valores de

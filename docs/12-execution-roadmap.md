@@ -3664,12 +3664,25 @@ select/tipo/checksum do verificador, e toda coluna `atrasos_*` em
 para a lista com o motivo. Prova: tirar `atrasos_origens` do select do
 verificador quebra o teste.
 
-**Em aberto, decisão de produto:** o gráfico de evolução mensal é por
-competência. Jun e jul seguem vermelhos porque naquele mês o aluguel não
-entrou; o pagamento de ago aparece como atraso recuperado. Mai está "ocupado sem
-recebimento", não inadimplente, porque o fechamento de maio não tem o marcador
-de INADIMPLENCIA. O card de ocupação mostra "Ocupado 1 · Inadimplente 1" (partição);
-o cliente lê como "2 ocupados, 1 inadimplente".
+**Decisões do Arthur (01/10/2026), aplicadas:**
+
+- *"Se pagar depois de uma competência anterior, atualiza."* A série mensal
+  ganhou `inadimplenciaPagaDepois`, `ocupadoSemRecebimentoPagoDepois` e
+  `ocupadoParcialPagoDepois`: o que um mês posterior quitou daquela competência
+  (mesma evidência do mapa, `origensDoAtraso`), limitado à perda da própria
+  unidade. As parcelas originais NÃO mudam, e a identidade da realização
+  continua a mesma. O gráfico tira o valor da parcela e o mostra como "Pago
+  depois (atraso quitado)", colado no verde. O percentual usa
+  `inadimplenciaPercentualEmAberto`. João Cordeiro real: mai, jun e jul com
+  R$ 788,22 pago depois; ago segue 788,22 em aberto; inadimplentes 50% → 0% em
+  jun/jul.
+- *"Se estiver falando de vacância, não cita inadimplência."* O card de
+  ocupação soma inadimplente em "Ocupado" (ago: "Ocupado 2"). Inadimplência
+  tem card próprio.
+
+As identidades `realizacao_*` divergem na carteira de ago/2026 (5.451,62 =
+intermediação + proporcional, fora da identidade de decomposição do resto). É
+igual no main, então não é regressão; ficou como tarefa separada.
 
 ### Indicadores — aba "Conciliação financeira" removida
 
