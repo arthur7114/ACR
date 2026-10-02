@@ -101,3 +101,14 @@ Coluna REAJUSTE do documento Alive: mês do reajuste anual do contrato. Quando
 coincide com a competência e a linha não é contrato novo (proporcional), a
 unidade recebe a etiqueta **Reajuste**. Fonte única é o documento; o sistema
 não infere reajuste comparando valores.
+
+### Prazo do contrato
+Início e término previsto do contrato de locação assinado, com o dia, guardado
+no cadastro do imóvel junto do locatário a quem pertence. Fontes: planilha
+CADASTRO INQUILINOS do cliente (carga inicial) e, depois, a seção APARTAMENTO
+ALUGADO do relatório de vigência, aplicada na aprovação. Não é vigência: a
+vigência tem grão de mês e descreve o que os fechamentos comprovaram; o prazo
+não entra em nenhum cálculo. Término vencido com inquilino na unidade é
+provável prorrogação, não vacância. Prazo de locatário diferente do inquilino
+atual não vale para a unidade.
+*Decidido em 2026-10-02.*

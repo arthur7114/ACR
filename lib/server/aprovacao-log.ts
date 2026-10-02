@@ -13,6 +13,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import type { MudancaCadastro } from "./cadastro-ocupacao"
+import type { DecisaoPrazo } from "./contrato-prazo-cadastro"
 import type { DecisaoReajuste } from "./reajuste-cadastro"
 
 export interface ContextoAprovacao {
@@ -24,6 +25,9 @@ export interface ResultadoAprovacao {
   reajustes: DecisaoReajuste[]
   cadastro: MudancaCadastro[]
   cadastroErro: string | null
+  // Prazo do contrato novo lido do relatorio de vigencia (inicio e termino).
+  prazos?: DecisaoPrazo[]
+  prazosErro?: string | null
 }
 
 export interface LogAprovacao {
@@ -44,6 +48,12 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
   )
   const linhasReajuste = aplicados.map((r) => `apto ${r.apto}: ${r.detalhe}`)
   const linhasPendentes = pendentes.map((r) => `apto ${r.apto}: ${r.detalhe}`)
+  const prazosAplicados = (resultado.prazos ?? []).filter((p) => p.resultado === "aplicado")
+  const linhasPrazo = prazosAplicados.map((p) => `apto ${p.apto}: ${p.detalhe}`)
+  const linhasPrazoPendente = [
+    ...(resultado.prazos ?? []).filter((p) => p.resultado === "sem_imovel").map((p) => `apto ${p.apto}: ${p.detalhe}`),
+    ...(resultado.prazosErro ? [`prazo dos contratos novos não lido: ${resultado.prazosErro}`] : []),
+  ]
 
   if (resultado.cadastroErro !== null) {
     return {
@@ -54,6 +64,8 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
         "Confira a tela de Imóveis ou rode scripts/atualizar-cadastro-ocupacao.ts para este fechamento.",
         ...secao("Aluguéis atualizados (reajuste ou contrato novo)", linhasReajuste),
         ...secao("Aluguéis pendentes de decisão", linhasPendentes),
+        ...secao("Prazos de contrato atualizados", linhasPrazo),
+        ...secao("Prazos de contrato não aplicados", linhasPrazoPendente),
       ].join("\n"),
     }
   }
@@ -66,15 +78,19 @@ export function montarLogAprovacao(contexto: ContextoAprovacao, resultado: Resul
   )
   if (aplicados.length > 0) partes.push(`${aplicados.length} ${aplicados.length === 1 ? "aluguel atualizado" : "aluguéis atualizados"}`)
   if (pendentes.length > 0) partes.push(`${pendentes.length} ${pendentes.length === 1 ? "aluguel pendente de decisão" : "aluguéis pendentes de decisão"}`)
+  if (prazosAplicados.length > 0) partes.push(`${prazosAplicados.length} ${prazosAplicados.length === 1 ? "prazo de contrato atualizado" : "prazos de contrato atualizados"}`)
+  if (linhasPrazoPendente.length > 0) partes.push("prazo de contrato pendente")
 
   return {
-    tipo: pendentes.length > 0 ? "aprovacao_cadastro_pendente" : "aprovacao_cadastro",
+    tipo: pendentes.length > 0 || linhasPrazoPendente.length > 0 ? "aprovacao_cadastro_pendente" : "aprovacao_cadastro",
     titulo: `${rotulo}: ${partes.join(", ")}`,
     corpo:
       [
         ...secao("Ocupação do cadastro", linhasCadastro),
         ...secao("Aluguéis atualizados (reajuste ou contrato novo)", linhasReajuste),
         ...secao("Aluguéis pendentes de decisão (cadastro não foi alterado)", linhasPendentes),
+        ...secao("Prazos de contrato atualizados (relatório de vigência)", linhasPrazo),
+        ...secao("Prazos de contrato não aplicados", linhasPrazoPendente),
       ].join("\n") || "Nenhuma alteração no cadastro: status, inquilinos e aluguéis já batiam com o fechamento.",
   }
 }

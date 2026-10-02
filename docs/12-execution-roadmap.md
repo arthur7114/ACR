@@ -3710,3 +3710,47 @@ de 21/09. Saiu a aba inteira (`view-receita.tsx`), com a ponte contábil, a
 tabela de realização do aluguel e as contagens de acordos/rescisões/
 intermediações/atrasos. A realização continua no gráfico de evolução mensal da
 Visão geral. Link antigo `?tab=receita` cai na Visão geral.
+
+## Feedback de 02/10/2026
+
+### Prazo do contrato: planilha de inquilinos e relatório de vigência
+
+A ACR enviou a planilha CADASTRO INQUILINOS (ref. julho/2026, 6 blocos,
+118 linhas) com início e término de cada contrato, e avisou que os contratos
+novos virão no relatório de vigência. O sistema não guardava o prazo com o dia:
+`contratos_locacao` e `imovel_vigencias` têm grão de mês e são derivados dos
+fechamentos.
+
+- Migration `202610020001_imovel_prazo_contrato.sql`: `imoveis.contrato_inicio`,
+  `contrato_termino`, `contrato_locatario`, `contrato_fonte` (aditiva, nula).
+- `lib/contrato-prazo.ts`: situação do prazo (vigente, vence em até 90 dias,
+  vencido, a iniciar, de outro inquilino) e data civil com ajuste de dia
+  inexistente.
+- Parser do relatório lê a "Previsão de término" (antes só o início).
+- Aprovação aplica o prazo dos contratos novos do relatório
+  (`lib/server/contrato-prazo-cadastro.ts`), depois da ocupação, com auditoria
+  e log.
+- Tela de Imóveis: coluna Contrato, filtro de prazo, campos no formulário.
+- Importador da planilha com dry-run. Prévia contra o cadastro de produção:
+  83 prazos aplicáveis; 6 com inquilino divergente (GM II 26 trocou em agosto;
+  Castelão 105, GM I 17 e 23, GM II 11 e LOCMAIS Sala 04 aparecem vagos no
+  cadastro e ocupados na planilha); 3 com inquilino sem datas (GM II 3 e 9,
+  Maracanaú 202); GM I 3 com datas futuras (01/09/26 a 28/02/29) e sem inquilino;
+  25 Airbnb/vagas sem prazo. Cerca de 20 contratos já têm o término vencido,
+  como a planilha informa.
+- Testes novos: `lib/contrato-prazo.test.ts`,
+  `lib/server/contrato-prazo-cadastro.test.ts`,
+  `lib/server/planilha-inquilinos.test.ts` (fixture sintética no layout da
+  planilha; a real não entra no repositório, que é público), mais casos no
+  parser, no log da aprovação e nos schemas.
+  Suíte 745/745, lint verde.
+- Sem verificação visual: a aplicação está atrás de login.
+- Aplicado em produção em 2026-10-02, com autorização explícita: migration via
+  pooler `aws-1-us-east-2` em transação única, com a versão registrada;
+  importação da planilha com 83 prazos (a segunda execução retorna
+  `ja_aplicado=83`); backfill dos relatórios aprovados com 5 contratos do GM II,
+  julho (3, 8, 23) e agosto (12, 26). Os aptos 8 e 23 renovaram com o mesmo
+  inquilino em jul/26, e o relatório, mais recente, substituiu o prazo da
+  planilha. O apto 12 teve o 30/02/2029 ajustado para 28/02. São 5 linhas em
+  `auditoria_correcoes`, e a segunda execução também é idempotente. Estado
+  final: 86 imóveis com prazo, 20 vencidos e 6 vencendo em até 90 dias.

@@ -67,8 +67,24 @@ test("le contratos novos e reajustes do layout de julho/2026", () => {
 
   assert.equal(relatorio.competencia, "2026-07")
   assert.deepEqual(relatorio.novosContratos, [
-    { apto: "3", inquilino: "VITOR SOUSA PINTO", vigenciaInicio: "2026-07-16", aluguel: 700, garagem: 25 },
-    { apto: "23", inquilino: "JAMILLE RODRIGUES DA PRATA", vigenciaInicio: "2026-07-30", aluguel: 700, garagem: null },
+    {
+      apto: "3",
+      inquilino: "VITOR SOUSA PINTO",
+      vigenciaInicio: "2026-07-16",
+      vigenciaTermino: "2029-01-15",
+      dataAjustada: false,
+      aluguel: 700,
+      garagem: 25,
+    },
+    {
+      apto: "23",
+      inquilino: "JAMILLE RODRIGUES DA PRATA",
+      vigenciaInicio: "2026-07-30",
+      vigenciaTermino: "2029-01-29",
+      dataAjustada: false,
+      aluguel: 700,
+      garagem: null,
+    },
   ])
   assert.deepEqual(relatorio.reajustes, [
     {
@@ -83,6 +99,33 @@ test("le contratos novos e reajustes do layout de julho/2026", () => {
   // O atrasado nao vira contrato novo nem reajuste.
   assert.equal(relatorio.reajustes.some((item) => item.apto === "7"), false)
   assert.equal(relatorio.novosContratos.some((item) => item.apto === "7"), false)
+})
+
+// Relatorio de agosto/2026 do GM II (print enviado pelo cliente em 2026-10-02):
+// o apto 12 traz "Previsão de término: 30/02/2029", um dia que nao existe.
+test("le a previsao de termino e ajusta dia inexistente para o fim do mes", () => {
+  const relatorio = parseRelatorioReajuste([
+    "RELATÓRIO VIGÊNCIA DE AGOSTO/2026 – GRAND MESSEJANA II",
+    "APARTAMENTO ALUGADO:",
+    "APTO 12: LOCATARIO DOZE.",
+    "Início de vigência dia 31/08/2026. Previsão de término: 30/02/2029. Sem desconto e com possibilidade de rescindir",
+    "a partir do 18º mês de locação sem a incidência de multa.",
+    "Valor total da locação contratada:",
+    "- R$ 700,00 de aluguel;",
+    "- R$ 50,00 de vaga de garagem para carro;",
+    "APTO 26: LOCATARIO VINTE E SEIS.",
+    "Início de vigência dia 11/08/2026. Previsão de término: 10/02/2029. Sem desconto e com possibilidade de rescindir",
+    "Valor total da locação contratada:",
+    "- R$ 700,00 de aluguel;",
+    "- R$ 25,00 de vaga de garagem para moto;",
+  ].join("\n"))
+
+  const [apto12, apto26] = relatorio.novosContratos
+  assert.equal(apto12.vigenciaInicio, "2026-08-31")
+  assert.equal(apto12.vigenciaTermino, "2029-02-28")
+  assert.equal(apto12.dataAjustada, true)
+  assert.equal(apto26.vigenciaTermino, "2029-02-10")
+  assert.equal(apto26.dataAjustada, false)
 })
 
 test("falha fechado quando o documento nao e um relatorio de vigencia", () => {

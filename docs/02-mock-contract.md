@@ -752,3 +752,13 @@ o aluguel potencial — verde o recebido, cinza o não realizado. A linha some.
 - **Sem verificação visual:** a aplicação está atrás de login.
 
 - **Docs atualizados:** este contrato e `docs/12-execution-roadmap.md`.
+
+### Ajuste registrado — prazo do contrato no cadastro de imóveis (2026-10-02)
+
+- **Ponto alterado:** a tabela de Imóveis ganha a coluna **Contrato** (início → término previsto, `dd/mm/aa`) com selo de situação — *Vence em N dias* (até 90 dias), *Vencido há N dias*, *A iniciar*, *De outro inquilino* (datas riscadas) — e o filtro **Prazo do contrato**. O formulário de edição ganha **Início do contrato** e **Término previsto**; mudar as datas à mão grava "Edição manual" como fonte e amarra o prazo ao inquilino do formulário. Passar o mouse sobre o prazo mostra locatário e fonte.
+- **Por que:** pedido da ACR (WhatsApp, 2026-10-02): enviou a planilha CADASTRO INQUILINOS "com o início e término dos contratos" e avisou que os contratos novos virão no relatório de vigência, "com a leitura do documento o sistema vai se mantendo atualizado".
+- **Na aprovação:** a seção APARTAMENTO ALUGADO do relatório de vigência ("Início de vigência dia 11/08/2026. Previsão de término: 10/02/2029.") é lida de forma determinística e grava início, término e locatário no imóvel, com `auditoria_correcoes` e uma linha no log da aprovação. Relatório mais antigo não regride contrato mais novo. Dia que não existe no mês ("30/02/2029", GM II ago/2026 apto 12) vai para o último dia do mês, e o log registra o ajuste.
+- **Carga da planilha:** `scripts/importar-planilha-inquilinos.ts` (dry-run por padrão, `--aplicar` escreve) só grava quando o inquilino da planilha é o do cadastro — a planilha é de julho e GM II 12/26 trocaram de inquilino em agosto. Diferença de aluguel planilha × cadastro é só listada. Imóveis da César Rêgo e da Plural são identificados pelo endereço, e ali o locatário não é conferível.
+- **Fechamentos já aprovados:** `scripts/aplicar-prazos-relatorio.ts` aplica os relatórios de vigência em ordem de competência.
+- **Não muda:** status, inquilino, aluguel, vigências e Indicadores. O prazo é informativo.
+- **Docs atualizados:** este contrato, `CONTEXT.md` (Prazo do contrato) e `docs/12-execution-roadmap.md`.
