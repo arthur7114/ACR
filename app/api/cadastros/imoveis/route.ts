@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { imovelInputSchema, imovelPatchSchema, parseJson } from "@/lib/server/cadastros"
+import { imovelCreateSchema, imovelPatchSchema, parseJson } from "@/lib/server/cadastros"
 import { hardDeleteImovel } from "@/lib/server/cadastros-delete"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
@@ -17,6 +17,10 @@ const selectFields = `
   ativo,
   egestor_tag_id,
   observacoes,
+  contrato_inicio,
+  contrato_termino,
+  contrato_locatario,
+  contrato_fonte,
   imobiliarias ( nome ),
   empreendimentos ( nome )
 `
@@ -44,7 +48,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const input = parseJson(imovelInputSchema, await request.json())
+  const input = parseJson(imovelCreateSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
 

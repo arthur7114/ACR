@@ -39,6 +39,11 @@ export type Imovel = {
   ativo: boolean
   egestor_tag_id: string | null
   observacoes: string | null
+  // Prazo do contrato assinado (planilha, relatorio de vigencia ou edicao).
+  contrato_inicio: string | null
+  contrato_termino: string | null
+  contrato_locatario: string | null
+  contrato_fonte: string | null
   imobiliarias?: { nome: string } | null
   empreendimentos?: { nome: string } | null
 }

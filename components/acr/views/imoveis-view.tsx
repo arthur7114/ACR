@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, Building2, CheckCircle, Edit3, EyeOff, FileUp, History, Home, Loader2, RotateCcw, Save, Search, Trash2 } from "lucide-react"
 import { formatBRL } from "@/lib/format"
+import { DIAS_ALERTA_VENCIMENTO, formatarDataCurta, situacaoPrazo, type EstadoPrazo, type SituacaoPrazo } from "@/lib/contrato-prazo"
 import type { CsvImportResult, Empreendimento, Imobiliaria, Imovel, ImovelStatus, RegraComercial } from "@/lib/cadastros-types"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 
@@ -22,6 +23,10 @@ type ImovelForm = {
   ativo: boolean
   egestor_tag_id: string
   observacoes: string
+  contrato_inicio: string
+  contrato_termino: string
+  // Prazo como carregado; se o operador mudar as datas, a edicao vira a fonte.
+  contrato_original: string
 }
 
 type ImobiliariaForm = {
@@ -125,6 +130,9 @@ const emptyImovel: ImovelForm = {
   ativo: true,
   egestor_tag_id: "",
   observacoes: "",
+  contrato_inicio: "",
+  contrato_termino: "",
+  contrato_original: "|",
 }
 
 const emptyImobiliaria: ImobiliariaForm = {
@@ -194,6 +202,7 @@ export function ImoveisView({
   const [imobiliariaFilter, setImobiliariaFilter] = useState("")
   const [empreendimentoFilter, setEmpreendimentoFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState("")
+  const [prazoFilter, setPrazoFilter] = useState("")
   const [imovelForm, setImovelForm] = useState<ImovelForm>(emptyImovel)
   const [imobiliariaForm, setImobiliariaForm] = useState<ImobiliariaForm>(emptyImobiliaria)
   const [empreendimentoForm, setEmpreendimentoForm] = useState<EmpreendimentoForm>(emptyEmpreendimento)
@@ -238,6 +247,12 @@ export function ImoveisView({
     }
   }
 
+  const hoje = useMemo(() => hojeLocal(), [])
+  const prazoPorImovel = useMemo(
+    () => new Map(imoveis.map((imovel) => [imovel.id, situacaoPrazo(imovel, hoje)])),
+    [hoje, imoveis],
+  )
+
   const filteredImoveis = useMemo(() => {
     const normalized = normalize(query)
     return imoveis.filter((imovel) => {
@@ -246,10 +261,11 @@ export function ImoveisView({
         (!normalized || text.includes(normalized)) &&
         (!imobiliariaFilter || imovel.imobiliaria_id === imobiliariaFilter) &&
         (!empreendimentoFilter || imovel.empreendimento_id === empreendimentoFilter) &&
-        (!statusFilter || imovel.status === statusFilter)
+        (!statusFilter || imovel.status === statusFilter) &&
+        (!prazoFilter || prazoPorImovel.get(imovel.id)?.estado === prazoFilter)
       )
     })
-  }, [empreendimentoFilter, imobiliariaFilter, imoveis, query, statusFilter])
+  }, [empreendimentoFilter, imobiliariaFilter, imoveis, prazoFilter, prazoPorImovel, query, statusFilter])
 
   async function submitImovel() {
     setSaving(true)
@@ -417,7 +433,7 @@ export function ImoveisView({
           {tab === "imoveis" && (
             <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
               <div className="acr-card min-w-0 overflow-hidden">
-                <div className="grid grid-cols-[1fr_180px_180px_160px] gap-3 border-b border-[#EEF1EE] p-4">
+                <div className="grid grid-cols-[1fr_170px_170px_140px_170px] gap-3 border-b border-[#EEF1EE] p-4">
                   <div className="relative">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6B7F6E]" />
                     <input className={`${inputClass} pl-9`} placeholder="Buscar" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -446,12 +462,20 @@ export function ImoveisView({
                       </option>
                     ))}
                   </Select>
+                  <Select value={prazoFilter} onChange={setPrazoFilter}>
+                    <option value="">Prazo do contrato</option>
+                    {filtrosPrazo.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
                 <div className="max-h-[70vh] overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10">
                       <tr className="border-b border-[#EEF1EE] bg-[#F8FAF8]">
-                        {["Código", "Unidade", "Imobiliária", "Empreendimento", "Status", "Aluguel", "Taxa", "Ações"].map((header) => (
+                        {["Código", "Unidade", "Imobiliária", "Empreendimento", "Status", "Contrato", "Aluguel", "Taxa", "Ações"].map((header) => (
                           <th key={header} className="px-4 py-3 text-left text-[11px] font-medium uppercase tracking-wide text-[#6B7F6E]">
                             {header}
                           </th>
@@ -461,7 +485,7 @@ export function ImoveisView({
                     <tbody>
                       {filteredImoveis.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
+                          <td colSpan={9} className="px-4 py-12 text-center text-[13px] text-[#6B7F6E]">
                             {autoSyncing ? (
                               <span className="inline-flex items-center gap-2">
                                 <Loader2 size={15} className="animate-spin" />
@@ -495,6 +519,9 @@ export function ImoveisView({
                           <td className="px-4 py-3 text-[#3D4F3F]">{imovel.imobiliarias?.nome ?? "-"}</td>
                           <td className="px-4 py-3 text-[#3D4F3F]">{imovel.empreendimentos?.nome ?? "-"}</td>
                           <td className="px-4 py-3"><StatusBadge status={imovel.status} active={imovel.ativo} /></td>
+                          <td className="px-4 py-3">
+                            <PrazoContrato imovel={imovel} situacao={prazoPorImovel.get(imovel.id)} />
+                          </td>
                           <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{imovel.valor_aluguel_esperado !== null ? formatBRL(Number(imovel.valor_aluguel_esperado)) : "-"}</td>
                           <td className="px-4 py-3 tabular-nums text-[#3D4F3F]">{imovel.taxa_administracao_percent ?? "-"}%</td>
                           <td className="px-4 py-3">
@@ -565,6 +592,14 @@ export function ImoveisView({
                 <Field label="Inquilino">
                   <Input value={imovelForm.inquilino_nome} onChange={(value) => setImovelForm((form) => ({ ...form, inquilino_nome: value }))} />
                 </Field>
+                <TwoColumns>
+                  <Field label="Início do contrato">
+                    <Input type="date" value={imovelForm.contrato_inicio} onChange={(value) => setImovelForm((form) => ({ ...form, contrato_inicio: value }))} />
+                  </Field>
+                  <Field label="Término previsto">
+                    <Input type="date" value={imovelForm.contrato_termino} onChange={(value) => setImovelForm((form) => ({ ...form, contrato_termino: value }))} />
+                  </Field>
+                </TwoColumns>
                 <TwoColumns>
                   <Field label="Aluguel esperado">
                     <Input type="number" value={imovelForm.valor_aluguel_esperado} onChange={(value) => setImovelForm((form) => ({ ...form, valor_aluguel_esperado: value }))} />
@@ -988,6 +1023,9 @@ function fromImovel(imovel: Imovel): ImovelForm {
     ativo: imovel.ativo,
     egestor_tag_id: imovel.egestor_tag_id ?? "",
     observacoes: imovel.observacoes ?? "",
+    contrato_inicio: imovel.contrato_inicio?.slice(0, 10) ?? "",
+    contrato_termino: imovel.contrato_termino?.slice(0, 10) ?? "",
+    contrato_original: `${imovel.contrato_inicio?.slice(0, 10) ?? ""}|${imovel.contrato_termino?.slice(0, 10) ?? ""}`,
   }
 }
 
@@ -1033,10 +1071,72 @@ function fromRegraComercial(regra: RegraComercial): RegraComercialForm {
 }
 
 function toImovelPayload(form: ImovelForm) {
+  const { contrato_original, ...campos } = form
+  const prazoMudou = `${form.contrato_inicio}|${form.contrato_termino}` !== contrato_original
   return {
-    ...form,
+    ...campos,
     valor_aluguel_esperado: form.valor_aluguel_esperado || null,
     taxa_administracao_percent: form.taxa_administracao_percent || null,
+    contrato_inicio: form.contrato_inicio || null,
+    contrato_termino: form.contrato_termino || null,
+    // Prazo editado a mao passa a pertencer ao inquilino do formulario.
+    ...(prazoMudou
+      ? {
+          contrato_locatario: form.contrato_inicio || form.contrato_termino ? form.inquilino_nome || null : null,
+          contrato_fonte: form.contrato_inicio || form.contrato_termino ? "Edição manual" : null,
+        }
+      : {}),
+  }
+}
+
+function hojeLocal() {
+  const agora = new Date()
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`
+}
+
+const filtrosPrazo: Array<{ value: EstadoPrazo; label: string }> = [
+  { value: "vence_em_breve", label: `Vence em até ${DIAS_ALERTA_VENCIMENTO} dias` },
+  { value: "vencido", label: "Vencido" },
+  { value: "a_iniciar", label: "A iniciar" },
+  { value: "outro_inquilino", label: "De outro inquilino" },
+  { value: "sem_data", label: "Sem prazo" },
+  { value: "vigente", label: "Vigente" },
+]
+
+function PrazoContrato({ imovel, situacao }: { imovel: Imovel; situacao: SituacaoPrazo | undefined }) {
+  if (!situacao || situacao.estado === "sem_data") return <span className="text-[12px] text-[#9AA89C]">—</span>
+  const periodo = `${formatarDataCurta(imovel.contrato_inicio)} → ${formatarDataCurta(imovel.contrato_termino)}`
+  const titulo = [
+    imovel.contrato_locatario ? `Contrato de ${imovel.contrato_locatario}` : null,
+    imovel.contrato_fonte ? `Fonte: ${imovel.contrato_fonte}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n")
+  const selo = seloPrazo(situacao)
+  return (
+    <div title={titulo || undefined}>
+      <div className={`whitespace-nowrap tabular-nums text-[12px] ${situacao.estado === "outro_inquilino" ? "text-[#9AA89C] line-through" : "text-[#3D4F3F]"}`}>
+        {periodo}
+      </div>
+      {selo && <span className={`mt-1 inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${selo.className}`}>{selo.label}</span>}
+    </div>
+  )
+}
+
+function seloPrazo(situacao: SituacaoPrazo): { label: string; className: string } | null {
+  const dias = situacao.diasParaTermino
+  switch (situacao.estado) {
+    case "vencido":
+      // Inquilino na unidade com prazo vencido costuma ser prorrogacao tacita.
+      return { label: `Vencido há ${Math.abs(dias ?? 0)} dias`, className: "bg-[#FEF2F2] text-[#B91C1C]" }
+    case "vence_em_breve":
+      return { label: dias === 0 ? "Vence hoje" : `Vence em ${dias} ${dias === 1 ? "dia" : "dias"}`, className: "bg-[#FFFBEB] text-[#B45309]" }
+    case "a_iniciar":
+      return { label: "A iniciar", className: "bg-[#EFF6FF] text-[#1D4ED8]" }
+    case "outro_inquilino":
+      return { label: "De outro inquilino", className: "bg-[#F3F4F6] text-[#6B7280]" }
+    default:
+      return null
   }
 }
 

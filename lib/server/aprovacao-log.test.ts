@@ -45,3 +45,26 @@ test("aprovação sem nada a mudar ainda deixa rastro", () => {
   assert.equal(log.tipo, "aprovacao_cadastro")
   assert.equal(log.titulo, "Aprovação Grand Messejana II 08/2026: cadastro já refletia o documento")
 })
+
+test("prazo do contrato novo lido do relatorio aparece no log da aprovacao", () => {
+  const log = montarLogAprovacao(CONTEXTO, {
+    reajustes: [],
+    cadastro: [],
+    cadastroErro: null,
+    prazos: [
+      {
+        apto: "26",
+        inquilino: "LOCATARIO NOVO",
+        inicio: "2026-08-11",
+        termino: "2029-02-10",
+        resultado: "aplicado",
+        detalhe: "15/09/25 a 14/03/28 (LOCATARIO ANTERIOR) -> 11/08/26 a 10/02/29 (LOCATARIO NOVO).",
+      },
+      { apto: "99", inquilino: "FULANO", inicio: "2026-08-01", termino: null, resultado: "sem_imovel", detalhe: "Nenhum imóvel ativo com essa unidade no empreendimento." },
+    ],
+  })
+  assert.equal(log.tipo, "aprovacao_cadastro_pendente")
+  assert.match(log.titulo, /1 prazo de contrato atualizado, prazo de contrato pendente/)
+  assert.match(log.corpo, /Prazos de contrato atualizados[\s\S]*apto 26: .*-> 11\/08\/26 a 10\/02\/29/)
+  assert.match(log.corpo, /Prazos de contrato não aplicados[\s\S]*apto 99/)
+})

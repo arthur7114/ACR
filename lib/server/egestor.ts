@@ -8,6 +8,7 @@ import { aplicarReajustesDoFechamento, type DecisaoReajuste } from "./reajuste-c
 import { atualizarCadastroOcupacaoDoFechamento, type MudancaCadastro } from "./cadastro-ocupacao"
 import { registrarLogAprovacao } from "./aprovacao-log"
 import { aplicarContratosNovosDoFechamento } from "./contrato-novo-cadastro"
+import { aplicarPrazosDoRelatorioDoFechamento, type DecisaoPrazo } from "./contrato-prazo-cadastro"
 
 const BUCKET = "fechamento-documentos"
 // Conta "Global" criada pela migration a partir do singleton legado.
@@ -130,11 +131,21 @@ export async function approveFechamentoForEgestor(supabase: SupabaseClient, fech
   } catch (falha) {
     cadastroErro = falha instanceof Error ? falha.message : String(falha)
   }
+  // Contrato novo do relatorio de vigencia -> inicio e termino previsto no
+  // cadastro (pedido do cliente, 2026-10-02). Depois da ocupacao, para o
+  // prazo ficar amarrado ao inquilino que o fechamento acabou de gravar.
+  let prazos: DecisaoPrazo[] = []
+  let prazosErro: string | null = null
+  try {
+    prazos = await aplicarPrazosDoRelatorioDoFechamento(supabase, fechamentoId, { usuario: "Operador" })
+  } catch (falha) {
+    prazosErro = falha instanceof Error ? falha.message : String(falha)
+  }
   // Tudo o que a aprovacao fez (ou nao conseguiu fazer) no cadastro fica na
   // tela de Logs. A tela de Revisao nao mostra o retorno desta chamada, e uma
   // falha aqui ficava invisivel.
   try {
-    await registrarLogAprovacao(supabase, fechamentoId, { reajustes, cadastro, cadastroErro })
+    await registrarLogAprovacao(supabase, fechamentoId, { reajustes, cadastro, cadastroErro, prazos, prazosErro })
   } catch (falha) {
     console.error("[aprovacao] log nao registrado:", falha instanceof Error ? falha.message : falha)
   }

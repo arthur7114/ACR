@@ -6,6 +6,8 @@
 // O texto vem de `pdftotext -layout`. Nada aqui usa IA: o layout e estavel e um
 // erro de leitura precisa falhar, nao ser inventado.
 
+import { dataCivil } from "@/lib/contrato-prazo"
+
 const MESES: Record<string, string> = {
   JANEIRO: "01",
   FEVEREIRO: "02",
@@ -35,6 +37,10 @@ export interface NovoContrato {
   inquilino: string
   /** Data ISO de inicio da vigencia, quando o documento a informa. */
   vigenciaInicio: string | null
+  /** Data ISO da "Previsao de termino", quando o documento a informa. */
+  vigenciaTermino: string | null
+  /** Alguma das duas datas trazia um dia que o mes nao tem (ex.: 30/02) e foi ajustada. */
+  dataAjustada: boolean
   aluguel: number
   garagem: number | null
 }
@@ -172,10 +178,14 @@ function parseNovosContratos(linhas: string[]): NovoContrato[] {
   return dividirPorApartamento(linhas).flatMap((bloco) => {
     const aluguel = valorDaRubrica(bloco.corpo, /de\s+aluguel/i)
     if (aluguel === null) return []
+    const inicio = dataDoBloco(bloco.corpo, /In[ií]cio\s+de\s+vig[eê]ncia\s+dia\s+(\d{2})\/(\d{2})\/(\d{4})/i)
+    const termino = dataDoBloco(bloco.corpo, /Previs[aã]o\s+de\s+t[eé]rmino\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i)
     return [{
       apto: bloco.apto,
       inquilino: bloco.inquilino,
-      vigenciaInicio: parseInicioVigencia(bloco.corpo),
+      vigenciaInicio: inicio?.iso ?? null,
+      vigenciaTermino: termino?.iso ?? null,
+      dataAjustada: Boolean(inicio?.ajustada || termino?.ajustada),
       aluguel,
       garagem: valorDaRubrica(bloco.corpo, /de\s+vaga\s+de\s+garagem/i),
     }]
@@ -193,10 +203,13 @@ function valorDaRubrica(corpo: string[], rubrica: RegExp) {
   return null
 }
 
-function parseInicioVigencia(corpo: string[]) {
+// "Início de vigência dia 31/08/2026. Previsão de término: 30/02/2029." — as
+// duas datas vêm na mesma linha. Dia que o mês não tem vai para o último dia
+// (ver `dataCivil`), em vez de perder o prazo inteiro.
+function dataDoBloco(corpo: string[], padrao: RegExp) {
   for (const linha of corpo) {
-    const match = /In[ií]cio\s+de\s+vig[eê]ncia\s+dia\s+(\d{2})\/(\d{2})\/(\d{4})/i.exec(linha)
-    if (match) return `${match[3]}-${match[2]}-${match[1]}`
+    const match = padrao.exec(linha)
+    if (match) return dataCivil(Number(match[1]), Number(match[2]), Number(match[3]))
   }
   return null
 }

@@ -32,3 +32,12 @@ test("matchesEmpreendimento tolera aliases ausentes (undefined/null)", () => {
   assert.equal(matchesEmpreendimento({ nome: "Locmais" }, "LOCMAIS II"), false)
   assert.equal(matchesEmpreendimento({ nome: "Locmais", aliases: null }, "LOCMAIS II"), false)
 })
+
+test("prazo do contrato: patch parcial nao apaga, vazio limpa, termino antes do inicio recusa", async () => {
+  const { imovelPatchSchema } = await import("./cadastros.ts")
+  const id = "00000000-0000-4000-8000-000000000000"
+  const parcial = imovelPatchSchema.parse({ id, ativo: true })
+  assert.equal("contrato_inicio" in parcial && parcial.contrato_inicio !== undefined, false)
+  assert.equal(imovelPatchSchema.parse({ id, contrato_termino: "" }).contrato_termino, null)
+  assert.equal(imovelPatchSchema.safeParse({ id, contrato_inicio: "2026-08-11", contrato_termino: "2026-01-01" }).success, false)
+})

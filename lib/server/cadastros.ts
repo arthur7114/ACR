@@ -12,6 +12,12 @@ const optionalNumber = z.preprocess((value) => {
   return value
 }, z.number().finite().nullable().optional())
 
+// Ausente continua ausente (um PATCH parcial nao apaga o prazo); vazio limpa.
+const optionalDate = z.preprocess((value) => {
+  if (value === "") return null
+  return value
+}, z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar no formato AAAA-MM-DD.").nullable().optional())
+
 export const idSchema = z.object({
   id: z.string().uuid(),
 })
@@ -62,11 +68,24 @@ export const imovelInputSchema = z.object({
   ativo: z.boolean().default(true),
   egestor_tag_id: optionalText,
   observacoes: optionalText,
+  contrato_inicio: optionalDate,
+  contrato_termino: optionalDate,
+  contrato_locatario: optionalText,
+  contrato_fonte: optionalText,
 })
 
-export const imovelPatchSchema = imovelInputSchema.partial().extend({
-  id: z.string().uuid(),
-})
+const terminoDepoisDoInicio = (value: { contrato_inicio?: string | null; contrato_termino?: string | null }) =>
+  !value.contrato_inicio || !value.contrato_termino || value.contrato_termino >= value.contrato_inicio
+const MENSAGEM_TERMINO = { message: "Término do contrato não pode ser anterior ao início." }
+
+export const imovelPatchSchema = imovelInputSchema
+  .partial()
+  .extend({
+    id: z.string().uuid(),
+  })
+  .refine(terminoDepoisDoInicio, MENSAGEM_TERMINO)
+
+export const imovelCreateSchema = imovelInputSchema.refine(terminoDepoisDoInicio, MENSAGEM_TERMINO)
 
 export const regraComercialInputSchema = z.object({
   imobiliaria_id: z.string().uuid(),
