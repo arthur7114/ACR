@@ -3754,3 +3754,13 @@ fechamentos.
   planilha. O apto 12 teve o 30/02/2029 ajustado para 28/02. São 5 linhas em
   `auditoria_correcoes`, e a segunda execução também é idempotente. Estado
   final: 86 imóveis com prazo, 20 vencidos e 6 vencendo em até 90 dias.
+
+## Contrato na bandeja do detalhe do imóvel (2026-10-06)
+
+- O drawer "Histórico do imóvel", aberto pela tela de Imóveis, ganhou no topo o
+  card "Contrato": início → término, selo de situação (o mesmo da coluna
+  Contrato), locatário e fonte; sem prazo, "Sem prazo cadastrado". Os Indicadores
+  abrem o mesmo drawer sem o card, porque não carregam o cadastro.
+- O selo saiu de `imoveis-view.tsx` para `prazo-contrato-selo.ts`, usado pelos
+  dois. Sem mudança de dados, schema ou migration. Lint verde nos arquivos
+  tocados; sem verificação visual (a aplicação está atrás de login).
