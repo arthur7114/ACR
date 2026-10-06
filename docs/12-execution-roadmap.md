@@ -3764,3 +3764,32 @@ fechamentos.
 - O selo saiu de `imoveis-view.tsx` para `prazo-contrato-selo.ts`, usado pelos
   dois. Sem mudança de dados, schema ou migration. Lint verde nos arquivos
   tocados; sem verificação visual (a aplicação está atrás de login).
+
+## Histórico de contratos por imóvel + cadastro manual (2026-10-06)
+
+- Pedido: o imóvel pode ter 3 ou mais contratos, a timeline precisa dos eventos
+  de início e fim, e o cliente não via o contrato no detalhe aberto pela Revisão
+  do fechamento (o card do PR anterior só recebia dados da tela de Imóveis).
+- Nova tabela `imovel_contratos` (migration `202610060001`): um contrato por
+  (imóvel, início), com locatário, término, fonte e fechamento de origem.
+  `imoveis.contrato_*` continua sendo o vigente: a coluna e o filtro da lista não
+  mudam. Backfill: os 86 vigentes e os contratos que um relatório já substituiu,
+  lidos do texto de `auditoria_correcoes` (só o que casa com o formato). Migration
+  testada duas vezes em Postgres local (idempotente).
+- O card "Contrato" agora busca os dados sozinho
+  (`GET /api/cadastros/imoveis/contratos`) e aparece onde o drawer abrir. Traz o
+  vigente, os anteriores (2 visíveis, "Ver todos") e o cadastro manual
+  (`POST`/`DELETE` na mesma rota). Manual: início igual corrige; no vigente ou
+  depois, vira o vigente; antes, só entra na lista; remover o vigente promove o
+  mais recente que sobrou.
+- Todas as escritas de prazo passam por `lib/server/imovel-contratos.ts`:
+  planilha, aprovação do relatório, formulário do imóvel (mesmo locatário
+  corrige a linha, outro acrescenta) e o cadastro manual. Relatório mais antigo
+  que o cadastro deixou de ser descartado: entra na lista sem trocar o vigente.
+- Timeline: eventos "Início do contrato" e "Fim do contrato" no mês de cada data,
+  com a data exata. Ficam fora dos períodos por inquilino e dos contadores.
+- Testes: regras puras, eventos da timeline e os caminhos de escrita (banco em
+  memória). Suíte 757/758, lint e tsc verdes (exceto `@react-pdf/renderer`
+  ausente neste worktree). Sem verificação visual: a aplicação está atrás de login.
+- Antes do merge: aplicar a migration em produção pelo pooler (transação única,
+  versão registrada) e conferir a contagem de linhas de `imovel_contratos`.

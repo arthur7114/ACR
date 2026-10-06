@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { imovelCreateSchema, imovelPatchSchema, parseJson } from "@/lib/server/cadastros"
 import { hardDeleteImovel } from "@/lib/server/cadastros-delete"
+import { sincronizarEdicaoDoVigente } from "@/lib/server/imovel-contratos"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 const selectFields = `
@@ -66,9 +67,25 @@ export async function PATCH(request: Request) {
 
   const { id, ...changes } = input.data
   const supabase = createSupabaseAdmin()
+  const mexeNoPrazo = "contrato_inicio" in changes || "contrato_termino" in changes
+  const { data: antes } = mexeNoPrazo
+    ? await supabase.from("imoveis").select("contrato_inicio,contrato_locatario").eq("id", id).maybeSingle()
+    : { data: null }
   const { data, error } = await supabase.from("imoveis").update(changes).eq("id", id).select(selectFields).single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (mexeNoPrazo) {
+    try {
+      await sincronizarEdicaoDoVigente(
+        supabase,
+        id,
+        { inicio: antes?.contrato_inicio ?? null, locatario: antes?.contrato_locatario ?? null },
+        { inicio: data.contrato_inicio, termino: data.contrato_termino, locatario: data.contrato_locatario, fonte: data.contrato_fonte },
+      )
+    } catch (erro) {
+      return NextResponse.json({ error: erro instanceof Error ? erro.message : "Prazo salvo, mas o histórico de contratos falhou." }, { status: 500 })
+    }
+  }
   return NextResponse.json({ imovel: data })
 }
 

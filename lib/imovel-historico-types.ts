@@ -14,6 +14,10 @@ export type EventoTipo =
   // da prestacao: vem de `imovel_vigencias`, e por isso aparece mesmo em mes
   // sem fechamento.
   | "reajuste"
+  // Inicio e fim do contrato de locacao, de `imovel_contratos`. Entram na
+  // linha do tempo no mes em que acontecem, com a data exata na observacao.
+  | "contrato_inicio"
+  | "contrato_fim"
 
 export interface EventoImovel {
   competencia: string

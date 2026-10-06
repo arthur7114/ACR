@@ -1,4 +1,8 @@
 import { createSupabaseAdmin } from "./supabase"
+import { aptoKey } from "./apto-key"
+import { encontrarImovelDaUnidade, listarContratosSemFalhar } from "./imovel-contratos"
+import { formatarDataCurta } from "@/lib/contrato-prazo"
+import type { ImovelContrato } from "@/lib/imovel-contratos-types"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
 import { resumirInadimplencia, type SnapshotInadimplente } from "@/lib/inadimplencia-mes"
@@ -30,19 +34,6 @@ const relNome = (rel: unknown): string => {
   if (!rel) return ""
   const obj = Array.isArray(rel) ? rel[0] : rel
   return (obj as { nome?: string } | undefined)?.nome ?? ""
-}
-
-// Normaliza o codigo da unidade para comparacao: tira acentos, espacos e
-// zeros a esquerda quando for numerica (apto "08" == "8").
-function aptoKey(value: string | null | undefined): string {
-  if (!value) return ""
-  const base = value
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "")
-  return /^\d+$/.test(base) ? String(Number(base)) : base
 }
 
 function isAirbnb(row: ReceitaPorImovel): boolean {
@@ -117,12 +108,20 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
   // prestacao so informa o MES do reajuste anual (reajuste_mes), nunca o valor;
   // o valor esta na troca de vigencia. Por isso o evento nasce de
   // `imovel_vigencias`, e existe mesmo em competencia sem fechamento.
-  eventos.push(...(await reajustesDaUnidade(supabase, query.empreendimentoId, alvo)))
+  const imovel = await encontrarImovelDaUnidade(supabase, query.empreendimentoId, query.unidade)
+  if (imovel) eventos.push(...(await reajustesDaUnidade(supabase, imovel.id)))
   marcarNovoContrato(eventos)
+  const inquilinos = derivarInquilinos(eventos)
+
+  // Inicio e fim de contrato vem de `imovel_contratos`, com a data exata. Entram
+  // depois de derivar os inquilinos: o mes do inicio nao e mes de aluguel pago.
+  const contratos = imovel ? await listarContratosSemFalhar(supabase, imovel.id) : []
+  eventos.push(...eventosDeContrato(contratos, hojeISO()))
 
   // Ordena por competencia desc (mais recente primeiro); dentro do mes, receita antes de acordo.
   const ordemTipo: Record<EventoTipo, number> = {
     // Reajuste vale a partir do primeiro dia: aparece antes do aluguel do mes.
+    contrato_inicio: -2,
     reajuste: -1,
     pago: 0,
     inadimplente: 0,
@@ -131,6 +130,7 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     acordo: 2,
     rescisao: 2,
     intermediacao: 3,
+    contrato_fim: 4,
   }
   eventos.sort(
     (a, b) => b.competencia.localeCompare(a.competencia) || ordemTipo[a.tipo] - ordemTipo[b.tipo],
@@ -142,7 +142,6 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
   // terceira leitura da mesma divida.
   const inadimplencia = await resumirInadimplenciaDaUnidade(supabase, query.empreendimentoId, alvo)
 
-  const inquilinos = derivarInquilinos(eventos)
   const mensais = eventos.filter((e) => e.tipo === "pago" || e.tipo === "inadimplente" || e.tipo === "vago")
   const mesesObservados = new Set(mensais.map((e) => e.competencia)).size
   const eventoMaisRecente = mensais[0] ?? null
@@ -290,21 +289,12 @@ async function resumirInadimplenciaDaUnidade(
 // anterior, entao nao gera evento — nao ha "de" para comparar.
 async function reajustesDaUnidade(
   supabase: ReturnType<typeof createSupabaseAdmin>,
-  empreendimentoId: string,
-  alvo: string,
+  imovelId: string,
 ): Promise<EventoImovel[]> {
-  const { data: imoveis, error: erroImoveis } = await supabase
-    .from("imoveis")
-    .select("id, unidade")
-    .eq("empreendimento_id", empreendimentoId)
-  if (erroImoveis) throw erroImoveis
-  const imovel = (imoveis ?? []).find((row) => aptoKey(row.unidade) === alvo)
-  if (!imovel) return []
-
   const { data: vigencias, error } = await supabase
     .from("imovel_vigencias")
     .select("vigencia_inicio, aluguel_contratado, garagem_contratada, modelo_receita, fonte")
-    .eq("imovel_id", imovel.id)
+    .eq("imovel_id", imovelId)
     .order("vigencia_inicio", { ascending: true })
   if (error) throw error
 
@@ -370,4 +360,55 @@ function marcarNovoContrato(eventos: EventoImovel[]) {
       e.observacao = `Novo contrato · ${e.observacao ?? ""}`
     }
   }
+}
+
+function hojeISO() {
+  const agora = new Date()
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`
+}
+
+/**
+ * Inicio e fim de cada contrato na linha do tempo, no mes em que acontecem.
+ * O fim futuro e "previsto"; o passado nao diz se houve prorrogacao tacita,
+ * so que o prazo terminou. Contrato sem termino nao gera evento de fim.
+ */
+export function eventosDeContrato(contratos: ImovelContrato[], hojeISO: string): EventoImovel[] {
+  const eventos: EventoImovel[] = []
+  const evento = (tipo: "contrato_inicio" | "contrato_fim", data: string, contrato: ImovelContrato, observacao: string): EventoImovel => {
+    const competencia = `${data.slice(0, 7)}-01`
+    return {
+      competencia,
+      competenciaLabel: formatCompetenciaLong(competencia),
+      tipo,
+      inquilino: contrato.locatario,
+      aluguel: null,
+      total: null,
+      comissao: null,
+      repasse: null,
+      vencimento: null,
+      observacao: [observacao, contrato.fonte ? `Fonte: ${contrato.fonte}` : null].filter(Boolean).join(". "),
+    }
+  }
+  for (const contrato of contratos) {
+    const termino = contrato.termino
+    eventos.push(
+      evento(
+        "contrato_inicio",
+        contrato.inicio,
+        contrato,
+        `Início em ${formatarDataCurta(contrato.inicio)}${termino ? `, com término previsto em ${formatarDataCurta(termino)}` : ""}`,
+      ),
+    )
+    if (termino) {
+      eventos.push(
+        evento(
+          "contrato_fim",
+          termino,
+          contrato,
+          termino > hojeISO ? `Término previsto em ${formatarDataCurta(termino)}` : `Prazo terminou em ${formatarDataCurta(termino)}`,
+        ),
+      )
+    }
+  }
+  return eventos
 }
