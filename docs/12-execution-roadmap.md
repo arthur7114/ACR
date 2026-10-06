@@ -3793,3 +3793,13 @@ fechamentos.
   ausente neste worktree). Sem verificação visual: a aplicação está atrás de login.
 - Antes do merge: aplicar a migration em produção pelo pooler (transação única,
   versão registrada) e conferir a contagem de linhas de `imovel_contratos`.
+
+## Contrato no detalhe aberto com código contratual Plural (2026-10-06)
+
+- Bug: o detalhe aberto pela Revisão do Galpão José Walter vem com a unidade
+  `GA0002/2` (código contratual), e o imóvel está cadastrado como `GA0002`. O
+  casamento por unidade do módulo de contratos não aplicava a regra canônica do
+  sync, então não achava o imóvel e o card "Contrato" e os eventos de início e
+  fim não apareciam. Agora `encontrarImovelDaUnidade` compara pela chave
+  canônica (`GA0002/2` = `GA0002`). Teste novo cobre o caso e os zeros à esquerda.
+- Confirmado no banco: `GA0002` tem contrato de 06/07/2022 a 06/07/2028.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { cadastrarContratoManual, registrarContrato, removerContrato, sincronizarEdicaoDoVigente } from "./imovel-contratos.ts"
+import { cadastrarContratoManual, encontrarImovelDaUnidade, registrarContrato, removerContrato, sincronizarEdicaoDoVigente } from "./imovel-contratos.ts"
 
 type Row = Record<string, unknown>
 
@@ -114,4 +114,15 @@ test("remover o unico contrato limpa o vigente; remover um antigo nao mexe nele"
   await removerContrato(bancoFalso(antigo), IMOVEL, "c1")
   assert.equal(antigo.imoveis[0].contrato_inicio, "2027-01-01")
   assert.equal(antigo.imovel_contratos.length, 1)
+})
+
+test("o codigo contratual da Plural (GA0002/2) acha o imovel canonico GA0002", async () => {
+  const tabelas = { imoveis: [{ ...imovel({ unidade: "GA0002", empreendimento_id: "emp-1", ativo: true, contrato_inicio: "2022-07-06" }) }] }
+  const achado = await encontrarImovelDaUnidade(bancoFalso(tabelas), "emp-1", "GA0002/2")
+  assert.equal(achado?.id, IMOVEL)
+  assert.equal(achado?.contrato_inicio, "2022-07-06")
+  // Zeros a esquerda e outra unidade continuam como antes.
+  const numerico = { imoveis: [{ ...imovel({ unidade: "8", empreendimento_id: "emp-1", ativo: true }) }] }
+  assert.equal((await encontrarImovelDaUnidade(bancoFalso(numerico), "emp-1", "08"))?.id, IMOVEL)
+  assert.equal(await encontrarImovelDaUnidade(bancoFalso(numerico), "emp-1", "9"), null)
 })
