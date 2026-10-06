@@ -10,7 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { destinoDaEdicao, viraVigente } from "@/lib/contrato-prazo"
 import type { ContratosDoImovel, ImovelContrato, ImovelDoContrato } from "@/lib/imovel-contratos-types"
-import { aptoKey } from "./apto-key"
+import { chaveDoImovel } from "./apto-key"
 
 const COLUNAS_CONTRATO = "id,imovel_id,locatario,inicio,termino,fonte"
 const COLUNAS_IMOVEL = "id,unidade,ativo,inquilino_nome,contrato_inicio,contrato_termino,contrato_locatario,contrato_fonte"
@@ -44,8 +44,8 @@ export async function encontrarImovelDaUnidade(
 ): Promise<ImovelDoContrato | null> {
   const { data, error } = await supabase.from("imoveis").select(COLUNAS_IMOVEL).eq("empreendimento_id", empreendimentoId)
   if (error) throw error
-  const alvo = aptoKey(unidade)
-  const candidatos = (data ?? []).filter((row) => aptoKey(row.unidade) === alvo)
+  const alvo = chaveDoImovel(unidade)
+  const candidatos = (data ?? []).filter((row) => chaveDoImovel(row.unidade) === alvo)
   const escolhido = candidatos.find((row) => row.ativo) ?? candidatos[0]
   if (!escolhido) return null
   const { unidade: _unidade, ativo: _ativo, ...imovel } = escolhido
