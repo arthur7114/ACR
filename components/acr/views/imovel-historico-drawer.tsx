@@ -19,6 +19,8 @@ import { Hint } from "@/components/acr/hint-tooltip"
 import { formatBRL } from "@/lib/format"
 import type { EventoImovel, EventoTipo, ImovelHistorico } from "@/lib/imovel-historico-types"
 import type { Acordo } from "@/lib/acordos-types"
+import { formatarDataCurta, type PrazoContrato, type SituacaoPrazo } from "@/lib/contrato-prazo"
+import { seloPrazo } from "./prazo-contrato-selo"
 
 interface ImovelHistoricoDrawerProps {
   empreendimentoId: string
@@ -29,6 +31,8 @@ interface ImovelHistoricoDrawerProps {
   // numeros da competencia em tela, para o drawer responder "como esta este mes"
   // antes de "como foi o historico", sem duplicar o calculo aqui.
   visaoGeral?: { titulo: string; itens: Array<{ label: string; valor: string }> }
+  // Prazo do contrato no cadastro; so a tela de Imoveis conhece o cadastro.
+  contrato?: { imovel: PrazoContrato & { contrato_fonte?: string | null }; situacao: SituacaoPrazo | undefined }
   onClose: () => void
 }
 
@@ -53,6 +57,7 @@ export function ImovelHistoricoDrawer({
   unidade,
   codigo,
   visaoGeral,
+  contrato,
   onClose,
 }: ImovelHistoricoDrawerProps) {
   const [historico, setHistorico] = useState<ImovelHistorico | null>(null)
@@ -144,6 +149,7 @@ export function ImovelHistoricoDrawer({
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
+          {contrato && <ContratoPrazoCard imovel={contrato.imovel} situacao={contrato.situacao} />}
           {visaoGeral && (
             <section className="acr-card mb-4 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">{visaoGeral.titulo}</p>
@@ -486,4 +492,37 @@ function mesAno(competencia: string): string {
   if (!m) return competencia
   const meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
   return `${meses[Number(m[2]) - 1] ?? m[2]}/${m[1].slice(2)}`
+}
+
+function ContratoPrazoCard({ imovel, situacao }: NonNullable<ImovelHistoricoDrawerProps["contrato"]>) {
+  const temPrazo = situacao && situacao.estado !== "sem_data"
+  const selo = situacao ? seloPrazo(situacao) : null
+  return (
+    <section className="acr-card mb-4 p-4">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">
+        <CalendarClock size={13} /> Contrato
+      </p>
+      {temPrazo ? (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span
+              className={`tabular-nums text-[15px] font-semibold ${situacao.estado === "outro_inquilino" ? "text-[#9AA89C] line-through" : "text-[#1A2B1C]"}`}
+            >
+              {formatarDataCurta(imovel.contrato_inicio)} → {formatarDataCurta(imovel.contrato_termino)}
+            </span>
+            {selo && <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${selo.className}`}>{selo.label}</span>}
+          </div>
+          {(imovel.contrato_locatario || imovel.contrato_fonte) && (
+            <p className="mt-1 text-[12px] text-[#6B7F6E]">
+              {[imovel.contrato_locatario ? `Contrato de ${imovel.contrato_locatario}` : null, imovel.contrato_fonte ? `Fonte: ${imovel.contrato_fonte}` : null]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-2 text-[13px] text-[#9AA89C]">Sem prazo cadastrado.</p>
+      )}
+    </section>
+  )
 }
