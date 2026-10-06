@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { dataCivil, mesmoLocatario, situacaoPrazo } from "./contrato-prazo.ts"
+import { dataCivil, destinoDaEdicao, mesmoLocatario, situacaoPrazo, viraVigente } from "./contrato-prazo.ts"
 
 const HOJE = "2026-10-02"
 
@@ -33,4 +33,20 @@ test("dia inexistente no mes vai para o ultimo dia e avisa", () => {
   assert.deepEqual(dataCivil(29, 2, 2028), { iso: "2028-02-29", ajustada: false })
   assert.deepEqual(dataCivil(11, 8, 26), { iso: "2026-08-11", ajustada: false })
   assert.equal(dataCivil(1, 13, 2026), null)
+})
+
+test("contrato que comeca no mesmo dia do vigente ou depois vira o vigente; antes e historico", () => {
+  assert.equal(viraVigente(null, "2020-01-01"), true)
+  assert.equal(viraVigente("2026-07-31", "2026-07-31"), true)
+  assert.equal(viraVigente("2026-07-31", "2027-01-01"), true)
+  assert.equal(viraVigente("2026-07-31", "2024-01-01"), false)
+})
+
+test("editar o prazo corrige o contrato do mesmo locatario e acrescenta o de outro", () => {
+  const anterior = { inicio: "2024-01-01", locatario: "JOÃO DA SILVA" }
+  assert.equal(destinoDaEdicao(anterior, "joao da silva"), "substituir")
+  assert.equal(destinoDaEdicao(anterior, "MARIA SOUZA"), "acrescentar")
+  assert.equal(destinoDaEdicao({ inicio: "2024-01-01", locatario: null }, "MARIA SOUZA"), "substituir")
+  assert.equal(destinoDaEdicao({ inicio: null, locatario: null }, "MARIA SOUZA"), "acrescentar")
+  assert.equal(destinoDaEdicao(null, "MARIA SOUZA"), "acrescentar")
 })

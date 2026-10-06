@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { acordoParaEvento } from "./imovel-historico.ts"
+import { acordoParaEvento, eventosDeContrato } from "./imovel-historico.ts"
 
 test("evento de acordo no historico usa os valores resolvidos, nao formula local", () => {
   const evento = acordoParaEvento(
@@ -45,4 +45,33 @@ test("evento pendente preserva o bruto sem inventar repasse", () => {
 
   assert.equal(evento.total, 300)
   assert.equal(evento.repasse, null)
+})
+
+test("contrato vira evento de inicio e de fim no mes de cada data, com a data exata", () => {
+  const eventos = eventosDeContrato(
+    [
+      { id: "a", imovel_id: "i", locatario: "ANA", inicio: "2024-01-01", termino: "2026-07-30", fonte: "Planilha" },
+      { id: "b", imovel_id: "i", locatario: "ANA", inicio: "2026-07-31", termino: "2029-07-30", fonte: null },
+    ],
+    "2026-10-06",
+  )
+  assert.deepEqual(
+    eventos.map((e) => [e.tipo, e.competencia]),
+    [
+      ["contrato_inicio", "2024-01-01"],
+      ["contrato_fim", "2026-07-01"],
+      ["contrato_inicio", "2026-07-01"],
+      ["contrato_fim", "2029-07-01"],
+    ],
+  )
+  assert.match(eventos[0].observacao ?? "", /Início em 01\/01\/24, com término previsto em 30\/07\/26\. Fonte: Planilha/)
+  assert.match(eventos[1].observacao ?? "", /^Prazo terminou em 30\/07\/26/)
+  assert.match(eventos[3].observacao ?? "", /^Término previsto em 30\/07\/29/)
+  assert.equal(eventos[0].inquilino, "ANA")
+})
+
+test("contrato sem termino so tem evento de inicio", () => {
+  const eventos = eventosDeContrato([{ id: "a", imovel_id: "i", locatario: null, inicio: "2025-05-10", termino: null, fonte: null }], "2026-10-06")
+  assert.deepEqual(eventos.map((e) => e.tipo), ["contrato_inicio"])
+  assert.equal(eventos[0].observacao, "Início em 10/05/25")
 })

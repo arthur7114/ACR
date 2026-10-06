@@ -775,7 +775,6 @@ export function ImoveisView({
           empreendimentoNome={historicoImovel.empreendimentos?.nome ?? "Empreendimento"}
           unidade={historicoImovel.unidade}
           codigo={historicoImovel.codigo_imobiliaria}
-          contrato={{ imovel: historicoImovel, situacao: prazoPorImovel.get(historicoImovel.id) }}
           onClose={() => setHistoricoImovel(null)}
         />
       )}
