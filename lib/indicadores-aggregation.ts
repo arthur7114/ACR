@@ -3,6 +3,7 @@ import { competenciaMesToDatabase } from "./competencia-fechamento"
 import { normalizePropertyKeyPart, roundMoney, type OccupancyStatus } from "./indicadores-domain"
 import { resolverRecebimentosLegados } from "./recebimentos-extraordinarios"
 import { origensDoAtraso, type AtrasoOrigem } from "./inadimplencia-mes"
+import { inquilinoParaExibir } from "./inquilino-exibicao"
 import {
   recortarDespesaOperacional,
   type RecorteDespesaOperacional,
@@ -409,6 +410,7 @@ function applyScope(input: IndicadoresAggregationInput): AggregationScope {
   const pairMatch = (item: IndicadoresPairInput) =>
     directMatch(item) && (!input.filtros.imovelId || selectedPairs.has(pairKey(item)))
   const propertyIds = new Set(properties.map((property) => property.id))
+  const inquilinoCadastro = new Map(properties.map((property) => [property.id, property.inquilinoNome]))
 
   return {
     rules: input.regrasAtivas.filter((rule) => rule.ativo && pairMatch(rule)),
@@ -420,8 +422,20 @@ function applyScope(input: IndicadoresAggregationInput): AggregationScope {
         (!input.filtros.imovelId || vigency.imovelId === input.filtros.imovelId),
     ),
     closings: input.fechamentos.filter(pairMatch),
-    snapshots: input.snapshots.filter((snapshot) => propertyIds.has(snapshot.imovelId)),
+    snapshots: input.snapshots
+      .filter((snapshot) => propertyIds.has(snapshot.imovelId))
+      .map((snapshot) => comInquilinoDoCadastro(snapshot, inquilinoCadastro.get(snapshot.imovelId))),
   }
+}
+
+// Snapshot de layout sem nome de inquilino (Cesar Rego) guarda o endereco da
+// unidade como inquilino; mapa, riscos e detalhamento mostram o do cadastro.
+function comInquilinoDoCadastro(
+  snapshot: IndicadoresSnapshotInput,
+  cadastro: string | null | undefined,
+): IndicadoresSnapshotInput {
+  const inquilinoNome = inquilinoParaExibir(snapshot.inquilinoNome, cadastro)
+  return inquilinoNome === (snapshot.inquilinoNome ?? null) ? snapshot : { ...snapshot, inquilinoNome }
 }
 
 interface DuplicidadeSemantica {

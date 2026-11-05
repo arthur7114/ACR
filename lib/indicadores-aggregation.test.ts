@@ -963,6 +963,20 @@ test("inquilino atual da linha vem da evidencia mais recente, nao do cadastro", 
   assert.equal(result.heat.linhas[0].inquilinoNome, "Inquilino do cadastro")
 })
 
+test("endereco no lugar do inquilino (layout Cesar Rego) cede ao cadastro", () => {
+  // Galpao Pompilio Gomes, ago/2026: o documento nao nomeia o inquilino e o
+  // parser grava o endereco; o mapa mostrava "RUA EXEMPLO,230" com
+  // EMPRESA LOCATARIA LTDA cadastrado.
+  const result = aggregateIndicadores(makeInput({
+    imoveisAtivos: [makeProperty({ inquilinoNome: "EMPRESA LOCATARIA LTDA" })],
+    snapshots: [makeSnapshot({ inquilinoNome: "RUA EXEMPLO,230" })],
+  }))
+
+  assert.equal(result.heat.linhas[0].inquilinoAtual, "EMPRESA LOCATARIA LTDA")
+  assert.equal(result.heat.linhas[0].celulas[0].inquilinoNome, "EMPRESA LOCATARIA LTDA")
+  assert.equal(result.receitasPorImovel[0].inquilinoNome, "EMPRESA LOCATARIA LTDA")
+})
+
 test("unidade vaga na evidencia mais recente nao tem inquilino atual", () => {
   const result = aggregateIndicadores(makeInput({
     imoveisAtivos: [makeProperty({ inquilinoNome: "Quem morava aqui" })],

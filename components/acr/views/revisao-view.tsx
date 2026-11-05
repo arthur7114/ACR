@@ -72,6 +72,7 @@ import type { FechamentoVinculosImoveis } from "@/lib/server/fechamento-imoveis"
 import type { InadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 import { ImovelHistoricoDrawer } from "./imovel-historico-drawer"
 import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
+import { inquilinoParaExibir } from "@/lib/inquilino-exibicao"
 
 // Colunas de dinheiro da tabela de intermediação — alinhadas à direita, como
 // nas tabelas de receitas e de acordos.
@@ -625,6 +626,13 @@ export function RevisaoView({
   const temPendencias = failedRechecks.length + resolvedRechecks.length > 0
   const validationSummary = getValidationSummary(rechecks)
   const blockingCount = validationSummary.blocked + vinculosImoveis.pendentes.length
+  // Layout sem nome de inquilino (Cesar Rego) traz o endereco no campo: a
+  // tabela mostra o inquilino do cadastro vinculado no lugar.
+  const inquilinoCadastroPorImovel = new Map(
+    vinculosImoveis.imoveis.map((imovel) => [imovel.id, imovel.inquilino_nome]),
+  )
+  const inquilinoDaLinha = (row: ReceitaPorImovel) =>
+    inquilinoParaExibir(row.inquilino, row.imovel_id ? inquilinoCadastroPorImovel.get(row.imovel_id) : null)
   const hasBlocking = blockingCount > 0
   const isApproved = ["aprovado", "preparado_egestor", "lancado_egestor", "erro_egestor"].includes(fechamento?.status ?? "")
   const canPreviewEgestor = isApproved && !hasBlocking
@@ -934,6 +942,7 @@ export function RevisaoView({
   const linhasImoveisExibicao = linhasImoveis.filter((row) => {
     const textMatch = !filtroTexto || 
       row.apto.toLowerCase().includes(filtroTexto.toLowerCase()) || 
+      (inquilinoDaLinha(row)?.toLowerCase() || "").includes(filtroTexto.toLowerCase()) ||
       (row.inquilino?.toLowerCase() || "").includes(filtroTexto.toLowerCase())
     if (!textMatch) return false
     
@@ -1634,7 +1643,9 @@ export function RevisaoView({
                     </td>
                     <td className="px-4 py-3.5 text-[#3D4F3F]">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span>{displayInquilino(row.inquilino)}</span>
+                        <span title={inquilinoDaLinha(row) !== (row.inquilino?.trim() || null) ? `No documento: ${row.inquilino}` : undefined}>
+                          {displayInquilino(inquilinoDaLinha(row))}
+                        </span>
                         {badge && (
                           <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold ${badge.classes}`}>
                             {badge.label}
