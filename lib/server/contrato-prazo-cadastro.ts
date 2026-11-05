@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { formatarDataCurta, mesmoLocatario } from "@/lib/contrato-prazo"
 import { encontrarImovel, type ImovelParaReajuste } from "./reajuste-cadastro"
 import { extractPdfTextLines } from "./cesar-rego-parser"
+import { registrarContrato } from "./imovel-contratos"
 import { parseRelatorioReajuste, type NovoContrato, type RelatorioReajuste } from "./reajuste-relatorio-parser"
 
 const BUCKET = "fechamento-documentos"
@@ -171,6 +172,20 @@ export async function aplicarPrazosDoRelatorioDoFechamento(
   const decisoes: DecisaoPrazo[] = []
 
   for (const { imovel, ...decisao } of planos) {
+    // Relatório mais antigo que o cadastro não troca o vigente, mas o contrato
+    // que ele declara entra na lista de contratos do imóvel.
+    if (decisao.resultado === "cadastro_mais_recente" && imovel && decisao.inicio && !options.dryRun) {
+      await registrarContrato(supabase, {
+        imovelId: imovel.id,
+        locatario: decisao.inquilino,
+        inicio: decisao.inicio,
+        termino: decisao.termino,
+        fonte,
+        fechamentoId,
+      })
+      decisoes.push({ ...decisao, detalhe: `${decisao.detalhe} Registrado na lista de contratos.` })
+      continue
+    }
     if (decisao.resultado !== "aplicado" || !imovel || options.dryRun) {
       decisoes.push(options.dryRun && decisao.resultado === "aplicado" ? { ...decisao, detalhe: `[dry-run] ${decisao.detalhe}` } : decisao)
       continue
@@ -185,6 +200,16 @@ export async function aplicarPrazosDoRelatorioDoFechamento(
       })
       .eq("id", imovel.id)
     if (error) throw error
+    if (decisao.inicio) {
+      await registrarContrato(supabase, {
+        imovelId: imovel.id,
+        locatario: decisao.inquilino,
+        inicio: decisao.inicio,
+        termino: decisao.termino,
+        fonte,
+        fechamentoId,
+      })
+    }
 
     const { error: erroAuditoria } = await supabase.from("auditoria_correcoes").insert({
       fechamento_id: fechamentoId,

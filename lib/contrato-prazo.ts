@@ -99,3 +99,28 @@ export function formatarDataCurta(iso: string | null | undefined) {
   const [ano, mes, dia] = iso.slice(0, 10).split("-")
   return `${dia}/${mes}/${ano.slice(2)}`
 }
+
+/**
+ * Um contrato declarado vira o vigente do imóvel quando começa no mesmo dia ou
+ * depois do atual. Um que começou antes é histórico: entra na lista de
+ * contratos sem trocar o prazo que a lista de imóveis mostra.
+ */
+export function viraVigente(inicioAtual: string | null | undefined, inicioNovo: string) {
+  return !inicioAtual || inicioNovo.slice(0, 10) >= inicioAtual.slice(0, 10)
+}
+
+export type DestinoEdicao = "substituir" | "acrescentar"
+
+/**
+ * Editar o prazo no formulário do imóvel: do mesmo locatário é correção do
+ * contrato que já estava lá (a linha antiga sai); de outro locatário é um
+ * contrato novo, e o antigo continua no histórico.
+ */
+export function destinoDaEdicao(
+  anterior: { inicio: string | null; locatario: string | null } | null,
+  locatarioNovo: string | null,
+): DestinoEdicao {
+  if (!anterior?.inicio) return "acrescentar"
+  if (!anterior.locatario || !locatarioNovo) return "substituir"
+  return mesmoLocatario(anterior.locatario, locatarioNovo) ? "substituir" : "acrescentar"
+}

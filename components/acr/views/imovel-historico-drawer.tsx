@@ -8,6 +8,8 @@ import {
   CheckCircle,
   Circle,
   DoorOpen,
+  FileCheck,
+  FileX,
   Handshake,
   Loader2,
   Receipt,
@@ -19,6 +21,7 @@ import { Hint } from "@/components/acr/hint-tooltip"
 import { formatBRL } from "@/lib/format"
 import type { EventoImovel, EventoTipo, ImovelHistorico } from "@/lib/imovel-historico-types"
 import type { Acordo } from "@/lib/acordos-types"
+import { ImovelContratosCard } from "./imovel-contratos-card"
 
 interface ImovelHistoricoDrawerProps {
   empreendimentoId: string
@@ -45,6 +48,9 @@ const tipoMeta: Record<EventoTipo, { label: string; color: string; bg: string; i
   atraso: { label: "Inadimplência paga", color: "#1D4ED8", bg: "#EFF6FF", icon: CalendarClock },
   intermediacao: { label: "Intermediação", color: "#0F766E", bg: "#F0FDFA", icon: Receipt },
   reajuste: { label: "Reajuste", color: "#5B3F97", bg: "#F5F3FF", icon: TrendingUp },
+  // Datas exatas dos contratos (imovel_contratos), no mes em que acontecem.
+  contrato_inicio: { label: "Início do contrato", color: "#0E7490", bg: "#ECFEFF", icon: FileCheck },
+  contrato_fim: { label: "Fim do contrato", color: "#475569", bg: "#F1F5F9", icon: FileX },
 }
 
 export function ImovelHistoricoDrawer({
@@ -91,17 +97,28 @@ export function ImovelHistoricoDrawer({
     }
   }
 
+  const buscarHistorico = useCallback(async () => {
+    const url = `/api/imoveis/historico?empreendimento_id=${encodeURIComponent(empreendimentoId)}&unidade=${encodeURIComponent(unidade)}`
+    const response = await fetch(url)
+    const json = await response.json()
+    if (!response.ok) throw new Error(json.error ?? "Falha ao carregar o histórico.")
+    return json.historico as ImovelHistorico
+  }, [empreendimentoId, unidade])
+
+  // Recarrega a linha do tempo sem piscar o carregamento (contrato cadastrado ou removido).
+  const recarregarHistorico = useCallback(async () => {
+    try {
+      setHistorico(await buscarHistorico())
+    } catch {
+      // Mantém a linha do tempo anterior; o card de contratos mostra o próprio erro.
+    }
+  }, [buscarHistorico])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    const url = `/api/imoveis/historico?empreendimento_id=${encodeURIComponent(empreendimentoId)}&unidade=${encodeURIComponent(unidade)}`
-    fetch(url)
-      .then(async (response) => {
-        const json = await response.json()
-        if (!response.ok) throw new Error(json.error ?? "Falha ao carregar o histórico.")
-        return json.historico as ImovelHistorico
-      })
+    buscarHistorico()
       .then((data) => {
         if (!cancelled) setHistorico(data)
       })
@@ -114,7 +131,7 @@ export function ImovelHistoricoDrawer({
     return () => {
       cancelled = true
     }
-  }, [empreendimentoId, unidade])
+  }, [buscarHistorico])
 
   const resumo = historico?.resumo
 
@@ -144,6 +161,7 @@ export function ImovelHistoricoDrawer({
         </div>
 
         <div className="flex-1 overflow-auto px-5 py-4">
+          <ImovelContratosCard empreendimentoId={empreendimentoId} unidade={unidade} onChanged={() => void recarregarHistorico()} />
           {visaoGeral && (
             <section className="acr-card mb-4 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B7F6E]">{visaoGeral.titulo}</p>

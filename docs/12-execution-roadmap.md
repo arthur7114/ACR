@@ -3755,6 +3755,55 @@ fechamentos.
   `auditoria_correcoes`, e a segunda execução também é idempotente. Estado
   final: 86 imóveis com prazo, 20 vencidos e 6 vencendo em até 90 dias.
 
+## Contrato na bandeja do detalhe do imóvel (2026-10-06)
+
+- O drawer "Histórico do imóvel", aberto pela tela de Imóveis, ganhou no topo o
+  card "Contrato": início → término, selo de situação (o mesmo da coluna
+  Contrato), locatário e fonte; sem prazo, "Sem prazo cadastrado". Os Indicadores
+  abrem o mesmo drawer sem o card, porque não carregam o cadastro.
+- O selo saiu de `imoveis-view.tsx` para `prazo-contrato-selo.ts`, usado pelos
+  dois. Sem mudança de dados, schema ou migration. Lint verde nos arquivos
+  tocados; sem verificação visual (a aplicação está atrás de login).
+
+## Histórico de contratos por imóvel + cadastro manual (2026-10-06)
+
+- Pedido: o imóvel pode ter 3 ou mais contratos, a timeline precisa dos eventos
+  de início e fim, e o cliente não via o contrato no detalhe aberto pela Revisão
+  do fechamento (o card do PR anterior só recebia dados da tela de Imóveis).
+- Nova tabela `imovel_contratos` (migration `202610060001`): um contrato por
+  (imóvel, início), com locatário, término, fonte e fechamento de origem.
+  `imoveis.contrato_*` continua sendo o vigente: a coluna e o filtro da lista não
+  mudam. Backfill: os 86 vigentes e os contratos que um relatório já substituiu,
+  lidos do texto de `auditoria_correcoes` (só o que casa com o formato). Migration
+  testada duas vezes em Postgres local (idempotente).
+- O card "Contrato" agora busca os dados sozinho
+  (`GET /api/cadastros/imoveis/contratos`) e aparece onde o drawer abrir. Traz o
+  vigente, os anteriores (2 visíveis, "Ver todos") e o cadastro manual
+  (`POST`/`DELETE` na mesma rota). Manual: início igual corrige; no vigente ou
+  depois, vira o vigente; antes, só entra na lista; remover o vigente promove o
+  mais recente que sobrou.
+- Todas as escritas de prazo passam por `lib/server/imovel-contratos.ts`:
+  planilha, aprovação do relatório, formulário do imóvel (mesmo locatário
+  corrige a linha, outro acrescenta) e o cadastro manual. Relatório mais antigo
+  que o cadastro deixou de ser descartado: entra na lista sem trocar o vigente.
+- Timeline: eventos "Início do contrato" e "Fim do contrato" no mês de cada data,
+  com a data exata. Ficam fora dos períodos por inquilino e dos contadores.
+- Testes: regras puras, eventos da timeline e os caminhos de escrita (banco em
+  memória). Suíte 757/758, lint e tsc verdes (exceto `@react-pdf/renderer`
+  ausente neste worktree). Sem verificação visual: a aplicação está atrás de login.
+- Antes do merge: aplicar a migration em produção pelo pooler (transação única,
+  versão registrada) e conferir a contagem de linhas de `imovel_contratos`.
+
+## Contrato no detalhe aberto com código contratual Plural (2026-10-06)
+
+- Bug: o detalhe aberto pela Revisão do Galpão José Walter vem com a unidade
+  `GA0002/2` (código contratual), e o imóvel está cadastrado como `GA0002`. O
+  casamento por unidade do módulo de contratos não aplicava a regra canônica do
+  sync, então não achava o imóvel e o card "Contrato" e os eventos de início e
+  fim não apareciam. Agora `encontrarImovelDaUnidade` compara pela chave
+  canônica (`GA0002/2` = `GA0002`). Teste novo cobre o caso e os zeros à esquerda.
+- Confirmado no banco: `GA0002` tem contrato de 06/07/2022 a 06/07/2028.
+
 ## Feedback de 27/10/2026
 
 ### César Rêgo: inquilino aparecia como endereço na Revisão e no mapa

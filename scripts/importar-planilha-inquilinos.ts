@@ -42,6 +42,7 @@ async function main() {
   const { createSupabaseAdmin } = await import("../lib/server/supabase")
   const { lerPlanilhaInquilinos, planejarImportacao } = await import("../lib/server/planilha-inquilinos")
   const { formatarDataCurta } = await import("../lib/contrato-prazo")
+  const { registrarContrato } = await import("../lib/server/imovel-contratos")
   const supabase = createSupabaseAdmin()
 
   const workbook = XLSX.readFile(arquivo)
@@ -76,7 +77,21 @@ async function main() {
     if (plano.resultado !== "sem_prazo") {
       console.log(`  L${String(plano.linha.linha).padEnd(3)} ${plano.resultado.padEnd(21)} ${alvo.padEnd(32)} ${prazo}  ${plano.detalhe}${aluguel}`)
     }
-    if (!aplicar || plano.resultado !== "aplicar" || !plano.imovel) continue
+    if (!aplicar || !plano.imovel) continue
+    const registrar = () =>
+      registrarContrato(supabase, {
+        imovelId: plano.imovel!.id,
+        locatario: plano.locatario,
+        inicio: plano.linha.inicio ?? "",
+        termino: plano.linha.termino,
+        fonte,
+      })
+    // Contrato mais antigo que o vigente: não troca o prazo do imóvel, mas entra na lista.
+    if (plano.resultado === "cadastro_mais_recente") {
+      await registrar()
+      continue
+    }
+    if (plano.resultado !== "aplicar") continue
     const { error: erro } = await supabase
       .from("imoveis")
       .update({
@@ -87,6 +102,7 @@ async function main() {
       })
       .eq("id", plano.imovel.id)
     if (erro) throw erro
+    await registrar()
     escritos++
   }
 
