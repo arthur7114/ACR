@@ -1,4 +1,5 @@
 import { createSupabaseAdmin } from "./supabase"
+import { inquilinoParaCadastro } from "@/lib/inquilino-exibicao"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import {
   canonicalizarCodigoImovel,
@@ -92,7 +93,8 @@ export async function syncImoveisFromFechamentos(
         empreendimentoId: f.empreendimento_id,
         unidade,
         competencia: f.competencia,
-        inquilino: row.inquilino?.trim() || null,
+        // Endereco no lugar do nome (layout Cesar Rego) nao sobrescreve o cadastro.
+        inquilino: inquilinoParaCadastro(row.inquilino),
         aluguel: typeof row.aluguel === "number" ? row.aluguel : null,
         status: statusDaLinha(row),
         emRescisao: rescindidasNoMes.has(normalizeCodigoImovel(unidade)),
@@ -125,7 +127,9 @@ export async function syncImoveisFromFechamentos(
       const { error: upErr } = await supabase
         .from("imoveis")
         .update({
-          inquilino_nome: u.inquilino,
+          // Linha com nome no documento atualiza; sem nome (vago ou layout que
+          // so traz o endereco) preserva o cadastro, salvo se a unidade vagou.
+          ...(u.inquilino !== null || status === "vago" ? { inquilino_nome: u.inquilino } : {}),
           status,
           valor_aluguel_esperado: u.aluguel,
         })

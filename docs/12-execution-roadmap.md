@@ -3754,3 +3754,30 @@ fechamentos.
   planilha. O apto 12 teve o 30/02/2029 ajustado para 28/02. São 5 linhas em
   `auditoria_correcoes`, e a segunda execução também é idempotente. Estado
   final: 86 imóveis com prazo, 20 vencidos e 6 vencendo em até 90 dias.
+
+## Feedback de 27/10/2026
+
+### César Rêgo: inquilino aparecia como endereço na Revisão e no mapa
+
+- Sintoma (Galpão Pompílio Gomes, ago/26): o cadastro tem o inquilino das
+  unidades 0002526 e 0002527, mas a Revisão ("Receitas por imóvel") e
+  Indicadores > Riscos por imóvel mostravam o endereço da unidade.
+- Causa: a Relação de Imóveis da César Rêgo não imprime o nome do inquilino, e
+  o parser grava o endereço da unidade no campo para a linha não sair em branco.
+  O mesmo ocorre com João Cordeiro 0002520/0002521.
+- Correção na exibição, sem reescrever o dado extraído (`lib/inquilino-exibicao.ts`):
+  quando o "inquilino" extraído tem número (endereço) e o imóvel vinculado tem
+  nome no cadastro, a tela mostra o do cadastro. Nome real do documento
+  continua valendo, mesmo divergente do cadastro, e linha sem nome não herda o
+  cadastro. Medido em produção: nenhum dos 119 nomes do cadastro tem dígito, e
+  todo inquilino extraído com dígito é endereço.
+- Aplicado em: tabela de receitas da Revisão (o endereço do documento fica no
+  tooltip e continua pesquisável), agregação dos Indicadores (mapa, células,
+  riscos e detalhamento) e histórico do imóvel.
+- "Sincronizar dos fechamentos" e o vínculo manual com "atualizar inquilino"
+  deixam de gravar o endereço em `imoveis.inquilino_nome`.
+- Testes: `lib/inquilino-exibicao.test.ts` e um caso novo em
+  `lib/indicadores-aggregation.test.ts`. Suíte 752/752 antes do caso novo,
+  typecheck e lint verdes. Conferido contra produção (somente leitura): mapa e
+  histórico do Pompílio retornam o inquilino do cadastro. Sem verificação
+  visual da Revisão: a aplicação está atrás de login.

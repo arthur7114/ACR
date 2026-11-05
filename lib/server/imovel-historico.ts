@@ -1,4 +1,5 @@
 import { createSupabaseAdmin } from "./supabase"
+import { inquilinoParaExibir } from "@/lib/inquilino-exibicao"
 import { formatCompetenciaLong } from "@/lib/fechamento-context"
 import { resolverRecebimentoLegado } from "@/lib/recebimentos-extraordinarios"
 import { resumirInadimplencia, type SnapshotInadimplente } from "@/lib/inadimplencia-mes"
@@ -84,6 +85,9 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
   }>
 
   const empreendimentoNome = fechamentos.length > 0 ? relNome(fechamentos[0].empreendimentos) : ""
+  const inquilinoCadastro = await inquilinoDoCadastro(supabase, query.empreendimentoId, alvo)
+  // Layout sem nome de inquilino (Cesar Rego) traz o endereco: vale o cadastro.
+  const nomeDoInquilino = (extraido: string | null | undefined) => inquilinoParaExibir(extraido, inquilinoCadastro)
   const eventos: EventoImovel[] = []
 
   for (const f of fechamentos) {
@@ -97,7 +101,7 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
         competencia: f.competencia,
         competenciaLabel,
         tipo: classificarReceita(row),
-        inquilino: row.inquilino || null,
+        inquilino: nomeDoInquilino(row.inquilino),
         aluguel: numOrNull(row.aluguel),
         total: numOrNull(row.total),
         comissao: numOrNull(row.comissao),
@@ -109,7 +113,8 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
 
     for (const item of prestacao.acordos_rescisoes_recebidos ?? []) {
       if (aptoKey(item.apto) !== alvo) continue
-      eventos.push(acordoParaEvento(item, f.competencia, competenciaLabel))
+      const evento = acordoParaEvento(item, f.competencia, competenciaLabel)
+      eventos.push({ ...evento, inquilino: nomeDoInquilino(evento.inquilino) })
     }
   }
 
@@ -177,6 +182,22 @@ export async function getImovelHistorico(query: ImovelHistoricoQuery): Promise<I
     inquilinos,
     eventos,
   }
+}
+
+async function inquilinoDoCadastro(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  empreendimentoId: string,
+  alvo: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("imoveis")
+    .select("codigo_imobiliaria, unidade, inquilino_nome")
+    .eq("empreendimento_id", empreendimentoId)
+    .eq("ativo", true)
+  if (error) throw error
+  const candidatos = ((data ?? []) as Array<{ codigo_imobiliaria: string | null; unidade: string; inquilino_nome: string | null }>)
+    .filter((imovel) => aptoKey(imovel.codigo_imobiliaria) === alvo || aptoKey(imovel.unidade) === alvo)
+  return candidatos.length === 1 ? candidatos[0].inquilino_nome : null
 }
 
 // CA27: o evento do histórico expõe os valores resolvidos pelo módulo

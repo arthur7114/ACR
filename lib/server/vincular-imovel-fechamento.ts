@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import { findCesarRegoPropertyScopeConflict } from "@/lib/cesar-rego-properties"
+import { inquilinoParaCadastro } from "@/lib/inquilino-exibicao"
 import { imovelInputSchema, imovelStatusSchema } from "./cadastros"
 import { applyFechamentoCorrection, FechamentoCorrectionError, resolveReceitaMovement } from "./fechamento-corrections"
 import {
@@ -110,7 +111,10 @@ function mergeResolvedImovel(imoveis: ImovelVinculoCadastro[], resolved: ImovelV
 
 function buildExistingChanges(row: ReceitaPorImovel, input: VincularInput) {
   const changes: Record<string, unknown> = {}
-  if (input.atualizacoes?.inquilino) changes.inquilino_nome = row.inquilino?.trim() || null
+  // Endereco extraido no lugar do nome (layout Cesar Rego) nao apaga o cadastro.
+  if (input.atualizacoes?.inquilino && (inquilinoParaCadastro(row.inquilino) !== null || !row.inquilino?.trim())) {
+    changes.inquilino_nome = inquilinoParaCadastro(row.inquilino)
+  }
   if (input.atualizacoes?.aluguel) changes.valor_aluguel_esperado = row.aluguel
   if (input.atualizacoes?.status) {
     const status = imovelStatusSchema.safeParse(input.statusSugerido)
