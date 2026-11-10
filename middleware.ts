@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { requireEnv, requireSupabasePublicKey } from "@/lib/server/env"
-import { authorizeRequest, parseUserRole } from "@/lib/authz"
+import { authorizeRequest, hasExplicitRole, parseUserRole } from "@/lib/authz"
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -47,6 +47,16 @@ export async function middleware(request: NextRequest) {
     }
     const loginUrl = new URL("/login", request.url)
     return NextResponse.redirect(loginUrl)
+  }
+
+  // Conta autenticada sem perfil atribuido pelo admin nao entra: API responde
+  // 403 e as paginas voltam ao login.
+  if (user && !hasExplicitRole(user.app_metadata?.role)) {
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Conta sem perfil de acesso." }, { status: 403 })
+    }
+    if (isLoginRoute) return response
+    return NextResponse.redirect(new URL("/login?erro=sem-perfil", request.url))
   }
 
   if (user && isLoginRoute) {

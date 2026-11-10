@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
@@ -5,6 +6,9 @@ export const runtime = "nodejs"
 
 // Lista as notificacoes recentes + contagem de nao-lidas para o sino do topo.
 export async function GET() {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
   const { data, error } = await supabase
     .from("notificacoes")

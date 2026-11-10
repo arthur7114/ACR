@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { deleteManualEgestorLancamento, updateEgestorLancamentoCampo } from "@/lib/server/egestor"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
@@ -6,6 +7,9 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string; lancamentoId: string }> },
 ) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id, lancamentoId } = await context.params
     const body = (await request.json()) as { descricao?: unknown; valor?: unknown; tags?: unknown }
@@ -28,6 +32,9 @@ export async function DELETE(
   request: Request,
   context: { params: Promise<{ id: string; lancamentoId: string }> },
 ) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id, lancamentoId } = await context.params
     const lancamentos = await deleteManualEgestorLancamento(createSupabaseAdmin(), id, lancamentoId)

@@ -1,8 +1,12 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { mesclarLogs } from "@/lib/server/logs"
 
 export async function GET() {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
 
   const [{ data: correcoes, error: correcoesError }, { data: notificacoes, error: notificacoesError }] =

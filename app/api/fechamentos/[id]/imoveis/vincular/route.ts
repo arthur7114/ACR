@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { FechamentoCorrectionError, FechamentoStaleError } from "@/lib/server/fechamento-corrections"
@@ -14,6 +15,9 @@ const inputSchema = z.object({
 })
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const parsed = inputSchema.safeParse({ ...(await request.json()), ...(await params) })
     if (!parsed.success) return NextResponse.json({ error: "Vínculo de receita inválido." }, { status: 400 })

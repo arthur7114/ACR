@@ -1,8 +1,12 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { getEgestorEnvios } from "@/lib/server/egestor"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id } = await context.params
     const envios = await getEgestorEnvios(createSupabaseAdmin(), id)

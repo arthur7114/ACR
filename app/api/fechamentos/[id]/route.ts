@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { purgeFechamentos } from "@/lib/server/cadastros-delete"
@@ -6,6 +7,9 @@ import { attachExistingImovelLinks, loadFechamentoVinculosImoveis } from "@/lib/
 import { loadInadimplenciaMes } from "@/lib/server/inadimplencia-mes"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const { id } = await context.params
   const supabase = createSupabaseAdmin()
 
@@ -154,6 +158,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const { id } = await context.params
   const supabase = createSupabaseAdmin()
 
@@ -182,6 +189,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const { id } = await context.params
   const supabase = createSupabaseAdmin()
 

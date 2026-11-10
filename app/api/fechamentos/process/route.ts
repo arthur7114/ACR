@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { startPackageProcessingInBackground } from "@/lib/server/background-processing"
 import { loadAuthoritativeFechamentoContext, parseSubmittedFechamentoId } from "@/lib/server/fechamento-context-server"
@@ -8,6 +9,9 @@ export const runtime = "nodejs"
 // O job continua no servidor mesmo se o cliente fechar a aba; a tela acompanha
 // por polling em GET /api/fechamentos/[id] e a conclusao gera uma notificacao.
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const formData = await request.formData()
   const incoming = formData.getAll("files").filter((file): file is File => file instanceof File)
   const fechamentoId = parseSubmittedFechamentoId(formData.get("fechamentoContext"))

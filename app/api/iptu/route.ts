@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import type { IptuFiltros, IptuStatus } from "@/lib/iptu-types"
 import { listarParcelas } from "@/lib/server/iptu"
@@ -5,6 +6,9 @@ import { listarParcelas } from "@/lib/server/iptu"
 const STATUS_VALIDOS: IptuStatus[] = ["aberto", "vencido", "pago"]
 
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const params = new URL(request.url).searchParams
 
   const statusParam = params.get("status")

@@ -1,8 +1,12 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { validarNovoUsuario, validarPerfilUsuario } from "@/lib/server/admin-usuarios"
 
 export async function GET() {
+  const acessoNegado = await requireApiRole("admin")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
   const { data, error } = await supabase.auth.admin.listUsers()
   if (error) {
@@ -19,6 +23,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("admin")
+  if (acessoNegado) return acessoNegado
+
   try {
     const body = (await request.json()) as { email?: unknown; role?: unknown }
     const { email, senha, role } = validarNovoUsuario({ email: body?.email, senha: undefined, role: body?.role })
@@ -40,6 +47,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const acessoNegado = await requireApiRole("admin")
+  if (acessoNegado) return acessoNegado
+
   try {
     const body = (await request.json()) as { id?: unknown; role?: unknown }
     if (typeof body.id !== "string" || !body.id) throw new Error("Usuario invalido.")

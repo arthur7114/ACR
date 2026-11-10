@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { validatePackage } from "@/lib/server/package-rechecks"
@@ -13,6 +14,9 @@ const camposPermitidos = new Set(["aluguel"])
 const statusEditavel = new Set(["pendente_revisao", "processado_com_sucesso"])
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id } = await params
     const { apto, inquilino = "", campo = "aluguel", valor_novo, justificativa } = await request.json()

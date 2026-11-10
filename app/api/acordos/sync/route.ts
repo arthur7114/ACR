@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { syncAcordosFromFechamentos } from "@/lib/server/acordos"
 
@@ -5,6 +6,9 @@ export const runtime = "nodejs"
 
 // POST /api/acordos/sync  { empreendimento_id?: string }
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   let empreendimentoId: string | null = null
   try {
     const body = (await request.json()) as { empreendimento_id?: string } | null

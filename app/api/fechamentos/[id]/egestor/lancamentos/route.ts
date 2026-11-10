@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { addManualEgestorLancamento } from "@/lib/server/egestor"
 import type { EgestorCategoria, EgestorTipoLancamento } from "@/lib/egestor-types"
@@ -15,6 +16,9 @@ const CATEGORIAS: EgestorCategoria[] = [
 ]
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id } = await context.params
     const body = (await request.json()) as {

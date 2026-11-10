@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { parseJson, regraComercialInputSchema, regraComercialPatchSchema } from "@/lib/server/cadastros"
 import { hardDeleteRegraComercial } from "@/lib/server/cadastros-delete"
@@ -16,6 +17,9 @@ const selectFields = `
 `
 
 export async function GET() {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
   const { data, error } = await supabase
     .from("regras_comerciais")
@@ -28,6 +32,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(regraComercialInputSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
@@ -44,6 +51,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(regraComercialPatchSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
@@ -62,6 +72,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const url = new URL(request.url)
   const id = url.searchParams.get("id")
   const mode = url.searchParams.get("mode") ?? "soft"

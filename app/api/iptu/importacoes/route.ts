@@ -1,7 +1,11 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { listarImportacoesPorEmpreendimento } from "@/lib/server/persist-iptu"
 
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const params = new URL(request.url).searchParams
   const empreendimentoId = params.get("empreendimento_id")
 

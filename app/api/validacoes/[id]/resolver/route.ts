@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
@@ -10,6 +11,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const { id } = await params
     const { status = "resolvida", justificativa, valor_oficial, origem_valor } = await request.json()

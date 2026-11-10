@@ -1,7 +1,11 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { runPrestacaoAliveWorkflow } from "@/lib/server/prestacao-workflow"
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const formData = await request.formData()
     const file = formData.get("file")
