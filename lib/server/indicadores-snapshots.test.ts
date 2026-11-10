@@ -2006,3 +2006,53 @@ test("aluguel fixo em zero e desconhecido, nao valor", () => {
   assert.equal(props[0].expectedRent, null)
   assert.equal(props[1].expectedRent, 400)
 })
+
+test("documento que traz so o codigo da imobiliaria vincula a unidade do cadastro", () => {
+  // Cadastro guarda a unidade por nome ("GALP 10") e o codigo do documento em
+  // codigo_imobiliaria; o extrato consolidado identifica o imovel so pelo codigo.
+  const analysis = prestacaoFixture({ receita: { apto: "0009910", aluguel: 1_000, total: 1_000 } })
+  analysis.prestacao!.receitas_por_imovel.push({
+    ...analysis.prestacao!.receitas_por_imovel[0],
+    apto: "0009911",
+    aluguel: null,
+    total: 0,
+    observacao: "INADIMPLENCIA",
+  })
+  analysis.prestacao!.inadimplencias_acumuladas.push({
+    apto: "0009911",
+    inquilino: null,
+    valor: 800,
+    condicao: "Em aberto",
+    observacao: null,
+    confianca: 0.95,
+  } as never)
+  const result = buildIndicadoresSnapshotRows({
+    properties: [
+      { id: "imovel-a", unit: "GALP 10", codigoImobiliaria: "0009910", expectedRent: 1_000, realEstateAgencyName: "Imobiliária X", developmentName: "Residencial X" },
+      { id: "imovel-b", unit: "GALP 11", codigoImobiliaria: "0009911", expectedRent: 800, realEstateAgencyName: "Imobiliária X", developmentName: "Residencial X" },
+    ],
+    fechamentoId: "fechamento-codigo",
+    competencia: "2026-06",
+    analysis,
+  })
+
+  assert.equal(result.unlinkedLineCount, 0)
+  const byId = new Map(result.rows.map((row) => [row.imovel_id, row]))
+  assert.equal(byId.get("imovel-a")?.quantidade_linhas, 1)
+  assert.equal(byId.get("imovel-a")?.status_ocupacao, "ocupado")
+  assert.equal(byId.get("imovel-b")?.status_ocupacao, "inadimplente")
+})
+
+test("codigo da imobiliaria ambiguo nao vira alias", () => {
+  const analysis = prestacaoFixture({ receita: { apto: "0009910", aluguel: 1_000, total: 1_000 } })
+  const result = buildIndicadoresSnapshotRows({
+    properties: [
+      { id: "imovel-a", unit: "GALP 10", codigoImobiliaria: "0009910", expectedRent: 1_000, realEstateAgencyName: "Imobiliária X", developmentName: "Residencial X" },
+      { id: "imovel-b", unit: "GALP 11", codigoImobiliaria: "0009910", expectedRent: 800, realEstateAgencyName: "Imobiliária X", developmentName: "Residencial X" },
+    ],
+    fechamentoId: "fechamento-ambiguo",
+    competencia: "2026-06",
+    analysis,
+  })
+  assert.equal(result.unlinkedLineCount, 1)
+})

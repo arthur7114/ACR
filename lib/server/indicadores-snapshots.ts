@@ -14,6 +14,7 @@ import type { PackageAnalysis, ReceitaPorImovel } from "@/lib/prestacao-types"
 import { resolverRecebimentosLegados } from "@/lib/recebimentos-extraordinarios"
 import type { IndicadoresRevenueModel } from "@/lib/indicadores-types"
 import type { AtrasoOrigem } from "@/lib/inadimplencia-mes"
+import { normalizeCodigoImovel } from "@/lib/codigo-imovel"
 import type { createSupabaseAdmin } from "./supabase"
 
 // v3: estado final × eventos (rescisão deixa de ser status), cobrança esperada
@@ -49,6 +50,10 @@ type SnapshotAnalysis = Pick<PackageAnalysis, "prestacao">
 export interface IndicadoresSnapshotProperty {
   id: string
   unit: string
+  // Código do imóvel na imobiliária ("0002526"). O documento César Rêgo traz
+  // só ele, enquanto a unidade do cadastro é "GALP 230": sem o alias a linha
+  // fica sem imóvel e o persist trava (Pompílio Gomes, set/2026).
+  codigoImobiliaria?: string | null
   expectedRent: number | null
   // Garagem contratada da vigência (CA-IND23). Nunca inferida do cadastro
   // atual: null significa "sem evidência", e a cobrança esperada recorre então
@@ -158,6 +163,7 @@ const relationSchema = z
 const propertyRowSchema = z.object({
   id: z.string().min(1),
   unidade: z.string(),
+  codigo_imobiliaria: z.string().nullish(),
   valor_aluguel_esperado: z.union([z.number(), z.string(), z.null()]),
   imobiliarias: relationSchema,
   empreendimentos: relationSchema,
@@ -251,7 +257,7 @@ export async function loadActiveIndicadoresProperties(input: {
   let query = input.supabase
     .from("imoveis")
     .select(
-      "id, unidade, valor_aluguel_esperado, imobiliarias ( nome ), empreendimentos ( nome )",
+      "id, unidade, codigo_imobiliaria, valor_aluguel_esperado, imobiliarias ( nome ), empreendimentos ( nome )",
     )
     .eq("imobiliaria_id", input.imobiliariaId)
     .eq("empreendimento_id", input.empreendimentoId)
@@ -340,6 +346,7 @@ export function mapIndicadoresProperties(input: {
     return {
       id: property.id,
       unit: property.unidade,
+      codigoImobiliaria: property.codigo_imobiliaria ?? null,
       // Zero em aluguel fixo e placeholder (cadastro migrado), nao valor: vira
       // desconhecido e a cobertura o conta em `semAluguelEsperado`. O banco
       // tambem recusa zero novo (constraint em 202609160001).
@@ -717,6 +724,7 @@ function resolvePropertyContext(input: BuildIndicadoresSnapshotRowsInput) {
   return {
     realEstateAgencyName: realEstateAgencyName ?? "",
     developmentName: developmentName ?? "",
+    unitAliases: buildUnitAliases(input.properties),
   }
 }
 
@@ -839,8 +847,29 @@ function buildContextPropertyKey(
   return buildPropertyKey({
     realEstateAgency: context.realEstateAgencyName,
     development: context.developmentName,
-    unit,
+    unit: context.unitAliases.get(normalizeCodigoImovel(unit)) ?? unit,
   })
+}
+
+/**
+ * Código da imobiliária → unidade do cadastro, para o documento que identifica
+ * o imóvel só pelo código. Vale apenas o alias inequívoco: código repetido, ou
+ * código que coincide com a unidade de OUTRO imóvel, fica de fora e a linha
+ * segue casando pela unidade, como antes.
+ */
+function buildUnitAliases(properties: IndicadoresSnapshotProperty[]) {
+  const units = new Set(properties.map((property) => normalizeCodigoImovel(property.unit)))
+  const byCode = new Map<string, string[]>()
+  for (const property of properties) {
+    const code = normalizeCodigoImovel(property.codigoImobiliaria ?? "")
+    if (!code || code === normalizeCodigoImovel(property.unit)) continue
+    byCode.set(code, [...(byCode.get(code) ?? []), property.unit])
+  }
+  const aliases = new Map<string, string>()
+  for (const [code, propertyUnits] of byCode) {
+    if (propertyUnits.length === 1 && !units.has(code)) aliases.set(code, propertyUnits[0])
+  }
+  return aliases
 }
 
 function resolveQuality(
