@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
@@ -5,6 +6,9 @@ export const runtime = "nodejs"
 
 // Marca notificacoes como lidas. Sem corpo (ou ids vazio) => marca todas as nao-lidas.
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
 
   let ids: string[] | null = null

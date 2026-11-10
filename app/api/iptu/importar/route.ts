@@ -1,8 +1,12 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { extractIptuFromPdf } from "@/lib/server/analyze-iptu"
 import { importarCertidaoIptu } from "@/lib/server/persist-iptu"
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const formData = await request.formData()
   const file = formData.get("file")
   const imobiliariaId = formData.get("imobiliaria_id")

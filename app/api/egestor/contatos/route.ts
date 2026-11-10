@@ -1,8 +1,12 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 import { EgestorClient } from "@/lib/server/egestor-client"
 
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const { searchParams } = new URL(request.url)
   const contaId = searchParams.get("conta_id")
   if (!contaId) return NextResponse.json({ error: "conta_id obrigatorio." }, { status: 400 })

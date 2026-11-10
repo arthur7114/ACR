@@ -1,9 +1,13 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { imobiliariaInputSchema, imobiliariaPatchSchema, normalizeCadastroKey, parseJson } from "@/lib/server/cadastros"
 import { hardDeleteImobiliaria } from "@/lib/server/cadastros-delete"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
   const includeInactive = new URL(request.url).searchParams.get("include_inactive") === "true"
   let query = supabase
@@ -20,6 +24,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(imobiliariaInputSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
@@ -43,6 +50,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(imobiliariaPatchSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })
@@ -56,6 +66,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const url = new URL(request.url)
   const id = url.searchParams.get("id")
   const mode = url.searchParams.get("mode") ?? "soft"

@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { darBaixaParcela } from "@/lib/server/acordos"
 
@@ -5,6 +6,9 @@ export const runtime = "nodejs"
 
 // PATCH /api/acordos/parcelas  { parcela_id: string, pago: boolean }
 export async function PATCH(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   let parcelaId: string | undefined
   let pago = true
   try {

@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
@@ -20,6 +21,9 @@ const contratoSchema = z
 // GET /api/cadastros/imoveis/contratos?empreendimento_id=...&unidade=...
 // Os contratos da unidade, de qualquer tela que abra o detalhe do imóvel.
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const params = new URL(request.url).searchParams
   const empreendimentoId = params.get("empreendimento_id")
   const unidade = params.get("unidade")
@@ -35,6 +39,9 @@ export async function GET(request: Request) {
 
 // POST: cadastra um contrato. O mesmo início de um contrato existente o corrige.
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(contratoSchema, await request.json())
   if (input.error || !input.data) return NextResponse.json({ error: input.error ?? "Payload invalido." }, { status: 400 })
   try {
@@ -52,6 +59,9 @@ export async function POST(request: Request) {
 
 // DELETE /api/cadastros/imoveis/contratos?imovel_id=...&contrato_id=...
 export async function DELETE(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const params = new URL(request.url).searchParams
   const imovelId = params.get("imovel_id")
   const contratoId = params.get("contrato_id")

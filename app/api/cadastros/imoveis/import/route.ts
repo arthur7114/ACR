@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { imovelInputSchema, normalizeCsvHeader } from "@/lib/server/cadastros"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
@@ -5,6 +6,9 @@ import { createSupabaseAdmin } from "@/lib/server/supabase"
 type CsvRow = Record<string, string>
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const formData = await request.formData()
   const file = formData.get("file")
 

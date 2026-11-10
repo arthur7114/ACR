@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { syncImoveisFromFechamentos } from "@/lib/server/sync-imoveis"
 
@@ -6,6 +7,9 @@ export const runtime = "nodejs"
 // POST /api/cadastros/imoveis/sync  { empreendimento_id?: string }
 // Popula/atualiza o cadastro de imoveis a partir das prestacoes ja processadas.
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   let empreendimentoId: string | null = null
   try {
     const body = (await request.json()) as { empreendimento_id?: string } | null

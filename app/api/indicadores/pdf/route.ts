@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { IndicadoresQueryValidationError, parseIndicadoresQuery } from "@/lib/indicadores-query"
 import { getIndicadores } from "@/lib/server/indicadores"
@@ -9,6 +10,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   try {
     const query = parseIndicadoresQuery(new URL(request.url).searchParams)
     const indicadores = await getIndicadores(query)

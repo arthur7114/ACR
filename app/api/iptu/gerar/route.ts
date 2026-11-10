@@ -1,9 +1,13 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { gerarIptuSchema } from "@/lib/iptu-types"
 import { parseJson } from "@/lib/server/cadastros"
 import { gerarParcelasLote } from "@/lib/server/iptu"
 
 export async function POST(request: Request) {
+  const acessoNegado = await requireApiRole("operador")
+  if (acessoNegado) return acessoNegado
+
   const input = parseJson(gerarIptuSchema, await request.json())
   if (input.error) return NextResponse.json({ error: input.error }, { status: 400 })
   if (!input.data) return NextResponse.json({ error: "Payload invalido." }, { status: 400 })

@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { getAcordosByUnidade } from "@/lib/server/acordos"
 
@@ -5,6 +6,9 @@ export const runtime = "nodejs"
 
 // GET /api/acordos?empreendimento_id=...&unidade=...
 export async function GET(request: Request) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const params = new URL(request.url).searchParams
   const empreendimentoId = params.get("empreendimento_id")
   const unidade = params.get("unidade")

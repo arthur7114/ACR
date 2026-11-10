@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
 
@@ -7,6 +8,9 @@ export const runtime = "nodejs"
 // principal do fechamento de proposito: as colunas de progresso podem nao existir
 // antes da migration, e isso NAO pode derrubar a revisao. Busca resiliente.
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const acessoNegado = await requireApiRole("visualizador")
+  if (acessoNegado) return acessoNegado
+
   const { id } = await context.params
   const supabase = createSupabaseAdmin()
 

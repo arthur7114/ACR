@@ -1,3 +1,4 @@
+import { requireApiRole } from "@/lib/server/api-auth"
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createSupabaseAdmin } from "@/lib/server/supabase"
@@ -72,6 +73,9 @@ function fail(error: SupabaseError, status = 500) {
 }
 
 export async function GET() {
+  const acessoNegado = await requireApiRole("admin")
+  if (acessoNegado) return acessoNegado
+
   const supabase = createSupabaseAdmin()
 
   const contasRes = await supabase.from("egestor_contas").select("*").order("nome")
@@ -113,6 +117,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const acessoNegado = await requireApiRole("admin")
+  if (acessoNegado) return acessoNegado
+
   const parsed = configSchema.safeParse(await request.json())
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues.map((issue) => issue.message).join("; ") }, { status: 400 })

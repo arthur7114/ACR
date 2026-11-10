@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -11,6 +11,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Conta autenticada sem perfil atribuido: o middleware devolve para ca.
+  // Encerra a sessao e explica o motivo.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("erro") !== "sem-perfil") return
+    createSupabaseBrowserClient()
+      .auth.signOut()
+      .finally(() => setError("Conta sem perfil de acesso. Fale com o administrador."))
+  }, [])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()

@@ -13,6 +13,12 @@ export function parseUserRole(value: unknown): UserRole {
   return USER_ROLES.includes(value as UserRole) ? (value as UserRole) : "visualizador"
 }
 
+// Conta sem perfil gravado em app_metadata nao entra no sistema: perfis sao
+// atribuidos somente pelo admin, entao uma conta criada por fora fica barrada.
+export function hasExplicitRole(value: unknown): value is UserRole {
+  return USER_ROLES.includes(value as UserRole)
+}
+
 export function hasRole(role: UserRole, minimum: UserRole): boolean {
   return roleLevel[role] >= roleLevel[minimum]
 }
